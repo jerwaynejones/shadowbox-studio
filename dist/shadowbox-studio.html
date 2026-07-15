@@ -1,0 +1,2345 @@
+<!DOCTYPE html>
+<!-- ==========================================================================
+  Shadowbox Studio — turn a photo into laser-ready layered shadowbox files.
+  Open this file directly in any modern browser. No server, no install.
+=========================================================================== -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Shadowbox Studio</title>
+<meta name="description" content="Turn a photo into laser-ready layered shadowbox cut files.">
+
+
+<style>
+/* ============================================================================
+ * Shadowbox Studio — style.css
+ * ----------------------------------------------------------------------------
+ * Design language: the laser workshop itself.
+ *   · The color system IS the laser convention — red means cut, blue means
+ *     score, amber means "the tool added a bridge here". Nothing decorative.
+ *   · Header is an engineering-drawing title block; labels set in the
+ *     monospace utility face like a plotter annotation.
+ *   · The viewport is the machine bed: graphite with a honeycomb dot field.
+ *
+ * Tokens
+ *   --film    #E7EBEE  protective-film gray (app background)
+ *   --panel   #FFFFFF  sheet white (cards, rail)
+ *   --ink     #1C2733  slate ink
+ *   --cut     #D93A2B  laser cut red   (primary actions, emphasis)
+ *   --score   #2456A6  score blue      (links, secondary)
+ *   --amber   #F0A227  bridge amber    (structural warnings)
+ *   --bed     #171D24  machine bed graphite
+ * ==========================================================================*/
+
+:root {
+  --film: #e7ebee;
+  --panel: #ffffff;
+  --ink: #1c2733;
+  --ink-soft: #5b6a78;
+  --line: #c8d1d8;
+  --cut: #d93a2b;
+  --score: #2456a6;
+  --amber: #f0a227;
+  --bed: #171d24;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --disp: "Avenir Next Condensed", "Arial Narrow", "Helvetica Neue", system-ui, sans-serif;
+  --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--film);
+  color: var(--ink);
+  font: 14px/1.45 var(--body);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------- title block */
+.titleblock {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background: var(--panel);
+  border-bottom: 2px solid var(--ink);
+  min-height: 56px;
+}
+.tb-name {
+  padding: 8px 16px;
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.tb-app {
+  font-family: var(--disp);
+  font-weight: 800;
+  font-size: 21px;
+  letter-spacing: 0.06em;
+}
+.tb-sub {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-soft);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tb-fields { display: flex; margin-left: auto; }
+.tb-field {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 6px 14px;
+  border-left: 1px solid var(--line);
+  min-width: 90px;
+}
+.tb-field span {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--ink-soft);
+}
+.tb-field b, .tb-field input {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.tb-field input {
+  border: none; outline: none; background: transparent;
+  border-bottom: 1px dashed var(--line);
+  padding: 0; width: 130px;
+}
+.tb-field input:focus { border-bottom-color: var(--cut); }
+.cut-swatch, .score-swatch {
+  display: inline-block; width: 14px; height: 3px;
+  vertical-align: middle; margin-right: 4px;
+}
+.cut-swatch { background: var(--cut); }
+.score-swatch { background: var(--score); }
+
+.railtoggle {
+  display: none;
+  border: none; background: var(--ink); color: #fff;
+  font-size: 18px; padding: 0 16px; cursor: pointer;
+}
+
+/* ------------------------------------------------------------ workspace */
+.workspace { flex: 1; display: flex; min-height: 0; }
+
+.rail {
+  width: 300px;
+  overflow-y: auto;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  padding: 4px 0 24px;
+}
+.step { padding: 14px 16px 6px; border-bottom: 1px solid var(--line); }
+.step h2 {
+  margin: 0 0 10px;
+  font-family: var(--disp);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  display: flex; align-items: center; gap: 8px;
+}
+.stepnum {
+  font-family: var(--mono);
+  font-size: 11px;
+  width: 20px; height: 20px;
+  border: 1.5px solid var(--ink);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.row { margin: 0 0 12px; }
+.row label {
+  display: flex; justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 11px; letter-spacing: 0.04em;
+  color: var(--ink-soft);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+.row output { color: var(--ink); font-weight: 600; }
+.row.check {
+  display: flex; align-items: center; gap: 8px;
+}
+.row.check label { margin: 0; text-transform: none; font-size: 12.5px; color: var(--ink); }
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--cut);
+  height: 22px;
+}
+input[type="checkbox"] { accent-color: var(--cut); width: 16px; height: 16px; }
+select {
+  width: 100%;
+  font: 13px var(--body);
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 3px;
+}
+
+.btnrow { display: flex; gap: 8px; }
+.btn {
+  font: 600 13px var(--body);
+  padding: 8px 12px;
+  border: 1.5px solid var(--ink);
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+  border-radius: 3px;
+  text-align: center;
+}
+.btn:hover { background: var(--film); }
+.btn.primary { background: var(--cut); border-color: var(--cut); color: #fff; }
+.btn.primary:hover { background: #b92c1f; }
+.btn.wide { width: 100%; }
+.filebtn { position: relative; overflow: hidden; flex: 1; }
+.filebtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+.hint { font-size: 12px; color: var(--ink-soft); margin: 0 0 10px; }
+.chips { display: flex; gap: 4px; margin-top: 8px; }
+.chip {
+  width: 24px; height: 14px;
+  border: 1px solid rgba(0,0,0,0.25);
+  border-radius: 2px;
+}
+
+/* ------------------------------------------------------------- viewport */
+.viewport {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background:
+    radial-gradient(rgba(255,255,255,0.05) 1.1px, transparent 1.4px) 0 0 / 18px 16px,
+    var(--bed);
+}
+.tabs { display: flex; gap: 0; padding: 10px 12px 0; }
+.tab {
+  font: 600 12px var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 8px 16px;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-bottom: none;
+  background: transparent;
+  color: rgba(255,255,255,0.6);
+  cursor: pointer;
+}
+.tab.active { background: rgba(255,255,255,0.08); color: #fff; border-color: rgba(255,255,255,0.35); }
+.tab:focus-visible, .btn:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 1px;
+}
+
+.pane { display: none; flex: 1; min-height: 0; position: relative; }
+.pane.active { display: flex; flex-direction: column; }
+
+#stackcanvas {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  touch-action: none;
+  cursor: grab;
+}
+#stackcanvas:active { cursor: grabbing; }
+
+.stacktools {
+  display: flex; align-items: center; gap: 18px;
+  padding: 8px 16px;
+  background: rgba(0,0,0,0.25);
+}
+.tool {
+  display: flex; align-items: center; gap: 8px;
+  font: 11px var(--mono);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.75);
+}
+.tool input[type="range"] { width: 140px; }
+.tool.hint { margin-left: auto; color: rgba(255,255,255,0.4); text-transform: none; }
+
+.sheetgrid {
+  flex: 1;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+  padding: 16px;
+}
+.sheetcard {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  padding: 8px;
+}
+.sheetcard canvas { width: 100%; height: auto; display: block; }
+.sheetlabel {
+  font: 11px var(--mono);
+  color: rgba(255,255,255,0.85);
+  padding-top: 6px;
+  line-height: 1.5;
+}
+.sheetlabel .muted { color: rgba(255,255,255,0.45); }
+.sheetlabel .amber { color: var(--amber); }
+
+.statusbar {
+  padding: 6px 14px;
+  font: 11px var(--mono);
+  letter-spacing: 0.04em;
+  color: rgba(255,255,255,0.55);
+  background: rgba(0,0,0,0.35);
+}
+
+/* --------------------------------------------------------------- mobile */
+@media (max-width: 760px) {
+  .railtoggle { display: block; }
+  .tb-fields .tb-conv { display: none; }
+  .tb-field { min-width: 0; }
+  .tb-field input { width: 90px; }
+  .rail {
+    position: fixed;
+    top: 56px; bottom: 0; left: 0;
+    width: min(86vw, 320px);
+    z-index: 30;
+    transform: translateX(-102%);
+    transition: transform 0.22s ease;
+    box-shadow: 4px 0 24px rgba(0,0,0,0.3);
+  }
+  body.rail-open .rail { transform: translateX(0); }
+  .stacktools { flex-wrap: wrap; gap: 10px; }
+  .tool.hint { width: 100%; margin: 0; }
+  .sheetgrid { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail { transition: none; }
+}
+
+</style>
+</head>
+<body>
+
+<!-- Title block: styled like the corner of an engineering drawing.        -->
+<header class="titleblock">
+  <button id="railtoggle" class="railtoggle" aria-label="Toggle controls">☰</button>
+  <div class="tb-name">
+    <span class="tb-app">SHADOWBOX&nbsp;STUDIO</span>
+    <span class="tb-sub">photo → layered laser files</span>
+  </div>
+  <div class="tb-fields">
+    <label class="tb-field">
+      <span>PROJECT</span>
+      <input id="projname" value="untitled" spellcheck="false" autocomplete="off">
+    </label>
+    <div class="tb-field"><span>DATE</span><b id="meta-date">—</b></div>
+    <div class="tb-field"><span>VERSION</span><b id="meta-version">—</b></div>
+    <div class="tb-field tb-conv"><span>CONVENTION</span><b><i class="cut-swatch"></i>cut&nbsp;&nbsp;<i class="score-swatch"></i>score</b></div>
+  </div>
+</header>
+
+<div class="workspace">
+
+  <!-- Process rail: the four real stages of the pipeline, in order.       -->
+  <aside class="rail" id="rail">
+
+    <section class="step">
+      <h2><span class="stepnum">1</span> Photo</h2>
+      <div class="row btnrow">
+        <label class="btn primary filebtn">
+          Load photo<input id="filein" type="file" accept="image/*">
+        </label>
+        <button id="btn-demo" class="btn">Demo scene</button>
+      </div>
+      <div class="row"><label for="in-res">Working resolution <output id="out-res"></output></label>
+        <input id="in-res" type="range" min="360" max="1280" step="20"></div>
+      <div class="row"><label for="in-smooth">Cartoon smoothing <output id="out-smooth"></output></label>
+        <input id="in-smooth" type="range" min="1" max="10" step="1"></div>
+      <div class="row"><label for="in-passes">Smoothing passes <output id="out-passes"></output></label>
+        <input id="in-passes" type="range" min="1" max="3" step="1"></div>
+    </section>
+
+    <section class="step">
+      <h2><span class="stepnum">2</span> Layers</h2>
+      <div class="row"><label for="in-sheets">Sheets <output id="out-sheets"></output></label>
+        <input id="in-sheets" type="range" min="3" max="8" step="1"></div>
+      <div class="row"><label for="in-thmode">Tone split</label>
+        <select id="in-thmode">
+          <option value="balanced">Balanced areas</option>
+          <option value="linear">Even brightness steps</option>
+        </select></div>
+      <div class="row check"><input id="in-darkfront" type="checkbox">
+        <label for="in-darkfront">Dark tones in front</label></div>
+      <div class="row"><label for="in-palette">Acrylic palette</label>
+        <select id="in-palette"></select>
+        <div id="chips" class="chips"></div></div>
+    </section>
+
+    <section class="step">
+      <h2><span class="stepnum">3</span> Fabrication</h2>
+      <div class="row"><label for="in-width">Artwork width <output id="out-width"></output></label>
+        <input id="in-width" type="range" min="100" max="600" step="10"></div>
+      <div class="row"><label for="in-margin">Frame ring <output id="out-margin"></output></label>
+        <input id="in-margin" type="range" min="0" max="30" step="1"></div>
+      <div class="row"><label for="in-feature">Min feature <output id="out-feature"></output></label>
+        <input id="in-feature" type="range" min="0.6" max="3" step="0.1"></div>
+      <div class="row"><label for="in-bridge">Bridge width <output id="out-bridge"></output></label>
+        <input id="in-bridge" type="range" min="0.8" max="4" step="0.1"></div>
+      <div class="row"><label for="in-cull">Cull islands under <output id="out-cull"></output></label>
+        <input id="in-cull" type="range" min="0" max="60" step="1"></div>
+      <div class="row"><label for="in-maxbridge">Max bridge reach <output id="out-maxbridge"></output></label>
+        <input id="in-maxbridge" type="range" min="5" max="120" step="5"></div>
+      <div class="row check"><input id="in-holes" type="checkbox">
+        <label for="in-holes">Registration holes</label></div>
+      <div class="row"><label for="in-holedia">Hole diameter <output id="out-holedia"></output></label>
+        <input id="in-holedia" type="range" min="2" max="8" step="0.5"></div>
+      <div class="row"><label for="in-corner">Corner style</label>
+        <select id="in-corner">
+          <option value="smooth">Smooth (paper-cut)</option>
+          <option value="faceted">Faceted (crisp)</option>
+        </select></div>
+    </section>
+
+    <section class="step">
+      <h2><span class="stepnum">4</span> Export</h2>
+      <p class="hint">One ZIP with every sheet SVG (real mm units), a color
+      proof, the assembly guide, a preview render, and your settings.</p>
+      <button id="btn-export" class="btn primary wide">Download cut files (.zip)</button>
+    </section>
+
+  </aside>
+
+  <!-- Viewport: the laser bed.                                            -->
+  <main class="viewport">
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="stack" role="tab">Stack preview</button>
+      <button class="tab" data-tab="sheets" role="tab">Layer sheets</button>
+    </nav>
+
+    <div id="pane-stack" class="pane active">
+      <canvas id="stackcanvas"></canvas>
+      <div class="stacktools">
+        <label class="tool">Explode
+          <input id="in-explode" type="range" min="0" max="1" step="0.01" value="0"></label>
+        <label class="tool check"><input id="in-bridgesvis" type="checkbox" checked>
+          Show bridges</label>
+        <span class="tool hint">drag the artwork to tilt</span>
+      </div>
+    </div>
+
+    <div id="pane-sheets" class="pane">
+      <div id="sheetgrid" class="sheetgrid"></div>
+    </div>
+
+    <footer class="statusbar"><span id="statusline">loading…</span></footer>
+  </main>
+</div>
+
+<script>
+/* ============================================================================
+ * Shadowbox Studio — util.js
+ * ----------------------------------------------------------------------------
+ * Small shared helpers used across the pipeline. Every module in this project
+ * follows the same pattern: a classic script that attaches one namespace to
+ * the global object, so the app runs from file:// with zero build tooling
+ * (and the same files can be loaded in Node for the test suite).
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+
+  const U = {};
+
+  /** Clamp x into [lo, hi]. */
+  U.clamp = (x, lo, hi) => (x < lo ? lo : x > hi ? hi : x);
+
+  /** Linear interpolation between a and b at t in [0,1]. */
+  U.lerp = (a, b, t) => a + (b - a) * t;
+
+  /**
+   * Debounce: returns a wrapped fn that fires `ms` after the last call.
+   * Used so slider drags don't recompute the pipeline on every pixel.
+   */
+  U.debounce = function (fn, ms) {
+    let t = null;
+    return function (...args) {
+      clearTimeout(t);
+      t = setTimeout(() => fn.apply(this, args), ms);
+    };
+  };
+
+  /** Parse "#rrggbb" to [r,g,b] (0..255). */
+  U.hexToRgb = function (hex) {
+    const h = hex.replace("#", "");
+    return [
+      parseInt(h.slice(0, 2), 16),
+      parseInt(h.slice(2, 4), 16),
+      parseInt(h.slice(4, 6), 16),
+    ];
+  };
+
+  /** [r,g,b] -> "#rrggbb". */
+  U.rgbToHex = function (rgb) {
+    return (
+      "#" +
+      rgb
+        .map((c) => Math.round(U.clamp(c, 0, 255)).toString(16).padStart(2, "0"))
+        .join("")
+    );
+  };
+
+  /**
+   * Sample a gradient defined by an array of hex stops at t in [0,1].
+   * Used to derive N acrylic sheet colors from a small palette definition.
+   */
+  U.samplePalette = function (stops, t) {
+    if (stops.length === 1) return stops[0];
+    const x = U.clamp(t, 0, 1) * (stops.length - 1);
+    const i = Math.min(Math.floor(x), stops.length - 2);
+    const f = x - i;
+    const a = U.hexToRgb(stops[i]);
+    const b = U.hexToRgb(stops[i + 1]);
+    return U.rgbToHex([U.lerp(a[0], b[0], f), U.lerp(a[1], b[1], f), U.lerp(a[2], b[2], f)]);
+  };
+
+  /** Format a number with fixed decimals, trimming trailing zeros. */
+  U.fmt = function (x, d = 1) {
+    return Number(x.toFixed(d)).toString();
+  };
+
+  /** Squared distance between two points [x,y]. */
+  U.dist2 = (a, b) => {
+    const dx = a[0] - b[0], dy = a[1] - b[1];
+    return dx * dx + dy * dy;
+  };
+
+  /** Polyline length of a closed loop of [x,y] points. */
+  U.loopLength = function (pts) {
+    let L = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      L += Math.hypot(b[0] - a[0], b[1] - a[1]);
+    }
+    return L;
+  };
+
+  global.SBUtil = U;
+})(typeof window !== "undefined" ? window : globalThis);
+
+</script>
+<script>
+/* ============================================================================
+ * Shadowbox Studio — raster.js
+ * ----------------------------------------------------------------------------
+ * Grayscale raster pipeline: the "cartoonize" half of the tool.
+ *
+ *   photo ─▶ luminance ─▶ Kuwahara filter ─▶ threshold banding ─▶ N bands
+ *
+ * The Kuwahara filter is the key trick: it is an edge-preserving smoother
+ * that flattens texture into paint-like patches while keeping hard edges,
+ * which is exactly the look you want before posterizing for laser layers.
+ * We implement it with summed-area tables so it runs in O(pixels) regardless
+ * of radius — fast enough to be interactive on a phone.
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+
+  const R = {};
+
+  /**
+   * Extract perceptual luminance (Rec.709) from RGBA image data.
+   * @param {Uint8ClampedArray} rgba  - source pixels (w*h*4)
+   * @returns {Float32Array} luminance 0..255
+   */
+  R.luminance = function (rgba, w, h) {
+    const L = new Float32Array(w * h);
+    for (let i = 0, p = 0; i < L.length; i++, p += 4) {
+      L[i] = 0.2126 * rgba[p] + 0.7152 * rgba[p + 1] + 0.0722 * rgba[p + 2];
+    }
+    return L;
+  };
+
+  /**
+   * Classic 4-quadrant Kuwahara filter, accelerated with summed-area tables.
+   * For each pixel we consider the four (r+1)x(r+1) windows that have the
+   * pixel at a corner, and output the mean of the window with the lowest
+   * variance. Result: flat painterly regions, crisp edges.
+   *
+   * @param {Float32Array} src  luminance
+   * @param {number} r          window radius in px (>=1)
+   * @param {number} passes     number of applications (2 = stronger cartoon)
+   */
+  R.kuwahara = function (src, w, h, r, passes = 1) {
+    if (r < 1 || passes < 1) return src.slice();
+    let cur = src;
+    for (let p = 0; p < passes; p++) cur = kuwaharaOnce(cur, w, h, r);
+    return cur;
+  };
+
+  function kuwaharaOnce(src, w, h, r) {
+    const W = w + 1, H = h + 1;
+    // Summed-area tables of value and value² (Float64 to avoid precision drift).
+    const sat = new Float64Array(W * H);
+    const sat2 = new Float64Array(W * H);
+    for (let y = 0; y < h; y++) {
+      let row = 0, row2 = 0;
+      for (let x = 0; x < w; x++) {
+        const v = src[y * w + x];
+        row += v; row2 += v * v;
+        const i = (y + 1) * W + (x + 1);
+        sat[i] = sat[i - W] + row;
+        sat2[i] = sat2[i - W] + row2;
+      }
+    }
+    // Window sum in [x0,x1) x [y0,y1) via inclusion–exclusion.
+    const boxSum = (T, x0, y0, x1, y1) =>
+      T[y1 * W + x1] - T[y0 * W + x1] - T[y1 * W + x0] + T[y0 * W + x0];
+
+    const out = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let bestVar = Infinity, bestMean = src[y * w + x];
+        // Four quadrant windows anchored at (x,y).
+        for (let q = 0; q < 4; q++) {
+          const x0 = SBUtilClampI(q & 1 ? x : x - r, 0, w);
+          const x1 = SBUtilClampI((q & 1 ? x + r : x) + 1, 0, w);
+          const y0 = SBUtilClampI(q & 2 ? y : y - r, 0, h);
+          const y1 = SBUtilClampI((q & 2 ? y + r : y) + 1, 0, h);
+          const n = (x1 - x0) * (y1 - y0);
+          if (n <= 0) continue;
+          const s = boxSum(sat, x0, y0, x1, y1);
+          const s2 = boxSum(sat2, x0, y0, x1, y1);
+          const mean = s / n;
+          const variance = s2 / n - mean * mean;
+          if (variance < bestVar) { bestVar = variance; bestMean = mean; }
+        }
+        out[y * w + x] = bestMean;
+      }
+    }
+    return out;
+  }
+
+  function SBUtilClampI(x, lo, hi) { return x < lo ? lo : x > hi ? hi : x; }
+
+  /**
+   * Compute N-1 ascending thresholds over the luminance histogram.
+   * @param {"balanced"|"linear"} mode
+   *   balanced — percentile split: every band covers ~equal pixel area
+   *   linear   — equal luminance spacing between the 2nd/98th percentiles
+   */
+  R.thresholds = function (L, nBands, mode) {
+    const hist = new Float64Array(256);
+    for (let i = 0; i < L.length; i++) hist[Math.round(SBUtilClampI(L[i], 0, 255))]++;
+    const total = L.length;
+    // cumulative
+    const cum = new Float64Array(257);
+    for (let i = 0; i < 256; i++) cum[i + 1] = cum[i] + hist[i];
+
+    const pct = (p) => { // value at percentile p (0..1)
+      const target = p * total;
+      for (let i = 0; i < 256; i++) if (cum[i + 1] >= target) return i;
+      return 255;
+    };
+
+    const t = [];
+    if (mode === "linear") {
+      const lo = pct(0.02), hi = Math.max(pct(0.98), lo + nBands);
+      for (let k = 1; k < nBands; k++) t.push(lo + ((hi - lo) * k) / nBands);
+    } else {
+      for (let k = 1; k < nBands; k++) t.push(pct(k / nBands) + 0.5);
+    }
+    return t;
+  };
+
+  /**
+   * Assign each pixel to a brightness band. Band 0 = darkest.
+   * @returns {Uint8Array} band index per pixel (0..nBands-1)
+   */
+  R.bands = function (L, thresholds) {
+    const out = new Uint8Array(L.length);
+    for (let i = 0; i < L.length; i++) {
+      const v = L[i];
+      let b = 0;
+      while (b < thresholds.length && v >= thresholds[b]) b++;
+      out[i] = b;
+    }
+    return out;
+  };
+
+  /**
+   * Build the nested sheet masks from the band map.
+   * Sheets are ordered back(0) → front(N-1). Sheet 0 is the solid backing.
+   * With darkFront=true (default), the front sheet carries only the darkest
+   * band, so dark tones sit closest to the viewer — the classic layered look.
+   *
+   * Masks are nested by construction (sheet k ⊇ sheet k+1), which is what
+   * lets the physical stack read as a continuous image.
+   *
+   * @returns {Uint8Array[]} one 0/1 mask per sheet
+   */
+  R.sheetMasks = function (bandMap, nBands, w, h, darkFront) {
+    const masks = [];
+    const full = new Uint8Array(w * h).fill(1);
+    masks.push(full); // backing sheet
+    for (let s = 1; s < nBands; s++) {
+      const m = new Uint8Array(w * h);
+      const cutoff = nBands - 1 - s; // include bands 0..cutoff (dark side)
+      for (let i = 0; i < bandMap.length; i++) {
+        const b = darkFront ? bandMap[i] : nBands - 1 - bandMap[i];
+        m[i] = b <= cutoff ? 1 : 0;
+      }
+      masks.push(m);
+    }
+    return masks;
+  };
+
+  global.SBRaster = R;
+})(typeof window !== "undefined" ? window : globalThis);
+
+</script>
+<script>
+/* ============================================================================
+ * Shadowbox Studio — morph.js
+ * ----------------------------------------------------------------------------
+ * Binary morphology on Uint8Array masks (0/1). This is the "make it cuttable"
+ * stage: a laser can draw arbitrarily fine lines, but acrylic can't survive
+ * arbitrarily fine features. Opening removes slivers thinner than the minimum
+ * feature width; closing seals pinhole gaps; speck/hole filters drop debris
+ * below a physical area threshold.
+ *
+ * All ops use a 3×3 structuring element iterated r times, which approximates
+ * a disc of radius r well enough for fabrication purposes and keeps the code
+ * dependency-free and fast.
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+
+  const M = {};
+
+  /** One 3×3 dilation pass (8-connected). */
+  function dilateOnce(src, dst, w, h) {
+    for (let y = 0; y < h; y++) {
+      const y0 = Math.max(0, y - 1), y1 = Math.min(h - 1, y + 1);
+      for (let x = 0; x < w; x++) {
+        if (src[y * w + x]) { dst[y * w + x] = 1; continue; }
+        let v = 0;
+        const x0 = Math.max(0, x - 1), x1 = Math.min(w - 1, x + 1);
+        for (let yy = y0; yy <= y1 && !v; yy++)
+          for (let xx = x0; xx <= x1; xx++)
+            if (src[yy * w + xx]) { v = 1; break; }
+        dst[y * w + x] = v;
+      }
+    }
+  }
+
+  /** One 3×3 erosion pass (8-connected). Pixels beyond the border count as empty. */
+  function erodeOnce(src, dst, w, h) {
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let v = src[y * w + x];
+        if (v) {
+          if (x === 0 || y === 0 || x === w - 1 || y === h - 1) v = 1; // keep border pixels stable
+          else {
+            outer: for (let yy = y - 1; yy <= y + 1; yy++)
+              for (let xx = x - 1; xx <= x + 1; xx++)
+                if (!src[yy * w + xx]) { v = 0; break outer; }
+          }
+        }
+        dst[y * w + x] = v;
+      }
+    }
+  }
+
+  M.dilate = function (mask, w, h, r) {
+    let a = mask.slice(), b = new Uint8Array(w * h);
+    for (let i = 0; i < r; i++) { dilateOnce(a, b, w, h); [a, b] = [b, a]; }
+    return a;
+  };
+
+  M.erode = function (mask, w, h, r) {
+    let a = mask.slice(), b = new Uint8Array(w * h);
+    for (let i = 0; i < r; i++) { erodeOnce(a, b, w, h); [a, b] = [b, a]; }
+    return a;
+  };
+
+  /** Opening = erode then dilate. Removes features thinner than ~2r px. */
+  M.open = (mask, w, h, r) => (r < 1 ? mask.slice() : M.dilate(M.erode(mask, w, h, r), w, h, r));
+
+  /** Closing = dilate then erode. Seals gaps/holes thinner than ~2r px. */
+  M.close = (mask, w, h, r) => (r < 1 ? mask.slice() : M.erode(M.dilate(mask, w, h, r), w, h, r));
+
+  /**
+   * Label 4-connected components of `value` pixels.
+   * @returns {{labels: Int32Array, count: number, areas: Int32Array,
+   *            touchesBorder: Uint8Array}}
+   *   labels: 0 = not part of any component, 1..count = component id
+   */
+  M.components = function (mask, w, h, value = 1) {
+    const labels = new Int32Array(w * h);
+    const queue = new Int32Array(w * h);
+    const areas = [];
+    const touches = [];
+    let count = 0;
+    for (let start = 0; start < mask.length; start++) {
+      if (mask[start] !== value || labels[start]) continue;
+      count++;
+      let area = 0, touch = 0;
+      let qh = 0, qt = 0;
+      queue[qt++] = start; labels[start] = count;
+      while (qh < qt) {
+        const i = queue[qh++];
+        area++;
+        const x = i % w, y = (i / w) | 0;
+        if (x === 0 || y === 0 || x === w - 1 || y === h - 1) touch = 1;
+        // 4-neighbours
+        if (x > 0 && mask[i - 1] === value && !labels[i - 1]) { labels[i - 1] = count; queue[qt++] = i - 1; }
+        if (x < w - 1 && mask[i + 1] === value && !labels[i + 1]) { labels[i + 1] = count; queue[qt++] = i + 1; }
+        if (y > 0 && mask[i - w] === value && !labels[i - w]) { labels[i - w] = count; queue[qt++] = i - w; }
+        if (y < h - 1 && mask[i + w] === value && !labels[i + w]) { labels[i + w] = count; queue[qt++] = i + w; }
+      }
+      areas.push(area); touches.push(touch);
+    }
+    return {
+      labels, count,
+      areas: Int32Array.from(areas),
+      touchesBorder: Uint8Array.from(touches),
+    };
+  };
+
+  /**
+   * Remove filled components with area < minArea px². Returns removed count.
+   * Mutates the mask in place.
+   */
+  M.removeSpecks = function (mask, w, h, minArea) {
+    if (minArea <= 1) return 0;
+    const { labels, count, areas } = M.components(mask, w, h, 1);
+    const kill = new Uint8Array(count + 1);
+    let removed = 0;
+    for (let c = 1; c <= count; c++)
+      if (areas[c - 1] < minArea) { kill[c] = 1; removed++; }
+    if (removed)
+      for (let i = 0; i < mask.length; i++)
+        if (mask[i] && kill[labels[i]]) mask[i] = 0;
+    return removed;
+  };
+
+  /**
+   * Fill enclosed empty regions (holes) with area < minArea px².
+   * Holes are empty components that do NOT touch the image border.
+   * Mutates in place. Returns filled count.
+   */
+  M.fillHoles = function (mask, w, h, minArea) {
+    if (minArea <= 1) return 0;
+    const { labels, count, areas, touchesBorder } = M.components(mask, w, h, 0);
+    const fill = new Uint8Array(count + 1);
+    let filled = 0;
+    for (let c = 1; c <= count; c++)
+      if (!touchesBorder[c - 1] && areas[c - 1] < minArea) { fill[c] = 1; filled++; }
+    if (filled)
+      for (let i = 0; i < mask.length; i++)
+        if (!mask[i] && fill[labels[i]]) mask[i] = 1;
+    return filled;
+  };
+
+  global.SBMorph = M;
+})(typeof window !== "undefined" ? window : globalThis);
+
+</script>
+<script>
+/* ============================================================================
+ * Shadowbox Studio — islands.js
+ * ----------------------------------------------------------------------------
+ * THE core problem this tool exists to solve.
+ *
+ * When a sheet is laser-cut, any region of kept material that isn't connected
+ * to the rest of the sheet ("an island") physically falls out on the bed.
+ * Think of the moon in a night sky layer, or the counter inside a letter "O".
+ *
+ * For every sheet we:
+ *   1. Decide what counts as "anchored":
+ *        · frame mode  — components touching the image border are anchored,
+ *          because the exported SVG welds the artwork to a solid frame ring
+ *        · frameless   — only the single largest component is anchored
+ *   2. For each unanchored component ("island"):
+ *        · CULL it if its area is below the cull threshold (too small to
+ *          matter visually, not worth a bridge), or
+ *        · BRIDGE it: run a BFS from the island across empty space to the
+ *          nearest anchored pixel, then stamp a corridor of material of the
+ *          requested bridge width along that shortest path.
+ *   3. Islands are processed nearest-first, and each bridged island becomes
+ *      part of the anchored set — so chains of islands (star, star, star)
+ *      daisy-chain to the mainland with short local bridges instead of each
+ *      one running its own long bridge.
+ *
+ * Bridges are recorded in a separate mask so the UI can show them in amber
+ * and the user can immediately see every structural compromise the tool made.
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+
+  const I = {};
+  const M = global.SBMorph;
+
+  /**
+   * Resolve islands in a sheet mask.
+   *
+   * @param {Uint8Array} mask   0/1 sheet material mask — MUTATED in place
+   * @param {number} w, h       mask dimensions
+   * @param {object} opt
+   *   frameAnchored {boolean}  border-touching components count as anchored
+   *   bridgeRadius  {number}   half bridge width, px (corridor thickness)
+   *   cullBelowPx   {number}   islands smaller than this (px²) are removed
+   *   maxBridgePx   {number}   islands farther than this from any anchor
+   *                            are culled instead of bridged (0 = no limit)
+   * @returns {{bridges: Uint8Array, bridged: number, culled: number,
+   *            islandCount: number}}
+   */
+  I.resolve = function (mask, w, h, opt) {
+    const bridges = new Uint8Array(w * h);
+    const comp = M.components(mask, w, h, 1);
+    if (comp.count === 0)
+      return { bridges, bridged: 0, culled: 0, islandCount: 0 };
+
+    // ---- 1. classify components -------------------------------------------
+    const anchoredComp = new Uint8Array(comp.count + 1);
+    if (opt.frameAnchored) {
+      for (let c = 1; c <= comp.count; c++)
+        if (comp.touchesBorder[c - 1]) anchoredComp[c] = 1;
+      // Degenerate case: nothing touches the border — anchor the largest.
+      if (!anchoredComp.some((v) => v)) anchoredComp[largest(comp)] = 1;
+    } else {
+      anchoredComp[largest(comp)] = 1;
+    }
+
+    const anchored = new Uint8Array(w * h);
+    for (let i = 0; i < mask.length; i++)
+      if (mask[i] && anchoredComp[comp.labels[i]]) anchored[i] = 1;
+
+    // ---- 2. collect islands, sort by size (largest first: they become
+    //         daisy-chain hubs for their smaller neighbours) ----------------
+    const islands = [];
+    for (let c = 1; c <= comp.count; c++)
+      if (!anchoredComp[c]) islands.push({ id: c, area: comp.areas[c - 1] });
+    islands.sort((a, b) => b.area - a.area);
+
+    let bridged = 0, culled = 0;
+    const parent = new Int32Array(w * h);
+    const visited = new Int32Array(w * h); // generation-stamped, no realloc
+    let gen = 0;
+
+    for (const isl of islands) {
+      // Small islands: not worth the visual noise of a bridge — cull.
+      if (isl.area < opt.cullBelowPx) {
+        eraseComponent(mask, comp.labels, isl.id);
+        culled++;
+        continue;
+      }
+
+      // ---- 3. BFS from every island pixel outward to nearest anchor ------
+      gen++;
+      const queue = new Int32Array(w * h);
+      let qh = 0, qt = 0;
+      for (let i = 0; i < mask.length; i++) {
+        if (comp.labels[i] === isl.id && mask[i]) {
+          visited[i] = gen; parent[i] = -1; queue[qt++] = i;
+        }
+      }
+      if (qt === 0) continue; // was erased by an earlier overlap (shouldn't happen)
+
+      let hit = -1, steps = 0;
+      const maxSteps = opt.maxBridgePx > 0 ? opt.maxBridgePx : Infinity;
+      // Level-order BFS so `steps` == path length in px.
+      while (qh < qt && hit < 0 && steps <= maxSteps) {
+        const levelEnd = qt;
+        while (qh < levelEnd && hit < 0) {
+          const i = queue[qh++];
+          const x = i % w, y = (i / w) | 0;
+          const nbrs = [
+            x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1,
+            y > 0 ? i - w : -1, y < h - 1 ? i + w : -1,
+          ];
+          for (const n of nbrs) {
+            if (n < 0 || visited[n] === gen) continue;
+            visited[n] = gen; parent[n] = i;
+            if (anchored[n]) { hit = n; break; }
+            queue[qt++] = n;
+          }
+        }
+        steps++;
+      }
+
+      if (hit < 0) {
+        // No anchor reachable within budget: cull, and report it.
+        eraseComponent(mask, comp.labels, isl.id);
+        culled++;
+        continue;
+      }
+
+      // ---- 4. stamp the bridge corridor along the parent chain ------------
+      let i = hit;
+      while (i >= 0) {
+        stampDisc(mask, bridges, w, h, i % w, (i / w) | 0, opt.bridgeRadius);
+        i = parent[i];
+      }
+      bridged++;
+
+      // The island + its bridge are now anchored: future islands may chain.
+      markAnchoredFrom(mask, anchored, w, h, hit);
+    }
+
+    return { bridges, bridged, culled, islandCount: islands.length };
+  };
+
+  /** id of the largest component. */
+  function largest(comp) {
+    let best = 1, bestA = -1;
+    for (let c = 1; c <= comp.count; c++)
+      if (comp.areas[c - 1] > bestA) { bestA = comp.areas[c - 1]; best = c; }
+    return best;
+  }
+
+  /** Zero out every pixel belonging to component id. */
+  function eraseComponent(mask, labels, id) {
+    for (let i = 0; i < mask.length; i++)
+      if (labels[i] === id) mask[i] = 0;
+  }
+
+  /** Stamp a filled disc into mask (material) and bridges (bookkeeping). */
+  function stampDisc(mask, bridges, w, h, cx, cy, r) {
+    const r2 = r * r;
+    const x0 = Math.max(0, Math.floor(cx - r)), x1 = Math.min(w - 1, Math.ceil(cx + r));
+    const y0 = Math.max(0, Math.floor(cy - r)), y1 = Math.min(h - 1, Math.ceil(cy + r));
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const dx = x - cx, dy = y - cy;
+        if (dx * dx + dy * dy <= r2) {
+          const i = y * w + x;
+          if (!mask[i]) bridges[i] = 1; // only new material counts as "bridge"
+          mask[i] = 1;
+        }
+      }
+    }
+  }
+
+  /** Flood the anchored flag across the (now merged) component containing i0. */
+  function markAnchoredFrom(mask, anchored, w, h, i0) {
+    const queue = [i0];
+    anchored[i0] = 1;
+    while (queue.length) {
+      const i = queue.pop();
+      const x = i % w, y = (i / w) | 0;
+      const nbrs = [
+        x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1,
+        y > 0 ? i - w : -1, y < h - 1 ? i + w : -1,
+      ];
+      for (const n of nbrs)
+        if (n >= 0 && mask[n] && !anchored[n]) { anchored[n] = 1; queue.push(n); }
+    }
+  }
+
+  global.SBIslands = I;
+})(typeof window !== "undefined" ? window : globalThis);
+
+</script>
+<script>
+/* ============================================================================
+ * Shadowbox Studio — trace.js
+ * ----------------------------------------------------------------------------
+ * Raster → vector. Converts a binary mask into closed contour loops the
+ * laser can cut.
+ *
+ * Method: directed boundary edges + chaining.
+ *   · For every filled/empty pixel pair we emit a unit edge on the pixel
+ *     grid, oriented so filled material lies on the LEFT of travel. This
+ *     guarantees consistent loop orientation (outers one way, holes the
+ *     other) and makes chaining unambiguous.
+ *   · Edges are chained head-to-tail into closed rectilinear loops. At
+ *     checkerboard saddle points two edges leave the same corner; we always
+ *     take the left-most turn, which keeps diagonally-touching regions as
+ *     separate loops instead of welding them into a figure-eight.
+ *   · Loops are then simplified (Ramer–Douglas–Peucker) and optionally
+ *     rounded (Chaikin corner cutting) for an organic, paper-cut feel.
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+
+  const T = {};
+
+  // Direction encoding for chaining: 0=+x, 1=+y, 2=-x, 3=-y
+  const DX = [1, 0, -1, 0];
+  const DY = [0, 1, 0, -1];
+
+  /**
+   * Trace all boundary loops of a 0/1 mask.
+   * @returns {Array<Array<[x,y]>>} closed loops in pixel-corner coordinates
+   */
+  T.trace = function (mask, w, h) {
+    // outgoing[cornerIndex] = list of directions with an unused edge leaving
+    // that corner. Corner grid is (w+1) x (h+1).
+    const CW = w + 1;
+    const outgoing = new Map(); // cornerIdx -> Uint8 bitmask of dirs
+
+    const at = (x, y) => (x >= 0 && y >= 0 && x < w && y < h ? mask[y * w + x] : 0);
+    const addEdge = (x, y, dir) => {
+      const idx = y * CW + x;
+      outgoing.set(idx, (outgoing.get(idx) || 0) | (1 << dir));
+    };
+
+    // Emit directed edges: material on the LEFT of travel (screen coords, y down).
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (!mask[y * w + x]) continue;
+        if (!at(x, y - 1)) addEdge(x + 1, y, 2);       // top edge, travel -x
+        if (!at(x, y + 1)) addEdge(x, y + 1, 0);       // bottom edge, travel +x
+        if (!at(x - 1, y)) addEdge(x, y, 1);           // left edge, travel +y
+        if (!at(x + 1, y)) addEdge(x + 1, y + 1, 3);   // right edge, travel -y
+      }
+    }
+
+    const loops = [];
+    // Deterministic iteration: sort corner indices.
+    const starts = Array.from(outgoing.keys()).sort((a, b) => a - b);
+
+    for (const start of starts) {
+      let bits = outgoing.get(start);
+      while (bits) {
+        // take lowest set direction as loop start
+        const startDir = 31 - Math.clz32(bits & -bits);
+        const loop = [];
+        let cx = start % CW, cy = (start / CW) | 0, dir = startDir;
+        // consume the starting edge
+        consumeEdge(outgoing, start, startDir);
+        loop.push([cx, cy]);
+        cx += DX[dir]; cy += DY[dir];
+
+        // Walk until we return to the start corner via a closed chain.
+        let guard = (w + 2) * (h + 2) * 4;
+        while (!(cx === start % CW && cy === ((start / CW) | 0)) && guard-- > 0) {
+          loop.push([cx, cy]);
+          const idx = cy * CW + cx;
+          const avail = outgoing.get(idx) || 0;
+          // Prefer the left-most turn relative to current direction:
+          // left, straight, right (never reverse).
+          const prefs = [(dir + 3) & 3, dir, (dir + 1) & 3];
+          let next = -1;
+          for (const d of prefs) if (avail & (1 << d)) { next = d; break; }
+          if (next < 0) break; // broken chain — abandon defensively
+          consumeEdge(outgoing, idx, next);
+          dir = next;
+          cx += DX[dir]; cy += DY[dir];
+        }
+        if (loop.length >= 4) loops.push(dedupeCollinear(loop));
+        bits = outgoing.get(start) || 0;
+      }
+      outgoing.delete(start);
+    }
+    return loops;
+  };
+
+  function consumeEdge(outgoing, idx, dir) {
+    const bits = (outgoing.get(idx) || 0) & ~(1 << dir);
+    if (bits) outgoing.set(idx, bits); else outgoing.delete(idx);
+  }
+
+  /** Merge runs of collinear rectilinear points to shrink loop size early. */
+  function dedupeCollinear(loop) {
+    const out = [];
+    const n = loop.length;
+    for (let i = 0; i < n; i++) {
+      const p = loop[(i + n - 1) % n], c = loop[i], q = loop[(i + 1) % n];
+      const straight =
+        (p[0] === c[0] && c[0] === q[0]) || (p[1] === c[1] && c[1] === q[1]);
+      if (!straight) out.push(c);
+    }
+    return out.length >= 3 ? out : loop;
+  }
+
+  /**
+   * Ramer–Douglas–Peucker simplification of a closed loop.
+   * @param {number} eps  max deviation in px
+   */
+  T.simplify = function (loop, eps) {
+    if (eps <= 0 || loop.length < 5) return loop;
+    // Split the closed loop at its two most distant points, simplify halves.
+    let iA = 0, iB = 0, best = -1;
+    for (let i = 0; i < loop.length; i++) {
+      const j = (i + (loop.length >> 1)) % loop.length;
+      const d = SBUtil.dist2(loop[i], loop[j]);
+      if (d > best) { best = d; iA = i; iB = j; }
+    }
+    if (iA > iB) [iA, iB] = [iB, iA];
+    const seg1 = loop.slice(iA, iB + 1);
+    const seg2 = loop.slice(iB).concat(loop.slice(0, iA + 1));
+    const out = rdp(seg1, eps).slice(0, -1).concat(rdp(seg2, eps).slice(0, -1));
+    return out.length >= 3 ? out : loop;
+  };
+
+  function rdp(pts, eps) {
+    if (pts.length < 3) return pts;
+    const stack = [[0, pts.length - 1]];
+    const keep = new Uint8Array(pts.length);
+    keep[0] = keep[pts.length - 1] = 1;
+    while (stack.length) {
+      const [a, b] = stack.pop();
+      let idx = -1, dmax = 0;
+      for (let i = a + 1; i < b; i++) {
+        const d = pointSegDist(pts[i], pts[a], pts[b]);
+        if (d > dmax) { dmax = d; idx = i; }
+      }
+      if (dmax > eps && idx > 0) {
+        keep[idx] = 1;
+        stack.push([a, idx], [idx, b]);
+      }
+    }
+    const out = [];
+    for (let i = 0; i < pts.length; i++) if (keep[i]) out.push(pts[i]);
+    return out;
+  }
+
+  function pointSegDist(p, a, b) {
+    const vx = b[0] - a[0], vy = b[1] - a[1];
+    const wx = p[0] - a[0], wy = p[1] - a[1];
+    const c1 = vx * wx + vy * wy;
+    if (c1 <= 0) return Math.hypot(wx, wy);
+    const c2 = vx * vx + vy * vy;
+    if (c2 <= c1) return Math.hypot(p[0] - b[0], p[1] - b[1]);
+    const t = c1 / c2;
+    return Math.hypot(p[0] - (a[0] + t * vx), p[1] - (a[1] + t * vy));
+  }
+
+  /**
+   * Chaikin corner-cutting on a closed loop; each iteration doubles the
+   * point count and rounds corners. 1–2 iterations gives the paper-cut look.
+   */
+  T.chaikin = function (loop, iterations) {
+    let pts = loop;
+    for (let k = 0; k < iterations; k++) {
+      const out = [];
+      const n = pts.length;
+      for (let i = 0; i < n; i++) {
+        const a = pts[i], b = pts[(i + 1) % n];
+        out.push(
+          [0.75 * a[0] + 0.25 * b[0], 0.75 * a[1] + 0.25 * b[1]],
+          [0.25 * a[0] + 0.75 * b[0], 0.25 * a[1] + 0.75 * b[1]]
+        );
+      }
+      pts = out;
+    }
+    return pts;
+  };
+
+  global.SBTrace = T;
+})(typeof window !== "undefined" ? window : globalThis);
+
+</script>
+<script>
+/* ============================================================================
+ * Shadowbox Studio — svgout.js
+ * ----------------------------------------------------------------------------
+ * SVG generation with real-world millimetre units, following the color
+ * conventions most laser software (LightBurn, RDWorks, xTool CS) expects:
+ *
+ *     RED  #FF0000, 0.1 mm stroke  →  vector CUT
+ *     BLUE #0000FF                 →  vector SCORE / engrave (layer labels)
+ *
+ * Each sheet exports as its own file so different acrylic colors can be cut
+ * separately. The artwork is welded to a frame ring (margin) so everything
+ * that touches the image border is genuinely anchored, and optional corner
+ * registration holes let the whole stack self-align on dowels or bolts.
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+
+  const S = {};
+
+  /**
+   * Build one sheet's SVG.
+   *
+   * @param {object} p
+   *   loops       {Array<Array<[x,y]>>} contour loops, px coords
+   *   pxW, pxH    {number}   working raster size
+   *   widthMM     {number}   artwork width in mm (height derived)
+   *   marginMM    {number}   frame ring width around the artwork (0 = none)
+   *   holes       {boolean}  registration holes in the frame corners
+   *   holeDiaMM   {number}   registration hole diameter
+   *   label       {string}   short label scored near the bottom-left corner
+   *   isBacking   {boolean}  sheet 0: solid panel, no interior cuts
+   * @returns {string} SVG document text
+   */
+  S.sheetSVG = function (p) {
+    const mmPerPx = p.widthMM / p.pxW;
+    const artH = p.pxH * mmPerPx;
+    const m = p.marginMM;
+    const W = p.widthMM + 2 * m;
+    const H = artH + 2 * m;
+
+    const cut = [];
+    // Outer frame boundary (always cut).
+    cut.push(rect(0, 0, W, H));
+
+    if (!p.isBacking) {
+      // Interior contours, translated into the frame by the margin.
+      for (const loop of p.loops) cut.push(path(loop, mmPerPx, m));
+      if (m <= 0) {
+        // No frame ring: warn via comment; islands were anchored to the
+        // largest component instead, so the file is still cuttable.
+      }
+    }
+
+    if (p.holes && m > 0) {
+      const r = p.holeDiaMM / 2;
+      const inset = m / 2;
+      for (const [cx, cy] of [
+        [inset, inset], [W - inset, inset],
+        [inset, H - inset], [W - inset, H - inset],
+      ]) cut.push(circle(cx, cy, r));
+    }
+
+    const score = [];
+    if (p.label) {
+      score.push(
+        `<text x="${f(2)}" y="${f(H - 2)}" font-family="monospace" ` +
+        `font-size="4" fill="none" stroke="#0000FF" stroke-width="0.1">${esc(p.label)}</text>`
+      );
+    }
+
+    return (
+      `<?xml version="1.0" encoding="UTF-8"?>\n` +
+      `<!-- Shadowbox Studio export — RED = cut, BLUE = score -->\n` +
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${f(W)}mm" height="${f(H)}mm" ` +
+      `viewBox="0 0 ${f(W)} ${f(H)}">\n` +
+      `<g fill="none" stroke="#FF0000" stroke-width="0.1">\n${cut.join("\n")}\n</g>\n` +
+      (score.length ? `<g>${score.join("\n")}</g>\n` : "") +
+      `</svg>\n`
+    );
+  };
+
+  /**
+   * Color proof: all sheets stacked and filled with their acrylic colors,
+   * back to front — a printable preview of the assembled piece.
+   */
+  S.proofSVG = function (sheets, pxW, pxH, widthMM, colors) {
+    const mmPerPx = widthMM / pxW;
+    const H = pxH * mmPerPx;
+    const groups = sheets.map((sheet, s) => {
+      if (s === 0)
+        return `<rect x="0" y="0" width="${f(widthMM)}" height="${f(H)}" fill="${colors[0]}"/>`;
+      const d = sheet.loops.map((L) => pathD(L, mmPerPx, 0)).join(" ");
+      return d
+        ? `<path d="${d}" fill="${colors[s]}" fill-rule="evenodd"/>`
+        : "";
+    });
+    return (
+      `<?xml version="1.0" encoding="UTF-8"?>\n` +
+      `<!-- Shadowbox Studio color proof (not for cutting) -->\n` +
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${f(widthMM)}mm" height="${f(H)}mm" ` +
+      `viewBox="0 0 ${f(widthMM)} ${f(H)}">\n${groups.join("\n")}\n</svg>\n`
+    );
+  };
+
+  // ---------------------------------------------------------------- helpers
+  const f = (x) => Number(x.toFixed(3)).toString();
+
+  function pathD(loop, k, off) {
+    let d = `M ${f(loop[0][0] * k + off)} ${f(loop[0][1] * k + off)}`;
+    for (let i = 1; i < loop.length; i++)
+      d += ` L ${f(loop[i][0] * k + off)} ${f(loop[i][1] * k + off)}`;
+    return d + " Z";
+  }
+  const path = (loop, k, off) => `<path d="${pathD(loop, k, off)}"/>`;
+  const rect = (x, y, w, h) =>
+    `<rect x="${f(x)}" y="${f(y)}" width="${f(w)}" height="${f(h)}"/>`;
+  const circle = (cx, cy, r) =>
+    `<circle cx="${f(cx)}" cy="${f(cy)}" r="${f(r)}"/>`;
+  const esc = (s) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  global.SBSvg = S;
+})(typeof window !== "undefined" ? window : globalThis);
+
+</script>
+<script>
+/* ============================================================================
+ * Shadowbox Studio — zip.js
+ * ----------------------------------------------------------------------------
+ * A minimal, dependency-free ZIP writer (STORE method, no compression).
+ * SVG exports are small, so compression buys nothing — but bundling every
+ * layer + docs into one download matters a lot for workflow. Implementing
+ * the format directly keeps the whole app usable offline in the workshop
+ * with no CDN and no npm.
+ *
+ * Format reference: PKWARE APPNOTE — local file headers, central directory,
+ * end-of-central-directory record. UTF-8 names (general-purpose bit 11).
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+
+  const Z = {};
+
+  // ---- CRC-32 (poly 0xEDB88320), table-driven ------------------------------
+  const CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+
+  Z.crc32 = function (bytes) {
+    let c = 0xffffffff;
+    for (let i = 0; i < bytes.length; i++)
+      c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+
+  // ---- DOS date/time encoding ----------------------------------------------
+  function dosDateTime(d) {
+    const time =
+      ((d.getHours() & 31) << 11) |
+      ((d.getMinutes() & 63) << 5) |
+      ((d.getSeconds() >> 1) & 31);
+    const date =
+      (((d.getFullYear() - 1980) & 127) << 9) |
+      (((d.getMonth() + 1) & 15) << 5) |
+      (d.getDate() & 31);
+    return { time, date };
+  }
+
+  /**
+   * Build a ZIP archive.
+   * @param {Array<{name: string, data: Uint8Array|string}>} files
+   * @returns {Uint8Array} the archive bytes
+   */
+  Z.build = function (files) {
+    const enc = new TextEncoder();
+    const now = dosDateTime(new Date());
+    const parts = [];
+    const central = [];
+    let offset = 0;
+
+    for (const file of files) {
+      const nameBytes = enc.encode(file.name);
+      const data =
+        typeof file.data === "string" ? enc.encode(file.data) : file.data;
+      const crc = Z.crc32(data);
+
+      // Local file header (30 bytes) + name + data
+      const lh = new DataView(new ArrayBuffer(30));
+      lh.setUint32(0, 0x04034b50, true);      // signature
+      lh.setUint16(4, 20, true);              // version needed
+      lh.setUint16(6, 0x0800, true);          // flags: UTF-8 names
+      lh.setUint16(8, 0, true);               // method: store
+      lh.setUint16(10, now.time, true);
+      lh.setUint16(12, now.date, true);
+      lh.setUint32(14, crc, true);
+      lh.setUint32(18, data.length, true);    // compressed size
+      lh.setUint32(22, data.length, true);    // uncompressed size
+      lh.setUint16(26, nameBytes.length, true);
+      lh.setUint16(28, 0, true);              // extra length
+      parts.push(new Uint8Array(lh.buffer), nameBytes, data);
+
+      // Central directory entry (46 bytes) + name
+      const cd = new DataView(new ArrayBuffer(46));
+      cd.setUint32(0, 0x02014b50, true);
+      cd.setUint16(4, 20, true);              // version made by
+      cd.setUint16(6, 20, true);              // version needed
+      cd.setUint16(8, 0x0800, true);
+      cd.setUint16(10, 0, true);
+      cd.setUint16(12, now.time, true);
+      cd.setUint16(14, now.date, true);
+      cd.setUint32(16, crc, true);
+      cd.setUint32(20, data.length, true);
+      cd.setUint32(24, data.length, true);
+      cd.setUint16(28, nameBytes.length, true);
+      // 30..37: extra/comment/disk/attrs = 0
+      cd.setUint32(42, offset, true);         // local header offset
+      central.push(new Uint8Array(cd.buffer), nameBytes);
+
+      offset += 30 + nameBytes.length + data.length;
+    }
+
+    const cdStart = offset;
+    let cdSize = 0;
+    for (const c of central) cdSize += c.length;
+
+    const end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true);
+    end.setUint16(8, files.length, true);     // entries on this disk
+    end.setUint16(10, files.length, true);    // entries total
+    end.setUint32(12, cdSize, true);
+    end.setUint32(16, cdStart, true);
+
+    const total = offset + cdSize + 22;
+    const out = new Uint8Array(total);
+    let pos = 0;
+    for (const p of [...parts, ...central, new Uint8Array(end.buffer)]) {
+      out.set(p, pos);
+      pos += p.length;
+    }
+    return out;
+  };
+
+  global.SBZip = Z;
+})(typeof window !== "undefined" ? window : globalThis);
+
+</script>
+<script>
+/* ============================================================================
+ * Shadowbox Studio — preview.js
+ * ----------------------------------------------------------------------------
+ * The signature view: a live render of the assembled shadowbox.
+ *
+ * Each sheet mask is rasterized once into an offscreen canvas tinted with its
+ * acrylic color. On every animation frame the sheets are composited back to
+ * front with a parallax offset driven by pointer position (drag to tilt) and
+ * a soft drop shadow per sheet, so the physical depth of the stack reads on
+ * screen. An "explode" slider spreads the sheets apart for inspection, and
+ * bridges can be highlighted in amber to audit every structural fix.
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+
+  const P = {};
+
+  /**
+   * Create a preview controller bound to a canvas element.
+   * Call setSheets() after each pipeline run, then start().
+   */
+  P.create = function (canvas) {
+    const ctx = canvas.getContext("2d");
+    const state = {
+      layers: [],        // [{canvas, bridgeCanvas}]
+      w: 0, h: 0,
+      tiltX: 0.35, tiltY: -0.25,   // resting pose: slightly off-axis
+      targetX: 0.35, targetY: -0.25,
+      explode: 0,        // 0..1
+      showBridges: true,
+      dragging: false,
+      running: false,
+      dirty: true,
+    };
+
+    // ---- pointer interaction: drag to tilt --------------------------------
+    const onDown = (e) => { state.dragging = true; move(e); };
+    const onUp = () => { state.dragging = false; };
+    const move = (e) => {
+      if (!state.dragging) return;
+      const r = canvas.getBoundingClientRect();
+      const pt = e.touches ? e.touches[0] : e;
+      state.targetX = ((pt.clientX - r.left) / r.width - 0.5) * 2;
+      state.targetY = ((pt.clientY - r.top) / r.height - 0.5) * 2;
+      if (e.cancelable) e.preventDefault();
+    };
+    canvas.addEventListener("mousedown", onDown);
+    canvas.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", onUp);
+    canvas.addEventListener("touchstart", onDown, { passive: false });
+    canvas.addEventListener("touchmove", move, { passive: false });
+    canvas.addEventListener("touchend", onUp);
+
+    /**
+     * @param {Array} sheets   [{mask, bridges}] back → front
+     * @param {string[]} colors  hex per sheet
+     */
+    function setSheets(sheets, colors, w, h) {
+      state.w = w; state.h = h;
+      state.layers = sheets.map((sheet, s) => ({
+        canvas: maskToCanvas(sheet.mask, w, h, colors[s], s === 0),
+        bridgeCanvas: sheet.bridges && hasAny(sheet.bridges)
+          ? maskToCanvas(sheet.bridges, w, h, "#F0A227", false)
+          : null,
+      }));
+      state.dirty = true;
+    }
+
+    function maskToCanvas(mask, w, h, hex, solid) {
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      const cc = c.getContext("2d");
+      const img = cc.createImageData(w, h);
+      const [r, g, b] = SBUtil.hexToRgb(hex);
+      for (let i = 0, p = 0; i < mask.length; i++, p += 4) {
+        const on = solid || mask[i];
+        img.data[p] = r; img.data[p + 1] = g; img.data[p + 2] = b;
+        img.data[p + 3] = on ? 255 : 0;
+      }
+      cc.putImageData(img, 0, 0);
+      return c;
+    }
+
+    function hasAny(arr) {
+      for (let i = 0; i < arr.length; i++) if (arr[i]) return 1;
+      return 0;
+    }
+
+    function frame() {
+      if (!state.running) return;
+      // Ease toward target tilt; skip repaint when settled and clean.
+      const k = 0.12;
+      const moved =
+        Math.abs(state.targetX - state.tiltX) > 0.001 ||
+        Math.abs(state.targetY - state.tiltY) > 0.001;
+      state.tiltX += (state.targetX - state.tiltX) * k;
+      state.tiltY += (state.targetY - state.tiltY) * k;
+      if (moved || state.dirty) { draw(); state.dirty = false; }
+      requestAnimationFrame(frame);
+    }
+
+    function draw() {
+      const dpr = Math.min(global.devicePixelRatio || 1, 2);
+      const cw = canvas.clientWidth, ch = canvas.clientHeight;
+      if (!cw || !ch || !state.layers.length) return;
+      if (canvas.width !== cw * dpr || canvas.height !== ch * dpr) {
+        canvas.width = cw * dpr; canvas.height = ch * dpr;
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cw, ch);
+
+      // Fit artwork into canvas with breathing room for the parallax throw.
+      const pad = 0.86;
+      const scale = Math.min((cw * pad) / state.w, (ch * pad) / state.h);
+      const dw = state.w * scale, dh = state.h * scale;
+      const ox = (cw - dw) / 2, oy = (ch - dh) / 2;
+
+      const n = state.layers.length;
+      const throwPx = Math.min(cw, ch) * 0.035; // parallax per sheet
+      const explodePx = state.explode * Math.min(cw, ch) * 0.06;
+
+      for (let s = 0; s < n; s++) {
+        const depth = s - (n - 1) / 2;
+        const dx = -state.tiltX * depth * throwPx;
+        const dy = -state.tiltY * depth * throwPx - s * explodePx;
+        ctx.save();
+        ctx.shadowColor = "rgba(10,16,24,0.45)";
+        ctx.shadowBlur = 6 + s * 2;
+        ctx.shadowOffsetX = state.tiltX * 4;
+        ctx.shadowOffsetY = 5 + state.tiltY * 4;
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(state.layers[s].canvas, ox + dx, oy + dy, dw, dh);
+        ctx.restore();
+        if (state.showBridges && state.layers[s].bridgeCanvas) {
+          ctx.drawImage(state.layers[s].bridgeCanvas, ox + dx, oy + dy, dw, dh);
+        }
+      }
+    }
+
+    return {
+      setSheets,
+      start() { if (!state.running) { state.running = true; frame(); } },
+      stop() { state.running = false; },
+      setExplode(v) { state.explode = v; state.dirty = true; },
+      setShowBridges(v) { state.showBridges = v; state.dirty = true; },
+      redraw() { state.dirty = true; },
+      /** Snapshot the current composite for the export bundle. */
+      snapshot() {
+        return new Promise((resolve) => {
+          draw();
+          canvas.toBlob((b) => resolve(b), "image/png");
+        });
+      },
+    };
+  };
+
+  global.SBPreview = P;
+})(typeof window !== "undefined" ? window : globalThis);
+
+</script>
+<script>
+/* ============================================================================
+ * Shadowbox Studio — app.js
+ * ----------------------------------------------------------------------------
+ * Orchestration layer: application state, the processing pipeline, UI wiring,
+ * the built-in demo scene, and the export bundle.
+ *
+ * Pipeline (runs debounced whenever a parameter changes):
+ *
+ *   photo ▶ scale ▶ luminance ▶ Kuwahara ▶ thresholds ▶ nested sheet masks
+ *         ▶ per sheet: open/close ▶ specks/holes ▶ ISLANDS (bridge/cull)
+ *         ▶ trace ▶ simplify ▶ smooth ▶ stats
+ *
+ * Everything physical is specified in millimetres and converted to pixels
+ * through pxPerMM = workingWidthPx / artworkWidthMM, so "1.5 mm bridges"
+ * means 1.5 mm on the laser bed no matter what the preview resolution is.
+ * ==========================================================================*/
+(function () {
+  "use strict";
+
+  // Single source of truth for the visible version. The service worker keeps
+  // its own matching cache-version string (sw.js); bump both together on every
+  // release so users can confirm at a glance which build they are running.
+  const APP_VERSION = "1.1.0";
+
+  // ------------------------------------------------------------------ state
+  const PALETTES = {
+    "Midnight (Starry Night)": ["#DCEFF7", "#8FC3E4", "#3F7CC0", "#1D3F7E", "#0C1B3D"],
+    "Ember": ["#FBE8C8", "#F2B36A", "#D96C2F", "#8C2F1B", "#3B120E"],
+    "Forest": ["#EAF2DC", "#A8C97F", "#5E9455", "#2F5D3A", "#122A1C"],
+    "Ocean": ["#E4F5F2", "#93D6CC", "#3FA8A0", "#1F6E78", "#0B3142"],
+    "Monochrome": ["#F4F4F2", "#C4C6C8", "#8B8F94", "#4A4E55", "#15181D"],
+  };
+
+  const state = {
+    projectName: "untitled",
+    sourceName: null,
+    sourceImage: null,   // HTMLImageElement or canvas
+    // — cartoonize —
+    procRes: 720,        // long-side working resolution, px
+    smoothRadius: 4,     // Kuwahara radius, px
+    smoothPasses: 2,
+    // — layers —
+    nSheets: 5,
+    thresholdMode: "balanced",
+    darkFront: true,
+    palette: "Midnight (Starry Night)",
+    // — fabrication (all mm) —
+    widthMM: 300,
+    marginMM: 12,
+    minFeatureMM: 1.2,
+    bridgeMM: 1.8,
+    cullBelowMM2: 9,
+    maxBridgeMM: 40,
+    holes: true,
+    holeDiaMM: 4,
+    cornerStyle: "smooth", // smooth | faceted
+    detailEps: 0.8,        // RDP epsilon, px
+    // — results —
+    sheets: [],            // [{mask, bridges, loops, stats}]
+    procW: 0, procH: 0,
+    report: "",
+  };
+
+  let preview = null;
+  const $ = (id) => document.getElementById(id);
+
+  // ------------------------------------------------------------- pipeline
+  const recompute = SBUtil.debounce(runPipeline, 160);
+
+  function runPipeline() {
+    if (!state.sourceImage) return;
+    const t0 = performance.now();
+
+    // 1. Scale source to working resolution.
+    const iw = state.sourceImage.width, ih = state.sourceImage.height;
+    const k = state.procRes / Math.max(iw, ih);
+    const w = Math.max(32, Math.round(iw * k));
+    const h = Math.max(32, Math.round(ih * k));
+    const cv = document.createElement("canvas");
+    cv.width = w; cv.height = h;
+    const cx = cv.getContext("2d", { willReadFrequently: true });
+    cx.drawImage(state.sourceImage, 0, 0, w, h);
+    const rgba = cx.getImageData(0, 0, w, h).data;
+
+    // 2. Cartoonize.
+    let L = SBRaster.luminance(rgba, w, h);
+    L = SBRaster.kuwahara(L, w, h, state.smoothRadius, state.smoothPasses);
+
+    // 3. Band and build nested sheet masks.
+    const th = SBRaster.thresholds(L, state.nSheets, state.thresholdMode);
+    const bandMap = SBRaster.bands(L, th);
+    const masks = SBRaster.sheetMasks(bandMap, state.nSheets, w, h, state.darkFront);
+
+    // 4. Physical px conversions.
+    const pxPerMM = w / state.widthMM;
+    const featR = Math.max(1, Math.round((state.minFeatureMM * pxPerMM) / 2));
+    const bridgeR = Math.max(featR, (state.bridgeMM * pxPerMM) / 2);
+    const cullPx = state.cullBelowMM2 * pxPerMM * pxPerMM;
+    const maxBridgePx = Math.round(state.maxBridgeMM * pxPerMM);
+    const speckPx = Math.max(4, cullPx * 0.5);
+    const holePx = Math.max(4, (state.minFeatureMM * pxPerMM) ** 2 * 2);
+
+    // 5. Per-sheet fabrication pass.
+    const chaikinIters = state.cornerStyle === "smooth" ? 2 : 0;
+    let totalBridged = 0, totalCulled = 0, totalCutMM = 0;
+    state.sheets = masks.map((mask, s) => {
+      if (s === 0) {
+        return { mask, bridges: null, loops: [], stats: { cutMM: 0, bridged: 0, culled: 0, loops: 0 } };
+      }
+      let m = SBMorph.open(mask, w, h, featR);
+      m = SBMorph.close(m, w, h, Math.max(1, featR - 1));
+      SBMorph.removeSpecks(m, w, h, speckPx);
+      SBMorph.fillHoles(m, w, h, holePx);
+
+      const isl = SBIslands.resolve(m, w, h, {
+        frameAnchored: state.marginMM > 0,
+        bridgeRadius: bridgeR,
+        cullBelowPx: cullPx,
+        maxBridgePx,
+      });
+
+      let loops = SBTrace.trace(m, w, h)
+        .map((lp) => SBTrace.simplify(lp, state.detailEps))
+        .map((lp) => (chaikinIters ? SBTrace.chaikin(lp, chaikinIters) : lp));
+      // drop degenerate micro-loops that survived
+      loops = loops.filter((lp) => lp.length >= 3);
+
+      const cutMM = loops.reduce((a, lp) => a + SBUtil.loopLength(lp), 0) / pxPerMM;
+      totalBridged += isl.bridged; totalCulled += isl.culled; totalCutMM += cutMM;
+      return {
+        mask: m,
+        bridges: isl.bridges,
+        loops,
+        stats: { cutMM, bridged: isl.bridged, culled: isl.culled, loops: loops.length },
+      };
+    });
+    state.procW = w; state.procH = h;
+
+    const ms = performance.now() - t0;
+    state.report =
+      `${w}×${h}px · ${state.nSheets} sheets · ` +
+      `${totalBridged} bridged · ${totalCulled} culled · ` +
+      `${SBUtil.fmt(totalCutMM / 1000, 2)} m of cuts · ${ms.toFixed(0)} ms`;
+    setStatus(state.report);
+
+    renderAll();
+  }
+
+  /**
+   * Write a line to the status bar. Transient messages (exports, errors) show
+   * briefly, then the bar reverts to the standing pipeline report so the user
+   * isn't left staring at a stale "saved…" string.
+   */
+  let statusRevertTimer = null;
+  function setStatus(text, transient = false) {
+    const el = $("statusline");
+    if (el) el.textContent = text;
+    clearTimeout(statusRevertTimer);
+    if (transient && state.report) {
+      statusRevertTimer = setTimeout(() => {
+        const cur = $("statusline");
+        if (cur) cur.textContent = state.report;
+      }, 6000);
+    }
+  }
+
+  // ------------------------------------------------------------- rendering
+  function sheetColors() {
+    const stops = PALETTES[state.palette];
+    const n = state.nSheets;
+    // Back sheet = lightest, front = darkest (matches dark-front stacking).
+    return Array.from({ length: n }, (_, s) =>
+      SBUtil.samplePalette(stops, 1 - (n === 1 ? 0 : s / (n - 1)))
+    ).reverse();
+  }
+
+  function renderAll() {
+    if (!state.sheets.length) return;
+    const colors = sheetColors();
+    preview.setSheets(state.sheets, colors, state.procW, state.procH);
+    renderSheetGrid(colors);
+    renderPaletteChips(colors);
+  }
+
+  /** The "Layer sheets" tab: one card per sheet with its cut preview + stats. */
+  function renderSheetGrid(colors) {
+    const grid = $("sheetgrid");
+    grid.innerHTML = "";
+    state.sheets.forEach((sheet, s) => {
+      const card = document.createElement("div");
+      card.className = "sheetcard";
+
+      const cvs = document.createElement("canvas");
+      const w = state.procW, h = state.procH;
+      cvs.width = w; cvs.height = h;
+      const c = cvs.getContext("2d");
+      // waste = dark bed, material = sheet color, bridges = amber
+      c.fillStyle = "#171D24";
+      c.fillRect(0, 0, w, h);
+      const img = c.getImageData(0, 0, w, h);
+      const [r, g, b] = SBUtil.hexToRgb(colors[s]);
+      for (let i = 0, p = 0; i < w * h; i++, p += 4) {
+        const on = s === 0 || sheet.mask[i];
+        if (on) { img.data[p] = r; img.data[p + 1] = g; img.data[p + 2] = b; }
+        if (sheet.bridges && sheet.bridges[i]) {
+          img.data[p] = 240; img.data[p + 1] = 162; img.data[p + 2] = 39;
+        }
+      }
+      c.putImageData(img, 0, 0);
+
+      const label = document.createElement("div");
+      label.className = "sheetlabel";
+      const role = s === 0 ? "backing" : s === state.sheets.length - 1 ? "front" : "mid";
+      label.innerHTML =
+        `<b>SHEET ${s + 1}</b> <span class="muted">${role}</span><br>` +
+        (s === 0
+          ? `solid panel — frame + holes only`
+          : `${sheet.stats.loops} contours · ${SBUtil.fmt(sheet.stats.cutMM / 10, 1)} cm cut` +
+            (sheet.stats.bridged ? ` · <span class="amber">${sheet.stats.bridged} bridged</span>` : "") +
+            (sheet.stats.culled ? ` · ${sheet.stats.culled} culled` : ""));
+      card.append(cvs, label);
+      grid.appendChild(card);
+    });
+  }
+
+  function renderPaletteChips(colors) {
+    const box = $("chips");
+    box.innerHTML = "";
+    colors.forEach((c, s) => {
+      const chip = document.createElement("span");
+      chip.className = "chip";
+      chip.style.background = c;
+      chip.title = `Sheet ${s + 1}: ${c}`;
+      box.appendChild(chip);
+    });
+  }
+
+  // ------------------------------------------------------------- demo scene
+  /**
+   * A procedural night scene (a nod to the layered Starry Night that started
+   * this project) so the tool is testable before any photo is loaded.
+   */
+  function demoScene() {
+    const w = 900, h = 680;
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const g = c.getContext("2d");
+    // sky gradient
+    const sky = g.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, "#0a0f2a"); sky.addColorStop(0.65, "#33406e"); sky.addColorStop(1, "#7986b8");
+    g.fillStyle = sky; g.fillRect(0, 0, w, h);
+    // moon + halo
+    g.fillStyle = "#f4f0da";
+    g.beginPath(); g.arc(700, 130, 52, 0, 7); g.fill();
+    g.fillStyle = "rgba(244,240,218,0.35)";
+    g.beginPath(); g.arc(700, 130, 86, 0, 7); g.fill();
+    // stars (fixed seed pattern)
+    g.fillStyle = "#efe9c8";
+    for (let i = 0; i < 40; i++) {
+      const x = ((i * 733) % w), y = ((i * 397) % (h * 0.5));
+      const r = 3 + ((i * 53) % 9);
+      g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+    }
+    // rolling hills, back to front
+    const hills = ["#3d4a70", "#2b3554", "#1b2238"];
+    hills.forEach((col, i) => {
+      g.fillStyle = col;
+      g.beginPath();
+      g.moveTo(0, h);
+      for (let x = 0; x <= w; x += 8) {
+        const y =
+          h * (0.55 + i * 0.13) +
+          Math.sin(x * 0.008 + i * 2.2) * 38 +
+          Math.sin(x * 0.021 + i) * 16;
+        g.lineTo(x, y);
+      }
+      g.lineTo(w, h); g.closePath(); g.fill();
+    });
+    // cypress tree
+    g.fillStyle = "#0d1120";
+    g.beginPath();
+    g.moveTo(150, h);
+    for (let y = h; y > 150; y -= 10) {
+      const t = (h - y) / (h - 150);
+      const wob = Math.sin(y * 0.06) * 14 * (1 - t);
+      g.lineTo(150 + wob - 34 * (1 - t) - 6, y);
+    }
+    g.lineTo(150, 140);
+    for (let y = 160; y < h; y += 10) {
+      const t = (h - y) / (h - 150);
+      const wob = Math.sin(y * 0.06 + 2) * 14 * (1 - t);
+      g.lineTo(150 + wob + 34 * (1 - t) + 6, y);
+    }
+    g.closePath(); g.fill();
+    // village
+    g.fillStyle = "#141a2e";
+    for (let i = 0; i < 7; i++) {
+      const x = 380 + i * 62, hw = 22 + (i % 3) * 6, hh = 30 + (i % 4) * 8;
+      g.fillRect(x, h - 110 - hh, hw * 2, hh + 40);
+      g.beginPath();
+      g.moveTo(x - 6, h - 110 - hh); g.lineTo(x + hw, h - 140 - hh); g.lineTo(x + 2 * hw + 6, h - 110 - hh);
+      g.closePath(); g.fill();
+    }
+    // steeple
+    g.fillRect(560, h - 260, 26, 160);
+    g.beginPath(); g.moveTo(551, h - 260); g.lineTo(573, h - 330); g.lineTo(595, h - 260); g.closePath(); g.fill();
+    return c;
+  }
+
+  // ------------------------------------------------------------- exporting
+  function buildAssemblyMD(colors) {
+    const mmPerPx = state.widthMM / state.procW;
+    const artH = state.procH * mmPerPx;
+    const lines = [
+      `# ${state.projectName} — assembly guide`,
+      ``,
+      `Generated by Shadowbox Studio on ${new Date().toISOString().slice(0, 10)}.`,
+      ``,
+      `## The stack`,
+      ``,
+      `Artwork ${SBUtil.fmt(state.widthMM)} × ${SBUtil.fmt(artH)} mm` +
+        (state.marginMM > 0 ? ` inside a ${SBUtil.fmt(state.marginMM)} mm frame ring` : ``) + `.`,
+      `Sheets are listed back → front. Cut each from the suggested color (or`,
+      `remap freely — the proof SVG shows the intended look).`,
+      ``,
+      `| # | Role | Suggested color | File |`,
+      `|---|------|-----------------|------|`,
+    ];
+    state.sheets.forEach((s, i) => {
+      const role = i === 0 ? "backing (solid)" : i === state.sheets.length - 1 ? "front" : "mid";
+      lines.push(`| ${i + 1} | ${role} | \`${colors[i]}\` | \`sheet_${String(i + 1).padStart(2, "0")}.svg\` |`);
+    });
+    lines.push(
+      ``,
+      `## Cutting`,
+      ``,
+      `- RED (0.1 mm) strokes are vector cuts; BLUE text is a score/engrave label.`,
+      `- Import at 1:1 — files carry real millimetre units.`,
+      `- Cut a small test square first and adjust laser kerf in your software if`,
+      `  the registration holes come out tight on your dowels.`,
+      ``,
+      `## Stacking`,
+      ``,
+      state.holes
+        ? `- Registration holes are ${SBUtil.fmt(state.holeDiaMM)} mm, centered ${SBUtil.fmt(state.marginMM / 2)} mm` +
+          ` from the frame edges. Run dowels or M${Math.max(2, Math.round(state.holeDiaMM - 1))} bolts through the`
+        : `- Registration holes are off; align sheets flush to the frame edges before the`,
+      state.holes ? `  stack to self-align every layer.` : `  glue sets.`,
+      `- Space sheets with 2–5 mm spacers (acrylic offcut rings around the dowels`,
+      `  work perfectly) for the shadowbox depth effect, or laminate them flush`,
+      `  for a solid relief.`,
+      ``,
+      `## Bridges`,
+      ``,
+      `Amber regions in the app preview are bridges the tool added so isolated`,
+      `pieces (moons, windows, letter counters) stay attached to the sheet.`,
+      `They are ${SBUtil.fmt(state.bridgeMM)} mm wide. If one bothers you visually, raise the`,
+      `cull threshold or lower the layer count and re-export.`,
+      ``
+    );
+    return lines.join("\n");
+  }
+
+  function settingsJSON() {
+    const keep = [
+      "projectName", "sourceName", "procRes", "smoothRadius", "smoothPasses",
+      "nSheets", "thresholdMode", "darkFront", "palette", "widthMM", "marginMM",
+      "minFeatureMM", "bridgeMM", "cullBelowMM2", "maxBridgeMM", "holes",
+      "holeDiaMM", "cornerStyle", "detailEps",
+    ];
+    const o = {};
+    keep.forEach((k) => (o[k] = state[k]));
+    return JSON.stringify(o, null, 2);
+  }
+
+  async function exportBundle() {
+    if (!state.sheets.length) {
+      setStatus("nothing to export yet — load a photo or the demo first", true);
+      return;
+    }
+    const btn = $("btn-export");
+    if (btn.dataset.busy === "1") return; // ignore double taps mid-export
+    btn.dataset.busy = "1";
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.textContent = "Preparing…";
+    setStatus("building cut files…");
+    try {
+      await buildAndDeliver();
+    } catch (err) {
+      setStatus(`export failed: ${err.message || err}`, true);
+    } finally {
+      btn.disabled = false;
+      btn.dataset.busy = "0";
+      btn.textContent = label;
+    }
+  }
+
+  async function buildAndDeliver() {
+    const colors = sheetColors();
+    const files = [];
+    state.sheets.forEach((sheet, s) => {
+      files.push({
+        name: `sheet_${String(s + 1).padStart(2, "0")}.svg`,
+        data: SBSvg.sheetSVG({
+          loops: sheet.loops,
+          pxW: state.procW, pxH: state.procH,
+          widthMM: state.widthMM, marginMM: state.marginMM,
+          holes: state.holes, holeDiaMM: state.holeDiaMM,
+          label: `${state.projectName} ${s + 1}/${state.sheets.length}`,
+          isBacking: s === 0,
+        }),
+      });
+    });
+    files.push({
+      name: "proof.svg",
+      data: SBSvg.proofSVG(state.sheets, state.procW, state.procH, state.widthMM, colors),
+    });
+    files.push({ name: "ASSEMBLY.md", data: buildAssemblyMD(colors) });
+    files.push({ name: "settings.json", data: settingsJSON() });
+
+    const snap = await preview.snapshot();
+    if (snap) files.push({ name: "preview.png", data: new Uint8Array(await snap.arrayBuffer()) });
+
+    const zipName = `${safeName(state.projectName)}_shadowbox.zip`;
+    const zipBytes = SBZip.build(files);
+    await deliverFile(zipName, zipBytes, "application/zip");
+  }
+
+  /**
+   * Get a file out of the app across every platform we support.
+   *
+   * The historical approach — an <a download> synthetic click — is unreliable
+   * inside an installed PWA, and on iOS Safari it fails outright: the download
+   * attribute is ignored and, in standalone mode, the click can navigate the
+   * whole app to the blob URL and lose the session without ever saving a file.
+   *
+   * Strategy, best option first:
+   *   1. Web Share with files — the only dependable "save a file" path on an
+   *      installed iOS/Android PWA. Routes the ZIP to the native share sheet
+   *      (Save to Files, AirDrop, Messages, etc.).
+   *   2. <a download> — works well on desktop browsers, which don't expose
+   *      file sharing.
+   *   3. Open the blob in a new tab — last resort so the bytes are never
+   *      simply lost; the user can save from there.
+   *
+   * Returns a short human string describing what happened, for the status bar.
+   */
+  async function deliverFile(name, data, mime) {
+    const blob = data instanceof Blob ? data : new Blob([data], { type: mime });
+    const file = new File([blob], name, { type: mime });
+
+    // 1. Native share sheet (mobile / installed PWA).
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: name });
+        setStatus(`shared ${name} — choose “Save to Files” to keep it`, true);
+        return;
+      } catch (err) {
+        // A user cancel is not an error; just stop quietly.
+        if (err && err.name === "AbortError") { setStatus("export cancelled", true); return; }
+        // Otherwise fall through to the download path.
+      }
+    }
+
+    // 2. Classic download (desktop).
+    const url = URL.createObjectURL(blob);
+    try {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setStatus(`saved ${name} to your downloads`, true);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      return;
+    } catch (_) {
+      /* fall through */
+    }
+
+    // 3. Last resort: surface the bytes in a new tab so nothing is lost.
+    window.open(url, "_blank");
+    setStatus(`opened ${name} in a new tab — use your browser to save it`, true);
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
+
+  const safeName = (s) => (s.trim() || "untitled").replace(/[^\w\-]+/g, "_").toLowerCase();
+
+  // ------------------------------------------------------------- UI wiring
+  function bindRange(id, key, out, fmt = (v) => v) {
+    const el = $(id);
+    el.value = state[key];
+    if (out) $(out).textContent = fmt(state[key]);
+    el.addEventListener("input", () => {
+      state[key] = parseFloat(el.value);
+      if (out) $(out).textContent = fmt(state[key]);
+      recompute();
+    });
+  }
+
+  function bindSelect(id, key) {
+    const el = $(id);
+    el.value = String(state[key]);
+    el.addEventListener("change", () => {
+      state[key] = el.type === "checkbox" ? el.checked
+        : isNaN(+el.value) ? el.value : +el.value;
+      recompute();
+    });
+  }
+
+  function bindCheck(id, key) {
+    const el = $(id);
+    el.checked = state[key];
+    el.addEventListener("change", () => { state[key] = el.checked; recompute(); });
+  }
+
+  function loadFile(file) {
+    if (!file.type || !file.type.startsWith("image/")) {
+      setStatus("that file isn’t an image", true);
+      return;
+    }
+    setStatus(`loading ${file.name}…`);
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    // Phone cameras produce very large images (12MP+). Nothing here needs the
+    // full sensor resolution — the pipeline works at procRes — so cap the
+    // decoded dimensions to keep memory and decode time sane on mobile.
+    if ("decoding" in img) img.decoding = "async";
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      if (!img.naturalWidth || !img.naturalHeight) {
+        setStatus("couldn’t read that image", true);
+        return;
+      }
+      state.sourceImage = downscaleIfHuge(img);
+      state.sourceName = file.name;
+      if (state.projectName === "untitled")
+        setProjectName(file.name.replace(/\.[^.]+$/, ""));
+      runPipeline();
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      setStatus(`couldn’t load ${file.name} — try a JPG or PNG`, true);
+    };
+    img.src = url;
+  }
+
+  /**
+   * If an image is larger than we could ever need, downscale it once into a
+   * canvas so every later processing step is cheap. The pipeline resamples to
+   * procRes anyway, so this is lossless for our purposes and prevents the
+   * out-of-memory stalls large phone photos can cause on iOS.
+   */
+  function downscaleIfHuge(img, cap = 2000) {
+    const big = Math.max(img.naturalWidth, img.naturalHeight);
+    if (big <= cap) return img;
+    const k = cap / big;
+    const w = Math.round(img.naturalWidth * k);
+    const h = Math.round(img.naturalHeight * k);
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    c.getContext("2d").drawImage(img, 0, 0, w, h);
+    return c;
+  }
+
+  function setProjectName(n) {
+    state.projectName = n;
+    $("projname").value = n;
+  }
+
+  function switchTab(name) {
+    document.querySelectorAll(".tab").forEach((t) =>
+      t.classList.toggle("active", t.dataset.tab === name));
+    document.querySelectorAll(".pane").forEach((p) =>
+      p.classList.toggle("active", p.id === "pane-" + name));
+    if (name === "stack") preview.redraw();
+  }
+
+  function init() {
+    preview = SBPreview.create($("stackcanvas"));
+    preview.start();
+
+    // header
+    $("projname").addEventListener("input", (e) => (state.projectName = e.target.value));
+    $("meta-date").textContent = new Date().toISOString().slice(0, 10);
+
+    // photo
+    $("filein").addEventListener("change", (e) => {
+      if (e.target.files[0]) loadFile(e.target.files[0]);
+    });
+    $("btn-demo").addEventListener("click", () => {
+      state.sourceImage = demoScene();
+      state.sourceName = "demo scene";
+      if (state.projectName === "untitled") setProjectName("night-over-the-valley");
+      runPipeline();
+    });
+    bindRange("in-res", "procRes", "out-res", (v) => v + " px");
+    bindRange("in-smooth", "smoothRadius", "out-smooth", (v) => v + " px");
+    bindRange("in-passes", "smoothPasses", "out-passes");
+
+    // layers
+    bindRange("in-sheets", "nSheets", "out-sheets");
+    bindSelect("in-thmode", "thresholdMode");
+    bindCheck("in-darkfront", "darkFront");
+    const pal = $("in-palette");
+    Object.keys(PALETTES).forEach((k) => {
+      const o = document.createElement("option");
+      o.value = k; o.textContent = k;
+      pal.appendChild(o);
+    });
+    pal.value = state.palette;
+    pal.addEventListener("change", () => { state.palette = pal.value; renderAll(); });
+
+    // fabrication
+    bindRange("in-width", "widthMM", "out-width", (v) => v + " mm");
+    bindRange("in-margin", "marginMM", "out-margin", (v) => v + " mm");
+    bindRange("in-feature", "minFeatureMM", "out-feature", (v) => v + " mm");
+    bindRange("in-bridge", "bridgeMM", "out-bridge", (v) => v + " mm");
+    bindRange("in-cull", "cullBelowMM2", "out-cull", (v) => v + " mm²");
+    bindRange("in-maxbridge", "maxBridgeMM", "out-maxbridge", (v) => v + " mm");
+    bindCheck("in-holes", "holes");
+    bindRange("in-holedia", "holeDiaMM", "out-holedia", (v) => v + " mm");
+    bindSelect("in-corner", "cornerStyle");
+
+    // preview controls
+    $("in-explode").addEventListener("input", (e) =>
+      preview.setExplode(parseFloat(e.target.value)));
+    $("in-bridgesvis").addEventListener("change", (e) =>
+      preview.setShowBridges(e.target.checked));
+
+    // tabs
+    document.querySelectorAll(".tab").forEach((t) =>
+      t.addEventListener("click", () => switchTab(t.dataset.tab)));
+
+    // export
+    $("btn-export").addEventListener("click", exportBundle);
+
+    // mobile rail toggle
+    $("railtoggle").addEventListener("click", () =>
+      document.body.classList.toggle("rail-open"));
+
+    // keyboard reachability: tabs are buttons, ranges are native — done.
+    window.addEventListener("resize", () => preview.redraw());
+
+    // Show the running version in the title block so a user can confirm which
+    // build they have after an update.
+    const verEl = $("meta-version");
+    if (verEl) verEl.textContent = "v" + APP_VERSION;
+
+    // Start with the demo so the app never opens empty.
+    $("btn-demo").click();
+
+    registerServiceWorker();
+    requestPersistentStorage();
+  }
+
+  /**
+   * Register the offline service worker. Only meaningful over http(s); when the
+   * bundle is opened directly from a file:// path the app still runs fully, it
+   * just isn't installable — so we register defensively and ignore failures.
+   */
+  function registerServiceWorker() {
+    if (!("serviceWorker" in navigator)) return;
+    if (location.protocol === "file:") return;
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").catch(() => {
+        /* offline support unavailable; app still works online */
+      });
+    });
+  }
+
+  /**
+   * Ask the browser to make our IndexedDB/cache storage persistent so the OS is
+   * less likely to evict the user's work under storage pressure. Best-effort:
+   * the prompt may be silently granted, denied, or unsupported.
+   */
+  function requestPersistentStorage() {
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persist().catch(() => {});
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", init);
+})();
+
+</script>
+</body>
+</html>

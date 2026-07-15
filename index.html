@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<!-- ==========================================================================
+  Shadowbox Studio — turn a photo into laser-ready layered shadowbox files.
+  Open this file directly in any modern browser. No server, no install.
+=========================================================================== -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Shadowbox Studio</title>
+<meta name="description" content="Turn a photo into laser-ready layered shadowbox cut files.">
+
+<!-- Progressive-web-app metadata. The manifest and icons make the app
+     installable; the Apple-specific tags give iOS a proper standalone launch,
+     since iOS ignores much of the manifest. -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#171d24">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Shadowbox">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
+<link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- Title block: styled like the corner of an engineering drawing.        -->
+<header class="titleblock">
+  <button id="railtoggle" class="railtoggle" aria-label="Toggle controls">☰</button>
+  <div class="tb-name">
+    <span class="tb-app">SHADOWBOX&nbsp;STUDIO</span>
+    <span class="tb-sub">photo → layered laser files</span>
+  </div>
+  <div class="tb-fields">
+    <label class="tb-field">
+      <span>PROJECT</span>
+      <input id="projname" value="untitled" spellcheck="false" autocomplete="off">
+    </label>
+    <div class="tb-field"><span>DATE</span><b id="meta-date">—</b></div>
+    <div class="tb-field"><span>VERSION</span><b id="meta-version">—</b></div>
+    <div class="tb-field tb-conv"><span>CONVENTION</span><b><i class="cut-swatch"></i>cut&nbsp;&nbsp;<i class="score-swatch"></i>score</b></div>
+  </div>
+</header>
+
+<div class="workspace">
+
+  <!-- Process rail: the four real stages of the pipeline, in order.       -->
+  <aside class="rail" id="rail">
+
+    <section class="step">
+      <h2><span class="stepnum">1</span> Photo</h2>
+      <div class="row btnrow">
+        <label class="btn primary filebtn">
+          Load photo<input id="filein" type="file" accept="image/*">
+        </label>
+        <button id="btn-demo" class="btn">Demo scene</button>
+      </div>
+      <div class="row"><label for="in-res">Working resolution <output id="out-res"></output></label>
+        <input id="in-res" type="range" min="360" max="1280" step="20"></div>
+      <div class="row"><label for="in-smooth">Cartoon smoothing <output id="out-smooth"></output></label>
+        <input id="in-smooth" type="range" min="1" max="10" step="1"></div>
+      <div class="row"><label for="in-passes">Smoothing passes <output id="out-passes"></output></label>
+        <input id="in-passes" type="range" min="1" max="3" step="1"></div>
+    </section>
+
+    <section class="step">
+      <h2><span class="stepnum">2</span> Layers</h2>
+      <div class="row"><label for="in-sheets">Sheets <output id="out-sheets"></output></label>
+        <input id="in-sheets" type="range" min="3" max="8" step="1"></div>
+      <div class="row"><label for="in-thmode">Tone split</label>
+        <select id="in-thmode">
+          <option value="balanced">Balanced areas</option>
+          <option value="linear">Even brightness steps</option>
+        </select></div>
+      <div class="row check"><input id="in-darkfront" type="checkbox">
+        <label for="in-darkfront">Dark tones in front</label></div>
+      <div class="row"><label for="in-palette">Acrylic palette</label>
+        <select id="in-palette"></select>
+        <div id="chips" class="chips"></div></div>
+    </section>
+
+    <section class="step">
+      <h2><span class="stepnum">3</span> Fabrication</h2>
+      <div class="row"><label for="in-width">Artwork width <output id="out-width"></output></label>
+        <input id="in-width" type="range" min="100" max="600" step="10"></div>
+      <div class="row"><label for="in-margin">Frame ring <output id="out-margin"></output></label>
+        <input id="in-margin" type="range" min="0" max="30" step="1"></div>
+      <div class="row"><label for="in-feature">Min feature <output id="out-feature"></output></label>
+        <input id="in-feature" type="range" min="0.6" max="3" step="0.1"></div>
+      <div class="row"><label for="in-bridge">Bridge width <output id="out-bridge"></output></label>
+        <input id="in-bridge" type="range" min="0.8" max="4" step="0.1"></div>
+      <div class="row"><label for="in-cull">Cull islands under <output id="out-cull"></output></label>
+        <input id="in-cull" type="range" min="0" max="60" step="1"></div>
+      <div class="row"><label for="in-maxbridge">Max bridge reach <output id="out-maxbridge"></output></label>
+        <input id="in-maxbridge" type="range" min="5" max="120" step="5"></div>
+      <div class="row check"><input id="in-holes" type="checkbox">
+        <label for="in-holes">Registration holes</label></div>
+      <div class="row"><label for="in-holedia">Hole diameter <output id="out-holedia"></output></label>
+        <input id="in-holedia" type="range" min="2" max="8" step="0.5"></div>
+      <div class="row"><label for="in-corner">Corner style</label>
+        <select id="in-corner">
+          <option value="smooth">Smooth (paper-cut)</option>
+          <option value="faceted">Faceted (crisp)</option>
+        </select></div>
+    </section>
+
+    <section class="step">
+      <h2><span class="stepnum">4</span> Export</h2>
+      <p class="hint">One ZIP with every sheet SVG (real mm units), a color
+      proof, the assembly guide, a preview render, and your settings.</p>
+      <button id="btn-export" class="btn primary wide">Download cut files (.zip)</button>
+    </section>
+
+  </aside>
+
+  <!-- Viewport: the laser bed.                                            -->
+  <main class="viewport">
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="stack" role="tab">Stack preview</button>
+      <button class="tab" data-tab="sheets" role="tab">Layer sheets</button>
+    </nav>
+
+    <div id="pane-stack" class="pane active">
+      <canvas id="stackcanvas"></canvas>
+      <div class="stacktools">
+        <label class="tool">Explode
+          <input id="in-explode" type="range" min="0" max="1" step="0.01" value="0"></label>
+        <label class="tool check"><input id="in-bridgesvis" type="checkbox" checked>
+          Show bridges</label>
+        <span class="tool hint">drag the artwork to tilt</span>
+      </div>
+    </div>
+
+    <div id="pane-sheets" class="pane">
+      <div id="sheetgrid" class="sheetgrid"></div>
+    </div>
+
+    <footer class="statusbar"><span id="statusline">loading…</span></footer>
+  </main>
+</div>
+
+<script src="js/util.js"></script>
+<script src="js/raster.js"></script>
+<script src="js/morph.js"></script>
+<script src="js/islands.js"></script>
+<script src="js/trace.js"></script>
+<script src="js/svgout.js"></script>
+<script src="js/zip.js"></script>
+<script src="js/preview.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

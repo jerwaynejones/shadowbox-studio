@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Shadowbox Studio app mark: layered panels on the machine-bed graphite,
+     front panel cut in laser red. Vector reference for the PNG icon set. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="113" fill="#171d24"/>
+  <g>
+    <!-- back panel -->
+    <rect x="150" y="150" width="212" height="212" rx="15" fill="#3f7cc0"/>
+    <!-- middle panel -->
+    <rect x="127" y="173" width="212" height="212" rx="15" fill="#1d3f7e"/>
+    <!-- front panel with red cut outline -->
+    <rect x="104" y="196" width="212" height="212" rx="15" fill="#e7ebee"
+          stroke="#d93a2b" stroke-width="9"/>
+    <!-- cut-out window -->
+    <rect x="174" y="266" width="72" height="72" rx="12" fill="#1d3f7e"
+          stroke="#d93a2b" stroke-width="9"/>
+  </g>
+</svg>
