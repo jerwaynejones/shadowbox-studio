@@ -57,7 +57,7 @@ function pngEncode({ w, h, colorType, bitDepth, data, extraChunks = [], corruptC
 function jpegHeader({ w, h, exif = 0, truncate = 0, sofLen = 17 }) {
   const seg = (m, body) => { const b = Buffer.alloc(4 + body.length); b[0] = 0xff; b[1] = m; b.writeUInt16BE(body.length + 2, 2); Buffer.from(body).copy(b, 4); return b; };
   const parts = [Buffer.from([0xff, 0xd8])];
-  if (exif) { const t = Buffer.alloc(26); t.write("Exif\0\0", 0, "latin1"); t.write("MM", 6, "latin1"); t.writeUInt16BE(42, 8); t.writeUInt32BE(8, 10);
+  if (exif) { const t = Buffer.alloc(28); /* 28 = complete IFD entry (S4b amendment 3) */ t.write("Exif\0\0", 0, "latin1"); t.write("MM", 6, "latin1"); t.writeUInt16BE(42, 8); t.writeUInt32BE(8, 10);
     t.writeUInt16BE(1, 14); t.writeUInt16BE(0x0112, 16); t.writeUInt16BE(3, 18); t.writeUInt32BE(1, 20); t.writeUInt16BE(exif, 24); parts.push(seg(0xe1, t)); }
   const sof = Buffer.alloc(sofLen - 2); sof[0] = 8; sof.writeUInt16BE(h, 1); sof.writeUInt16BE(w, 3); sof[5] = 3;
   parts.push(seg(0xc0, sof), Buffer.from([0xff, 0xd9]));

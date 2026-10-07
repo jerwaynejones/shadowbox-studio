@@ -1,0 +1,47 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>S4b browser probe</title></head>
+<body><pre id="out">running</pre>
+<script src="jpeg.js"></script>
+<script>
+"use strict";
+const FILES = ["baseline.jpg","progressive.jpg","gray.jpg","arithmetic.jpg","arith_progressive.jpg","restart.jpg","p12.jpg","lossless.jpg","yuv444.jpg","cmyk.jpg",
+  "exif1_II.jpg","exif2_MM.jpg","exif3_II.jpg","exif4_MM.jpg","exif5_II.jpg","exif6_II.jpg","exif6_MM.jpg","exif7_MM.jpg","exif8_II.jpg","xmp_then_exif6.jpg","fixture_app1_exif6_graft.jpg","fixture_app1_pad2_exif6.jpg","fixture_app1_pad6_exif6.jpg","app0_then_exif6.jpg",
+  "big_app2.jpg","fill_bytes.jpg","garbage_before_marker.jpg","trailing_after_eoi.jpg","no_eoi.jpg","trunc_scan50.jpg","trunc_header100.jpg","sof_h0.jpg","bad_soi.jpg","mp16.jpg","mp16plus.jpg","big_24mp.jpg"];
+async function probe(f) {
+  const r = { f };
+  const buf = await (await fetch("corpus/" + f)).arrayBuffer();
+  r.bytes = buf.byteLength;
+  const blob = new Blob([buf], { type: "image/jpeg" });
+  let t = performance.now();
+  try { const head = new Uint8Array(await blob.slice(0, 65536).arrayBuffer()); const i = SBJpeg.inspect(head); r.inspect = `${i.w}x${i.h} sof=${i.sof.toString(16)} P${i.precision} exif=${i.exif}`; }
+  catch (e) { r.inspect = e.code || ("UNCODED " + e.message); }
+  r.inspectMs = +(performance.now() - t).toFixed(3);
+  try { const all = new Uint8Array(buf); const i = SBJpeg.inspect(all); r.unsupported = SBJpeg.unsupported(i); r.exifAmbiguous = i.exifAmbiguous;
+    t = performance.now(); const se = SBJpeg.scanEnd(all, i.headerBytes); r.scanEndMs = +(performance.now() - t).toFixed(2); r.eoi = se.eoi === null ? "MISSING" : "ok"; } catch (e) { r.eoi = "-"; }
+  for (const opt of [undefined, { imageOrientation: "none" }, { imageOrientation: "from-image" }]) {
+    const k = "cib_" + (opt ? opt.imageOrientation : "default");
+    t = performance.now();
+    try {
+      const bmp = await createImageBitmap(blob, opt);
+      r[k] = `${bmp.width}x${bmp.height}`;
+      if (!opt) {
+        r.decodeMs = +(performance.now() - t).toFixed(1);
+        // sample: is the bottom-right region grey fill (truncation) ?
+        const c = new OffscreenCanvas(bmp.width, bmp.height), g = c.getContext("2d"); g.drawImage(bmp, 0, 0);
+        const px = g.getImageData(bmp.width - 2, bmp.height - 2, 1, 1).data; r.brPixel = Array.from(px).join(",");
+        const tl = g.getImageData(1, 1, 1, 1).data; r.tlPixel = Array.from(tl).join(",");
+      }
+      bmp.close();
+    } catch (e) { r[k] = "ERR " + e.name; }
+  }
+  const img = new Image(); img.src = URL.createObjectURL(blob);
+  try { await img.decode(); r.img = `${img.naturalWidth}x${img.naturalHeight}`; } catch (e) { r.img = "ERR " + e.name; }
+  URL.revokeObjectURL(img.src);
+  return r;
+}
+(async () => {
+  const res = { ua: navigator.userAgent, results: [] };
+  for (const f of FILES) { try { res.results.push(await probe(f)); } catch (e) { res.results.push({ f, fatal: String(e) }); } }
+  document.getElementById("out").textContent = "RESULT " + JSON.stringify(res);
+})();
+</script></body></html>

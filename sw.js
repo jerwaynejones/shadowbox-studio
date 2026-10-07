@@ -31,6 +31,7 @@ const SHELL = [
   "./js/vendor/clipper2.js",
   "./js/geom.js",
   "./js/png.js",
+  "./js/jpeg.js",
   "./js/raster.js",
   "./js/morph.js",
   "./js/islands.js",

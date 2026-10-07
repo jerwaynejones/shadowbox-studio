@@ -1,0 +1,217 @@
+[
+ [
+  "baseline.jpg",
+  12499,
+  "640x480 SOF0 P8 Nc3 exif=null hdr=177 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "progressive.jpg",
+  9184,
+  "640x480 SOF2 P8 Nc3 exif=null hdr=177 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "gray.jpg",
+  7250,
+  "640x480 SOF0 P8 Nc1 exif=null hdr=102 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "arithmetic.jpg",
+  5486,
+  "640x480 SOF9 P8 Nc3 exif=null hdr=177 eoi=ok trailing=0 unsupported=arithmetic coding"
+ ],
+ [
+  "arith_progressive.jpg",
+  5902,
+  "640x480 SOF10 P8 Nc3 exif=null hdr=177 eoi=ok trailing=0 unsupported=arithmetic coding"
+ ],
+ [
+  "restart.jpg",
+  12652,
+  "640x480 SOF0 P8 Nc3 exif=null hdr=177 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "p12.jpg",
+  25733,
+  "640x480 SOF1 P12 Nc3 exif=null hdr=177 eoi=ok trailing=0 unsupported=12-bit precision"
+ ],
+ [
+  "lossless.jpg",
+  127286,
+  "640x480 SOF3 P8 Nc3 exif=null hdr=37 eoi=ok trailing=0 unsupported=lossless"
+ ],
+ [
+  "yuv444.jpg",
+  21792,
+  "640x480 SOF0 P8 Nc3 exif=null hdr=177 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "cmyk.jpg",
+  26810,
+  "640x480 SOF0 P8 Nc4 exif=null hdr=178 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "big_24mp.jpg",
+  55029955,
+  "6000x4000 SOF0 P8 Nc3 exif=null hdr=177 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "mp16.jpg",
+  4236188,
+  "4000x4000 SOF0 P8 Nc3 exif=null hdr=177 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "mp16plus.jpg",
+  62785,
+  "4000x4001 SOF0 P8 Nc1 exif=null hdr=102 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "xmp_then_exif6.jpg",
+  12612,
+  "640x480 SOF0 P8 Nc3 exif=6? hdr=290 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "big_app2.jpg",
+  72517,
+  "640x480 SOF0 P8 Nc3 exif=null hdr=60195 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "fixture_app1_exif6_graft.jpg",
+  12529,
+  "640x480 SOF0 P8 Nc3 exif=6? hdr=207 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "fixture_app1_pad2_exif6.jpg",
+  12531,
+  "640x480 SOF0 P8 Nc3 exif=6 hdr=209 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "fixture_app1_pad6_exif6.jpg",
+  12535,
+  "640x480 SOF0 P8 Nc3 exif=6 hdr=213 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "app0_then_exif6.jpg",
+  12567,
+  "640x480 SOF0 P8 Nc3 exif=6 hdr=245 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "fill_bytes.jpg",
+  12502,
+  "640x480 SOF0 P8 Nc3 exif=null hdr=180 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "trailing_after_eoi.jpg",
+  1061075,
+  "640x480 SOF0 P8 Nc3 exif=null hdr=177 eoi=ok trailing=1048576 unsupported=null"
+ ],
+ [
+  "no_eoi.jpg",
+  12497,
+  "640x480 SOF0 P8 Nc3 exif=null hdr=177 eoi=MISSING trailing=0 unsupported=null"
+ ],
+ [
+  "trunc_scan50.jpg",
+  6249,
+  "640x480 SOF0 P8 Nc3 exif=null hdr=177 eoi=MISSING trailing=0 unsupported=null"
+ ],
+ [
+  "sof_h0.jpg",
+  12499,
+  "640x0 SOF0 P8 Nc3 exif=null hdr=177 eoi=ok trailing=0 unsupported=zero dimension (DNL)"
+ ],
+ [
+  "garbage_before_marker.jpg",
+  12502,
+  "JPEG_BAD_SEGMENT"
+ ],
+ [
+  "trunc_header100.jpg",
+  100,
+  "JPEG_TRUNCATED"
+ ],
+ [
+  "bad_soi.jpg",
+  12499,
+  "JPEG_SIGNATURE"
+ ],
+ [
+  "exif1_II.jpg",
+  12567,
+  "640x480 SOF0 P8 Nc3 exif=1 hdr=245 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "exif1_MM.jpg",
+  12567,
+  "640x480 SOF0 P8 Nc3 exif=1 hdr=245 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "exif2_II.jpg",
+  12567,
+  "640x480 SOF0 P8 Nc3 exif=2 hdr=245 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "exif2_MM.jpg",
+  12567,
+  "640x480 SOF0 P8 Nc3 exif=2 hdr=245 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "exif3_II.jpg",
+  12567,
+  "640x480 SOF0 P8 Nc3 exif=3 hdr=245 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "exif3_MM.jpg",
+  12567,
+  "640x480 SOF0 P8 Nc3 exif=3 hdr=245 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "exif4_II.jpg",
+  12567,
+  "640x480 SOF0 P8 Nc3 exif=4 hdr=245 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "exif4_MM.jpg",
+  12567,
+  "640x480 SOF0 P8 Nc3 exif=4 hdr=245 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "exif5_II.jpg",
+  12567,
+  "640x480 SOF0 P8 Nc3 exif=5 hdr=245 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "exif5_MM.jpg",
+  12567,
+  "640x480 SOF0 P8 Nc3 exif=5 hdr=245 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "exif6_II.jpg",
+  12567,
+  "640x480 SOF0 P8 Nc3 exif=6 hdr=245 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "exif6_MM.jpg",
+  12567,
+  "640x480 SOF0 P8 Nc3 exif=6 hdr=245 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "exif7_II.jpg",
+  12567,
+  "640x480 SOF0 P8 Nc3 exif=7 hdr=245 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "exif7_MM.jpg",
+  12567,
+  "640x480 SOF0 P8 Nc3 exif=7 hdr=245 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "exif8_II.jpg",
+  12567,
+  "640x480 SOF0 P8 Nc3 exif=8 hdr=245 eoi=ok trailing=0 unsupported=null"
+ ],
+ [
+  "exif8_MM.jpg",
+  12567,
+  "640x480 SOF0 P8 Nc3 exif=8 hdr=245 eoi=ok trailing=0 unsupported=null"
+ ]
+]

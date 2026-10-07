@@ -744,6 +744,112 @@ suite("spike S4 — amendments (error codes, maxPixels, sub-8-bit gray, CRC in u
   })());
 });
 
+// ------------------------------------------------------------ jpeg.js (S4b)
+// Synthetic JPEG builder for structure-only checks (SBJpeg never decodes, so no real entropy data is needed).
+const S4B = (() => {
+  const seg = (m, body) => { const b = Buffer.alloc(4 + body.length); b[0] = 0xff; b[1] = m; b.writeUInt16BE(body.length + 2, 2); Buffer.from(body).copy(b, 4); return b; };
+  // APP1 Exif whose TIFF buffer is `len` bytes (28 = complete 12-byte IFD entry; 26 = entry 2 bytes short).
+  const app1 = (o, len = 28, le = false) => { const t = Buffer.alloc(len); t.write("Exif\0\0", 0, "latin1"); t.write(le ? "II" : "MM", 6, "latin1");
+    const w16 = (v, p) => (le ? t.writeUInt16LE(v, p) : t.writeUInt16BE(v, p)), w32 = (v, p) => (le ? t.writeUInt32LE(v, p) : t.writeUInt32BE(v, p));
+    w16(42, 8); w32(8, 10); w16(1, 14); w16(0x0112, 16); w16(3, 18); w32(1, 20); w16(o, 24); return seg(0xe1, t); };
+  const sof = ({ m = 0xc0, precision = 8, w = 8, h = 8, nc = 3 } = {}) => { const s = Buffer.alloc(6 + 3 * nc); s[0] = precision; s.writeUInt16BE(h, 1); s.writeUInt16BE(w, 3); s[5] = nc;
+    for (let i = 0; i < nc; i++) { s[6 + 3 * i] = i + 1; s[7 + 3 * i] = 0x11; } return seg(m, s); };
+  // entropy data with stuffed FF00 and an RST marker in it, i.e. the bytes scanEnd must skip over
+  const entropy = Buffer.from([0x12, 0xff, 0x00, 0x34, 0xff, 0xd0, 0x56, 0x78, 0xff, 0x00, 0x9a]);
+  const sos = seg(0xda, [1, 1, 0, 0, 63, 0]);
+  const file = ({ pre = [], sofOpts = {}, scans = 1, eoi = true, trailing = 0 } = {}) => new Uint8Array(Buffer.concat([
+    Buffer.from([0xff, 0xd8]), ...pre, sof(sofOpts), seg(0xc4, [0, ...Array(16).fill(0)]),
+    ...Array.from({ length: scans }, () => Buffer.concat([sos, entropy])), eoi ? Buffer.from([0xff, 0xd9]) : Buffer.alloc(0), Buffer.alloc(trailing, 0xab)]));
+  const codeOf = (fn) => { try { fn(); return null; } catch (e) { return e.code || "UNCODED:" + e.message; } };
+  return { seg, app1, sof, file, codeOf };
+})();
+
+suite("spike S4b — jpeg.js plan checks (IMG-05/07, AT-22)", () => {
+  const F = require("./fixtures.js"), J = SBJpeg, { codeOf } = S4B;
+  const i = J.inspect(F.jpegHeader({ w: 6000, h: 4000 }));
+  check("IMG-07 JPEG SOF dimensions read before decode", i.w === 6000 && i.h === 4000 && i.components === 3 && i.progressive === false);
+  check("IMG-05 JPEG EXIF orientation 6 parsed", J.inspect(F.jpegHeader({ w: 640, h: 480, exif: 6 })).exif === 6);
+  const bad = F.jpegHeader({ w: 64, h: 64 }); bad[1] = 0x00;
+  check("AT-22 corrupt JPEG (bad SOI) rejected", codeOf(() => J.inspect(bad)) === "JPEG_SIGNATURE");
+  check("AT-22 truncated JPEG rejected", codeOf(() => J.inspect(F.jpegHeader({ w: 64, h: 64, truncate: 5 }))) === "JPEG_TRUNCATED");
+  check("AT-22 oversized SOF segment length rejected", codeOf(() => J.inspect(F.jpegHeader({ w: 64, h: 64, sofLen: 4000 }))) === "JPEG_BAD_SEGMENT");
+  check("S4b SBJpeg.CODES lists the 4 plan codes, frozen", Array.isArray(J.CODES) && Object.isFrozen(J.CODES) && J.CODES.length === 4 &&
+    ["JPEG_SIGNATURE", "JPEG_TRUNCATED", "JPEG_BAD_SEGMENT", "JPEG_NO_SOF"].every((c) => J.CODES.includes(c)));
+  check("S4b module order: jpeg.js directly after png.js (§4)", (() => { const L = require("./modules.js").NODE_MODULES; return L.indexOf("jpeg.js") === L.indexOf("png.js") + 1; })());
+});
+
+suite("spike S4b — jpeg.js header edge cases and Exif", () => {
+  const F = require("./fixtures.js"), J = SBJpeg, { seg, app1, sof, file, codeOf } = S4B;
+  const hdr = (pre, o = {}) => new Uint8Array(Buffer.concat([Buffer.from([0xff, 0xd8]), ...pre, sof(o), Buffer.from([0xff, 0xd9])]));
+  let allO = true;
+  for (let o = 1; o <= 8; o++) for (const le of [false, true]) { const r = J.inspect(hdr([app1(o, 28, le)])); if (r.exif !== o || r.exifAmbiguous) allO = false; }
+  check("IMG-05 Exif orientations 1–8, II and MM, parsed and unambiguous", allO);
+  check("IMG-05 T0.3 fixture Exif (amended to a complete IFD entry) is unambiguous", J.inspect(F.jpegHeader({ w: 8, h: 8, exif: 6 })).exifAmbiguous === false);
+  check("IMG-05 IFD entry 2 bytes short → exif 6 but exifAmbiguous (Chromium ignores, Firefox applies)",
+    (() => { const r = J.inspect(hdr([app1(6, 26)])); return r.exif === 6 && r.exifAmbiguous === true; })());
+  const xmp = seg(0xe1, Buffer.from("http://ns.adobe.com/xap/1.0/\0<x/>", "latin1"));
+  check("IMG-05 XMP APP1 then Exif APP1 → exif 6, exifAmbiguous (browsers disagree)", (() => { const r = J.inspect(hdr([xmp, app1(6)])); return r.exif === 6 && r.exifAmbiguous; })());
+  check("IMG-05 Exif after a JFIF APP0 → exif 6, unambiguous", (() => { const r = J.inspect(hdr([seg(0xe0, Buffer.from("JFIF\0\x01\x01\0\0\x01\0\x01\0\0", "latin1")), app1(6)])); return r.exif === 6 && !r.exifAmbiguous; })());
+  check("IMG-05 orientation 9 (invalid) → exif null", J.inspect(hdr([app1(9)])).exif === null);
+  check("IMG-05 no APP1 → exif null", J.inspect(F.jpegHeader({ w: 8, h: 8 })).exif === null);
+  const full = new Uint8Array(Buffer.concat([Buffer.from([0xff, 0xd8]), app1(6), sof()])), hb = J.inspect(full).headerBytes;
+  let worst = "";
+  for (let k = 0; k < hb; k++) { const c = codeOf(() => J.inspect(full.subarray(0, k))), want = k < 2 ? "JPEG_SIGNATURE" : "JPEG_TRUNCATED"; if (c !== want) worst = `k=${k} got ${c}`; }
+  check(`AT-22 every prefix shorter than headerBytes (${hb}) → SIGNATURE (<2) / TRUNCATED` + (worst ? " — " + worst : ""), hb === full.length && worst === "");
+  check("AT-22 SOF lengths 8, 16, 18 (≠ 8 + 3·Nc) → BAD_SEGMENT", [8, 16, 18].every((s) => codeOf(() => J.inspect(F.jpegHeader({ w: 8, h: 8, sofLen: s }))) === "JPEG_BAD_SEGMENT"));
+  check("AT-22 Nc = 0 → BAD_SEGMENT", codeOf(() => J.inspect(new Uint8Array([0xff, 0xd8, 0xff, 0xc0, 0, 8, 8, 0, 8, 0, 8, 0]))) === "JPEG_BAD_SEGMENT");
+  check("AT-22 empty input and PNG bytes → SIGNATURE", codeOf(() => J.inspect(new Uint8Array(0))) === "JPEG_SIGNATURE" &&
+    codeOf(() => J.inspect(F.pngEncode({ w: 2, h: 2, colorType: 0, bitDepth: 8, data: new Uint8Array(4) }))) === "JPEG_SIGNATURE");
+  check("AT-22 SOI then EOI / SOI then SOS → NO_SOF", codeOf(() => J.inspect(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]))) === "JPEG_NO_SOF" &&
+    codeOf(() => J.inspect(new Uint8Array([0xff, 0xd8, 0xff, 0xda, 0, 2]))) === "JPEG_NO_SOF");
+  check("AT-22 segment length 0 → BAD_SEGMENT", codeOf(() => J.inspect(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0]))) === "JPEG_BAD_SEGMENT");
+  check("AT-22 garbage byte between segments → BAD_SEGMENT", codeOf(() => J.inspect(new Uint8Array([0xff, 0xd8, 0x00, ...sof()]))) === "JPEG_BAD_SEGMENT");
+  check("AT-22 second SOI / FF00 before SOF → BAD_SEGMENT", codeOf(() => J.inspect(new Uint8Array([0xff, 0xd8, 0xff, 0xd8, ...sof()]))) === "JPEG_BAD_SEGMENT" &&
+    codeOf(() => J.inspect(new Uint8Array([0xff, 0xd8, 0xff, 0x00, ...sof()]))) === "JPEG_BAD_SEGMENT");
+  check("APP segment running past the data → TRUNCATED", codeOf(() => J.inspect(new Uint8Array([0xff, 0xd8, 0xff, 0xe2, 0x10, 0x00, 1, 2, 3]))) === "JPEG_TRUNCATED");
+  check("fill bytes and RSTn/TEM before SOF are skipped", J.inspect(new Uint8Array([0xff, 0xd8, 0xff, 0xd0, 0xff, 0x01, 0xff, 0xff, ...sof({ w: 3, h: 2 })])).w === 3);
+  check("ArrayBuffer input accepted", J.inspect(F.jpegHeader({ w: 5, h: 7 }).slice().buffer).h === 7);
+  check("progressive SOF2 → progressive, sof 0xC2", (() => { const r = J.inspect(hdr([], { m: 0xc2 })); return r.progressive && r.sof === 0xc2 && !r.arithmetic; })());
+  check("NFR-07 never touches scan data: headerBytes stops at the end of SOF", (() => { const b = file({ pre: [app1(6)] }); return J.inspect(b).headerBytes === 2 + app1(6).length + sof().length; })());
+  check("inspect output is JSON-clean (plain numbers/booleans)", (() => { const r = J.inspect(file()); return JSON.stringify(JSON.parse(JSON.stringify(r))) === JSON.stringify(r); })());
+  check("NFR-05 jpeg.js uses no Math.random / Date / trig", !/Math\.(random|sin|cos|tan|exp|log)\b|\bDate\b/.test(fs.readFileSync(path.join(__dirname, "../js/jpeg.js"), "utf8")));
+});
+
+suite("spike S4b — unsupported(), scanEnd() and mini-fuzz (G2.14 preflight, AT-22)", () => {
+  const J = SBJpeg, { file, codeOf } = S4B;
+  const un = (o) => J.unsupported(J.inspect(file({ sofOpts: o })));
+  check("G2.14 baseline 8-bit Nc 1/3/4 supported", [1, 3, 4].every((nc) => un({ nc }) === null) && un({ m: 0xc2 }) === null && un({ m: 0xc1 }) === null);
+  check("G2.14 12-bit precision unsupported", un({ m: 0xc1, precision: 12 }) === "12-bit precision");
+  check("G2.14 arithmetic coding (SOF9/SOF10) unsupported", un({ m: 0xc9 }) === "arithmetic coding" && un({ m: 0xca }) === "arithmetic coding");
+  check("G2.14 lossless (SOF3) unsupported", un({ m: 0xc3 }) === "lossless");
+  check("G2.14 hierarchical (SOF5) unsupported", un({ m: 0xc5 }) === "hierarchical");
+  check("G2.14 zero height (DNL) unsupported", un({ h: 0 }) === "zero dimension (DNL)");
+  check("G2.14 Nc = 2 unsupported", un({ nc: 2 }) === "2 components");
+  const ok = file({ scans: 3 });
+  check("AT-22 scanEnd finds EOI through FF00 stuffing and RSTn, counts scans", (() => { const s = J.scanEnd(ok, J.inspect(ok).headerBytes); return s.eoi === ok.length - 2 && s.trailing === 0 && s.scans === 3; })());
+  check("AT-22 scanEnd from default offset (2) agrees", J.scanEnd(ok).eoi === ok.length - 2);
+  const tr = file({ trailing: 4096 });
+  check("AT-22 trailing payload after EOI (Motion Photo) accepted, trailing counted", J.scanEnd(tr, J.inspect(tr).headerBytes).trailing === 4096);
+  check("AT-22 missing EOI → eoi null", J.scanEnd(file({ eoi: false }), 2).eoi === null);
+  let missed = 0; const hb = J.inspect(ok).headerBytes;
+  for (let k = hb; k < ok.length; k++) if (J.scanEnd(ok.subarray(0, k), hb).eoi !== null) missed++;
+  check(`AT-22 every cut in [headerBytes, len) → scanEnd eoi null, while inspect still succeeds (${ok.length - hb} cuts)`,
+    missed === 0 && J.inspect(ok.subarray(0, hb)).w === 8);
+  check("scanEnd on garbage / ArrayBuffer never throws", (() => { try { J.scanEnd(new Uint8Array([1, 2, 3]), 0); J.scanEnd(new Uint8Array(0)); return J.scanEnd(ok.slice().buffer).eoi === ok.length - 2; } catch { return false; } })());
+  // mini-fuzz: every rejection carries a code in SBJpeg.CODES; scanEnd never throws.
+  const rng = require("./fixtures.js").lcg(0x54b);
+  const seeds = [file({ pre: [S4B.app1(6)] }), file({ sofOpts: { m: 0xc2, nc: 1 }, scans: 2 }), file({ sofOpts: { nc: 4 }, trailing: 16 })];
+  let uncoded = 0, first = "", threwScan = 0;
+  for (const seed of seeds) for (let i = 0; i < 400; i++) {
+    const b = seed.slice(0, 1 + Math.floor(rng() * seed.length)), k = 1 + Math.floor(rng() * 4);
+    for (let j = 0; j < k; j++) b[Math.floor(rng() * b.length)] = rng() < 0.5 ? Math.floor(rng() * 256) : [0xff, 0x00, 0xd8, 0xd9, 0xda, 0xc0, 0xe1][Math.floor(rng() * 7)];
+    const c = codeOf(() => J.inspect(b)); if (c !== null && !J.CODES.includes(c)) { uncoded++; first ||= c; }
+    try { J.scanEnd(b, 2); } catch { threwScan++; }
+  }
+  check("AT-22 mini-fuzz 1200 mutations: every inspect rejection has a code in SBJpeg.CODES" + (first ? " — " + first : ""), uncoded === 0);
+  check("AT-22 mini-fuzz 1200 mutations: scanEnd never throws", threwScan === 0);
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

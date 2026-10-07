@@ -1,0 +1,87 @@
+
+spike S4b — plan tests (IMG-05/07, AT-22)
+  ✓ IMG-07 JPEG SOF dimensions read before decode
+  ✓ IMG-05 JPEG EXIF orientation 6 parsed
+  ✓ IMG-05 T0.3 fixture Exif flagged exifAmbiguous (short IFD entry)
+  ✓ IMG-05 proposed fixture (Buffer.alloc(28)) -> exif 6, not ambiguous
+  ✓ AT-22 corrupt JPEG (bad SOI) rejected
+  ✓ AT-22 truncated JPEG rejected
+  ✓ AT-22 oversized SOF segment length rejected
+
+spike S4b — fixture edge cases
+  ✓ fixture without APP1 -> exif null
+  ✓ fixture truncate:2 removes only EOI -> header still inspectable (documented limit)
+  ✓ every prefix shorter than headerBytes (53) -> SIGNATURE (<2) / TRUNCATED
+  ✓ sofLen 8 (!= 17) -> BAD_SEGMENT
+  ✓ sofLen 16 (!= 17) -> BAD_SEGMENT
+  ✓ sofLen 18 (!= 17) -> BAD_SEGMENT
+  ✓ sofLen 4000 (!= 17) -> BAD_SEGMENT
+  ✓ empty input -> SIGNATURE
+  ✓ PNG bytes -> SIGNATURE
+  ✓ SOI then EOI -> NO_SOF
+  ✓ SOI then SOS -> NO_SOF
+  ✓ segment length 0 -> BAD_SEGMENT
+  ✓ RSTn/TEM standalone markers skipped
+  ✓ ArrayBuffer input accepted
+
+spike S4b — real-encoder corpus (libjpeg-turbo cjpeg 3.2.0 / ImageMagick 7.1.2)
+  ✓ baseline.jpg 640x480 c=3 sof=c0 p=8 prog=false exif=null hdr=177B eoi=12497 unsup=null
+  ✓ progressive.jpg 640x480 c=3 sof=c2 p=8 prog=true exif=null hdr=177B eoi=9182 unsup=null
+  ✓ gray.jpg 640x480 c=1 sof=c0 p=8 prog=false exif=null hdr=102B eoi=7248 unsup=null
+  ✓ arithmetic.jpg 640x480 c=3 sof=c9 p=8 prog=false exif=null hdr=177B eoi=5484 unsup=arithmetic coding
+  ✓ arith_progressive.jpg 640x480 c=3 sof=ca p=8 prog=true exif=null hdr=177B eoi=5900 unsup=arithmetic coding
+  ✓ restart.jpg 640x480 c=3 sof=c0 p=8 prog=false exif=null hdr=177B eoi=12650 unsup=null
+  ✓ p12.jpg 640x480 c=3 sof=c1 p=12 prog=false exif=null hdr=177B eoi=25731 unsup=12-bit precision
+  ✓ lossless.jpg 640x480 c=3 sof=c3 p=8 prog=false exif=null hdr=37B eoi=127284 unsup=lossless
+  ✓ yuv444.jpg 640x480 c=3 sof=c0 p=8 prog=false exif=null hdr=177B eoi=21790 unsup=null
+  ✓ cmyk.jpg 640x480 c=4 sof=c0 p=8 prog=false exif=null hdr=178B eoi=26808 unsup=null
+  ✓ big_24mp.jpg 6000x4000 c=3 sof=c0 p=8 prog=false exif=null hdr=177B eoi=55029953 unsup=null
+  ✓ mp16.jpg 4000x4000 c=3 sof=c0 p=8 prog=false exif=null hdr=177B eoi=4236186 unsup=null
+  ✓ mp16plus.jpg 4000x4001 c=1 sof=c0 p=8 prog=false exif=null hdr=102B eoi=62783 unsup=null
+  ✓ xmp_then_exif6.jpg 640x480 c=3 sof=c0 p=8 prog=false exif=6(ambiguous) hdr=290B eoi=12610 unsup=null
+  ✓ big_app2.jpg 640x480 c=3 sof=c0 p=8 prog=false exif=null hdr=60195B eoi=72515 unsup=null
+  ✓ fixture_app1_exif6_graft.jpg 640x480 c=3 sof=c0 p=8 prog=false exif=6(ambiguous) hdr=207B eoi=12527 unsup=null
+  ✓ fixture_app1_pad2_exif6.jpg 640x480 c=3 sof=c0 p=8 prog=false exif=6 hdr=209B eoi=12529 unsup=null
+  ✓ fixture_app1_pad6_exif6.jpg 640x480 c=3 sof=c0 p=8 prog=false exif=6 hdr=213B eoi=12533 unsup=null
+  ✓ app0_then_exif6.jpg 640x480 c=3 sof=c0 p=8 prog=false exif=6 hdr=245B eoi=12565 unsup=null
+  ✓ fill_bytes.jpg 640x480 c=3 sof=c0 p=8 prog=false exif=null hdr=180B eoi=12500 unsup=null
+  ✓ trailing_after_eoi.jpg 640x480 c=3 sof=c0 p=8 prog=false exif=null hdr=177B eoi=12497 unsup=null
+  ✓ no_eoi.jpg 640x480 c=3 sof=c0 p=8 prog=false exif=null hdr=177B eoi=null unsup=null
+  ✓ trunc_scan50.jpg 640x480 c=3 sof=c0 p=8 prog=false exif=null hdr=177B eoi=null unsup=null
+  ✓ sof_h0.jpg 640x0 c=3 sof=c0 p=8 prog=false exif=null hdr=177B eoi=12497 unsup=zero dimension (DNL)
+  ✓ garbage_before_marker.jpg -> JPEG_BAD_SEGMENT
+  ✓ trunc_header100.jpg -> JPEG_TRUNCATED
+  ✓ bad_soi.jpg -> JPEG_SIGNATURE
+
+spike S4b — mutation fuzz (50000 cases x 4 seeds; contract: return or throw a coded error, never hang/uncoded)
+   outcome tally: {"ok":170289,"JPEG_BAD_SEGMENT":14317,"JPEG_TRUNCATED":10848,"JPEG_SIGNATURE":3227,"JPEG_NO_SOF":1319} max single-call us: 10526.7
+  ✓ fuzz: no uncoded exceptions
+
+spike S4b — scan-data truncation sweep (scanEnd)
+  ✓ baseline.jpg: all 1761 cuts in [headerBytes, len) -> eoi null
+  ✓ baseline.jpg: complete file -> eoi at len-2
+  ✓ progressive.jpg: all 1287 cuts in [headerBytes, len) -> eoi null
+  ✓ progressive.jpg: complete file -> eoi at len-2
+  ✓ restart.jpg: all 1783 cuts in [headerBytes, len) -> eoi null
+  ✓ restart.jpg: complete file -> eoi at len-2
+  ✓ cmyk.jpg: all 3805 cuts in [headerBytes, len) -> eoi null
+  ✓ cmyk.jpg: complete file -> eoi at len-2
+  ✓ scanEnd fuzz 20000 mutations of progressive.jpg: never throws
+
+spike S4b — benchmark (Node v26.7.0)
+   fixture jpegHeader 6000x4000                         23 B      0.07 us/inspect
+   baseline.jpg 640x480                              12499 B      0.12 us/inspect
+   exif6_II.jpg                                      12567 B      0.33 us/inspect
+   big_app2.jpg (60 KB APP2 skipped)                 72517 B      0.14 us/inspect
+   big_24mp.jpg 6000x4000 (55 MB)                 55029955 B      0.12 us/inspect
+   big_24mp.jpg first 64 KiB slice only              65536 B      0.12 us/inspect
+   pathological 1000 x 64 KiB APPn before SOF     65537023 B     26.71 us/inspect
+   scanEnd baseline.jpg                              12499 B      0.01 ms  (1346 MiB/s)
+   scanEnd progressive.jpg (10 scans)                 9184 B      0.02 ms  (544 MiB/s)
+   scanEnd mp16.jpg 16 MP                          4236188 B      4.26 ms  (949 MiB/s)
+   scanEnd big_24mp.jpg (55 MB noise, q97)        55029955 B     65.29 ms  (804 MiB/s)
+   scanEnd first 25 MiB of big_24mp (cap-size)    26214400 B     31.08 ms  (804 MiB/s)
+   full readFileSync(55 MB)+inspect                         102.00 ms
+   64 KiB partial read+inspect                              0.133 ms
+
+82 passed, 0 failed
