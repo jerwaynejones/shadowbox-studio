@@ -3,7 +3,7 @@
 This document is the binding architecture contract for the Stacked Relief work
 (`docs/SRS_Stacked_Relief.md`). It is copied from `docs/plans/opaque-layers-dev-plan.md`
 (§3, §4, Global Constraints and the determinism rules) and records the spike decisions
-D1–D4 as they land. When this file and the plan disagree, update both in the same commit.
+D1–D4 as they land.
 
 ## Global Constraints
 
@@ -189,6 +189,7 @@ util → hash → vendor/<geomlib> → geom → diag → schema → png → jpeg
 | Proof extent | art only, no margin | shared page frame | intentional fix [UP] | G1.6 |
 | Registration holes (connected) | four fixed corners at `margin/2` | same four corners via `SBGeom.circle` + `subtractHoles` until G3.4; then validated positions | same positions until G3.4 | G1.7 |
 | Sheet label (connected) | live `<text>` | kept via `layerSVG({legacyTextLabel})` until G3.2; then vector strokes | present in every release | G1.7, G3.2 |
+| Start-up | auto-loads the demo | opens empty; Demo is a button | intentional fix (PRJ-01) | G2.11a |
 
 ---
 

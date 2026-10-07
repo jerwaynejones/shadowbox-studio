@@ -232,14 +232,31 @@ section("docs — architecture contract and component inventory (T0.1)");
   check("NFR-11 COMPONENTS.md inventory table has required columns",
     /\|\s*Name\s*\|\s*Version\s*\|\s*License\s*\|\s*File\s*\|\s*SHA-256\s*\|\s*Obtained from\s*\|\s*Build form \(UMD\/IIFE\/shim\)\s*\|\s*Scope \(runtime\/dev-only\)\s*\|/.test(comp));
   const arch = read("docs/ARCHITECTURE.md");
-  check("§9.1 ARCHITECTURE.md carries the schema v1 data model",
-    arch.includes("Data model and contracts (schema v1)") && arch.includes("geometryKey(p)") && arch.includes("Winding convention"));
-  check("§4 ARCHITECTURE.md carries the module map and backward-compatibility matrix",
-    arch.includes("Module map and load order") && arch.includes("Backward-compatibility matrix"));
-  check("NFR-05 ARCHITECTURE.md carries the global constraints and determinism rules",
-    arch.includes("Global Constraints") && arch.includes("Determinism rules (NFR-05)"));
+  const plan = read("docs/plans/opaque-layers-dev-plan.md");
+  // Extract a plan block from its start heading up to (not including) the end marker.
+  const block = (src, startRe, endRe) => {
+    const m = startRe.exec(src);
+    if (!m) return "";
+    const rest = src.slice(m.index);
+    const e = endRe.exec(rest.slice(m[0].length));
+    return (e ? rest.slice(0, m[0].length + e.index) : rest).trim();
+  };
+  const planGlobal = block(plan, /^## Global Constraints\s*$/m, /^## /m);
+  const plan3 = block(plan, /^## 3\. Data model and contracts \(schema v1\)\s*$/m, /^## 4\. /m);
+  const plan4 = block(plan, /^## 4\. Module map and load order\s*$/m, /^---\s*$|^## /m);
+  const tableRows = (b) => b.split("\n").filter((l) => /^\|/.test(l) && !/^\|[\s|:-]+\|$/.test(l));
+  check("§9.1 ARCHITECTURE.md carries plan §3 (schema v1 data model) verbatim",
+    plan3.length > 0 && plan3.includes("geometryKey(p)") && arch.includes(plan3));
+  check("DEP-04 ARCHITECTURE.md carries plan §4 (module map, backward-compatibility matrix) verbatim",
+    plan4.length > 0 && plan4.includes("Backward-compatibility matrix") && arch.includes(plan4));
+  const missingRows = tableRows(plan3 + "\n" + plan4).filter((r) => !arch.includes(r));
+  check("DEP-04 every plan §3–§4 table row (incl. compatibility matrix) is in ARCHITECTURE.md"
+    + (missingRows.length ? " — missing: " + missingRows.map((r) => r.slice(0, 40)).join("; ") : ""),
+    tableRows(plan4).length > 0 && missingRows.length === 0);
+  check("NFR-05 ARCHITECTURE.md carries the plan's Global Constraints and determinism rules verbatim",
+    planGlobal.includes("Determinism rules (NFR-05)") && arch.includes(planGlobal));
   const decisions = arch.split(/^## Decisions\s*$/m)[1] || "";
-  check("ARCHITECTURE.md has a Decisions section with D1–D4",
+  check("GEO-04/NFR-11/GEO-02/NFR-05 ARCHITECTURE.md Decisions section has D1–D4",
     ["D1", "D2", "D3", "D4"].every((d) => new RegExp("^#+\\s*" + d + "\\b", "m").test(decisions)));
 }
 
