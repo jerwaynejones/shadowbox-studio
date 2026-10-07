@@ -222,6 +222,27 @@ section("svgout.js — document sanity");
   check("score label present", svg.includes("test 1/3"));
 }
 
+// ------------------------------------------------- docs contract (T0.1)
+section("docs — architecture contract and component inventory (T0.1)");
+{
+  const read = (p) => {
+    try { return fs.readFileSync(path.join(__dirname, "..", p), "utf8"); } catch (e) { return ""; }
+  };
+  const comp = read("docs/COMPONENTS.md");
+  check("NFR-11 COMPONENTS.md inventory table has required columns",
+    /\|\s*Name\s*\|\s*Version\s*\|\s*License\s*\|\s*File\s*\|\s*SHA-256\s*\|\s*Obtained from\s*\|\s*Build form \(UMD\/IIFE\/shim\)\s*\|\s*Scope \(runtime\/dev-only\)\s*\|/.test(comp));
+  const arch = read("docs/ARCHITECTURE.md");
+  check("§9.1 ARCHITECTURE.md carries the schema v1 data model",
+    arch.includes("Data model and contracts (schema v1)") && arch.includes("geometryKey(p)") && arch.includes("Winding convention"));
+  check("§4 ARCHITECTURE.md carries the module map and backward-compatibility matrix",
+    arch.includes("Module map and load order") && arch.includes("Backward-compatibility matrix"));
+  check("NFR-05 ARCHITECTURE.md carries the global constraints and determinism rules",
+    arch.includes("Global Constraints") && arch.includes("Determinism rules (NFR-05)"));
+  const decisions = arch.split(/^## Decisions\s*$/m)[1] || "";
+  check("ARCHITECTURE.md has a Decisions section with D1–D4",
+    ["D1", "D2", "D3", "D4"].every((d) => new RegExp("^#+\\s*" + d + "\\b", "m").test(decisions)));
+}
+
 // ------------------------------------------------------------------ report
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
