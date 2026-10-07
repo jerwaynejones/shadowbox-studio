@@ -723,12 +723,15 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *     opposite, so fromPixelLoops reverses traced rings.
  *   · Each ring starts at its lexicographically smallest (x, y) vertex.
  *   · Collinear (and duplicate / spike) vertices are removed.
- *   · Boundary edges meeting at a shared vertex are re-chained canonically
+ *   · A vertex lying inside another edge (T-contact) is inserted into that edge;
+ *     then boundary edges meeting at a shared vertex are re-chained canonically
  *     (sharpest left turn), then rings touching themselves at a vertex (pixel
  *     saddles) are split into separate simple rings (D3); holes are assigned
  *     to the smallest outer that contains them.
  *   · Polygons sorted by (minY, minX) of the outer, then by the outer's
  *     coordinate list; holes the same way.
+ *   · canonicalBytes / layerHash / materialHash (decision D4, spike S6) are
+ *     built on normalize; integer coordinates within ±2^25 µm only.
  * Only + - * / Math.round/floor/abs/sqrt are used here (NFR-05). No trig.
  * Booleans and offsets delegate to global.Clipper2 (js/vendor/clipper2.js),
  * looked up at call time. Merged from spikes/S1/geom_core.js + geom_clipper.js.
@@ -876,6 +879,129 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     return false;
   }
 
+  /**
+   * T-contacts (D3, D4; spike S6): insert every vertex that lies strictly inside an edge of any ring
+   * (its own included) into that edge, so a vertex-on-edge contact becomes a shared vertex that
+   * rechain() can separate. Exact integer tests only; returns the input array itself when nothing was
+   * inserted. Axis-parallel edges (all of them on pixel-lattice geometry) are matched by binary search
+   * among the vertices of the same row (column); any other edge goes through a uniform grid whose only division
+   * sizes the cells and never reaches the output.
+   */
+  const KLIM = 33554432; // 2^25: the axis path stores (integer) coordinates in Int32Array
+  function splitTJunctions(rings) {
+    let E = 0, x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, ints = true;
+    for (const r of rings) {
+      E += r.length >> 1;
+      for (let i = 0; i < r.length; i += 2) {
+        const x = r[i], y = r[i + 1]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+        if ((x | 0) !== x || (y | 0) !== y) ints = false;
+      }
+    }
+    if (E < 4) return rings;
+    const keyed = ints && x0 >= -KLIM && y0 >= -KLIM && x1 <= KLIM && y1 <= KLIM; // else everything takes the grid path
+    const AX = new Float64Array(E), AY = new Float64Array(E), BX = new Float64Array(E), BY = new Float64Array(E);
+    const general = []; let e = 0;
+    for (const r of rings) {
+      const n = r.length >> 1;
+      for (let i = 0; i < n; i++, e++) {
+        const j = (i + 1) % n; AX[e] = r[2 * i]; AY[e] = r[2 * i + 1]; BX[e] = r[2 * j]; BY[e] = r[2 * j + 1];
+        if (!keyed || (AX[e] !== BX[e] && AY[e] !== BY[e])) general.push(e);
+      }
+    }
+    let ins = null; // edge → [[x, y, distance key]…]
+    const hit = (f, px, py) => {
+      if (!ins) ins = new Map();
+      const d = (BX[f] - AX[f]) * (px - AX[f]) + (BY[f] - AY[f]) * (py - AY[f]), arr = ins.get(f);
+      if (!arr) ins.set(f, [[px, py, d]]); else if (!arr.some((q) => q[0] === px && q[1] === py)) arr.push([px, py, d]);
+    };
+    if (general.length < E) { // axis-parallel edges: vertices bucketed by row (column), sorted within it
+      let cap = 2, bits = 1; while (cap < E * 2) { cap <<= 1; bits++; }
+      const mask = cap - 1, shift = 32 - bits, slotKey = new Int32Array(cap), slotRow = new Int32Array(cap), row = new Int32Array(E), vals = new Int32Array(E);
+      const index = (P, Q) => { // open-addressing int table P → row id (Fibonacci hash, high bits); counting sort of Q by row
+        slotRow.fill(-1); let R = 0;
+        for (let v = 0; v < E; v++) {
+          const p = P[v]; let h = Math.imul(p, 0x9e3779b1) >>> shift;
+          while (slotRow[h] >= 0 && slotKey[h] !== p) h = (h + 1) & mask;
+          if (slotRow[h] < 0) { slotKey[h] = p; slotRow[h] = R++; }
+          row[v] = slotRow[h];
+        }
+        const start = new Int32Array(R + 1); for (let v = 0; v < E; v++) start[row[v] + 1]++;
+        for (let k = 0; k < R; k++) start[k + 1] += start[k];
+        const fill = start.slice(0, R), V = vals.slice();
+        for (let v = 0; v < E; v++) V[fill[row[v]]++] = Q[v];
+        for (let k = 0; k < R; k++) {
+          const a = start[k], b = start[k + 1];
+          if (b - a > 96) V.subarray(a, b).sort();
+          else for (let i = a + 1; i < b; i++) { const x = V[i]; let j = i - 1; while (j >= a && V[j] > x) { V[j + 1] = V[j]; j--; } V[j + 1] = x; } // short rows: insertion sort
+        }
+        return { keys: slotKey.slice(), rows: slotRow.slice(), start, V };
+      };
+      for (let pass = 0; pass < 2; pass++) { // 0: horizontal edges against rows of equal y; 1: vertical against columns of equal x
+        let I = null;
+        for (let f = 0; f < E; f++) {
+          const ax = AX[f], ay = AY[f], bx = BX[f], by = BY[f];
+          let p, lo, hi;
+          if (pass === 0) { if (ay !== by || ax === bx) continue; p = ay; lo = ax < bx ? ax : bx; hi = ax < bx ? bx : ax; }
+          else { if (ax !== bx || ay === by) continue; p = ax; lo = ay < by ? ay : by; hi = ay < by ? by : ay; }
+          if (!I) I = pass === 0 ? index(AY, AX) : index(AX, AY);
+          let h = Math.imul(p, 0x9e3779b1) >>> shift; while (I.keys[h] !== p || I.rows[h] < 0) h = (h + 1) & mask; // p is a vertex coordinate: always present
+          const k = I.rows[h], V = I.V, end = I.start[k + 1]; let a = I.start[k], b = end;
+          while (a < b) { const m = (a + b) >> 1; if (V[m] <= lo) a = m + 1; else b = m; }
+          for (let t = a; t < end && V[t] < hi; t++) if (t === a || V[t] !== V[t - 1]) { if (pass === 0) hit(f, V[t], p); else hit(f, p, V[t]); }
+        }
+      }
+    }
+    if (general.length) { // other edges: GN×GN grid over their bbox, GN = min(1024, isqrt(count))
+      const G = general.length;
+      let gx0 = Infinity, gy0 = Infinity, gx1 = -Infinity, gy1 = -Infinity;
+      for (const f of general) {
+        const ax = AX[f], ay = AY[f], bx = BX[f], by = BY[f];
+        if (ax < gx0) gx0 = ax; if (bx < gx0) gx0 = bx; if (ax > gx1) gx1 = ax; if (bx > gx1) gx1 = bx;
+        if (ay < gy0) gy0 = ay; if (by < gy0) gy0 = by; if (ay > gy1) gy1 = ay; if (by > gy1) gy1 = by;
+      }
+      let GN = 1; while (GN < 1024 && (GN + 1) * (GN + 1) <= G) GN++;
+      // cell = floor((v − v0)·GN/(span+1)) ∈ [0, GN−1]; monotone, so an edge is listed in every cell its
+      // bbox covers and a vertex inside that bbox finds it.
+      const icw = GN / (gx1 - gx0 + 1), ich = GN / (gy1 - gy0 + 1);
+      const C0 = new Int32Array(G), C1 = new Int32Array(G), R0 = new Int32Array(G), R1 = new Int32Array(G), start = new Int32Array(GN * GN + 1);
+      for (let g = 0; g < G; g++) {
+        const f = general[g], ax = AX[f], ay = AY[f], bx = BX[f], by = BY[f];
+        C0[g] = ((ax < bx ? ax : bx) - gx0) * icw | 0; C1[g] = ((ax < bx ? bx : ax) - gx0) * icw | 0;
+        R0[g] = ((ay < by ? ay : by) - gy0) * ich | 0; R1[g] = ((ay < by ? by : ay) - gy0) * ich | 0;
+        for (let gy = R0[g]; gy <= R1[g]; gy++) for (let gx = C0[g]; gx <= C1[g]; gx++) start[gy * GN + gx + 1]++;
+      }
+      for (let c = 0; c < GN * GN; c++) start[c + 1] += start[c];
+      const fill = start.slice(0, GN * GN), list = new Int32Array(start[GN * GN]);
+      for (let g = 0; g < G; g++) for (let gy = R0[g]; gy <= R1[g]; gy++) for (let gx = C0[g]; gx <= C1[g]; gx++) list[fill[gy * GN + gx]++] = general[g];
+      for (let v = 0; v < E; v++) {
+        const px = AX[v], py = AY[v];
+        if (px < gx0 || px > gx1 || py < gy0 || py > gy1) continue;
+        const c = ((py - gy0) * ich | 0) * GN + ((px - gx0) * icw | 0);
+        for (let t = start[c], t1 = start[c + 1]; t < t1; t++) {
+          const f = list[t], ax = AX[f], ay = AY[f], bx = BX[f], by = BY[f];
+          if (px < (ax < bx ? ax : bx) || px > (ax < bx ? bx : ax) || py < (ay < by ? ay : by) || py > (ay < by ? by : ay)) continue;
+          if ((px === ax && py === ay) || (px === bx && py === by)) continue;
+          if ((bx - ax) * (py - ay) - (by - ay) * (px - ax) !== 0) continue;
+          hit(f, px, py);
+        }
+      }
+    }
+    if (!ins) return rings;
+    let base = 0;
+    return rings.map((r) => {
+      const n = r.length >> 1, b = base; base += n;
+      let any = false; for (let i = 0; i < n && !any; i++) if (ins.has(b + i)) any = true;
+      if (!any) return r;
+      const out = [];
+      for (let i = 0; i < n; i++) {
+        out.push(r[2 * i], r[2 * i + 1]);
+        const q = ins.get(b + i); if (q) { q.sort((u, w) => u[2] - w[2]); for (const p of q) out.push(p[0], p[1]); }
+      }
+      return out;
+    });
+  }
+  C.splitTJunctions = splitTJunctions;
+
   // ------------------------------------------------------------- hierarchy
   /**
    * Canonical re-chaining at shared vertices (D3). All rings are role-oriented (material on the LEFT
@@ -945,7 +1071,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   function assemble(rings) {
     const outers = [], holes = [];
     const cleaned = []; for (const r0 of rings) { const c = cleanRing(r0); if (c.length >= 6) cleaned.push(c); }
-    for (const r0 of rechain(cleaned)) {
+    for (const r0 of rechain(splitTJunctions(cleaned))) {
       for (const s of splitRing(cleanRing(r0))) {
         const r = cleanRing(s); if (r.length < 6) continue;
         const a = area2(r); if (a === 0) continue;
@@ -1115,6 +1241,101 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     return { ok: errors.length === 0, errors };
   };
 
+  // ================================================ canonical bytes and hash scope (decision D4)
+  // Spike S6 (docs/spikes/S6.md §5). Little-endian int32 stream, layers in ascending index order:
+  //   [layerCount, (index, partCount, (ringCount, (vertexCount, x, y …)…)…,
+  //                 scoreCount, (vertexCount, x, y …)…,
+  //                 holeCount, (cx, cy, r)…)…]
+  // The trailing hole section is D4 amendment A. Every coordinate must be an integer with
+  // |v| ≤ 2^25 µm (amendment C): that keeps every cross product an exact double, and anything else
+  // THROWS rather than truncating. canonicalBytes always normalizes (idempotent), so the bytes never
+  // depend on the caller having normalized. Input material must be boolean-resolved.
+  const LIM = 33554432; // 2^25 µm (33.5 m)
+  function checkCoord(v) {
+    if (!Number.isInteger(v) || v > LIM || v < -LIM) throw new Error("SBGeom.canonicalBytes: coordinate is not an integer µm within ±2^25: " + v);
+  }
+  function checkRing(r) { if (!Array.isArray(r) || r.length % 2) throw new Error("SBGeom.canonicalBytes: ring has an odd coordinate count"); for (const v of r) checkCoord(v); }
+  function cmpSeq(a, b) { const n = Math.min(a.length, b.length); for (let i = 0; i < n; i++) if (a[i] !== b[i]) return a[i] - b[i]; return a.length - b.length; }
+
+  /**
+   * Canonical score polyline: consecutive duplicates removed, pass-through collinear points dropped
+   * (reversals kept), oriented so the smaller (x, y) endpoint comes first. A closed path (first point
+   * repeated last) is cleaned and oriented as a positive ring starting at its smallest vertex, with
+   * the closing point repeated. Returns null for fewer than 2 distinct points.
+   */
+  function canonPolyline(src) {
+    const pts = [];
+    for (let i = 0; i < src.length; i += 2) {
+      const n = pts.length; if (n && pts[n - 2] === src[i] && pts[n - 1] === src[i + 1]) continue;
+      pts.push(src[i], src[i + 1]);
+    }
+    const n = pts.length >> 1; if (n < 2) return null;
+    if (n > 2 && pts[0] === pts[2 * n - 2] && pts[1] === pts[2 * n - 1]) {
+      const c = cleanRing(pts.slice(0, -2)); if (c.length < 6) return null;
+      const r = rotateStart(area2(c) < 0 ? reverseRing(c) : c);
+      return r.concat([r[0], r[1]]);
+    }
+    const keep = [pts[0], pts[1]];
+    for (let i = 1; i < n - 1; i++) {
+      const ax = keep[keep.length - 2], ay = keep[keep.length - 1], bx = pts[2 * i], by = pts[2 * i + 1], cx = pts[2 * i + 2], cy = pts[2 * i + 3];
+      if ((bx - ax) * (cy - by) - (by - ay) * (cx - bx) === 0 && (bx - ax) * (cx - bx) + (by - ay) * (cy - by) > 0) continue;
+      keep.push(bx, by);
+    }
+    keep.push(pts[2 * n - 2], pts[2 * n - 1]);
+    const m = keep.length;
+    return keep[m - 2] < keep[0] || (keep[m - 2] === keep[0] && keep[m - 1] < keep[1]) ? reverseRing(keep) : keep;
+  }
+  C.canonPolyline = canonPolyline;
+
+  /** The three word sections of one layer: {head: index + material, score, holes}. */
+  function layerSections(L) {
+    checkCoord(L.index);
+    const mat = L.material || [];
+    for (const p of mat) { checkRing(p.outer); for (const h of p.holes || []) checkRing(h); }
+    const head = [L.index], polys = C.normalize(mat);
+    head.push(polys.length);
+    for (const p of polys) {
+      head.push(1 + p.holes.length);
+      for (const r of [p.outer].concat(p.holes)) { head.push(r.length >> 1); for (const v of r) head.push(v); }
+    }
+    const sc = [];
+    for (const s of L.scorePaths || []) { checkRing(s); const c = canonPolyline(s); if (c) sc.push(c); }
+    sc.sort(cmpSeq);
+    const score = [sc.length];
+    for (const s of sc) { score.push(s.length >> 1); for (const v of s) score.push(v); }
+    const hs = (L.holes || []).map((h) => { checkCoord(h.cxUm); checkCoord(h.cyUm); checkCoord(h.rUm); return [h.cyUm, h.cxUm, h.rUm]; }).sort(cmpSeq);
+    const holes = [hs.length];
+    for (const h of hs) holes.push(h[1], h[0], h[2]);
+    return { head, score, holes };
+  }
+  function toBytes(chunks) {
+    let n = 0; for (const c of chunks) n += c.length;
+    const buf = new Uint8Array(n * 4), dv = new DataView(buf.buffer); let o = 0;
+    for (const c of chunks) for (let i = 0; i < c.length; i++, o += 4) dv.setInt32(o, c[i], true);
+    return buf;
+  }
+  const NO_SCORES = [0];
+
+  /** canonicalBytes(layers: {index, material, holes?: {cxUm, cyUm, rUm}[], scorePaths?}[]) → Uint8Array. */
+  C.canonicalBytes = function (layers) {
+    const ls = layers.slice().sort((a, b) => a.index - b.index), chunks = [[ls.length]];
+    for (const L of ls) { const s = layerSections(L); chunks.push(s.head, s.score, s.holes); }
+    return toBytes(chunks);
+  };
+  /**
+   * Both D4 layer hashes from one normalization (amendment B):
+   *   materialHash = sha256(canonicalBytes([{index, material, holes}]))  (scoreCount 0) — MaterialLayer.canonicalHash,
+   *                  guide invalidation, repair before/after hashes, part-ID stability;
+   *   layerHash    = sha256(canonicalBytes([layer]))                      — the only one in geometryHash.layers.
+   */
+  C.layerHashes = function (L) {
+    const s = layerSections(L), sha = global.SBHash.sha256;
+    return { materialHash: sha(toBytes([[1], s.head, NO_SCORES, s.holes])), layerHash: sha(toBytes([[1], s.head, s.score, s.holes])) };
+  };
+  C.layerHash = (L) => global.SBHash.sha256(C.canonicalBytes([L]));
+  C.materialHash = (L) => global.SBHash.sha256(C.canonicalBytes([{ index: L.index, material: L.material, holes: L.holes }]));
+  C.COORD_LIMIT = LIM;
+
   // ===================================================== Clipper2 backend (decision D2)
   // Booleans and offsets over global.Clipper2 (js/vendor/clipper2.js, clipper2-ts 2.0.1-18), looked
   // up at call time. Paths are Int64 µm; NonZero fill on role-oriented rings (outer +, hole −).
@@ -1164,7 +1385,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   };
   /** One entry per connected part; point contact counts as separate (D3). */
   G.components = (polys) => G.union(polys, []).map((p) => [p]);
-  for (const k of ["fromPixelLoops", "normalize", "validate", "area", "isEmpty", "containsPoint", "bbox", "circle"]) G[k] = C[k];
+  for (const k of ["fromPixelLoops", "normalize", "validate", "area", "isEmpty", "containsPoint", "bbox", "circle",
+    "canonicalBytes", "layerHashes", "layerHash", "materialHash", "COORD_LIMIT"]) G[k] = C[k];
   G.backend = "clipper2-ts@2.0.1-18";
 
   global.SBGeom = G;

@@ -238,7 +238,39 @@ Contract notes recorded with this decision:
 ### D4 — Hash scope
 
 - Owner: spike S6 (`SBGeom.canonicalBytes`).
-- Decision: _pending S6._
+- **Decision (S6, 2026-10-07): accept the spike proposal (`docs/spikes/S6.md` §5) with amendments A, B and C.** Implemented in `js/geom.js`; pinned by the suites "spike S6" in `test/run_tests.js`.
+- **Canonical form (`SBGeom.normalize`):** integer µm, Y-down; outer rings positive, holes negative; every ring starts at its smallest (x, y); no duplicate, collinear or spike vertices; vertex **and T** contacts resolved into simple rings, so point contact never connects material (D3); holes and parts sorted by (bbox minY, minX), then by the full coordinate sequence (a total order). Input must be boolean-resolved: `normalize` does not merge overlapping or edge-sharing parts.
+- **T-contacts.** A vertex lying strictly inside another edge (of any ring of the layer, its own included) is inserted into that edge before the S1 re-chaining, so the sharpest-left-turn rule separates it like any shared vertex. This closes the "known limit" in D2 note 1: S6 showed Clipper2 `difference` does emit T-contacts (a square minus a diamond whose corners sit on the square's edge midpoints). It runs inside `assemble`, so every boolean result, `fromPixelLoops` and `normalize` get it. Axis-parallel edges are matched by binary search among the vertices of the same row or column; other edges use a uniform grid whose only division sizes the cells.
+- **Byte stream (`SBGeom.canonicalBytes(layers)` → `Uint8Array`, little-endian int32):** `[layerCount, (index, partCount, (ringCount, (vertexCount, x, y…)…)…, scoreCount, (vertexCount, x, y…)…, holeCount, (cx, cy, r)…)…]`, layers in ascending index order. `canonicalBytes` always normalizes, so the bytes never depend on the caller having done it.
+  - **Amendment A — hole section.** Registration holes `{cxUm, cyUm, rUm}` are appended, sorted by (cy, cx, r). A hole that misses material, or moves by less than its effect on the cut, still changes the hash (G3.1).
+  - Score paths: consecutive duplicates removed, pass-through collinear points dropped (reversals kept), oriented so the smaller endpoint comes first; a closed path is oriented and started like a positive ring and keeps its closing point. Then sorted.
+- **Amendment B — two layer hashes** (breaks the guide/hash cycle of G3.3):
+  - `SBGeom.materialHash(L) = sha256(canonicalBytes([{index, material, holes}]))`, i.e. `scoreCount = 0`. It is `MaterialLayer.canonicalHash` and is what guide invalidation (SUP-05, `part.guideRefs`), `Repair.reviewed.beforeHash`/`afterHash`, MAT-04 and part-ID stability use.
+  - `SBGeom.layerHash(L) = sha256(canonicalBytes([L]))`. Only this one enters `geometryHash.layers`.
+  - `SBGeom.layerHashes(L) → {materialHash, layerHash}` derives both from one normalization (the engine should use this).
+- **`geometryHash`** stays as in §3: `hashJSON({key, engine, quality, raster, layers: layerHashes, guides: guideHash})`, with one `layerHash` per index 0..N−1 (an empty layer hashes the words `[1, k, 0, 0, 0]`). Score polylines are already inside `layerHash`, so `guideHash` covers only labels, omissions with reasons, and the map. The multi-layer `canonicalBytes(allLayers)` is not hashed for `geometryHash` (hashing the layer hashes is equivalent and half the cost); it stays available for packaging.
+- **Excluded from every geometry hash:** derived data (`parts` and IDs, `cutPaths`, `stats`, `diagnostics`; `zBottomMM`/`zTopMM` come in through `geometryKey`), and `appearance`, `view`, `acks`, `extras`, `title`, `units`. `carriers` is `[]` in v1.0; populating it means a new section and an `engine.version` bump.
+- **Amendment C — determinism guards.** `canonicalBytes` (and the hash functions) throw on a non-integer coordinate, index or hole field, and on |v| > 2^25 µm (`SBGeom.COORD_LIMIT`, 33.5 m), which keeps every cross product an exact double; nothing is ever truncated. No transcendental math in `geom.js` (static check in the suite). Any change to normalization or to the byte layout requires an `engine.version` bump; persisted `materialHash` values then mismatch and repairs fail closed (`REPAIR_STALE`).
+
+Differences between the shipped code and the spike reference (`spikes/S6/canon.js`), all deliberate:
+
+1. Normalization reuses the S1 pipeline (`cleanRing` → T-split → `rechain` → `splitRing` → classify → smallest containing outer) rather than the spike's per-polygon `faceTrace`; both apply the same left-most-turn rule. T-splitting runs over all rings of the layer at once, so a T-contact *between* parts is resolved too.
+2. Ring roles in `normalize` come from position (outer forced positive, holes forced negative), the S1 contract, not from orientation relative to the outer. The spike check "a hole wound like its outer is material" is therefore not ported. On boolean-resolved input, the only input D4 admits, the two agree.
+3. Orphan holes (no containing outer) are dropped, as in S1, instead of throwing.
+4. The spike's dev-only `clipper2-js` 1.2.4 is not used; the property checks run through the shipped backend (`clipper2-ts`, D2).
+
+Measured (spike, Node 26, i7-11800H; hash stage = `canonicalBytes` + `sha256` per layer + project stream, 5 warm-ups, 30 runs):
+
+| Workload | Vertices | Canonical bytes | p50 / p95 |
+|---|---|---|---|
+| Desktop final 1536², 8 layers | 16,288 | 131 KB | 72 / 92 ms |
+| Desktop draft 720², 8 layers | 7,512 | 61 KB | 34 / 55 ms |
+| Mobile final 768², 6 layers | 4,498 | 36 KB | 18 / 21 ms |
+| Desktop final, raw staircase (no RDP), 8 layers | 39,962 | 321 KB | 254 / 311 ms |
+
+Cross-engine (spike): all 8 layer hashes and the project hash of the 1,660-part draft fixture (`spikes/S6/fixture_draft.json`) are byte-identical in Node 26, headless Chromium 152 and headless Firefox 155.
+
+**Cost of the T-split on the S1 B1 workload** (integration, A/B interleaved in one process, 10 runs each, load average 6–8): B1 (14 differences on 8 × 30k–60k-vertex layers) median 1.61–1.88 s without, 1.88–2.16 s with, a ratio of **1.12–1.18**. The split itself costs about 17 ms per 50k-vertex layer (≈40 % of `assemble`). Output is unchanged on lattice input (B1 fingerprint `27fa97ef…` identical). B1 was already a narrow pass (D2), so G4.4 must re-measure it on the reference machines.
 
 ### D5 — Sub-8-bit gray PNG in height mode
 

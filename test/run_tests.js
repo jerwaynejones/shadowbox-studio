@@ -594,6 +594,131 @@ suite("spike S1 — test/bench.js geom smoke (--quick)", () => {
     r.B3b_supportPairs_dense_partsGiven.pairs === r.B3b_supportPairs_dense.pairs);
 });
 
+// ------------------------------------------------ canonical bytes and hash scope (spike S6, decision D4)
+const S6 = (() => {
+  const rect = (x0, y0, x1, y1) => [x0, y0, x1, y0, x1, y1, x0, y1];
+  const rot = (r, k) => r.slice(2 * k).concat(r.slice(0, 2 * k));
+  const rev = (r) => { const o = []; for (let i = r.length - 2; i >= 0; i -= 2) o.push(r[i], r[i + 1]); return o; };
+  const shuffle = (a, seed) => { const rnd = require("./fixtures.js").lcg(seed), b = a.slice(); for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; };
+  const throws = (fn) => { try { fn(); return false; } catch (e) { return true; } };
+  const noise = (w, h, seed, p) => { const rnd = require("./fixtures.js").lcg(seed), m = new Uint8Array(w * h); for (let i = 0; i < m.length; i++) m[i] = rnd() < p ? 1 : 0; return m; };
+  const pixelSquares = (m, w, h, s) => { const out = []; for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (m[y * w + x]) out.push({ outer: rect(x * s, y * s, (x + 1) * s, (y + 1) * s), holes: [] }); return out; };
+  // A small layer: L-shaped part with a hole, a triangle, a square with a hole; one score path; one registration hole.
+  const Lshape = { outer: [0, 0, 6000, 0, 6000, 2000, 2000, 2000, 2000, 8000, 0, 8000], holes: [rev(rect(500, 500, 1500, 1500))] };
+  const tri = { outer: [10000, 0, 14000, 0, 12000, 3000], holes: [] };
+  const sq = { outer: rect(20000, 5000, 23000, 8000), holes: [[20500, 5500, 20500, 6500, 21500, 6500, 21500, 5500]] };
+  const base = { index: 3, material: [Lshape, tri, sq], scorePaths: [[1000, 9000, 4000, 9000, 4000, 12000]], holes: [{ cxUm: 30000, cyUm: 30000, rUm: 1500 }] };
+  return { rect, rot, rev, shuffle, throws, noise, pixelSquares, Lshape, tri, sq, base };
+})();
+
+suite("spike S6 — plan checks (GEO-09, NFR-05)", () => {
+  const G = SBGeom, { rot, rev, shuffle, Lshape, tri, sq, base } = S6, H = (L) => G.layerHash(L), h0 = H(base);
+  check("S6/GEO-09 hash invariant to start vertex", H({ ...base, material: base.material.map((p) => ({ outer: rot(p.outer, 2), holes: p.holes.map((h) => rot(h, 2)) })) }) === h0);
+  check("S6 hash invariant to input winding", H({ ...base, material: base.material.map((p) => ({ outer: rev(p.outer), holes: p.holes.map(rev) })) }) === h0);
+  check("S6 hash invariant to part order", [1, 2, 3, 4, 5].every((s) => H({ ...base, material: shuffle(base.material, s) }) === h0) && H({ ...base, material: base.material.slice().reverse() }) === h0);
+  check("S6 1µm move changes hash", H({ ...base, material: [{ outer: [0, 0, 6001, 0, 6001, 2000, 2000, 2000, 2000, 8000, 0, 8000], holes: Lshape.holes }, tri, sq] }) !== h0);
+  check("S6 1µm move changes hash (whole part translated by 1 µm in y)", H({ ...base, material: [Lshape, { outer: tri.outer.map((v, i) => (i % 2 ? v + 1 : v)), holes: [] }, sq] }) !== h0);
+  check("S6 score path change changes hash", H({ ...base, scorePaths: [[1000, 9000, 4000, 9000, 4000, 12001]] }) !== h0);
+  check("S6 score path removal changes hash", H({ ...base, scorePaths: [] }) !== h0);
+  check("S6 layerHash = SBHash.sha256(canonicalBytes([layer]))", h0 === SBHash.sha256(G.canonicalBytes([base])));
+});
+
+suite("spike S6 — canonicalBytes layout and D4 hash scope (amendments A, B, C)", () => {
+  const G = SBGeom, { rect, rev, throws, base } = S6, H = (L) => G.layerHash(L), M = (L) => G.materialHash(L), h0 = H(base), m0 = M(base);
+  const words = (u8) => Array.from(new Int32Array(u8.buffer, u8.byteOffset, u8.byteLength / 4));
+  const tiny = G.canonicalBytes([{ index: 2, material: [{ outer: rev(rect(0, 0, 10, 10)), holes: [] }], scorePaths: [[5, 5, 1, 1]] }]);
+  check("S6 byte layout = [layerCount, index, partCount, ringCount, vertexCount, x,y…, scoreCount, vertexCount, x,y…, holeCount]",
+    JSON.stringify(words(tiny)) === JSON.stringify([1, 2, 1, 1, 4, 0, 0, 10, 0, 10, 10, 0, 10, 1, 2, 1, 1, 5, 5, 0]));
+  check("S6 little-endian int32 (first word bytes 01 00 00 00)", tiny instanceof Uint8Array && tiny[0] === 1 && tiny[1] === 0 && tiny[2] === 0 && tiny[3] === 0);
+  check("D4-A hole section: (cx, cy, r) words after the score section, sorted by (cy, cx, r)",
+    JSON.stringify(words(G.canonicalBytes([{ index: 0, material: [], holes: [{ cxUm: 9, cyUm: 5, rUm: 3 }, { cxUm: 1, cyUm: 2, rUm: 4 }] }]))) === JSON.stringify([1, 0, 0, 0, 2, 1, 2, 4, 9, 5, 3]));
+  check("D4 empty layer hashes [1, k, 0, 0, 0]", H({ index: 7, material: [] }) === SBHash.sha256(new Uint8Array(new Int32Array([1, 7, 0, 0, 0]).buffer)) &&
+    H({ index: 7, material: [] }) === H({ index: 7, material: [], scorePaths: [], holes: [] }));
+  check("S6 layer index enters hash", H({ ...base, index: 4 }) !== h0);
+  check("S6 multi-layer stream independent of input layer order", SBHash.sha256(G.canonicalBytes([base, { ...base, index: 0 }])) === SBHash.sha256(G.canonicalBytes([{ ...base, index: 0 }, base])));
+  check("S6 score path direction invariant", H({ ...base, scorePaths: [rev(base.scorePaths[0])] }) === h0);
+  check("S6 score path pass-through collinear point removed", H({ ...base, scorePaths: [[1000, 9000, 2500, 9000, 4000, 9000, 4000, 12000]] }) === h0);
+  check("S6 score path duplicate point removed", H({ ...base, scorePaths: [[1000, 9000, 4000, 9000, 4000, 9000, 4000, 12000]] }) === h0);
+  check("S6 score path reversal (U-turn) point kept", H({ ...base, scorePaths: [[1000, 9000, 4000, 9000, 3000, 9000]] }) !== H({ ...base, scorePaths: [[1000, 9000, 3000, 9000]] }));
+  const two = { ...base, scorePaths: [[0, 0, 0, 5], [7, 7, 9, 9]] };
+  check("S6 score path order invariant", H(two) === H({ ...two, scorePaths: two.scorePaths.slice().reverse() }));
+  check("S6 closed score ring start/direction invariant", H({ ...base, scorePaths: [[100, 100, 900, 100, 900, 900, 100, 900, 100, 100]] }) === H({ ...base, scorePaths: [[900, 900, 900, 100, 100, 100, 100, 900, 900, 900]] }));
+  check("D4-A registration hole radius change changes hash", H({ ...base, holes: [{ cxUm: 30000, cyUm: 30000, rUm: 1501 }] }) !== h0 && M({ ...base, holes: [{ cxUm: 30000, cyUm: 30000, rUm: 1501 }] }) !== m0);
+  check("D4-A registration hole that misses material still changes hash", H({ ...base, holes: [] }) !== h0);
+  check("D4-A registration hole order invariant", H({ ...base, holes: [{ cxUm: 1, cyUm: 2, rUm: 3 }, { cxUm: 4, cyUm: 1, rUm: 3 }] }) === H({ ...base, holes: [{ cxUm: 4, cyUm: 1, rUm: 3 }, { cxUm: 1, cyUm: 2, rUm: 3 }] }));
+  check("D4-B materialHash ignores score paths (breaks the guide/hash cycle)", M({ ...base, scorePaths: [] }) === m0 && M({ ...base, scorePaths: [[0, 0, 5, 5]] }) === m0);
+  check("D4-B materialHash = sha256(canonicalBytes([{index, material, holes}])) (scoreCount 0)", m0 === SBHash.sha256(G.canonicalBytes([{ index: base.index, material: base.material, holes: base.holes }])));
+  check("D4-B materialHash changes on 1 µm material move and on index", M({ ...base, index: 4 }) !== m0 && M({ ...base, material: base.material.slice(1) }) !== m0);
+  check("D4-B layerHash != materialHash when score paths exist, equal when none", h0 !== m0 && H({ ...base, scorePaths: [] }) === m0);
+  const both = G.layerHashes(base);
+  check("D4-B layerHashes(layer) returns both hashes from one normalization", both.materialHash === m0 && both.layerHash === h0);
+  check("D4-C non-integer coordinate throws", throws(() => G.canonicalBytes([{ index: 0, material: [{ outer: [0, 0, 10.5, 0, 10, 10], holes: [] }] }])));
+  check("D4-C coordinate beyond ±2^25 µm throws (never truncates)", throws(() => G.canonicalBytes([{ index: 0, material: [{ outer: [0, 0, 2 ** 26, 0, 10, 10], holes: [] }] }])) &&
+    !throws(() => G.canonicalBytes([{ index: 0, material: [{ outer: [0, 0, 2 ** 25, 0, 10, 10], holes: [] }] }])));
+  check("D4-C non-integer / out-of-range score path, hole or index throws", throws(() => G.canonicalBytes([{ index: 0, material: [], scorePaths: [[0, 0, 1.5, 0]] }])) &&
+    throws(() => G.canonicalBytes([{ index: 0, material: [], holes: [{ cxUm: 0, cyUm: -(2 ** 25) - 1, rUm: 1 }] }])) && throws(() => G.canonicalBytes([{ index: 0.5, material: [] }])));
+  check("S6 zero-area part dropped", H({ ...base, material: [...base.material, { outer: [0, 50000, 100, 50000, 200, 50000], holes: [] }] }) === h0);
+  check("S6 SBHash.sha256(canonicalBytes) == node:crypto", SBHash.sha256(G.canonicalBytes([base])) === require("crypto").createHash("sha256").update(G.canonicalBytes([base])).digest("hex"));
+  check("S6 canonicalBytes does not mutate its input", (() => { const s = JSON.stringify(base); G.canonicalBytes([base]); return JSON.stringify(base) === s; })());
+});
+
+suite("spike S6 — normalization contract and D3 saddles / T-contacts", () => {
+  const G = SBGeom, { rect, rev, Lshape, tri, sq, base } = S6, H = (L) => G.layerHash(L), h0 = H(base);
+  const n = G.normalize(base.material);
+  const starts = (r) => { for (let i = 2; i < r.length; i += 2) if (r[i] < r[0] || (r[i] === r[0] && r[i + 1] < r[1])) return false; return true; };
+  check("S6 every ring starts at lexicographically smallest (x, y)", n.every((p) => [p.outer, ...p.holes].every(starts)));
+  check("S6 parts sorted by (minY, minX)", n.map((p) => p.outer[0]).join() === "0,10000,20000");
+  check("S6 hole order invariant", H({ ...base, material: [Lshape, tri, { outer: sq.outer, holes: [...sq.holes, rev(rect(22000, 7000, 22500, 7500))] }] }) ===
+    H({ ...base, material: [Lshape, tri, { outer: sq.outer, holes: [rev(rect(22000, 7000, 22500, 7500)), ...sq.holes] }] }));
+  check("S6 duplicate + collinear vertices removed (hash unchanged)",
+    H({ ...base, material: [{ outer: [0, 0, 3000, 0, 3000, 0, 6000, 0, 6000, 1000, 6000, 2000, 2000, 2000, 2000, 8000, 1000, 8000, 0, 8000, 0, 4000], holes: Lshape.holes }, tri, sq] }) === h0);
+  check("S6 180° zero-width spike removed (hash unchanged)", H({ ...base, material: [{ outer: [0, 0, 6000, 0, 6000, 2000, 9000, 2000, 6000, 2000, 2000, 2000, 2000, 8000, 0, 8000], holes: Lshape.holes }, tri, sq] }) === h0);
+  const fig8 = { outer: [0, 0, 10, 0, 10, 10, 20, 10, 20, 20, 10, 20, 10, 10, 0, 10], holes: [] };
+  check("D3 figure-8 ring == two vertex-touching squares (same hash)", H({ index: 0, material: [fig8] }) === H({ index: 0, material: [{ outer: rect(0, 0, 10, 10), holes: [] }, { outer: rect(10, 10, 20, 20), holes: [] }] }));
+  const pinched = { outer: [0, 0, 10, 0, 7, 5, 13, 5, 10, 0, 20, 0, 20, 20, 0, 20], holes: [] };
+  check("D3 pinched outer == outer + vertex-touching hole (same hash)", H({ index: 0, material: [pinched] }) === H({ index: 0, material: [{ outer: rect(0, 0, 20, 20), holes: [[10, 0, 7, 5, 13, 5]] }] }));
+  const pn = G.normalize([pinched]);
+  check("D3 pinched outer → 1 part with 1 hole", pn.length === 1 && pn[0].holes.length === 1);
+  const tris = [[0, 0, 10, 0, 0, 10], [10, 0, 20, 0, 20, 10], [20, 10, 20, 20, 10, 20], [0, 10, 10, 20, 0, 20]].map((o) => ({ outer: o, holes: [] }));
+  const diamond = { outer: rect(0, 0, 20, 20), holes: [rev([10, 0, 20, 10, 10, 20, 0, 10])] };
+  const dn = G.normalize([diamond]);
+  check("D3 T-contact: diamond hole touching the outer at edge midpoints → 4 corner triangles, 0 holes", dn.length === 4 && dn.every((p) => p.holes.length === 0) && G.validate(dn).ok);
+  check("D3 T-contact: diamond-hole polygon == 4 separate corner triangles (same hash)", H({ index: 0, material: [diamond] }) === H({ index: 0, material: tris }));
+  check("D3 T-contact: Clipper2 difference(square, diamond) == union of the 4 triangles (same hash)",
+    H({ index: 0, material: G.difference([{ outer: rect(0, 0, 20, 20), holes: [] }], [{ outer: [10, 0, 20, 10, 10, 20, 0, 10], holes: [] }]) }) === H({ index: 0, material: G.union(tris, []) }));
+  check("D3 T-contact between two parts (vertex on another part's edge) → 2 components", G.normalize([{ outer: rect(0, 0, 20, 10), holes: [] }, { outer: [10, 10, 15, 20, 5, 20], holes: [] }]).length === 2);
+  const dia = (o) => ({ outer: [20, 0, 40, 20, 20, 40, 0, 20].map((v) => v + o), holes: [rev(rect(10, 10, 30, 30).map((v) => v + o))] });
+  check("D3 T-contact on diagonal edges (grid path): square hole at a diamond's edge midpoints → 4 triangles", (() => { const r = G.normalize([dia(0)]); return r.length === 4 && r.every((p) => !p.holes.length); })());
+  check("D3 T-contact beyond ±2^25 µm (no Int32 axis path) still split", (() => { const r = G.normalize([{ outer: rect(0, 0, 20, 20).map((v) => v + 4e7), holes: [rev([10, 0, 20, 10, 10, 20, 0, 10].map((v) => v + 4e7))] }]); return r.length === 4; })() &&
+    G.normalize([dia(4e7)]).length === 4);
+  check("D3 normalize stays idempotent with T-contacts", (() => { const a = G.normalize([diamond]); return JSON.stringify(G.normalize(a)) === JSON.stringify(a); })());
+});
+
+suite("spike S6 — strong invariance through Clipper2 (property check)", () => {
+  const G = SBGeom, { rot, rev, shuffle, noise, pixelSquares } = S6, H = (m) => G.layerHash({ index: 0, material: m });
+  // rotate every ring, reverse every other polygon (global winding flip), shuffle parts and holes
+  const perturb = (polys, seed) => shuffle(polys, seed).map((p, i) => { const f = (i + seed) % 2 ? rev : (r) => r;
+    return { outer: f(rot(p.outer, seed % (p.outer.length >> 1))), holes: shuffle(p.holes, seed + 1).map((h) => f(rot(h, 1))) }; });
+  let agree = 0, runs = 0, repeat = 0, raw = 0;
+  for (const [w, h, dens] of [[24, 20, 0.35], [24, 20, 0.5], [24, 20, 0.65], [40, 30, 0.5]]) for (let seed = 100; seed < 115; seed++) {
+    const m = noise(w, h, seed * 7 + w, dens), s = 1000;
+    const loops = G.fromPixelLoops(SBTrace.trace(m, w, h), s, s, 0, 0), px = pixelSquares(m, w, h, s);
+    const routes = [loops, G.union(loops, []), G.union(px, []), G.union(shuffle(px, seed).map((p) => ({ outer: rev(p.outer), holes: [] })), [])];
+    if (JSON.stringify(routes[1]) !== JSON.stringify(routes[2])) raw++;
+    const hs = routes.map((r, i) => H(perturb(r, seed + i)));
+    runs++; if (hs.every((x) => x === hs[0])) agree++;
+    for (const r of routes) for (const p of G.normalize(r)) for (const ring of [p.outer, ...p.holes]) {
+      const seen = new Set(); for (let i = 0; i < ring.length; i += 2) { const k = ring[i] + "," + ring[i + 1]; if (seen.has(k)) { repeat++; break; } seen.add(k); } }
+  }
+  check(`S6 property: ${runs} random masks × 4 routes (trace / union(trace) / union(pixels) / union(reversed shuffled pixels)) + rotate/reverse/shuffle → identical hash (${agree}/${runs})`, agree === runs);
+  check("D3 property: no normalized ring revisits a vertex", repeat === 0);
+});
+
+suite("spike S6 — NFR-05 static scan of the hashed path", () => {
+  const src = fs.readFileSync(path.join(__dirname, "../js/geom.js"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  check("NFR-05 geom.js uses no Math.cbrt/sin/cos/tan/atan/exp/log/pow/random/hypot", !/Math\.(cbrt|sin|cos|tan|atan2?|exp|log\w*|pow|random|hypot)/.test(src));
+});
+
 // ------------------------------------------------------------- png.js (S4)
 suite("spike S4 — png.js raw decode and inspection, plan checks (IMG-01/02/05/07, AT-02/22)", () => {
   const F = require("./fixtures.js");

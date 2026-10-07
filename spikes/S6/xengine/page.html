@@ -1,0 +1,22 @@
+<!doctype html><meta charset="utf-8"><title>S6 cross-engine hash</title>
+<script src="/js/util.js"></script><script src="/js/hash.js"></script><script src="/spikes/S6/canon.js"></script>
+<pre id="out">running</pre>
+<script>
+(async () => {
+  const res = { ua: navigator.userAgent };
+  try {
+    const fx = await (await fetch("/spikes/S6/fixture_draft.json")).json();
+    const t0 = performance.now();
+    res.layerHashes = fx.layers.map((L) => SBCanonS6.layerHash(L));
+    res.projectHash = SBHash.sha256(SBCanonS6.canonicalBytes(fx.layers));
+    res.ms = Math.round(performance.now() - t0);
+    res.layersMatch = res.layerHashes.every((h, i) => h === fx.expectedLayerHashes[i]);
+    res.projectMatch = res.projectHash === fx.expectedProjectHash;
+    // tiny inline vectors too
+    const sq = { outer: [0,0,10,0,10,10,0,10], holes: [] };
+    res.tiny = SBCanonS6.layerHash({ index: 2, material: [sq, { outer: [10,10,20,10,20,20,10,20], holes: [] }], scorePaths: [[5,5,1,1]] });
+  } catch (e) { res.error = String(e && e.stack || e); }
+  document.getElementById("out").textContent = JSON.stringify(res);
+  await fetch("/result", { method: "POST", body: JSON.stringify(res) });
+})();
+</script>

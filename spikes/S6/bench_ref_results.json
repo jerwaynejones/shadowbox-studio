@@ -1,0 +1,79 @@
+{
+ "node": "v26.7.0",
+ "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+ "date": "2026-10-07T21:08:15.108Z",
+ "rows": [
+  {
+   "name": "desktop final (SRS §12.3): 1536², 8 layers",
+   "raster": "1536×1536",
+   "layers": 8,
+   "maxPartsPerLayer": 28,
+   "totalVertices": 16288,
+   "bytes": 131428,
+   "hashStageFromClipperOutput_ms": {
+    "p50": 72.3,
+    "p95": 91.6,
+    "stable": true
+   },
+   "hashStageFromNormalizedMaterial_ms": {
+    "p50": 65.4,
+    "p95": 85.1,
+    "stable": true
+   }
+  },
+  {
+   "name": "desktop draft: 720², 8 layers",
+   "raster": "720×720",
+   "layers": 8,
+   "maxPartsPerLayer": 28,
+   "totalVertices": 7512,
+   "bytes": 61092,
+   "hashStageFromClipperOutput_ms": {
+    "p50": 34.1,
+    "p95": 55.1,
+    "stable": true
+   },
+   "hashStageFromNormalizedMaterial_ms": {
+    "p50": 30.5,
+    "p95": 38.6,
+    "stable": true
+   }
+  },
+  {
+   "name": "mobile final (SRS §12.3): 768², 6 layers",
+   "raster": "768×768",
+   "layers": 6,
+   "maxPartsPerLayer": 14,
+   "totalVertices": 4498,
+   "bytes": 36352,
+   "hashStageFromClipperOutput_ms": {
+    "p50": 18.1,
+    "p95": 21,
+    "stable": true
+   },
+   "hashStageFromNormalizedMaterial_ms": {
+    "p50": 21.1,
+    "p95": 24,
+    "stable": true
+   }
+  },
+  {
+   "name": "desktop final, raw pixel staircase (no RDP), 1536², 8 layers",
+   "raster": "1536×1536",
+   "layers": 8,
+   "maxPartsPerLayer": 28,
+   "totalVertices": 39962,
+   "bytes": 320920,
+   "hashStageFromClipperOutput_ms": {
+    "p50": 254.3,
+    "p95": 310.5,
+    "stable": true
+   },
+   "hashStageFromNormalizedMaterial_ms": {
+    "p50": 204.2,
+    "p95": 225.9,
+    "stable": true
+   }
+  }
+ ]
+}
