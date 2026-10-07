@@ -134,24 +134,43 @@ working tree of `9a883f3` (app `v1.1.0`) by `node tools/capture_baseline.mjs`.
   see `docs/baseline/export/settings.json`). Status line after the pipeline:
   `720×544px · 5 sheets · 0 bridged · 5 culled · 7.94 m of cuts` (timing omitted).
 
-Steps the script performs:
+Steps the script performs (`node tools/capture_baseline.mjs [--out <dir>] [chromium-binary]`;
+without `--out` it writes over the committed `docs/baseline/`):
 
-1. Serve the repo on `127.0.0.1`; launch `chromium --headless=new --remote-debugging-port=0`
-   with a throw-away profile and drive it over the DevTools protocol (Node's built-in
-   `WebSocket`, no npm packages).
-2. Navigate to `index.html`; wait until `#statusline` stops ending in `…`; wait 1.5 s.
+1. Serve the repo on `127.0.0.1` (`python3 -m http.server`, ready once it prints its
+   `Serving HTTP` line; retried on another random port if it fails to bind); launch
+   `chromium --headless=new --remote-debugging-port=0` with a throw-away profile and drive it
+   over the DevTools protocol (Node's built-in `WebSocket`, no npm packages).
+2. Navigate to `index.html`; wait (at most 60 s) until `#statusline` stops ending in `…`;
+   wait 1.5 s.
 3. Save the `#stackcanvas` pixels (`canvas.toBlob("image/png")`, same call as the app's
-   `preview.snapshot()`) to `preview_stack.png`, and a viewport screenshot to
+   `preview.snapshot()`) as `preview_stack.png`, and a viewport screenshot as
    `app_screenshot.png`.
-4. Click `#btn-export` ("Download cut files (.zip)"); capture the browser download
-   (`Browser.setDownloadBehavior`) into `docs/baseline/`.
-5. The ZIP was then unpacked into `docs/baseline/export/` (`unzip -d export`).
+4. Click `#btn-export` ("Download cut files (.zip)") and capture the browser download
+   (`Browser.setDownloadBehavior`).
+5. Unpack the ZIP into `export/` with `unzip`, and delete `export/preview.png` when it is
+   byte-identical to `preview_stack.png` (it is: the app's export embeds the same
+   `preview.snapshot()` PNG), so the 176,686-byte PNG is stored once outside the ZIP.
+
+The script exits non-zero and writes nothing if the pipeline does not finish, the status
+line (timing removed) is not `720×544px · 5 sheets · 0 bridged · 5 culled · 7.94 m of cuts`,
+any page exception is thrown, or a service worker is registered on the local host.
+
+The committed artifacts come from the first run (at `9a883f3`). Steps 1 to 4 were done by
+the script; the unpacking was done by hand with `unzip -d export`, before the script gained
+step 5. `export/preview.png` was then removed as a duplicate, as step 5 now does.
+`browser.json` is from that run, so it has no `exportPreviewIdenticalToPreviewStack` field.
+
+Scope: plan Step 2 asks only for one preview PNG, the exported ZIP, and the browser and
+version (`browser.json`). The screenshot (whole-app context) and the unpacked `export/`
+tree (so the SVGs can be diffed and hashed without unzipping) are extras kept on purpose.
+Together they add about 0.5 MB.
 
 Artifacts (`docs/baseline/`):
 
 | File | SHA-256 |
 |---|---|
-| `preview_stack.png` (= `export/preview.png`) | `39e2eadfc4b612ce271ef908eeaaecbd4c1e5e89e13317e71522a963e1e4a655` |
+| `preview_stack.png` (= `preview.png` inside the ZIP) | `39e2eadfc4b612ce271ef908eeaaecbd4c1e5e89e13317e71522a963e1e4a655` |
 | `app_screenshot.png` | `c4d3c839f23746b01f5f56eafc20370b6039c2760e82832bd3f4a25a72b15608` |
 | `night-over-the-valley_shadowbox.zip` | `39de248f8418111632105add46648b3ea64071e9af35a06d81e1fdff24c07cd9` |
 | `export/sheet_01.svg` | `26389cd5533585defcfc44824dff929c9ba0d74425d65f433a7c90b2786b6279` |
@@ -163,7 +182,10 @@ Artifacts (`docs/baseline/`):
 | `export/ASSEMBLY.md` | `911df0eda33fa51cd90e6f716f1fde308c0e92723b5e561dccf97045001a7e95` |
 | `export/settings.json` | `301d52f0f83d1417e6daa12b966674a51d43ad7d639b974c75ece8ff187177e8` |
 
-Reproducibility: a second run produced byte-identical PNG and every extracted file; only
-the ZIP container differed (entry modification timestamps). `app_screenshot.png` shows
-today's date in the title block, so it differs from day to day. These are visual/reference
-baselines, not test goldens; the hashed regression goldens remain `test/golden/*.json`.
+Reproducibility: a second run (`--out` to a scratch directory) produced a byte-identical
+`preview_stack.png` and byte-identical extracted files. These are the only reproducible
+artifacts. The ZIP container differs on every run (entry modification timestamps).
+`app_screenshot.png` differs as well, even between runs on the same day: it shows the date in
+the title block and the pipeline timing in the status bar (`… 7.94 m of cuts · 883 ms` in
+the committed shot; 951 ms and 981 ms on later runs). These are visual/reference baselines, not test
+goldens; the hashed regression goldens remain `test/golden/*.json`.
