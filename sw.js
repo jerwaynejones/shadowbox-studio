@@ -33,6 +33,7 @@ const SHELL = [
   "./js/trace.js",
   "./js/svgout.js",
   "./js/zip.js",
+  "./js/engine.js",
   "./js/preview.js",
   "./js/app.js",
   "./icons/icon.svg",

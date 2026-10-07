@@ -338,6 +338,18 @@ suite("baseline — characterization (KNOWN-DEFECT checks invert when fixed)", (
       SBRaster.sheetMasks(SBRaster.bands(L, th), g.N, 37, 11, g.darkFront).every((m, k) => H(m) === g.masks[k]); }));
 });
 
+// ------------------------------------------------ engine seam (T0.5)
+suite("engine.js — legacyRun seam (NFR-10, DEP-04)", () => {
+  const G = require("./golden/oldrun.json"), H = (u8) => require("crypto").createHash("sha256").update(Buffer.from(u8)).digest("hex");
+  const w = 40, h = 30, rgba = new Uint8ClampedArray(w * h * 4);
+  for (let i = 0; i < w * h; i++) { const v = ((i % w) * 6 + Math.floor(i / w) * 3) % 256; rgba.set([v, v, v, 255], i * 4); }
+  const r = SBEngine.legacyRun(rgba, w, h, G.cfg);
+  check("NFR-10 legacyRun returns nSheets sheets", r.sheets.length === 5);
+  check("DEP-04 legacyRun == pre-refactor runPipeline body (masks, loops, bridges)", r.sheets.every((s, k) =>
+    H(s.mask) === G.sheets[k].mask && H(Buffer.from(JSON.stringify(s.loops))) === G.sheets[k].loops &&
+    (s.bridges ? H(s.bridges) : null) === G.sheets[k].bridges));
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {
