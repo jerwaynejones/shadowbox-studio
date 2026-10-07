@@ -1,0 +1,747 @@
+
+=== Config A — plan literal: simplify(0.6)+chaikin(2), 250 µm/px, tol 50 µm, no pinning ===
+stack                         k        loops ovUncond mm²   sliverU µm  ovGated mm²   sliverG µm  ovFinal mm²    rawOv mm²       fb dev      fb topo      fb cont      C/R/raw       sweeps
+donutIsland                   1            3            0            0            0            0            0            0            2            0            0        1/2/0            1
+crescent                      1            1       0.0069           24            0            0            0            0            2            0            0        0/0/1            1
+crescentInterior              1            1            0            0            0            0            0            0            2            0            0        0/0/1            1
+borderTouch                   1            1       0.0691          142            0            0            0            0            1            0            0        0/1/0            1
+lowerHoleUnderPart            1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+lowerHoleUnderPart            2            1       0.0526          250       0.0526          250       0.0526         0.06            0            0            0        1/0/0             
+emptyIntermediate             1            0            0            0            0            0            0            0            0            0            0        0/0/0            1
+emptyIntermediate             2            1       0.4743          750       0.5625          750       0.5625         0.56            1            0            0        0/1/0             
+orientationF                  1            1       0.0613           78            0            0            0            0            1            0            0        0/1/0            1
+diagonalTouch                 1            2       0.1288          132            0            0            0            0            2            0            0        0/2/0            1
+looseBridge                   1            3            0            0            0            0            0            0            3            0            0        0/3/0            1
+looseBridge                   2            3            0            0            0            0            0            0            3            0            0        0/3/0             
+narrowBridge(1)               1            1       0.3438          148            0            0            0            0            2            0            0        0/0/1            1
+narrowBridge(2)               1            1       0.3478          148            0            0            0            0            2            0            0        0/0/1            1
+narrowBridge(3)               1            1       0.2558          148            0            0            0            0            2            0            0        0/0/1            1
+random s=1                    1            3       3.5921         1152            0            0            0            0            5            0            0        0/1/2            1
+random s=1                    2            1       0.0102           70            0            0            0            0            2            0            0        0/0/1             
+random s=1                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=1                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=1                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=2                    1            2            0            0            0            0            0            0            4            0            0        0/0/2            1
+random s=2                    2            1       0.0063           42            0            0            0            0            2            0            0        0/0/1             
+random s=2                    3            1            0            0            0            0            0            0            2            0            0        0/0/1             
+random s=2                    4            1       0.0141           76            0            0            0            0            0            0            0        1/0/0             
+random s=2                    5            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=3                    1            2       2.9883          672            0            0            0            0            4            0            0        0/0/2            1
+random s=3                    2            3       0.1350          104            0            0            0            0            6            0            0        0/0/3             
+random s=3                    3            1            0            0            0            0            0            0            2            0            0        0/0/1             
+random s=3                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=3                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=4                    1            3      26.3697         3388            0            0            0            0            6            0            0        0/0/3            1
+random s=4                    2            1       0.0671           84            0            0            0            0            2            0            0        0/0/1             
+random s=4                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=4                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=4                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=5                    1            3            0            0            0            0            0            0            5            0            0        0/1/2            1
+random s=5                    2            1       0.0048           44            0            0            0            0            2            0            0        0/0/1             
+random s=5                    3            1       0.0079           48            0            0            0            0            2            0            0        0/0/1             
+random s=5                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=5                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=6                    1            3      43.2835         3490            0            0            0            0            6            0            0        0/0/3            1
+random s=6                    2            3       0.1746           88            0            0            0            0            6            0            0        0/0/3             
+random s=6                    3            2            0            0            0            0            0            0            4            0            0        0/0/2             
+random s=6                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=6                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    1            3      33.4841         3122            0            0            0            0            6            0            0        0/0/3            1
+random s=7                    2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    1            2      26.9933         2960            0            0            0            0            4            0            0        0/0/2            1
+random s=8                    2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=9                    1            2      23.1967         3208            0            0            0            0            4            0            0        0/0/2            1
+random s=9                    2            1            0            0            0            0            0            0            2            0            0        0/0/1             
+random s=9                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=9                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=9                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=10                   1            3      15.3250         1916            0            0            0            0            6            0            0        0/0/3            1
+random s=10                   2            1       0.0964          104            0            0            0            0            2            0            0        0/0/1             
+random s=10                   3            2       0.1661          128            0            0            0            0            2            0            0        1/0/1             
+random s=10                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=10                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=11                   1            2      20.1776         3388            0            0            0            0            4            0            0        0/0/2            1
+random s=11                   2            2       0.1339           92            0            0            0            0            4            0            0        0/0/2             
+random s=11                   3            1       0.0681           84            0            0            0            0            2            0            0        0/0/1             
+random s=11                   4            1       0.0142           30            0            0            0            0            2            0            0        0/0/1             
+random s=11                   5            1            0            0            0            0            0            0            2            0            0        0/0/1             
+random s=12                   1            2       2.5813          990            0            0            0            0            4            0            0        0/0/2            1
+random s=12                   2            2       0.1668          100            0            0            0            0            4            0            0        0/0/2             
+random s=12                   3            1       0.0096           52            0            0            0            0            2            0            0        0/0/1             
+random s=12                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=12                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=13                   1            3      11.2353         2822            0            0            0            0            6            0            0        0/0/3            1
+random s=13                   2            2       0.2514          156            0            0            0            0            4            0            0        0/0/2             
+random s=13                   3            2       0.1606          232            0            0            0            0            4            0            0        0/0/2             
+random s=13                   4            2            0            0            0            0            0            0            4            0            0        0/0/2             
+random s=13                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=14                   1            1            0            0            0            0            0            0            2            0            0        0/0/1            1
+random s=14                   2            3       0.0260           70            0            0            0            0            3            0            0        1/1/1             
+random s=14                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=14                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=14                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=15                   1            2       0.3789          240            0            0            0            0            4            0            0        0/0/2            1
+random s=15                   2            1       0.0057           24            0            0            0            0            2            0            0        0/0/1             
+random s=15                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=15                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=15                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=16                   1            1      17.9911         2098            0            0            0            0            2            0            0        0/0/1            1
+random s=16                   2            1       0.0217           74            0            0            0            0            2            0            0        0/0/1             
+random s=16                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=16                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=16                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   1            2       3.1509          878            0            0            0            0            4            0            0        0/0/2            1
+random s=17                   2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=18                   1            3      22.9213         3260            0            0            0            0            6            0            0        0/0/3            1
+random s=18                   2            1       0.0167           22            0            0            0            0            2            0            0        0/0/1             
+random s=18                   3            1            0            0            0            0            0            0            2            0            0        0/0/1             
+random s=18                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=18                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   1            1      14.8117         2852            0            0            0            0            2            0            0        0/0/1            1
+random s=19                   2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=20                   1            3      27.7682         3462            0            0            0            0            6            0            0        0/0/3            1
+random s=20                   2            2       0.6269          398            0            0            0            0            2            0            0        1/0/1             
+random s=20                   3            1       0.0496           84            0            0            0            0            2            0            0        0/0/1             
+random s=20                   4            1       0.0553           60            0            0            0            0            2            0            0        0/0/1             
+random s=20                   5            1       0.0831          208            0            0            0            0            2            0            0        0/0/1             
+  [fixtures] loops 34; bonded C/R/raw 2/27/5 (connected C 2); containment-fallback loops 0; smoothed perimeter bonded 0.8% vs connected 0.8%; max sweeps 1, max steps 0, unresolved 0; all nested true; max dev 44.55 µm; uncond overhang max 0.4743 mm² (total 1.7404), max sliver 750 µm, stacks w/ overhang 9/12; time p50 9 ms max 42 ms
+  [random] loops 113; bonded C/R/raw 5/23/85 (connected C 5); containment-fallback loops 0; smoothed perimeter bonded 0.1% vs connected 0.1%; max sweeps 1, max steps 0, unresolved 0; all nested true; max dev 44.55 µm; uncond overhang max 43.2835 mm² (total 298.6212), max sliver 3490 µm, stacks w/ overhang 20/20; time p50 372 ms max 467 ms
+
+=== Config B — D1 proposal: rdp(tol/px)+chaikin(2), 250 µm/px, tol 50 µm, pinned ===
+stack                         k        loops ovUncond mm²   sliverU µm  ovGated mm²   sliverG µm  ovFinal mm²    rawOv mm²       fb dev      fb topo      fb cont      C/R/raw       sweeps
+donutIsland                   1            3            0            0            0            0            0            0            2            0            0        1/2/0            1
+crescent                      1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+crescentInterior              1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+borderTouch                   1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+lowerHoleUnderPart            1            2            0            0            0            0            0            0            1            0            0        1/1/0            1
+lowerHoleUnderPart            2            1       0.0526          250       0.0526          250       0.0526         0.06            0            0            0        1/0/0             
+emptyIntermediate             1            0            0            0            0            0            0            0            0            0            0        0/0/0            1
+emptyIntermediate             2            1       0.4743          750       0.5625          750       0.5625         0.56            1            0            0        0/1/0             
+orientationF                  1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+diagonalTouch                 1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+looseBridge                   1            3            0            0            0            0            0            0            2            0            0        1/2/0            1
+looseBridge                   2            3            0            0            0            0            0            0            2            0            0        1/2/0             
+narrowBridge(1)               1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+narrowBridge(2)               1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+narrowBridge(3)               1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+random s=1                    1            3            0            0            0            0            0            0            3            0            0        0/3/0            1
+random s=1                    2            1       0.0042           30            0            0            0            0            1            0            0        0/1/0             
+random s=1                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=1                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=1                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=2                    1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+random s=2                    2            1       0.0063           42            0            0            0            0            1            0            0        0/1/0             
+random s=2                    3            1            0            0            0            0            0            0            1            0            0        0/1/0             
+random s=2                    4            1       0.0141           76            0            0            0            0            0            0            0        1/0/0             
+random s=2                    5            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=3                    1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+random s=3                    2            3       0.0171           24            0            0            0            0            3            0            0        0/3/0             
+random s=3                    3            1            0            0            0            0            0            0            1            0            0        0/1/0             
+random s=3                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=3                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=4                    1            3            0            0            0            0            0            0            3            0            0        0/3/0            1
+random s=4                    2            1       0.0024           22            0            0            0            0            1            0            0        0/1/0             
+random s=4                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=4                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=4                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=5                    1            3            0            0            0            0            0            0            3            0            0        0/3/0            1
+random s=5                    2            1            0            0            0            0            0            0            1            0            0        0/1/0             
+random s=5                    3            1       0.0146           48            0            0            0            0            1            0            0        0/1/0             
+random s=5                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=5                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=6                    1            3            0            0            0            0            0            0            3            0            0        0/3/0            1
+random s=6                    2            3       0.0184           26            0            0            0            0            3            0            0        0/3/0             
+random s=6                    3            2            0            0            0            0            0            0            2            0            0        0/2/0             
+random s=6                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=6                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    1            3            0            0            0            0            0            0            3            0            0        0/3/0            1
+random s=7                    2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+random s=8                    2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=9                    1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+random s=9                    2            1            0            0            0            0            0            0            1            0            0        0/1/0             
+random s=9                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=9                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=9                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=10                   1            3            0            0            0            0            0            0            3            0            0        0/3/0            1
+random s=10                   2            1       0.0048           22            0            0            0            0            1            0            0        0/1/0             
+random s=10                   3            2       0.0058           38            0            0            0            0            1            0            0        1/1/0             
+random s=10                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=10                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=11                   1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+random s=11                   2            2       0.0050           16            0            0            0            0            2            0            0        0/2/0             
+random s=11                   3            1       0.0025           16            0            0            0            0            1            0            0        0/1/0             
+random s=11                   4            1       0.0108           30            0            0            0            0            1            0            0        0/1/0             
+random s=11                   5            1            0            0            0            0            0            0            1            0            0        0/1/0             
+random s=12                   1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+random s=12                   2            2       0.0133           30            0            0            0            0            2            0            0        0/2/0             
+random s=12                   3            1       0.0024           12            0            0            0            0            1            0            0        0/1/0             
+random s=12                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=12                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=13                   1            3            0            0            0            0            0            0            3            0            0        0/3/0            1
+random s=13                   2            2            0            0            0            0            0            0            2            0            0        0/2/0             
+random s=13                   3            2       0.0024            8            0            0            0            0            2            0            0        0/2/0             
+random s=13                   4            2            0            0            0            0            0            0            2            0            0        0/2/0             
+random s=13                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=14                   1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+random s=14                   2            3       0.0164           68            0            0            0            0            2            0            0        1/2/0             
+random s=14                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=14                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=14                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=15                   1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+random s=15                   2            1            0            0            0            0            0            0            1            0            0        0/1/0             
+random s=15                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=15                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=15                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=16                   1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+random s=16                   2            1            0            0            0            0            0            0            1            0            0        0/1/0             
+random s=16                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=16                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=16                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+random s=17                   2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=18                   1            3            0            0            0            0            0            0            3            0            0        0/3/0            1
+random s=18                   2            1            0            0            0            0            0            0            1            0            0        0/1/0             
+random s=18                   3            1            0            0            0            0            0            0            1            0            0        0/1/0             
+random s=18                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=18                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+random s=19                   2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=20                   1            3            0            0            0            0            0            0            3            0            0        0/3/0            1
+random s=20                   2            2       0.0042           30            0            0            0            0            1            0            0        1/1/0             
+random s=20                   3            1       0.0087           14            0            0            0            0            1            0            0        0/1/0             
+random s=20                   4            1       0.0049           16            0            0            0            0            1            0            0        0/1/0             
+random s=20                   5            1       0.0552          130            0            0            0            0            1            0            0        0/1/0             
+  [fixtures] loops 34; bonded C/R/raw 17/17/0 (connected C 17); containment-fallback loops 0; smoothed perimeter bonded 55.0% vs connected 55.0%; max sweeps 1, max steps 0, unresolved 0; all nested true; max dev 44.55 µm; uncond overhang max 0.4743 mm² (total 0.5269), max sliver 750 µm, stacks w/ overhang 2/12; time p50 4 ms max 7 ms
+  [random] loops 113; bonded C/R/raw 25/88/0 (connected C 25); containment-fallback loops 0; smoothed perimeter bonded 53.1% vs connected 53.1%; max sweeps 1, max steps 0, unresolved 0; all nested true; max dev 44.55 µm; uncond overhang max 0.0552 mm² (total 0.2136), max sliver 130 µm, stacks w/ overhang 12/20; time p50 54 ms max 123 ms
+
+=== Config C — D1 @ fab-like pixel: 100 µm/px, tol 50 µm, pinned ===
+stack                         k        loops ovUncond mm²   sliverU µm  ovGated mm²   sliverG µm  ovFinal mm²    rawOv mm²       fb dev      fb topo      fb cont      C/R/raw       sweeps
+donutIsland                   1            3            0            0            0            0            0            0            2            0            0        1/2/0            1
+crescent                      1            1            0            0            0            0            0            0            0            0            0        1/0/0            1
+crescentInterior              1            1            0            0            0            0            0            0            0            0            0        1/0/0            1
+borderTouch                   1            1            0            0            0            0            0            0            0            0            0        1/0/0            1
+lowerHoleUnderPart            1            2            0            0            0            0            0            0            1            0            0        1/1/0            1
+lowerHoleUnderPart            2            1       0.0084          100       0.0084          100       0.0084         0.01            0            0            0        1/0/0             
+emptyIntermediate             1            0            0            0            0            0            0            0            0            0            0        0/0/0            1
+emptyIntermediate             2            1       0.0759          300       0.0900          300       0.0900         0.09            1            0            0        0/1/0             
+orientationF                  1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+diagonalTouch                 1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+looseBridge                   1            3            0            0            0            0            0            0            1            0            0        2/1/0            1
+looseBridge                   2            3            0            0            0            0            0            0            1            0            0        2/1/0             
+narrowBridge(1)               1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+narrowBridge(2)               1            1            0            0            0            0            0            0            0            0            0        1/0/0            1
+narrowBridge(3)               1            1            0            0            0            0            0            0            0            0            0        1/0/0            1
+random s=1                    1            3            0            0            0            0            0            0            1            0            2        1/1/1            2
+random s=1                    2            1       0.0034           28       0.0133           38            0            0            1            0            1        0/0/1             
+random s=1                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=1                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=1                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=2                    1            2            0            0            0            0            0            0            0            0            2        1/0/1            2
+random s=2                    2            1       0.0010           18       0.0010           18            0            0            0            0            2        0/0/1             
+random s=2                    3            1            0            0            0            0            0            0            0            0            2        0/0/1             
+random s=2                    4            1       0.0023           32       0.0023           32            0            0            0            0            0        1/0/0             
+random s=2                    5            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=3                    1            2            0            0            0            0            0            0            0            0            4        0/0/2            2
+random s=3                    2            3       0.0222           34       0.0590           44            0            0            2            0            4        0/0/3             
+random s=3                    3            1            0            0            0            0            0            0            0            0            2        0/0/1             
+random s=3                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=3                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=4                    1            3            0            0            0            0            0            0            0            0            2        2/0/1            2
+random s=4                    2            1       0.0079           34       0.0079           34            0            0            0            0            2        0/0/1             
+random s=4                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=4                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=4                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=5                    1            3            0            0            0            0            0            0            0            0            2        2/0/1            2
+random s=5                    2            1       0.0008           18       0.0076           32            0            0            1            0            1        0/0/1             
+random s=5                    3            1       0.0013           20       0.0019           22            0            0            0            0            1        0/1/0             
+random s=5                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=5                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=6                    1            3            0            0            0            0            0            0            1            0            3        1/0/2            2
+random s=6                    2            3       0.0174           34       0.0338           36            0            0            1            0            3        1/0/2             
+random s=6                    3            2            0            0            0            0            0            0            0            0            2        1/0/1             
+random s=6                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=6                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    1            3            0            0            0            0            0            0            1            0            0        2/1/0            1
+random s=7                    2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    1            2            0            0            0            0            0            0            1            0            0        1/1/0            1
+random s=8                    2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=9                    1            2            0            0            0            0            0            0            0            0            0        2/0/0            1
+random s=9                    2            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=9                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=9                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=9                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=10                   1            3            0            0            0            0            0            0            0            0            2        2/0/1            2
+random s=10                   2            1       0.0077           30       0.0335           40            0            0            1            0            1        0/0/1             
+random s=10                   3            2       0.0062           34       0.0075           44            0            0            1            0            1        1/0/1             
+random s=10                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=10                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=11                   1            2            0            0            0            0            0            0            0            0            2        1/0/1            2
+random s=11                   2            2       0.0080           34       0.0080           34            0            0            0            0            2        1/0/1             
+random s=11                   3            1       0.0118           34       0.0242           34            0            0            1            0            1        0/0/1             
+random s=11                   4            1       0.0033           22       0.0025           38            0            0            1            0            1        0/0/1             
+random s=11                   5            1            0            0            0            0            0            0            1            0            1        0/0/1             
+random s=12                   1            2            0            0            0            0            0            0            0            0            4        0/0/2            2
+random s=12                   2            2       0.0057           34       0.0057           34            0            0            0            0            4        0/0/2             
+random s=12                   3            1       0.0015           20       0.0074           40            0            0            1            0            1        0/0/1             
+random s=12                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=12                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=13                   1            3            0            0            0            0            0            0            0            0            4        1/0/2            2
+random s=13                   2            2       0.0088           36       0.0088           36            0            0            0            0            4        0/0/2             
+random s=13                   3            2       0.0062           34       0.0168           34            0            0            1            0            3        0/0/2             
+random s=13                   4            2            0            0            0            0            0            0            1            0            3        0/0/2             
+random s=13                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=14                   1            1            0            0            0            0            0            0            1            0            0        0/1/0            2
+random s=14                   2            3       0.0042           28       0.0025           38            0            0            1            0            1        2/0/1             
+random s=14                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=14                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=14                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=15                   1            2            0            0            0            0            0            0            0            0            2        1/0/1            2
+random s=15                   2            1       0.0020           28       0.0174           32            0            0            1            0            1        0/0/1             
+random s=15                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=15                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=15                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=16                   1            1            0            0            0            0            0            0            0            0            2        0/0/1            2
+random s=16                   2            1       0.0035           30       0.0035           30            0            0            0            0            2        0/0/1             
+random s=16                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=16                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=16                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   1            2            0            0            0            0            0            0            0            0            0        2/0/0            1
+random s=17                   2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=18                   1            3            0            0            0            0            0            0            0            0            0        3/0/0            1
+random s=18                   2            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=18                   3            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=18                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=18                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   1            1            0            0            0            0            0            0            0            0            0        1/0/0            1
+random s=19                   2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=20                   1            3            0            0            0            0            0            0            1            0            3        0/2/1            3
+random s=20                   2            2       0.0008           16       0.0008           16            0            0            0            0            4        0/0/2             
+random s=20                   3            1       0.0065           34       0.0267           44            0            0            1            0            1        0/0/1             
+random s=20                   4            1       0.0046           36       0.0100           46            0            0            1            0            1        0/0/1             
+random s=20                   5            1       0.0133           82       0.0045           22            0            0            0            0            2        0/0/1             
+  [fixtures] loops 34; bonded C/R/raw 24/10/0 (connected C 24); containment-fallback loops 0; smoothed perimeter bonded 75.6% vs connected 75.6%; max sweeps 1, max steps 0, unresolved 0; all nested true; max dev 49.04 µm; uncond overhang max 0.0759 mm² (total 0.0843), max sliver 300 µm, stacks w/ overhang 2/12; time p50 2 ms max 3 ms
+  [random] loops 113; bonded C/R/raw 54/7/52 (connected C 90); containment-fallback loops 54; smoothed perimeter bonded 69.8% vs connected 89.8%; max sweeps 3, max steps 11, unresolved 0; all nested true; max dev 49.62 µm; uncond overhang max 0.0222 mm² (total 0.1505), max sliver 82 µm, stacks w/ overhang 14/20; time p50 35 ms max 74 ms
+
+=== Config D — D1 loose tolerance: 250 µm/px, tol 100 µm, pinned ===
+stack                         k        loops ovUncond mm²   sliverU µm  ovGated mm²   sliverG µm  ovFinal mm²    rawOv mm²       fb dev      fb topo      fb cont      C/R/raw       sweeps
+donutIsland                   1            3            0            0            0            0            0            0            2            0            0        1/2/0            1
+crescent                      1            1            0            0            0            0            0            0            0            0            0        1/0/0            1
+crescentInterior              1            1            0            0            0            0            0            0            0            0            0        1/0/0            1
+borderTouch                   1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+lowerHoleUnderPart            1            2            0            0            0            0            0            0            1            0            0        1/1/0            1
+lowerHoleUnderPart            2            1       0.0526          250       0.0526          250       0.0526         0.06            0            0            0        1/0/0             
+emptyIntermediate             1            0            0            0            0            0            0            0            0            0            0        0/0/0            1
+emptyIntermediate             2            1       0.4743          750       0.5625          750       0.5625         0.56            1            0            0        0/1/0             
+orientationF                  1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+diagonalTouch                 1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+looseBridge                   1            3            0            0            0            0            0            0            1            0            0        2/1/0            1
+looseBridge                   2            3            0            0            0            0            0            0            1            0            0        2/1/0             
+narrowBridge(1)               1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+narrowBridge(2)               1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+narrowBridge(3)               1            1            0            0            0            0            0            0            0            0            0        1/0/0            1
+random s=1                    1            3            0            0            0            0            0            0            1            0            1        1/2/0            2
+random s=1                    2            1       0.0042           30       0.0664           78            0            0            1            0            1        0/0/1             
+random s=1                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=1                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=1                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=2                    1            2            0            0            0            0            0            0            0            0            1        1/1/0            2
+random s=2                    2            1       0.0063           42       0.0328           68            0            0            1            0            1        0/0/1             
+random s=2                    3            1            0            0            0            0            0            0            1            0            0        0/1/0             
+random s=2                    4            1       0.0141           76            0            0            0            0            0            0            0        1/0/0             
+random s=2                    5            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=3                    1            2            0            0            0            0            0            0            0            0            2        0/2/0            2
+random s=3                    2            3       0.0171           24       0.2290           80            0            0            2            0            4        0/0/3             
+random s=3                    3            1            0            0            0            0            0            0            0            0            1        0/1/0             
+random s=3                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=3                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=4                    1            3            0            0            0            0            0            0            0            0            1        2/1/0            2
+random s=4                    2            1       0.0024           22       0.0024           22            0            0            0            0            2        0/0/1             
+random s=4                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=4                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=4                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=5                    1            3            0            0            0            0            0            0            0            0            1        2/1/0            3
+random s=5                    2            1            0            0            0            0            0            0            0            0            2        0/0/1             
+random s=5                    3            1       0.0146           48       0.0146           48            0            0            0            0            2        0/0/1             
+random s=5                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=5                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=6                    1            3            0            0            0            0            0            0            0            0            1        2/1/0            2
+random s=6                    2            3       0.0184           26       0.0961           84            0            0            1            0            1        2/0/1             
+random s=6                    3            2            0            0            0            0            0            0            0            0            0        2/0/0             
+random s=6                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=6                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    1            3            0            0            0            0            0            0            1            0            0        2/1/0            1
+random s=7                    2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    1            2            0            0            0            0            0            0            1            0            0        1/1/0            1
+random s=8                    2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=9                    1            2            0            0            0            0            0            0            1            0            0        1/1/0            1
+random s=9                    2            1            0            0            0            0            0            0            1            0            0        0/1/0             
+random s=9                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=9                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=9                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=10                   1            3            0            0            0            0            0            0            0            0            1        2/1/0            2
+random s=10                   2            1       0.0048           22       0.0048           22            0            0            0            0            2        0/0/1             
+random s=10                   3            2       0.0058           38       0.0058           38            0            0            0            0            1        1/1/0             
+random s=10                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=10                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=11                   1            2            0            0            0            0            0            0            0            0            1        1/1/0            2
+random s=11                   2            2       0.0050           16       0.0050           16            0            0            0            0            2        1/0/1             
+random s=11                   3            1       0.0025           16       0.0764           72            0            0            1            0            0        0/1/0             
+random s=11                   4            1       0.0108           30            0            0            0            0            1            0            0        0/1/0             
+random s=11                   5            1            0            0            0            0            0            0            1            0            0        0/1/0             
+random s=12                   1            2            0            0            0            0            0            0            0            0            1        1/1/0            2
+random s=12                   2            2       0.0133           30       0.0133           30            0            0            0            0            2        1/0/1             
+random s=12                   3            1       0.0024           12       0.0302           62            0            0            1            0            0        0/1/0             
+random s=12                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=12                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=13                   1            3            0            0            0            0            0            0            0            0            1        2/1/0            3
+random s=13                   2            2            0            0            0            0            0            0            0            0            2        1/0/1             
+random s=13                   3            2       0.0024            8       0.0659           74            0            0            1            0            1        1/0/1             
+random s=13                   4            2            0            0            0            0            0            0            1            0            0        1/1/0             
+random s=13                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=14                   1            1            0            0            0            0            0            0            1            0            0        0/1/0            2
+random s=14                   2            3       0.0164           68       0.0074           48            0            0            0            0            1        2/1/0             
+random s=14                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=14                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=14                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=15                   1            2            0            0            0            0            0            0            0            0            1        1/1/0            2
+random s=15                   2            1            0            0       0.0936           82            0            0            1            0            1        0/0/1             
+random s=15                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=15                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=15                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=16                   1            1            0            0            0            0            0            0            0            0            0        1/0/0            1
+random s=16                   2            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=16                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=16                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=16                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   1            2            0            0            0            0            0            0            1            0            0        1/1/0            1
+random s=17                   2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=18                   1            3            0            0            0            0            0            0            0            0            0        3/0/0            1
+random s=18                   2            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=18                   3            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=18                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=18                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   1            1            0            0            0            0            0            0            0            0            0        1/0/0            1
+random s=19                   2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=20                   1            3            0            0            0            0            0            0            0            0            2        1/2/0            2
+random s=20                   2            2       0.0042           30       0.0952           80            0            0            1            0            3        0/0/2             
+random s=20                   3            1       0.0087           14            0            0            0            0            1            0            0        0/1/0             
+random s=20                   4            1       0.0049           16            0            0            0            0            1            0            0        0/1/0             
+random s=20                   5            1       0.0552          130            0            0            0            0            1            0            0        0/1/0             
+  [fixtures] loops 34; bonded C/R/raw 22/12/0 (connected C 22); containment-fallback loops 0; smoothed perimeter bonded 68.2% vs connected 68.2%; max sweeps 1, max steps 0, unresolved 0; all nested true; max dev 85.33 µm; uncond overhang max 0.4743 mm² (total 0.5269), max sliver 750 µm, stacks w/ overhang 2/12; time p50 4 ms max 7 ms
+  [random] loops 113; bonded C/R/raw 63/33/17 (connected C 89); containment-fallback loops 34; smoothed perimeter bonded 76.2% vs connected 90.1%; max sweeps 3, max steps 5, unresolved 0; all nested true; max dev 92.16 µm; uncond overhang max 0.0552 mm² (total 0.2136), max sliver 130 µm, stacks w/ overhang 12/20; time p50 57 ms max 137 ms
+
+=== Config E — D1 + shared-boundary pinning: 100 µm/px, tol 50 µm ===
+stack                         k        loops ovUncond mm²   sliverU µm  ovGated mm²   sliverG µm  ovFinal mm²    rawOv mm²       fb dev      fb topo      fb cont      C/R/raw       sweeps
+donutIsland                   1            3            0            0            0            0            0            0            2            0            0        1/2/0            1
+crescent                      1            1            0            0            0            0            0            0            0            0            0        1/0/0            1
+crescentInterior              1            1            0            0            0            0            0            0            0            0            0        1/0/0            1
+borderTouch                   1            1            0            0            0            0            0            0            0            0            0        1/0/0            1
+lowerHoleUnderPart            1            2            0            0            0            0            0            0            1            0            0        1/1/0            1
+lowerHoleUnderPart            2            1       0.0084          100       0.0084          100       0.0084         0.01            0            0            0        1/0/0             
+emptyIntermediate             1            0            0            0            0            0            0            0            0            0            0        0/0/0            1
+emptyIntermediate             2            1       0.0759          300       0.0900          300       0.0900         0.09            1            0            0        0/1/0             
+orientationF                  1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+diagonalTouch                 1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+looseBridge                   1            3            0            0            0            0            0            0            0            0            0        3/0/0            1
+looseBridge                   2            3            0            0            0            0            0            0            0            0            0        3/0/0             
+narrowBridge(1)               1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+narrowBridge(2)               1            1            0            0            0            0            0            0            0            0            0        1/0/0            1
+narrowBridge(3)               1            1            0            0            0            0            0            0            0            0            0        1/0/0            1
+random s=1                    1            3            0            0            0            0            0            0            1            0            0        2/1/0            1
+random s=1                    2            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=1                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=1                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=1                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=2                    1            2            0            0            0            0            0            0            0            0            0        2/0/0            1
+random s=2                    2            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=2                    3            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=2                    4            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=2                    5            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=3                    1            2            0            0            0            0            0            0            0            0            1        1/1/0            2
+random s=3                    2            3       0.0001            2       0.0001            2            0            0            1            0            2        1/1/1             
+random s=3                    3            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=3                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=3                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=4                    1            3            0            0            0            0            0            0            0            0            0        3/0/0            1
+random s=4                    2            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=4                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=4                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=4                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=5                    1            3            0            0            0            0            0            0            0            0            2        2/0/1            2
+random s=5                    2            1       0.0012           20       0.0012           20            0            0            0            0            2        0/0/1             
+random s=5                    3            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=5                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=5                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=6                    1            3            0            0            0            0            0            0            0            0            0        3/0/0            1
+random s=6                    2            3            0            0            0            0            0            0            0            0            0        3/0/0             
+random s=6                    3            2            0            0            0            0            0            0            0            0            0        2/0/0             
+random s=6                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=6                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    1            3            0            0            0            0            0            0            1            0            0        2/1/0            1
+random s=7                    2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    1            2            0            0            0            0            0            0            1            0            0        1/1/0            1
+random s=8                    2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=9                    1            2            0            0            0            0            0            0            0            0            0        2/0/0            1
+random s=9                    2            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=9                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=9                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=9                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=10                   1            3            0            0            0            0            0            0            0            0            1        2/1/0            2
+random s=10                   2            1       0.0005            8       0.0005            8            0            0            0            0            2        0/0/1             
+random s=10                   3            2            0            0            0            0            0            0            0            0            0        2/0/0             
+random s=10                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=10                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=11                   1            2            0            0            0            0            0            0            0            0            1        1/1/0            2
+random s=11                   2            2       0.0001            2       0.0001            2            0            0            0            0            2        1/0/1             
+random s=11                   3            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=11                   4            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=11                   5            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=12                   1            2            0            0            0            0            0            0            0            0            0        2/0/0            1
+random s=12                   2            2            0            0            0            0            0            0            0            0            0        2/0/0             
+random s=12                   3            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=12                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=12                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=13                   1            3            0            0            0            0            0            0            0            0            2        2/0/1            2
+random s=13                   2            2       0.0013           22       0.0013           22            0            0            0            0            2        1/0/1             
+random s=13                   3            2            0            0            0            0            0            0            0            0            0        2/0/0             
+random s=13                   4            2            0            0            0            0            0            0            0            0            0        2/0/0             
+random s=13                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=14                   1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+random s=14                   2            3            0            0            0            0            0            0            0            0            0        3/0/0             
+random s=14                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=14                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=14                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=15                   1            2            0            0            0            0            0            0            0            0            2        1/0/1            2
+random s=15                   2            1       0.0033           30       0.0033           30            0            0            0            0            2        0/0/1             
+random s=15                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=15                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=15                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=16                   1            1            0            0            0            0            0            0            0            0            0        1/0/0            1
+random s=16                   2            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=16                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=16                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=16                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   1            2            0            0            0            0            0            0            0            0            0        2/0/0            1
+random s=17                   2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=18                   1            3            0            0            0            0            0            0            0            0            0        3/0/0            1
+random s=18                   2            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=18                   3            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=18                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=18                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   1            1            0            0            0            0            0            0            0            0            0        1/0/0            1
+random s=19                   2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=20                   1            3            0            0            0            0            0            0            1            0            0        2/1/0            2
+random s=20                   2            2            0            0            0            0            0            0            0            0            0        2/0/0             
+random s=20                   3            1            0            0            0            0            0            0            0            0            1        0/1/0             
+random s=20                   4            1       0.0001            2       0.0001            2            0            0            0            0            2        0/0/1             
+random s=20                   5            1            0            0            0            0            0            0            0            0            0        1/0/0             
+  [fixtures] loops 34; bonded C/R/raw 26/8/0 (connected C 26); containment-fallback loops 0; smoothed perimeter bonded 78.1% vs connected 78.1%; max sweeps 1, max steps 0, unresolved 0; all nested true; max dev 49.04 µm; uncond overhang max 0.0759 mm² (total 0.0843), max sliver 300 µm, stacks w/ overhang 2/12; time p50 2 ms max 4 ms
+  [random] loops 113; bonded C/R/raw 93/10/10 (connected C 107); containment-fallback loops 14; smoothed perimeter bonded 87.2% vs connected 95.7%; max sweeps 2, max steps 4, unresolved 0; all nested true; max dev 49.81 µm; uncond overhang max 0.0033 mm² (total 0.0065), max sliver 30 µm, stacks w/ overhang 7/20; time p50 22 ms max 42 ms
+
+=== Config F — D1 + shared-boundary pinning: 250 µm/px, tol 50 µm ===
+stack                         k        loops ovUncond mm²   sliverU µm  ovGated mm²   sliverG µm  ovFinal mm²    rawOv mm²       fb dev      fb topo      fb cont      C/R/raw       sweeps
+donutIsland                   1            3            0            0            0            0            0            0            2            0            0        1/2/0            1
+crescent                      1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+crescentInterior              1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+borderTouch                   1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+lowerHoleUnderPart            1            2            0            0            0            0            0            0            1            0            0        1/1/0            1
+lowerHoleUnderPart            2            1       0.0526          250       0.0526          250       0.0526         0.06            0            0            0        1/0/0             
+emptyIntermediate             1            0            0            0            0            0            0            0            0            0            0        0/0/0            1
+emptyIntermediate             2            1       0.4743          750       0.5625          750       0.5625         0.56            1            0            0        0/1/0             
+orientationF                  1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+diagonalTouch                 1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+looseBridge                   1            3            0            0            0            0            0            0            0            0            0        3/0/0            1
+looseBridge                   2            3            0            0            0            0            0            0            0            0            0        3/0/0             
+narrowBridge(1)               1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+narrowBridge(2)               1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+narrowBridge(3)               1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+random s=1                    1            3            0            0            0            0            0            0            3            0            0        0/3/0            1
+random s=1                    2            1            0            0            0            0            0            0            1            0            0        0/1/0             
+random s=1                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=1                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=1                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=2                    1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+random s=2                    2            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=2                    3            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=2                    4            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=2                    5            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=3                    1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+random s=3                    2            3       0.0010            6            0            0            0            0            2            0            0        1/2/0             
+random s=3                    3            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=3                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=3                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=4                    1            3            0            0            0            0            0            0            3            0            0        0/3/0            1
+random s=4                    2            1            0            0            0            0            0            0            1            0            0        0/1/0             
+random s=4                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=4                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=4                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=5                    1            3            0            0            0            0            0            0            3            0            0        0/3/0            1
+random s=5                    2            1            0            0            0            0            0            0            1            0            0        0/1/0             
+random s=5                    3            1            0            0            0            0            0            0            1            0            0        0/1/0             
+random s=5                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=5                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=6                    1            3            0            0            0            0            0            0            2            0            0        1/2/0            1
+random s=6                    2            3            0            0            0            0            0            0            1            0            0        2/1/0             
+random s=6                    3            2            0            0            0            0            0            0            0            0            0        2/0/0             
+random s=6                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=6                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    1            3            0            0            0            0            0            0            3            0            0        0/3/0            1
+random s=7                    2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=7                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+random s=8                    2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=8                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=9                    1            2            0            0            0            0            0            0            1            0            0        1/1/0            1
+random s=9                    2            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=9                    3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=9                    4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=9                    5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=10                   1            3            0            0            0            0            0            0            3            0            0        0/3/0            1
+random s=10                   2            1       0.0036           18            0            0            0            0            0            0            0        1/0/0             
+random s=10                   3            2            0            0            0            0            0            0            1            0            0        1/1/0             
+random s=10                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=10                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=11                   1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+random s=11                   2            2       0.0005            6            0            0            0            0            2            0            0        0/2/0             
+random s=11                   3            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=11                   4            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=11                   5            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=12                   1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+random s=12                   2            2            0            0            0            0            0            0            2            0            0        0/2/0             
+random s=12                   3            1            0            0            0            0            0            0            1            0            0        0/1/0             
+random s=12                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=12                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=13                   1            3            0            0            0            0            0            0            3            0            0        0/3/0            1
+random s=13                   2            2            0            0            0            0            0            0            2            0            0        0/2/0             
+random s=13                   3            2            0            0            0            0            0            0            0            0            0        2/0/0             
+random s=13                   4            2            0            0            0            0            0            0            0            0            0        2/0/0             
+random s=13                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=14                   1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+random s=14                   2            3            0            0            0            0            0            0            2            0            0        1/2/0             
+random s=14                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=14                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=14                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=15                   1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+random s=15                   2            1       0.0002            4            0            0            0            0            1            0            0        0/1/0             
+random s=15                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=15                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=15                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=16                   1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+random s=16                   2            1            0            0            0            0            0            0            1            0            0        0/1/0             
+random s=16                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=16                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=16                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   1            2            0            0            0            0            0            0            2            0            0        0/2/0            1
+random s=17                   2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=17                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=18                   1            3            0            0            0            0            0            0            3            0            0        0/3/0            1
+random s=18                   2            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=18                   3            1            0            0            0            0            0            0            0            0            0        1/0/0             
+random s=18                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=18                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   1            1            0            0            0            0            0            0            1            0            0        0/1/0            1
+random s=19                   2            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   3            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   4            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=19                   5            0            0            0            0            0            0            0            0            0            0        0/0/0             
+random s=20                   1            3            0            0            0            0            0            0            2            0            0        1/2/0            1
+random s=20                   2            2            0            0            0            0            0            0            1            0            0        1/1/0             
+random s=20                   3            1            0            0            0            0            0            0            1            0            0        0/1/0             
+random s=20                   4            1       0.0005            6            0            0            0            0            0            0            0        1/0/0             
+random s=20                   5            1            0            0            0            0            0            0            1            0            0        0/1/0             
+  [fixtures] loops 34; bonded C/R/raw 21/13/0 (connected C 21); containment-fallback loops 0; smoothed perimeter bonded 58.2% vs connected 58.2%; max sweeps 1, max steps 0, unresolved 0; all nested true; max dev 44.55 µm; uncond overhang max 0.4743 mm² (total 0.5269), max sliver 750 µm, stacks w/ overhang 2/12; time p50 4 ms max 16 ms
+  [random] loops 113; bonded C/R/raw 48/65/0 (connected C 48); containment-fallback loops 0; smoothed perimeter bonded 59.0% vs connected 59.0%; max sweeps 1, max steps 0, unresolved 0; all nested true; max dev 44.55 µm; uncond overhang max 0.0036 mm² (total 0.0059), max sliver 18 µm, stacks w/ overhang 5/20; time p50 47 ms max 76 ms
+
+=== Scale timing: 8-layer nested stacks (fixture = randomNestedStack, busy = 40 discs/layer), configs C and E (100 µm/px, tol 50 µm) ===
+  [C] fixture 240x160: loops 5, bonded C/R/raw 1/2/2 (connected C 2), smoothed perimeter 64.3% vs 75.6%, sweeps 2, steps 3, nested true; bonded 38 ms (deviation 29 ms), connected 34 ms
+  [E] fixture 240x160: loops 5, bonded C/R/raw 1/3/1 (connected C 3), smoothed perimeter 64.3% vs 81.2%, sweeps 2, steps 3, nested true; bonded 33 ms (deviation 25 ms), connected 31 ms
+  [C] fixture 768x512: loops 5, bonded C/R/raw 1/2/2 (connected C 3), smoothed perimeter 65.2% vs 81.5%, sweeps 2, steps 4, nested true; bonded 146 ms (deviation 93 ms), connected 158 ms
+  [E] fixture 768x512: loops 5, bonded C/R/raw 3/2/0 (connected C 3), smoothed perimeter 81.5% vs 81.5%, sweeps 1, steps 0, nested true; bonded 111 ms (deviation 77 ms), connected 110 ms
+  [C] fixture 1536x1024: loops 5, bonded C/R/raw 2/1/2 (connected C 3), smoothed perimeter 66.1% vs 71.2%, sweeps 2, steps 3, nested true; bonded 314 ms (deviation 182 ms), connected 296 ms
+  [E] fixture 1536x1024: loops 5, bonded C/R/raw 2/2/1 (connected C 4), smoothed perimeter 66.1% vs 82.3%, sweeps 2, steps 3, nested true; bonded 287 ms (deviation 154 ms), connected 269 ms
+  [C] busy 240x160: loops 162, bonded C/R/raw 44/14/104 (connected C 118), smoothed perimeter 13.5% vs 57.5%, sweeps 3, steps 23, nested true; bonded 752 ms (deviation 427 ms), connected 545 ms
+  [E] busy 240x160: loops 162, bonded C/R/raw 142/13/7 (connected C 156), smoothed perimeter 73.3% vs 86.2%, sweeps 2, steps 9, nested true; bonded 387 ms (deviation 194 ms), connected 236 ms
+  [C] busy 768x512: loops 121, bonded C/R/raw 23/14/84 (connected C 70), smoothed perimeter 18.3% vs 53.1%, sweeps 3, steps 18, nested true; bonded 1726 ms (deviation 1006 ms), connected 1223 ms
+  [E] busy 768x512: loops 121, bonded C/R/raw 100/11/10 (connected C 115), smoothed perimeter 67.5% vs 85.9%, sweeps 2, steps 10, nested true; bonded 1038 ms (deviation 506 ms), connected 673 ms
+  [C] busy 1536x1024: loops 107, bonded C/R/raw 15/9/83 (connected C 42), smoothed perimeter 17.1% vs 37.0%, sweeps 3, steps 17, nested true; bonded 3315 ms (deviation 2106 ms), connected 2502 ms
+  [E] busy 1536x1024: loops 107, bonded C/R/raw 85/18/4 (connected C 92), smoothed perimeter 67.7% vs 74.7%, sweeps 2, steps 6, nested true; bonded 1847 ms (deviation 1023 ms), connected 1414 ms
+
+=== G1.2 prototype checks ===
+  ✓ GEO-04 G1.2 'stair' fixture: whole-ring deviation is 0.375·√2 mm = 530.33 µm, NOT the plan's 176.78 (its 3-unit corners dominate)  [530.33 µm]
+  ✓ GEO-04 unit-step corner deviation of chaikin(2) = 0.125·√2 mm = 176.78 µm  [176.78 µm at unit corners]
+  ✓ GEO-04 tolerance 1 µm @250 µm/px → fallback recorded  [1 fallbacks]
+  ✓ D1/SUP-02 crescentInterior: containment-aware smoothing leaves no overhang  [levels C/R/raw 1/1/0]
+  ✓ GEO-02 art-boundary vertices pinned (x=0 edge kept exact)
+  ✓ GEO-04 topology unchanged after smoothing (donut keeps its hole)  [(((())))]
+  ✓ GEO-04 densified deviation ≥ brute-force sampled (20 random quads)
+  ✓ backend identity area(A\B) = area(A) − area(A∩B) on smoothed layers (seed 7)
+  ✓ D1 fixpoint deterministic across two runs (seed 7)
+
+9 / 9 prototype checks passed

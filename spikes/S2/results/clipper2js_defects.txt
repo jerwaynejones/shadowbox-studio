@@ -1,0 +1,14 @@
+  DIFFER inflate 1000x10 rect by -1 (miter); expected [[1,1]..[999,9]]
+    clipper2-js: [[{"x":1001,"y":9},{"x":1,"y":10},{"x":1,"y":0},{"x":902,"y":0}]]
+    clipper2-ts: [[{"x":999,"y":1},{"x":999,"y":9},{"x":1,"y":9},{"x":1,"y":1}]]
+  DIFFER inflate 1000x10 rect by -4 (miter); expected [[4,4]..[996,6]]
+    clipper2-js: [[{"x":1004,"y":6},{"x":4,"y":10},{"x":4,"y":3},{"x":748,"y":0}]]
+    clipper2-ts: [[{"x":996,"y":4},{"x":996,"y":6},{"x":4,"y":6},{"x":4,"y":4}]]
+  DIFFER PolyTree union of a donut (expect 1 outer with 1 hole)
+    clipper2-js: succeeded=false roots=0
+    clipper2-ts: roots=1 holes=1
+  DIFFER union of a single rectangle (duplicate vertices?)
+    clipper2-js: [[{"x":1000,"y":10},{"x":0,"y":10},{"x":0,"y":10},{"x":0,"y":0},{"x":0,"y":0},{"x":1000,"y":0}]]
+    clipper2-ts: [[{"x":1000,"y":10},{"x":0,"y":10},{"x":0,"y":0},{"x":1000,"y":0}]]
+
+4 divergent result(s); clipper2-ts matches the expected geometry in every case above.

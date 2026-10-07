@@ -1,0 +1,15 @@
+
+=== G1.2 prototype checks ===
+  PASS G1.2 'stair' fixture: whole-ring chaikin(2) deviation is 530.33 µm (3-unit corners), not 176.78  [530.33 µm]
+  PASS unit-step corner deviation of chaikin(2) = 176.78 µm at 1 mm/px  [176.78 µm]
+  PASS tolerance 1 µm @250 µm/px → deviation fallback recorded, nothing rounded  [1 fallbacks]
+  PASS crescentInterior bonded (C): no overhang after fixpoint
+  PASS crescentInterior bonded (E): no overhang after fixpoint
+  PASS crescentInterior bonded (G): no overhang after fixpoint
+  PASS art-boundary vertices pinned (x=0 edge kept exact, local variant)
+  PASS topology unchanged (donut keeps its hole, local variant)  [(((())))]
+  PASS densified deviation ≥ brute-force sampled (20 random quads)
+  PASS backend identity area(A\B) = area(A) − area(A∩B) on smoothed layers (seed 7)
+  PASS metric: an all-pinned loop at level 'chaikin' counts 0 % rounded (v1 metric said 100 %)  [unpinned 4/6 rounded; all-pinned 0/6, v1 1]
+
+11 / 11 prototype checks passed

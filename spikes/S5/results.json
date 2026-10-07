@@ -1,0 +1,836 @@
+{
+ "env": {
+  "node": "v26.7.0",
+  "date": "2026-10-07T22:30:07.662Z",
+  "quick": false
+ },
+ "catalogue": {
+  "diagonalTouch": {
+   "w": 6,
+   "h": 6,
+   "saddles": 1,
+   "traceLoops": 2,
+   "traceLoopsWithRepeatedCorner": 0,
+   "clipperRawPaths": 2,
+   "clipperRawPathsWithRepeatedVertex": 0,
+   "polygons": 2,
+   "holes": 0,
+   "components": 2,
+   "rasterOracleOk": true,
+   "morph4Components": 2,
+   "enclosedBg4": 0,
+   "areaOk": true,
+   "validateOk": true,
+   "validateCodes": {}
+  },
+  "checker4": {
+   "w": 4,
+   "h": 4,
+   "saddles": 9,
+   "traceLoops": 8,
+   "traceLoopsWithRepeatedCorner": 0,
+   "clipperRawPaths": 8,
+   "clipperRawPathsWithRepeatedVertex": 0,
+   "polygons": 8,
+   "holes": 0,
+   "components": 8,
+   "rasterOracleOk": true,
+   "morph4Components": 8,
+   "enclosedBg4": 2,
+   "areaOk": true,
+   "validateOk": true,
+   "validateCodes": {}
+  },
+  "checker8": {
+   "w": 8,
+   "h": 8,
+   "saddles": 49,
+   "traceLoops": 32,
+   "traceLoopsWithRepeatedCorner": 0,
+   "clipperRawPaths": 32,
+   "clipperRawPathsWithRepeatedVertex": 0,
+   "polygons": 32,
+   "holes": 0,
+   "components": 32,
+   "rasterOracleOk": true,
+   "morph4Components": 32,
+   "enclosedBg4": 18,
+   "areaOk": true,
+   "validateOk": true,
+   "validateCodes": {}
+  },
+  "holeHoleSaddle": {
+   "w": 6,
+   "h": 4,
+   "saddles": 1,
+   "traceLoops": 2,
+   "traceLoopsWithRepeatedCorner": 1,
+   "clipperRawPaths": 3,
+   "clipperRawPathsWithRepeatedVertex": 0,
+   "polygons": 1,
+   "holes": 2,
+   "components": 1,
+   "rasterOracleOk": true,
+   "morph4Components": 1,
+   "enclosedBg4": 2,
+   "areaOk": true,
+   "validateOk": true,
+   "validateCodes": {
+    "touch(info)": 1
+   }
+  },
+  "holeOuterSaddle": {
+   "w": 5,
+   "h": 3,
+   "saddles": 1,
+   "traceLoops": 1,
+   "traceLoopsWithRepeatedCorner": 1,
+   "clipperRawPaths": 1,
+   "clipperRawPathsWithRepeatedVertex": 1,
+   "polygons": 1,
+   "holes": 1,
+   "components": 1,
+   "rasterOracleOk": true,
+   "morph4Components": 1,
+   "enclosedBg4": 1,
+   "areaOk": true,
+   "validateOk": true,
+   "validateCodes": {
+    "touch(info)": 1
+   }
+  },
+  "ringOfFourDiagonal": {
+   "w": 5,
+   "h": 4,
+   "saddles": 4,
+   "traceLoops": 4,
+   "traceLoopsWithRepeatedCorner": 0,
+   "clipperRawPaths": 4,
+   "clipperRawPathsWithRepeatedVertex": 0,
+   "polygons": 4,
+   "holes": 0,
+   "components": 4,
+   "rasterOracleOk": true,
+   "morph4Components": 4,
+   "enclosedBg4": 1,
+   "areaOk": true,
+   "validateOk": true,
+   "validateCodes": {}
+  },
+  "plusDiagonalChain": {
+   "w": 4,
+   "h": 4,
+   "saddles": 3,
+   "traceLoops": 4,
+   "traceLoopsWithRepeatedCorner": 0,
+   "clipperRawPaths": 4,
+   "clipperRawPathsWithRepeatedVertex": 0,
+   "polygons": 4,
+   "holes": 0,
+   "components": 4,
+   "rasterOracleOk": true,
+   "morph4Components": 4,
+   "enclosedBg4": 0,
+   "areaOk": true,
+   "validateOk": true,
+   "validateCodes": {}
+  },
+  "donutIsland": {
+   "w": 9,
+   "h": 9,
+   "saddles": 0,
+   "traceLoops": 3,
+   "traceLoopsWithRepeatedCorner": 0,
+   "clipperRawPaths": 3,
+   "clipperRawPathsWithRepeatedVertex": 0,
+   "polygons": 2,
+   "holes": 1,
+   "components": 2,
+   "rasterOracleOk": true,
+   "morph4Components": 2,
+   "enclosedBg4": 1,
+   "areaOk": true,
+   "validateOk": true,
+   "validateCodes": {}
+  }
+ },
+ "sweep": {
+  "split:noise24_p0.5": {
+   "masks": 1000,
+   "saddles": 66350,
+   "traceLoopsWithRepeatedCorner": 3181,
+   "rawPathsWithRepeatedVertex": 3724,
+   "compMismatch": 542,
+   "areaMismatch": 0,
+   "validateFail": 542,
+   "codes": {
+    "touch(info)": 8366,
+    "GEO_MULTIPART": 680
+   },
+   "holeVsEnclosedBgMismatch": 1000,
+   "holesTotal": 9126,
+   "enclosedBgTotal": 27570,
+   "multiPartSaddleCycles": 19725,
+   "partAreaMatch": 458,
+   "rasterOracleFail": 542,
+   "partAreaMismatch": 542,
+   "firstFail": {
+    "w": 24,
+    "h": 24,
+    "rows": "#...#..##.#.....####.###/#.....#######..##.##.##./#...#.#.##.##.#.####.#.#/###.#..##..####...##.##./..##.#..##.....#..#.#.##/#...######....#....#.###/#..###...#..#.####..#.../##....##......#..#..#.#./.#.#.#.##..##..##.###.#./.#....##.#...#.....#####/######.#####.........##./#.#.##....#...###..####./###...#.####....##..####/#.##.###.#...###..##.##./#.##..#.####..##.###.##./...####.##..###..#....#./..#.##.#.##.#...###.####/##.....##.#..###.##....#/##.#.#.##....#######..#./.##..#.##.###.#.###.####/.#......#...#....#.#.###/..##..##.#######.##..#.#/..#.#########..##....##./.#.#..#.##..##....###.##",
+    "errors": [
+     {
+      "code": "GEO_MULTIPART",
+      "ring": [
+       9
+      ]
+     }
+    ]
+   }
+  },
+  "split:noise64_p0.35": {
+   "masks": 300,
+   "saddles": 122683,
+   "traceLoopsWithRepeatedCorner": 1417,
+   "rawPathsWithRepeatedVertex": 2480,
+   "compMismatch": 154,
+   "areaMismatch": 0,
+   "validateFail": 154,
+   "codes": {
+    "touch(info)": 2018,
+    "GEO_MULTIPART": 202
+   },
+   "holeVsEnclosedBgMismatch": 300,
+   "holesTotal": 2029,
+   "enclosedBgTotal": 15577,
+   "multiPartSaddleCycles": 13801,
+   "partAreaMatch": 146,
+   "rasterOracleFail": 154,
+   "partAreaMismatch": 154,
+   "firstFail": {
+    "w": 64,
+    "h": 64,
+    "rows": "#.#..#.#.#.##....#.#..#.##..........#.##.#...#...#.#..#.#..#...#/##....#...#.###.#..#....#.....#...#.............#...##.##..#...#/...##....#..#.##....##.####......#....####.#..#....#........#..#/..##......#.#..#....#.#.#.####.##...#..#...#..........###...#.#./#.#.##....####....#.#...###....####.....#.##...#...#.........#../.#..#.#.....#.#.#...#...####.#.....#.##..##.#.#.......##.#...#.#/.##.##.........#.#.#.....#.##....#.........####.......#...#..#.#/.........#.....###..###.##.........#..#....#..#.#..#..#......##./#....###..#....#..#..#.###.#...#..........#.....#.....#..#..#.#./.#.###.#.#.#.#...##.#...##............#..#..#.##.####..##.###.../.#.##...##..#........#...#.#.......#..#.##.#.....#...###.....###/..#.#....###.#.#...#...##.......#.##.#.#..###..###..#..#...#..../......#........#...###.........##...#....##..##...#.###.###.###./#.........#........#..##.##.##..#.##.#..#.#.#...#....#######..../...#...#..#.##....##...#.##...#.#.##....###........#.#.#...###../.##...#.##......######.##...#...#......####.##....##..#.#......./...#.##.....#.#..#.#.....#.....##.........#.#....#.##.##......#./..#..#.#....#...#######......#...#.#..#.##............#.....##../...#....###..#........#.....#.....#........##.#.#....#.....#..#./........#.###.###.#...##.....#..#.#.#...#..#...#..#............./#.##..#.#........#.......###.#.#..#........##...#..#.#.#....##../....#..#..#.#.#.##.##.#.#....#.####.###.#.#....#........##.#.###/.#.##....#....#......#.#....##.#..##....#.........##........#..#/###..#.......#.#..#......##.#.###.....#.#....###.#.#.##.#.####../..#.....#.#...###.#.#.#....#.#...#....#.##....##.###.#.#####..../#...####...#...........#####..####..#.###.........######.####.../.#....#.............#.....#..#..##..##.#..##....##.##.#...#...../.....#......#...#..#......#......#...#.....#..###.#...#.##..#.#./#..###..##...#....#.....##..#.#.#....###.##....#.#........###..#/...##.##..#.##....#.####....#...##....#.#...##..##..##....#...#./#.##.........#...#...#......#.##...##.#..###..#.....#.#.#.#....#/#.#...#..###.#...#..#.....###.#......#.#.##...#.#.#....#....####/.#...#.#.#.#..#....#...#.....#...##.#......#...#....#.........##/.....##.....#.....##...##..#.##..#......#.....##.#.##.##..##...#/##....#..#..##..#..#......#.......##.........##.#.........#.#.#./###.#.##..#####....#...#..#..###....#.#.###..#..#.#......#.#.#.#/.#..####..#......#.....#.#..#..#..#.##....#...##.##..####......#/#..#.....#.##...####.#....#...##.......#.#...##.#.....#.#..#.###/##..#.##......#.#..#......#.#.#.#..#.##.#....#...#..##...###..#./....#.#..#...#.#...##...#.##.......#.##..........#........#..#../....###.#####....#.#.#.#.##..#....######.###.##..#.#...##..#..##/#..#.#..................##..#...#..#...##.........##..###..#.#../..#......#......#.#...##...#.#..#....#..####......#..##...#...../.#..#..####.#..#...#.#....#....#..#...#....#.##..##....##......./.#...#..#..#.#...#....##.#....##..###....#..##.....##....#....../....#..#.#.#......##.##.#.#.#.#...#.#.......#..#.###.#...#....../..###.....#........#.##...#.##..####...##.....#...##.###...##.##/#.#......#.##....#..#.######...#.....#.##....###.......##..#.#.#/..#..#..#.#..#.#..####....#.#....#.##..#.##....#.#...#.#####.###/#...#..####.#...#.#.#...#..#..#.#.#.#..##.#.#.##...#..#..#.#..../#...#.......##.......##..##.#.......#....#...##..###...#......../#...###..#..#.#.###.#..###.##...#..###.......#.###.######....#../.....#....#....#..#....#.....#.#....###...###...#..##.#......##./#..##.##......#..#..##..#..###.#.##..#.#.#.........##......#..##/...#..#..##..##..#.#.....#...##.#.#.#...#.....##..#........###../..#..#............###.........#.#..#...#...####..##..##.#..#.##./...##.........#...#...#..##.#..##..#...##.#####.##..#...#...#.../#.##....#...#......#.....#.#...#......#.#.#..#...##.#..##....#.#/.....#.#.#...##.......#.....##..##.#...###.....#.....#........#./##..#..#...#...##..#.......#.....#...#..####...#...##....##....#/#..#........##.......#..#..#.#..........#.#...#..#.###...#....../#.##....##.#....##.#.#..#....###...#.##..#..#......##.#..#..#.../#.#.......##.......#.##......###.......#.....#...#...#.##..#..#./.#...#..###.##....#...#.##.#..#.###.#.#....#...#..#......#.....#",
+    "errors": [
+     {
+      "code": "GEO_MULTIPART",
+      "ring": [
+       377
+      ]
+     }
+    ]
+   }
+  },
+  "split:noise64_p0.65": {
+   "masks": 300,
+   "saddles": 122529,
+   "traceLoopsWithRepeatedCorner": 12820,
+   "rawPathsWithRepeatedVertex": 14544,
+   "compMismatch": 288,
+   "areaMismatch": 0,
+   "validateFail": 288,
+   "codes": {
+    "touch(info)": 77442,
+    "GEO_MULTIPART": 317
+   },
+   "holeVsEnclosedBgMismatch": 300,
+   "holesTotal": 109127,
+   "enclosedBgTotal": 134993,
+   "multiPartSaddleCycles": 29812,
+   "partAreaMatch": 12,
+   "rasterOracleFail": 288,
+   "partAreaMismatch": 288,
+   "firstFail": {
+    "w": 64,
+    "h": 64,
+    "rows": ".#####.#..##.#.###.#######.####.####...#.###.#..#..#..##.#..#.##/##..####.#...#####..#.###.#.##.######..###.######...#....#..###./#####..####.#.###.#.#.##.#..#.#.#..##.###.##.###.#.##......#.#.#/.#####.#.#.#..###..###.#####.####..#.####.###.######.###.##.#.##/...#.#.####..###.#.##.#.###.##.####.#...##.#.##..#############.#/#..........#.#####.##.#.######.#.##.#########.##..##......#..###/.#..####.###.##.#...###.#..#..###.####.#####..#.#.####...##.#.#./#.######..#.#.#.#.#....##.#..#.#.##.##.#.#.##.###.###.####.##.#./...###########.########...#..#.####...##..##.######.##..####.#.#/.##..#.##.#.##.#..###.##.#####..#.#...########.##...##.#.#.###.#/#..######.###.#########.##.###..########.##..###.###..#####.##.#/.#..####..##.##.############.##.##.#.###.##########.##....###.#./#...#.#.#####..#..##...##..##..##.######...##.#.##########.#####/..##.####.###.#.##.#...#.#.###..##.########..####.##.##.#.######/#..#..#.####.#####.####.###..############..#.#.#######.#.....###/###.##.##..#...#..###...######.##.#.##...#.###...#####.#.#####../.###...##.##.#####.###..##..#.####...##.##..#.##..######.##.#.##/###...#.######..##..##.##.#.####.###.#####.##...#.#.........#..#/#.#####.#..#####..#.##..###..#.##.####.#.#.##....##.#########..#/.###.#.#...#...####..##.##.#..#..####.#.####.###########....##.#/.....#....#.#####....####.##.#####..##..#..####..#######....##../.###.####.#.#####...##.#.##########.#.#.###.#..#..####.#####.###/..#########.###...##########.#.#..#.#.###.#.#####...#..#.##.#.../######...#.#....#############.####.##.#.###..##.#..##.#.#..##.##/..###..#....###..###########.#.##.#..#..#..####.###.#.#####.####/#..###..###..#.#.#.###..##..#..##.#.###.##..##.#.....####.##..##/###..####.######.##.#####......##...##..#.####.##..###.#.....##./#.#######...######.##################.##.#..#.#.##..###.#.#.##.#/....######....#.##..##..########.######.#####.###.#.###.#######./..#.#.#..####..#..####..##...#####.#.#...##.######..###..##..#../####.#.#..#.#.##.####.#..#.#.####.#####.#.##.###.######.....##.#/#####..####.###.#.####.#..##.#.###.#.####..#.#.####..#.#.#.##..#/.###..####...#####.##...##.####.#.###.###...#.####.#######.#####/...#..#.################.####..#####.#...##.#######...#.#.######/...####..#.#############.###...###.##########...#..#.###.##.#.##/#...#####.#.#.#..#.#########.#..#.##.#..##...###.#.##...#.#####./.##..###.#.#.#.####..####..###..#...#.#.#####.#...##..#.#######./#.#####.#.#####..########..#####.###.#.##...#####.##.#.#.##.#..#/.######.##.#.#.####.##.###.###..##..##.##.#####.#...##.##..##.#./##.######.####.#####.#..##.###....#.#####.....#...########.#.#.#/##.###.##.#..#.#.####..#.##.#.##..#..#.#.###..##.##..#...####.../###...#.####..########.#.###..#.#...#.#.######.###..#..###.##.##/##..##########.#####.#..#######.#..###..#####..###...##.##.....#/######.##..####.######.#.###..#####.##.#.###..#.#.#######..###../.#..##.#####...#.#####.#######....##.#.#.##..##..#.#.#######..#./#..#.#######.####.##...##.##.###.#..##.#.####..##.#..##.#.#..#.#/#.######.#####..#..#.#.##..######.##.###.####.#.#########.###..#/###...##.##.######...#######...#.#####..##.#######...#.##.##.#.#/.##.##########.###.###.###.#######..#.#.###..######.#######.#.##/.####.#.#...######.###.#...####...##...##.#.######.#.##.####..##/.#.#.#.##.#.#####....#######..####..#.####..#.#####..#.######.#./..##.#####.#...#..###..####..##..####...######.#####.#####..###./.#####.###...####.##.#.##.##.#..#.#.#....######.#.###.#########./##..##.#..#...###...#.#.#####.#####...##.##.##..#....##.###...##/####..####.###..##########.#####..##..#.#.#.#####..###..##...#../##.#.##..#.######..#.#...####...###.#.###..#####.###..##..#..###/###.##.##.######..#..#.#########.######.##.##...####..#..####.##/.#########..####.#.#.##.#.#...#########..##.###.#.#########.##../###.####.##..##.#..#.##.#.#.####.####.#####.##....####.#####.##./##.####.##....####.########.#####.##.##.###..###.#.#.#.##.####.#/##.#################.####..###...#.##...################.##.###./#.#..##...###.#.########.#..#.#..#######.###.###.######..#.####./##.######.#.##...#.#..##.####.###.###.####......##.#..####.#.###/.#.#.##.##.######.#.#.##..##..#########...##...##..#.##.#####..#",
+    "errors": [
+     {
+      "code": "GEO_MULTIPART",
+      "ring": [
+       0
+      ]
+     }
+    ]
+   }
+  },
+  "split:nested120x90x6_layers": {
+   "masks": 100,
+   "saddles": 7,
+   "traceLoopsWithRepeatedCorner": 2,
+   "rawPathsWithRepeatedVertex": 2,
+   "compMismatch": 0,
+   "areaMismatch": 0,
+   "validateFail": 0,
+   "codes": {
+    "touch(info)": 2
+   },
+   "holeVsEnclosedBgMismatch": 0,
+   "holesTotal": 2,
+   "enclosedBgTotal": 2,
+   "multiPartSaddleCycles": 0,
+   "partAreaMatch": 100
+  },
+  "split:D3stats": {
+   "rechainCalls": 0,
+   "sharedVertices": 0,
+   "degreeMismatch": 0,
+   "badClose": 0,
+   "splitPositiveRing": 0,
+   "splitTwoPositive": 0,
+   "splitNegativeGotPositive": 0,
+   "nodedPoints": 0
+  },
+  "rechain:noise24_p0.5": {
+   "masks": 1000,
+   "saddles": 66350,
+   "traceLoopsWithRepeatedCorner": 3181,
+   "rawPathsWithRepeatedVertex": 3724,
+   "compMismatch": 0,
+   "areaMismatch": 0,
+   "validateFail": 0,
+   "codes": {
+    "touch(info)": 6307
+   },
+   "holeVsEnclosedBgMismatch": 1000,
+   "holesTotal": 7845,
+   "enclosedBgTotal": 27570,
+   "multiPartSaddleCycles": 19725,
+   "partAreaMatch": 1000
+  },
+  "rechain:noise64_p0.35": {
+   "masks": 300,
+   "saddles": 122683,
+   "traceLoopsWithRepeatedCorner": 1417,
+   "rawPathsWithRepeatedVertex": 2480,
+   "compMismatch": 0,
+   "areaMismatch": 0,
+   "validateFail": 0,
+   "codes": {
+    "touch(info)": 1562
+   },
+   "holeVsEnclosedBgMismatch": 300,
+   "holesTotal": 1776,
+   "enclosedBgTotal": 15577,
+   "multiPartSaddleCycles": 13801,
+   "partAreaMatch": 300
+  },
+  "rechain:noise64_p0.65": {
+   "masks": 300,
+   "saddles": 122529,
+   "traceLoopsWithRepeatedCorner": 12820,
+   "rawPathsWithRepeatedVertex": 14544,
+   "compMismatch": 0,
+   "areaMismatch": 0,
+   "validateFail": 0,
+   "codes": {
+    "touch(info)": 72511
+   },
+   "holeVsEnclosedBgMismatch": 300,
+   "holesTotal": 105181,
+   "enclosedBgTotal": 134993,
+   "multiPartSaddleCycles": 29812,
+   "partAreaMatch": 300
+  },
+  "rechain:nested120x90x6_layers": {
+   "masks": 100,
+   "saddles": 7,
+   "traceLoopsWithRepeatedCorner": 2,
+   "rawPathsWithRepeatedVertex": 2,
+   "compMismatch": 0,
+   "areaMismatch": 0,
+   "validateFail": 0,
+   "codes": {
+    "touch(info)": 2
+   },
+   "holeVsEnclosedBgMismatch": 0,
+   "holesTotal": 2,
+   "enclosedBgTotal": 2,
+   "multiPartSaddleCycles": 0,
+   "partAreaMatch": 100
+  },
+  "rechain:D3stats": {
+   "rechainCalls": 1700,
+   "sharedVertices": 311569,
+   "degreeMismatch": 0,
+   "badClose": 0,
+   "splitPositiveRing": 5271,
+   "splitTwoPositive": 0,
+   "splitNegativeGotPositive": 0,
+   "nodedPoints": 0
+  }
+ },
+ "frame": {
+  "borderTouch_10mmpx": {
+   "polygons": 1,
+   "outerVertices": 4,
+   "outerRing": [
+    0,
+    0,
+    100000,
+    0,
+    100000,
+    70000,
+    0,
+    70000
+   ],
+   "holes": 1,
+   "G1_3_check_noEdgeOnFrameLine": true,
+   "legacyStillHasDefectSegment": true,
+   "AT12_outerIsPageRect": true,
+   "validate": {}
+  },
+  "AT12_note": "outer ring compared to [0,0,100000,0,100000,70000,0,70000] after normalize (start at min vertex, positive Y-down)",
+  "fixtures": {
+   "donutIsland": [
+    {
+     "layer": 0,
+     "polygons": 1,
+     "expected": 1,
+     "ok": true,
+     "codes": {}
+    },
+    {
+     "layer": 1,
+     "polygons": 3,
+     "expected": 3,
+     "ok": true,
+     "codes": {}
+    }
+   ],
+   "crescent": [
+    {
+     "layer": 0,
+     "polygons": 1,
+     "expected": 1,
+     "ok": true,
+     "codes": {}
+    },
+    {
+     "layer": 1,
+     "polygons": 1,
+     "expected": 1,
+     "ok": true,
+     "codes": {}
+    }
+   ],
+   "crescentInterior": [
+    {
+     "layer": 0,
+     "polygons": 1,
+     "expected": 1,
+     "ok": true,
+     "codes": {}
+    },
+    {
+     "layer": 1,
+     "polygons": 2,
+     "expected": 2,
+     "ok": true,
+     "codes": {}
+    }
+   ],
+   "borderTouch": [
+    {
+     "layer": 0,
+     "polygons": 1,
+     "expected": 1,
+     "ok": true,
+     "codes": {}
+    },
+    {
+     "layer": 1,
+     "polygons": 1,
+     "expected": 1,
+     "ok": true,
+     "codes": {}
+    }
+   ],
+   "lowerHoleUnderPart": [
+    {
+     "layer": 0,
+     "polygons": 1,
+     "expected": 1,
+     "ok": true,
+     "codes": {}
+    },
+    {
+     "layer": 1,
+     "polygons": 1,
+     "expected": 1,
+     "ok": true,
+     "codes": {}
+    },
+    {
+     "layer": 2,
+     "polygons": 2,
+     "expected": 2,
+     "ok": true,
+     "codes": {}
+    }
+   ],
+   "orientationF": [
+    {
+     "layer": 0,
+     "polygons": 1,
+     "expected": 1,
+     "ok": true,
+     "codes": {}
+    },
+    {
+     "layer": 1,
+     "polygons": 1,
+     "expected": 1,
+     "ok": true,
+     "codes": {}
+    }
+   ],
+   "diagonalTouch": [
+    {
+     "layer": 0,
+     "polygons": 1,
+     "expected": 1,
+     "ok": true,
+     "codes": {}
+    },
+    {
+     "layer": 1,
+     "polygons": 1,
+     "expected": 1,
+     "ok": true,
+     "codes": {
+      "touch(info)": 1
+     }
+    }
+   ],
+   "looseBridge": [
+    {
+     "layer": 0,
+     "polygons": 1,
+     "expected": 1,
+     "ok": true,
+     "codes": {}
+    },
+    {
+     "layer": 1,
+     "polygons": 2,
+     "expected": 2,
+     "ok": true,
+     "codes": {}
+    },
+    {
+     "layer": 2,
+     "polygons": 2,
+     "expected": 2,
+     "ok": true,
+     "codes": {}
+    }
+   ]
+  },
+  "noise32x24_sweep:split": {
+   "masks": 500,
+   "mismatch": 298,
+   "validateFail": 298,
+   "codes": {
+    "GEO_MULTIPART": 343,
+    "touch(info)": 12210
+   }
+  },
+  "noise32x24_sweep:rechain": {
+   "masks": 500,
+   "mismatch": 0,
+   "validateFail": 0,
+   "codes": {
+    "touch(info)": 10478
+   }
+  },
+  "smoothing": {
+   "raw": {
+    "borderTouch": {
+     "polygons": 1,
+     "expectedPolygons": 1,
+     "holes": 1,
+     "extraHolesVsRaw": 0,
+     "frameEdgeMicroHoles": 0,
+     "minFrameEdgeMicroHoleUm2": null,
+     "ok": true,
+     "codes": {}
+    },
+    "noise32x24": {
+     "masks": 200,
+     "polygonMismatch": 0,
+     "masksWithFrameEdgeMicroHoles": 0,
+     "frameEdgeMicroHoles": 0,
+     "minFrameEdgeMicroHoleUm2": null,
+     "validateFail": 0,
+     "extraHolesVsRaw": 0
+    }
+   },
+   "chaikin": {
+    "borderTouch": {
+     "polygons": 1,
+     "expectedPolygons": 1,
+     "holes": 2,
+     "extraHolesVsRaw": 1,
+     "frameEdgeMicroHoles": 1,
+     "minFrameEdgeMicroHoleUm2": 24390.5,
+     "ok": true,
+     "codes": {}
+    },
+    "noise32x24": {
+     "masks": 200,
+     "polygonMismatch": 0,
+     "masksWithFrameEdgeMicroHoles": 200,
+     "frameEdgeMicroHoles": 521,
+     "minFrameEdgeMicroHoleUm2": 2480.5,
+     "validateFail": 0,
+     "extraHolesVsRaw": -5836
+    }
+   },
+   "pinnedChaikin": {
+    "borderTouch": {
+     "polygons": 1,
+     "expectedPolygons": 1,
+     "holes": 1,
+     "extraHolesVsRaw": 0,
+     "frameEdgeMicroHoles": 0,
+     "minFrameEdgeMicroHoleUm2": null,
+     "ok": true,
+     "codes": {}
+    },
+    "noise32x24": {
+     "masks": 200,
+     "polygonMismatch": 0,
+     "masksWithFrameEdgeMicroHoles": 189,
+     "frameEdgeMicroHoles": 538,
+     "minFrameEdgeMicroHoleUm2": 57299,
+     "validateFail": 0,
+     "extraHolesVsRaw": -6366
+    }
+   }
+  }
+ },
+ "finiteWidth": [
+  {
+   "case": "point (corner)",
+   "intersectionArea": 0,
+   "inset0.25_x4": "fails",
+   "inset0.25_x16": "fails",
+   "inset0.25_x64": "fails",
+   "inset1500_x4": "fails",
+   "inset1500_x16": "fails",
+   "inset1500_x64": "fails",
+   "classify_minFeature3000": "block"
+  },
+  {
+   "case": "edge (line)",
+   "intersectionArea": 0,
+   "inset0.25_x4": "fails",
+   "inset0.25_x16": "fails",
+   "inset0.25_x64": "fails",
+   "inset1500_x4": "fails",
+   "inset1500_x16": "fails",
+   "inset1500_x64": "fails",
+   "classify_minFeature3000": "block"
+  },
+  {
+   "case": "overlap 1 µm",
+   "intersectionArea": 10000,
+   "inset0.25_x4": "survives",
+   "inset0.25_x16": "survives",
+   "inset0.25_x64": "survives",
+   "inset1500_x4": "fails",
+   "inset1500_x16": "fails",
+   "inset1500_x64": "fails",
+   "classify_minFeature3000": "warn"
+  },
+  {
+   "case": "overlap 2 µm",
+   "intersectionArea": 20000,
+   "inset0.25_x4": "survives",
+   "inset0.25_x16": "survives",
+   "inset0.25_x64": "survives",
+   "inset1500_x4": "fails",
+   "inset1500_x16": "fails",
+   "inset1500_x64": "fails",
+   "classify_minFeature3000": "warn"
+  },
+  {
+   "case": "overlap 3 µm",
+   "intersectionArea": 30000,
+   "inset0.25_x4": "survives",
+   "inset0.25_x16": "survives",
+   "inset0.25_x64": "survives",
+   "inset1500_x4": "fails",
+   "inset1500_x16": "fails",
+   "inset1500_x64": "fails",
+   "classify_minFeature3000": "warn"
+  },
+  {
+   "case": "overlap 4 µm",
+   "intersectionArea": 40000,
+   "inset0.25_x4": "survives",
+   "inset0.25_x16": "survives",
+   "inset0.25_x64": "survives",
+   "inset1500_x4": "fails",
+   "inset1500_x16": "fails",
+   "inset1500_x64": "fails",
+   "classify_minFeature3000": "warn"
+  },
+  {
+   "case": "overlap 249 µm",
+   "intersectionArea": 2490000,
+   "inset0.25_x4": "survives",
+   "inset0.25_x16": "survives",
+   "inset0.25_x64": "survives",
+   "inset1500_x4": "fails",
+   "inset1500_x16": "fails",
+   "inset1500_x64": "fails",
+   "classify_minFeature3000": "warn"
+  },
+  {
+   "case": "overlap 250 µm",
+   "intersectionArea": 2500000,
+   "inset0.25_x4": "survives",
+   "inset0.25_x16": "survives",
+   "inset0.25_x64": "survives",
+   "inset1500_x4": "fails",
+   "inset1500_x16": "fails",
+   "inset1500_x64": "fails",
+   "classify_minFeature3000": "warn"
+  },
+  {
+   "case": "overlap 2999 µm",
+   "intersectionArea": 29990000,
+   "inset0.25_x4": "survives",
+   "inset0.25_x16": "survives",
+   "inset0.25_x64": "survives",
+   "inset1500_x4": "fails",
+   "inset1500_x16": "fails",
+   "inset1500_x64": "fails",
+   "classify_minFeature3000": "warn"
+  },
+  {
+   "case": "overlap 3000 µm",
+   "intersectionArea": 30000000,
+   "inset0.25_x4": "survives",
+   "inset0.25_x16": "survives",
+   "inset0.25_x64": "survives",
+   "inset1500_x4": "survives",
+   "inset1500_x16": "survives",
+   "inset1500_x64": "survives",
+   "classify_minFeature3000": "ok"
+  },
+  {
+   "case": "overlap 3001 µm",
+   "intersectionArea": 30010000,
+   "inset0.25_x4": "survives",
+   "inset0.25_x16": "survives",
+   "inset0.25_x64": "survives",
+   "inset1500_x4": "survives",
+   "inset1500_x16": "survives",
+   "inset1500_x64": "survives",
+   "classify_minFeature3000": "ok"
+  },
+  {
+   "case": "diagonal sliver k=1 (normal width 0.707 µm)",
+   "intersectionArea": 99999,
+   "inset0.25_x4": "survives",
+   "inset0.25_x16": "survives",
+   "inset0.25_x64": "survives",
+   "inset1500_x4": "fails",
+   "inset1500_x16": "fails",
+   "inset1500_x64": "fails",
+   "classify_minFeature3000": "warn"
+  },
+  {
+   "case": "diagonal sliver k=2 (normal width 1.414 µm)",
+   "intersectionArea": 199996,
+   "inset0.25_x4": "survives",
+   "inset0.25_x16": "survives",
+   "inset0.25_x64": "survives",
+   "inset1500_x4": "fails",
+   "inset1500_x16": "fails",
+   "inset1500_x64": "fails",
+   "classify_minFeature3000": "warn"
+  },
+  {
+   "case": "diagonal sliver k=3 (normal width 2.121 µm)",
+   "intersectionArea": 299991,
+   "inset0.25_x4": "survives",
+   "inset0.25_x16": "survives",
+   "inset0.25_x64": "survives",
+   "inset1500_x4": "fails",
+   "inset1500_x16": "fails",
+   "inset1500_x64": "fails",
+   "classify_minFeature3000": "warn"
+  },
+  {
+   "case": "needle triangle 20001×1 (inradius ≈ 2.5e-5 µm)",
+   "intersectionArea": 0.5,
+   "inset0.25_x4": "undecided",
+   "inset0.25_x16": "fails",
+   "inset0.25_x64": "fails",
+   "inset1500_x4": "fails",
+   "inset1500_x16": "fails",
+   "inset1500_x64": "fails",
+   "classify_minFeature3000": "block"
+  }
+ ],
+ "roundJoinRefused": true,
+ "nonIntegerOffsetRefused": true,
+ "timing_nested1536x1024x8": {
+  "runs": 5,
+  "layers": 40,
+  "meanVerticesPerLayer": 268,
+  "compMismatch": 0,
+  "stackMs": {
+   "p50": 257.56,
+   "p95": 305.16,
+   "max": 305.16
+  },
+  "perLayerMs": {
+   "trace": {
+    "p50": 8.72,
+    "p95": 36.46,
+    "max": 40.41
+   },
+   "fromPixelLoops": {
+    "p50": 0,
+    "p95": 0.49,
+    "max": 2.29
+   },
+   "unionNormalize": {
+    "p50": 0.05,
+    "p95": 14.32,
+    "max": 24.56
+   },
+   "frameUnion": {
+    "p50": 0.2,
+    "p95": 10.66,
+    "max": 15.84
+   },
+   "components": {
+    "p50": 0.01,
+    "p95": 1.79,
+    "max": 2.97
+   },
+   "morph4": {
+    "p50": 8.46,
+    "p95": 51.04,
+    "max": 53.62
+   }
+  }
+ },
+ "timing_noise1536x1024": {
+  "saddles": 195460,
+  "traceLoops": 108064,
+  "traceMs": 1886.61,
+  "clipperFlatUnionOnlyMs": 5911.2,
+  "unionNormalizeMs": 19037.77,
+  "componentsMs": 2925.22,
+  "polygons": 103128,
+  "morph4": 103128,
+  "match": true
+ }
+}

@@ -1,0 +1,67 @@
+stack | config | mode                         sha256 (first 16)   in-process x2   separate process
+random s=1 | C | bonded                       7486202ae1b14026    identical       identical
+random s=1 | C | connected                    ad95a2f18abdfa72    identical       identical
+random s=1 | E | bonded                       0031bd8990c9a33f    identical       identical
+random s=1 | E | connected                    0031bd8990c9a33f    identical       identical
+random s=1 | G | bonded                       f2b96ecd4d40f7db    identical       identical
+random s=1 | G | connected                    aaf3709ef11ac4a2    identical       identical
+random s=1 | H | bonded                       811c953e8dde1814    identical       identical
+random s=1 | H | connected                    811c953e8dde1814    identical       identical
+random s=2 | C | bonded                       3d51bd46c0c2c5fd    identical       identical
+random s=2 | C | connected                    440567a6fca80b35    identical       identical
+random s=2 | E | bonded                       32bd9ec2e6793c5e    identical       identical
+random s=2 | E | connected                    32bd9ec2e6793c5e    identical       identical
+random s=2 | G | bonded                       64e247cd56023e91    identical       identical
+random s=2 | G | connected                    440567a6fca80b35    identical       identical
+random s=2 | H | bonded                       de076c769fbe4f24    identical       identical
+random s=2 | H | connected                    de076c769fbe4f24    identical       identical
+random s=3 | C | bonded                       15d46ac850d84d81    identical       identical
+random s=3 | C | connected                    1eb7be4ec6ef14fa    identical       identical
+random s=3 | E | bonded                       d1179db799f3fa60    identical       identical
+random s=3 | E | connected                    641ab5c29f00a0ba    identical       identical
+random s=3 | G | bonded                       59cdcd7a9bd99fa0    identical       identical
+random s=3 | G | connected                    58a4940a9902194b    identical       identical
+random s=3 | H | bonded                       893c5150bbe0c687    identical       identical
+random s=3 | H | connected                    893c5150bbe0c687    identical       identical
+random s=4 | C | bonded                       2111fedde2a31495    identical       identical
+random s=4 | C | connected                    eedfae930dccbd9c    identical       identical
+random s=4 | E | bonded                       67a74396d5f7c603    identical       identical
+random s=4 | E | connected                    67a74396d5f7c603    identical       identical
+random s=4 | G | bonded                       99e71f0d2e2ffd7d    identical       identical
+random s=4 | G | connected                    eedfae930dccbd9c    identical       identical
+random s=4 | H | bonded                       2f8801ed5e944402    identical       identical
+random s=4 | H | connected                    2f8801ed5e944402    identical       identical
+random s=5 | C | bonded                       f97a744d6b4f6bd0    identical       identical
+random s=5 | C | connected                    9bef97399b52cb24    identical       identical
+random s=5 | E | bonded                       b55ad7a33a672f57    identical       identical
+random s=5 | E | connected                    968ec100f9566e5c    identical       identical
+random s=5 | G | bonded                       4f98becc9408879e    identical       identical
+random s=5 | G | connected                    3e207549dd44454b    identical       identical
+random s=5 | H | bonded                       60c63564186a8469    identical       identical
+random s=5 | H | connected                    ef6fd744f62ddc8b    identical       identical
+busy-768 | C | bonded                         7ad85262fc3316be    identical       identical
+busy-768 | C | connected                      569ddf3631e40fba    identical       identical
+busy-768 | E | bonded                         359b8704580ef7e5    identical       identical
+busy-768 | E | connected                      09a56c89e27425f4    identical       identical
+busy-768 | G | bonded                         95763053afcf2a58    identical       identical
+busy-768 | G | connected                      60c76acc593c5011    identical       identical
+busy-768 | H | bonded                         812f2a101cf9a569    identical       identical
+busy-768 | H | connected                      d631c6740acba905    identical       identical
+photo-mountains-720 | C | bonded              108e9fa435af110d    identical       identical
+photo-mountains-720 | C | connected           b73a3b857a5654ba    identical       identical
+photo-mountains-720 | E | bonded              641d71e8e885b3ba    identical       identical
+photo-mountains-720 | E | connected           641d71e8e885b3ba    identical       identical
+photo-mountains-720 | G | bonded              38b5fc6c73da7109    identical       identical
+photo-mountains-720 | G | connected           2bdcca6b5aa0c01a    identical       identical
+photo-mountains-720 | H | bonded              cfcaba8e659fccdc    identical       identical
+photo-mountains-720 | H | connected           7d33ba5258c4828b    identical       identical
+art-procession-720 | C | bonded               150e3f8235df947a    identical       identical
+art-procession-720 | C | connected            b02af0fd5507ce8e    identical       identical
+art-procession-720 | E | bonded               eff4455adfd7b7bf    identical       identical
+art-procession-720 | E | connected            fc639a61ee084cfb    identical       identical
+art-procession-720 | G | bonded               ea18ed75cc6d13ac    identical       identical
+art-procession-720 | G | connected            efd04413bd9cb800    identical       identical
+art-procession-720 | H | bonded               00532088b116b253    identical       identical
+art-procession-720 | H | connected            fd81c914c8286a22    identical       identical
+
+64 / 64 (stack, config, mode) combinations bit-identical across 3 runs (2 in-process + 1 separate process)

@@ -1,0 +1,4 @@
+art-procession-720 @ 416.7 µm/px, tol 50 µm, bonded   : corners rounded 0.0%, length 0.0%, nested true, maxDev 0.0 µm, 2672 ms
+art-procession-720 @ 416.7 µm/px, tol 50 µm, connected: corners rounded 0.0%, length 0.0%, nested true, maxDev 0.0 µm, 2388 ms
+art-procession-720 @ 416.7 µm/px, tol 100 µm, bonded   : corners rounded 27.6%, length 7.3%, nested true, maxDev 93.7 µm, 5805 ms
+art-procession-720 @ 416.7 µm/px, tol 100 µm, connected: corners rounded 29.9%, length 8.0%, nested false, maxDev 93.7 µm, 3178 ms

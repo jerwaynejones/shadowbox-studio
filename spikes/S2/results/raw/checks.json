@@ -1,0 +1,90 @@
+{
+ "generated": "2026-10-07T22:18:35.988Z",
+ "node": "v26.7.0",
+ "configs": {},
+ "checks": [
+  {
+   "name": "G1.2 'stair' fixture: whole-ring chaikin(2) deviation is 530.33 µm (3-unit corners), not 176.78",
+   "pass": true,
+   "detail": "530.33 µm"
+  },
+  {
+   "name": "unit-step corner deviation of chaikin(2) = 176.78 µm at 1 mm/px",
+   "pass": true,
+   "detail": "176.78 µm"
+  },
+  {
+   "name": "tolerance 1 µm @250 µm/px → deviation fallback recorded, nothing rounded",
+   "pass": true,
+   "detail": "1 fallbacks"
+  },
+  {
+   "name": "crescentInterior bonded (C): no overhang after fixpoint",
+   "pass": true
+  },
+  {
+   "name": "crescentInterior bonded (E): no overhang after fixpoint",
+   "pass": true
+  },
+  {
+   "name": "crescentInterior bonded (G): no overhang after fixpoint",
+   "pass": true
+  },
+  {
+   "name": "art-boundary vertices pinned (x=0 edge kept exact, local variant)",
+   "pass": true
+  },
+  {
+   "name": "topology unchanged (donut keeps its hole, local variant)",
+   "pass": true,
+   "detail": "(((())))"
+  },
+  {
+   "name": "densified deviation ≥ brute-force sampled (20 random quads)",
+   "pass": true
+  },
+  {
+   "name": "backend identity area(A\\B) = area(A) − area(A∩B) on smoothed layers (seed 7)",
+   "pass": true
+  },
+  {
+   "name": "metric: an all-pinned loop at level 'chaikin' counts 0 % rounded (v1 metric said 100 %)",
+   "pass": true,
+   "detail": "unpinned 4/6 rounded; all-pinned 0/6, v1 1"
+  }
+ ],
+ "images": [
+  {
+   "id": "photo-mountains",
+   "kind": "photograph (landscape)",
+   "file": "/usr/share/doc/ImageMagick-7/www/image/mountains.jpg",
+   "pkg": "imagemagick 7.1.2.31-1 (Arch package, docs example image)",
+   "sha256": "6835b0d07eaa1694f2b56567385dbb941122c605dc6da8e34f9576c5b62a5062",
+   "size": "1500x1000"
+  },
+  {
+   "id": "photo-coffee",
+   "kind": "photograph (macro, foliage)",
+   "file": "/usr/share/omarchy/themes/ristretto/backgrounds/2-coffee-beans.jpg",
+   "pkg": "omarchy 4.0.4-1 (theme wallpaper)",
+   "sha256": "1f691430c72083f547871019c8c3f3632af1962f882ce54a45fcf07eaf2a330a",
+   "size": "2912x1632"
+  },
+  {
+   "id": "art-procession",
+   "kind": "painting (Flemish landscape, many figures)",
+   "file": "/usr/share/omarchy/themes/gruvbox/backgrounds/4-idyllic-procession.jpg",
+   "pkg": "omarchy 4.0.4-1 (theme wallpaper)",
+   "sha256": "be0ae73263a5eb69416fb13547826a60806859aa31bb031053afc73de60a55c5",
+   "size": "3160x1996"
+  },
+  {
+   "id": "art-village",
+   "kind": "painting (Dutch genre scene)",
+   "file": "/usr/share/omarchy/themes/gruvbox/backgrounds/3-village-square.jpg",
+   "pkg": "omarchy 4.0.4-1 (theme wallpaper)",
+   "sha256": "9ac4d52dbef06876a838e9cf9f97813dd86e99d2b977d9d11c5f389be6451cdc",
+   "size": "3160x2360"
+  }
+ ]
+}

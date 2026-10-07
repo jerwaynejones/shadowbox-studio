@@ -1,0 +1,2908 @@
+{
+ "generated": "2026-10-07T22:18:36.008Z",
+ "node": "v26.7.0",
+ "configs": {
+  "B": {
+   "cfg": {
+    "label": "D1: rdp(tol/px)+chaikin(2), 250 µm/px, art-boundary pins, whole-loop fallback",
+    "pxUm": 250,
+    "tolUm": 50,
+    "epsPx": 0.2,
+    "pin": true
+   },
+   "agg": {
+    "random|bonded": {
+     "stacks": 20,
+     "loops": 93,
+     "corners": 4376,
+     "cornerShare": 0.004570383912248629,
+     "lengthShare": 0.0021257587918528252,
+     "lengthShareMean": 0.0026235371817419505,
+     "cornerShareMean": 0.005491460420315666,
+     "v1PerimShare": 0.0032794214771774376,
+     "deviation": 88,
+     "topology": 0,
+     "containment": 0,
+     "maxDevUm": 44.54772721475249,
+     "allNested": true,
+     "allTopoOK": true,
+     "maxSweeps": 1,
+     "maxSteps": 0,
+     "unresolved": 0,
+     "msTotal": 1936.8405719999998,
+     "msMax": 182.029132,
+     "stacksWithUncondOverhang": 12,
+     "uncondOverhangMM2": 0.213563
+    },
+    "random|connected": {
+     "stacks": 20,
+     "loops": 93,
+     "corners": 4376,
+     "cornerShare": 0.004570383912248629,
+     "lengthShare": 0.0021257587918528252,
+     "lengthShareMean": 0.0026235371817419505,
+     "cornerShareMean": 0.005491460420315666,
+     "v1PerimShare": 0.0032794214771774376,
+     "deviation": 88,
+     "topology": 0,
+     "containment": 0,
+     "maxDevUm": 44.54772721475249,
+     "allNested": true,
+     "allTopoOK": true,
+     "maxSweeps": 0,
+     "maxSteps": 0,
+     "unresolved": 0,
+     "msTotal": 1765.120908,
+     "msMax": 181.099293
+    },
+    "busy768|bonded": {
+     "stacks": 1,
+     "loops": 120,
+     "corners": 10594,
+     "cornerShare": 0.003775722106852936,
+     "lengthShare": 0.0016813787305590584,
+     "lengthShareMean": 0.0016813787305590584,
+     "cornerShareMean": 0.003775722106852936,
+     "v1PerimShare": 0.002101723413198823,
+     "deviation": 110,
+     "topology": 0,
+     "containment": 0,
+     "maxDevUm": 44.54772721475249,
+     "allNested": true,
+     "allTopoOK": true,
+     "maxSweeps": 1,
+     "maxSteps": 0,
+     "unresolved": 0,
+     "msTotal": 3941.534947,
+     "msMax": 3941.534947,
+     "stacksWithUncondOverhang": 1,
+     "uncondOverhangMM2": 0.373802
+    },
+    "busy768|connected": {
+     "stacks": 1,
+     "loops": 120,
+     "corners": 10594,
+     "cornerShare": 0.003775722106852936,
+     "lengthShare": 0.0016813787305590584,
+     "lengthShareMean": 0.0016813787305590584,
+     "cornerShareMean": 0.003775722106852936,
+     "v1PerimShare": 0.002101723413198823,
+     "deviation": 110,
+     "topology": 0,
+     "containment": 0,
+     "maxDevUm": 44.54772721475249,
+     "allNested": true,
+     "allTopoOK": true,
+     "maxSweeps": 0,
+     "maxSteps": 0,
+     "unresolved": 0,
+     "msTotal": 3621.030375,
+     "msMax": 3621.030375
+    },
+    "busy1536|bonded": {
+     "stacks": 1,
+     "loops": 106,
+     "corners": 20078,
+     "cornerShare": 0.0005976690905468672,
+     "lengthShare": 0.00026573658860654375,
+     "lengthShareMean": 0.00026573658860654375,
+     "cornerShareMean": 0.0005976690905468672,
+     "v1PerimShare": 0.0003321707357581797,
+     "deviation": 103,
+     "topology": 0,
+     "containment": 0,
+     "maxDevUm": 44.54772721475249,
+     "allNested": true,
+     "allTopoOK": true,
+     "maxSweeps": 1,
+     "maxSteps": 0,
+     "unresolved": 0,
+     "msTotal": 6366.621256,
+     "msMax": 6366.621256,
+     "stacksWithUncondOverhang": 1,
+     "uncondOverhangMM2": 0.3364715
+    },
+    "busy1536|connected": {
+     "stacks": 1,
+     "loops": 106,
+     "corners": 20078,
+     "cornerShare": 0.0005976690905468672,
+     "lengthShare": 0.00026573658860654375,
+     "lengthShareMean": 0.00026573658860654375,
+     "cornerShareMean": 0.0005976690905468672,
+     "v1PerimShare": 0.0003321707357581797,
+     "deviation": 103,
+     "topology": 0,
+     "containment": 0,
+     "maxDevUm": 44.54772721475249,
+     "allNested": true,
+     "allTopoOK": true,
+     "maxSweeps": 0,
+     "maxSteps": 0,
+     "unresolved": 0,
+     "msTotal": 7226.133554,
+     "msMax": 7226.133554
+    },
+    "images|bonded": {
+     "stacks": 4,
+     "loops": 785,
+     "corners": 45128,
+     "cornerShare": 0,
+     "lengthShare": 0,
+     "lengthShareMean": 0,
+     "cornerShareMean": 0,
+     "v1PerimShare": 0,
+     "deviation": 785,
+     "topology": 0,
+     "containment": 0,
+     "maxDevUm": 1.4551915228366852e-11,
+     "allNested": true,
+     "allTopoOK": true,
+     "maxSweeps": 1,
+     "maxSteps": 0,
+     "unresolved": 0,
+     "msTotal": 19356.664601999997,
+     "msMax": 6122.487399,
+     "stacksWithUncondOverhang": 4,
+     "uncondOverhangMM2": 2.821721
+    },
+    "images|connected": {
+     "stacks": 4,
+     "loops": 785,
+     "corners": 45128,
+     "cornerShare": 0,
+     "lengthShare": 0,
+     "lengthShareMean": 0,
+     "cornerShareMean": 0,
+     "v1PerimShare": 0,
+     "deviation": 785,
+     "topology": 0,
+     "containment": 0,
+     "maxDevUm": 1.4551915228366852e-11,
+     "allNested": true,
+     "allTopoOK": true,
+     "maxSweeps": 0,
+     "maxSteps": 0,
+     "unresolved": 0,
+     "msTotal": 18302.619438,
+     "msMax": 5634.237235
+    }
+   },
+   "per": [
+    {
+     "set": "random",
+     "name": "random s=1",
+     "w": 120,
+     "h": 90,
+     "modes": {
+      "bonded": {
+       "loops": 4,
+       "chaikin": 0,
+       "rdp": 4,
+       "raw": 0,
+       "corners": 138,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 4.547473508864641e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 4,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 181.826918,
+       "devMs": 119.185228,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 3,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 1,
+         "overUncondMM2": 0.004245,
+         "sliverUncondUm": 30,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "a1a890008306369a912bfc08e74ecfcb093dcc9c706b456b61c397826dd3db45"
+      },
+      "connected": {
+       "loops": 4,
+       "chaikin": 0,
+       "rdp": 4,
+       "raw": 0,
+       "corners": 138,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 4.547473508864641e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 4,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 88.778151,
+       "devMs": 57.796573
+      }
+     }
+    },
+    {
+     "set": "random",
+     "name": "random s=2",
+     "w": 120,
+     "h": 90,
+     "modes": {
+      "bonded": {
+       "loops": 6,
+       "chaikin": 2,
+       "rdp": 4,
+       "raw": 0,
+       "corners": 136,
+       "cornersRounded": 8,
+       "cornerShare": 0.058823529411764705,
+       "freeCornerShare": 0.058823529411764705,
+       "lengthShare": 0.02962962962962963,
+       "v1PerimShare": 0.037037037037037035,
+       "maxDevUm": 44.54772721475249,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 4,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 73.118678,
+       "devMs": 58.199903,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 2,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 1,
+         "overUncondMM2": 0.0063195,
+         "sliverUncondUm": 42,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 1,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 1,
+         "overUncondMM2": 0.0141435,
+         "sliverUncondUm": 76,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 1,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "7ed43b5b48682efec0df30acf2b3f7c581a1b3d0aee0979bcbc220f14a59a956"
+      },
+      "connected": {
+       "loops": 6,
+       "chaikin": 2,
+       "rdp": 4,
+       "raw": 0,
+       "corners": 136,
+       "cornersRounded": 8,
+       "cornerShare": 0.058823529411764705,
+       "freeCornerShare": 0.058823529411764705,
+       "lengthShare": 0.02962962962962963,
+       "v1PerimShare": 0.037037037037037035,
+       "maxDevUm": 44.54772721475249,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 4,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 70.079407,
+       "devMs": 55.3558
+      }
+     }
+    },
+    {
+     "set": "random",
+     "name": "random s=3",
+     "w": 120,
+     "h": 90,
+     "modes": {
+      "bonded": {
+       "loops": 6,
+       "chaikin": 0,
+       "rdp": 6,
+       "raw": 0,
+       "corners": 486,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 4.547473508864641e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 6,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 182.029132,
+       "devMs": 162.255658,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 2,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 3,
+         "overUncondMM2": 0.017077,
+         "sliverUncondUm": 24,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 1,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "b2d4f36e420d44ea49d76f87a416eacb24d71b959b17a254130dbaee182409ea"
+      },
+      "connected": {
+       "loops": 6,
+       "chaikin": 0,
+       "rdp": 6,
+       "raw": 0,
+       "corners": 486,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 4.547473508864641e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 6,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 178.733944,
+       "devMs": 159.430852
+      }
+     }
+    },
+    {
+     "set": "random",
+     "name": "random s=4",
+     "w": 120,
+     "h": 90,
+     "modes": {
+      "bonded": {
+       "loops": 4,
+       "chaikin": 0,
+       "rdp": 4,
+       "raw": 0,
+       "corners": 240,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 9.094947017729282e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 4,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 94.463537,
+       "devMs": 86.953905,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 3,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 1,
+         "overUncondMM2": 0.0023975,
+         "sliverUncondUm": 22,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "aeb6da992b808f08a638796918a5864493cd121559915ca9a3d6151adc0fa1ae"
+      },
+      "connected": {
+       "loops": 4,
+       "chaikin": 0,
+       "rdp": 4,
+       "raw": 0,
+       "corners": 240,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 9.094947017729282e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 4,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 98.851796,
+       "devMs": 91.153694
+      }
+     }
+    },
+    {
+     "set": "random",
+     "name": "random s=5",
+     "w": 120,
+     "h": 90,
+     "modes": {
+      "bonded": {
+       "loops": 5,
+       "chaikin": 0,
+       "rdp": 5,
+       "raw": 0,
+       "corners": 130,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 1.1368683772161603e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 5,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 67.340104,
+       "devMs": 58.72114,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 3,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 1,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 1,
+         "overUncondMM2": 0.014569,
+         "sliverUncondUm": 48,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "43d96452ee0489120dcc70eb5cd8f436038254fbd1fb1ed1310e94e54d22b576"
+      },
+      "connected": {
+       "loops": 5,
+       "chaikin": 0,
+       "rdp": 5,
+       "raw": 0,
+       "corners": 130,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 1.1368683772161603e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 5,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 59.360933,
+       "devMs": 53.054644
+      }
+     }
+    },
+    {
+     "set": "random",
+     "name": "random s=6",
+     "w": 120,
+     "h": 90,
+     "modes": {
+      "bonded": {
+       "loops": 8,
+       "chaikin": 0,
+       "rdp": 8,
+       "raw": 0,
+       "corners": 314,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 9.094947017729282e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 8,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 129.635298,
+       "devMs": 113.071583,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 3,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 3,
+         "overUncondMM2": 0.0184345,
+         "sliverUncondUm": 26,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 2,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "47e5a47dde8664086769e1a8cd5b46db13bac1540bdce09404aaa09c862dc3b8"
+      },
+      "connected": {
+       "loops": 8,
+       "chaikin": 0,
+       "rdp": 8,
+       "raw": 0,
+       "corners": 314,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 9.094947017729282e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 8,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 108.830695,
+       "devMs": 98.509891
+      }
+     }
+    },
+    {
+     "set": "random",
+     "name": "random s=7",
+     "w": 120,
+     "h": 90,
+     "modes": {
+      "bonded": {
+       "loops": 3,
+       "chaikin": 0,
+       "rdp": 3,
+       "raw": 0,
+       "corners": 110,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 9.094947017729282e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 3,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 71.097321,
+       "devMs": 63.518343,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 3,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "c8f1b32cf191d432c161c807b4ce69d151ead86176d5e85cfe84a8c0cd4bfe5c"
+      },
+      "connected": {
+       "loops": 3,
+       "chaikin": 0,
+       "rdp": 3,
+       "raw": 0,
+       "corners": 110,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 9.094947017729282e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 3,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 58.17883,
+       "devMs": 52.157039
+      }
+     }
+    },
+    {
+     "set": "random",
+     "name": "random s=8",
+     "w": 120,
+     "h": 90,
+     "modes": {
+      "bonded": {
+       "loops": 2,
+       "chaikin": 0,
+       "rdp": 2,
+       "raw": 0,
+       "corners": 82,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 9.094947017729282e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 2,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 43.79777,
+       "devMs": 38.190603,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 2,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "761e3888dd8fcd6a67abe791077accd5e64085bcb32991e73476d879c1f2078c"
+      },
+      "connected": {
+       "loops": 2,
+       "chaikin": 0,
+       "rdp": 2,
+       "raw": 0,
+       "corners": 82,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 9.094947017729282e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 2,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 45.918581,
+       "devMs": 42.026101
+      }
+     }
+    },
+    {
+     "set": "random",
+     "name": "random s=9",
+     "w": 120,
+     "h": 90,
+     "modes": {
+      "bonded": {
+       "loops": 3,
+       "chaikin": 0,
+       "rdp": 3,
+       "raw": 0,
+       "corners": 104,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 9.094947017729282e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 3,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 54.486505,
+       "devMs": 49.354347,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 2,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 1,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "15b0f0f5f7f26f69bedd083a0c74906e06323b2963fb698600de2e4b61f4efdb"
+      },
+      "connected": {
+       "loops": 3,
+       "chaikin": 0,
+       "rdp": 3,
+       "raw": 0,
+       "corners": 104,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 9.094947017729282e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 3,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 47.581851,
+       "devMs": 43.976048
+      }
+     }
+    },
+    {
+     "set": "random",
+     "name": "random s=10",
+     "w": 120,
+     "h": 90,
+     "modes": {
+      "bonded": {
+       "loops": 6,
+       "chaikin": 1,
+       "rdp": 5,
+       "raw": 0,
+       "corners": 368,
+       "cornersRounded": 4,
+       "cornerShare": 0.010869565217391304,
+       "freeCornerShare": 0.01098901098901099,
+       "lengthShare": 0.004968944099378882,
+       "v1PerimShare": 0.006211180124223602,
+       "maxDevUm": 44.54772721475249,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 5,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 135.62639,
+       "devMs": 126.422417,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 3,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 1,
+         "overUncondMM2": 0.004845,
+         "sliverUncondUm": 22,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 2,
+         "overUncondMM2": 0.0057625,
+         "sliverUncondUm": 38,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "a35bd1c7f6b1e025e0085fbfa20a2c472419eebdaf6d95a57719c57c4ea6cdd7"
+      },
+      "connected": {
+       "loops": 6,
+       "chaikin": 1,
+       "rdp": 5,
+       "raw": 0,
+       "corners": 368,
+       "cornersRounded": 4,
+       "cornerShare": 0.010869565217391304,
+       "freeCornerShare": 0.01098901098901099,
+       "lengthShare": 0.004968944099378882,
+       "v1PerimShare": 0.006211180124223602,
+       "maxDevUm": 44.54772721475249,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 5,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 130.052277,
+       "devMs": 122.20567
+      }
+     }
+    },
+    {
+     "set": "random",
+     "name": "random s=11",
+     "w": 120,
+     "h": 90,
+     "modes": {
+      "bonded": {
+       "loops": 7,
+       "chaikin": 0,
+       "rdp": 7,
+       "raw": 0,
+       "corners": 270,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 9.094947017729282e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 7,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 106.581244,
+       "devMs": 99.885448,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 2,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 2,
+         "overUncondMM2": 0.004953,
+         "sliverUncondUm": 16,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 1,
+         "overUncondMM2": 0.0024725,
+         "sliverUncondUm": 16,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 1,
+         "overUncondMM2": 0.01081,
+         "sliverUncondUm": 30,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 1,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "8c825f67c5e5b12794a60f6bd09807f8370250d1f1721267fb90cf00c603e01a"
+      },
+      "connected": {
+       "loops": 7,
+       "chaikin": 0,
+       "rdp": 7,
+       "raw": 0,
+       "corners": 270,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 9.094947017729282e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 7,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 107.598274,
+       "devMs": 100.570086
+      }
+     }
+    },
+    {
+     "set": "random",
+     "name": "random s=12",
+     "w": 120,
+     "h": 90,
+     "modes": {
+      "bonded": {
+       "loops": 5,
+       "chaikin": 0,
+       "rdp": 5,
+       "raw": 0,
+       "corners": 312,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 4.547473508864641e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 5,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 110.384845,
+       "devMs": 102.935178,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 2,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 2,
+         "overUncondMM2": 0.013263,
+         "sliverUncondUm": 30,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 1,
+         "overUncondMM2": 0.002418,
+         "sliverUncondUm": 12,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "e3cec10f2a915c9393ff32dd32e194c2b9cf30e29729b895dbd7447111248914"
+      },
+      "connected": {
+       "loops": 5,
+       "chaikin": 0,
+       "rdp": 5,
+       "raw": 0,
+       "corners": 312,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 4.547473508864641e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 5,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 107.246957,
+       "devMs": 98.726088
+      }
+     }
+    },
+    {
+     "set": "random",
+     "name": "random s=13",
+     "w": 120,
+     "h": 90,
+     "modes": {
+      "bonded": {
+       "loops": 9,
+       "chaikin": 0,
+       "rdp": 9,
+       "raw": 0,
+       "corners": 484,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 4.547473508864641e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 9,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 145.079258,
+       "devMs": 134.722441,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 3,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 2,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 2,
+         "overUncondMM2": 0.0024415,
+         "sliverUncondUm": 8,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 2,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "5a46661fb8f349816716520130b752a5b1452f00971bf0ff10bfcef3a0c212f6"
+      },
+      "connected": {
+       "loops": 9,
+       "chaikin": 0,
+       "rdp": 9,
+       "raw": 0,
+       "corners": 484,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 4.547473508864641e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 9,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 181.099293,
+       "devMs": 167.879597
+      }
+     }
+    },
+    {
+     "set": "random",
+     "name": "random s=14",
+     "w": 120,
+     "h": 90,
+     "modes": {
+      "bonded": {
+       "loops": 4,
+       "chaikin": 1,
+       "rdp": 3,
+       "raw": 0,
+       "corners": 146,
+       "cornersRounded": 4,
+       "cornerShare": 0.0273972602739726,
+       "freeCornerShare": 0.0273972602739726,
+       "lengthShare": 0.012903225806451613,
+       "v1PerimShare": 0.016129032258064516,
+       "maxDevUm": 44.54772721475249,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 3,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 66.80583,
+       "devMs": 61.620678,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 1,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 3,
+         "overUncondMM2": 0.0163895,
+         "sliverUncondUm": 68,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "4ed3e94c55e59da9d91c725b39d36f28fe72bff6768022e7b5b975507db5d4f1"
+      },
+      "connected": {
+       "loops": 4,
+       "chaikin": 1,
+       "rdp": 3,
+       "raw": 0,
+       "corners": 146,
+       "cornersRounded": 4,
+       "cornerShare": 0.0273972602739726,
+       "freeCornerShare": 0.0273972602739726,
+       "lengthShare": 0.012903225806451613,
+       "v1PerimShare": 0.016129032258064516,
+       "maxDevUm": 44.54772721475249,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 3,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 64.406612,
+       "devMs": 59.907229
+      }
+     }
+    },
+    {
+     "set": "random",
+     "name": "random s=15",
+     "w": 120,
+     "h": 90,
+     "modes": {
+      "bonded": {
+       "loops": 3,
+       "chaikin": 0,
+       "rdp": 3,
+       "raw": 0,
+       "corners": 200,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 2.2737367544323206e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 3,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 79.407689,
+       "devMs": 73.332222,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 2,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 1,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "9a23e9fe4e1e8194b6539f3ebc11cbbc760a45b346e68cdcadf1f559307e6a57"
+      },
+      "connected": {
+       "loops": 3,
+       "chaikin": 0,
+       "rdp": 3,
+       "raw": 0,
+       "corners": 200,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 2.2737367544323206e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 3,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 81.530916,
+       "devMs": 76.297895
+      }
+     }
+    },
+    {
+     "set": "random",
+     "name": "random s=16",
+     "w": 120,
+     "h": 90,
+     "modes": {
+      "bonded": {
+       "loops": 2,
+       "chaikin": 0,
+       "rdp": 2,
+       "raw": 0,
+       "corners": 240,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 9.094947017729282e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 2,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 122.577883,
+       "devMs": 117.870244,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 1,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 1,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "73fc9f93558057338824b7838c57aef9fc14d21b35fbc8ea26af5fe71ee1d726"
+      },
+      "connected": {
+       "loops": 2,
+       "chaikin": 0,
+       "rdp": 2,
+       "raw": 0,
+       "corners": 240,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 9.094947017729282e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 2,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 94.925413,
+       "devMs": 90.270921
+      }
+     }
+    },
+    {
+     "set": "random",
+     "name": "random s=17",
+     "w": 120,
+     "h": 90,
+     "modes": {
+      "bonded": {
+       "loops": 2,
+       "chaikin": 0,
+       "rdp": 2,
+       "raw": 0,
+       "corners": 108,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 2.2737367544323206e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 2,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 44.307867,
+       "devMs": 41.204998,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 2,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "33fa4526944ad6d2829f11ab562ad1fb537b597c73f04f2863e778e95f2e01eb"
+      },
+      "connected": {
+       "loops": 2,
+       "chaikin": 0,
+       "rdp": 2,
+       "raw": 0,
+       "corners": 108,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 2.2737367544323206e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 2,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 47.298338,
+       "devMs": 43.855422
+      }
+     }
+    },
+    {
+     "set": "random",
+     "name": "random s=18",
+     "w": 120,
+     "h": 90,
+     "modes": {
+      "bonded": {
+       "loops": 5,
+       "chaikin": 0,
+       "rdp": 5,
+       "raw": 0,
+       "corners": 122,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 4.547473508864641e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 5,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 66.329565,
+       "devMs": 51.655995,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 3,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 1,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 1,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "b396c904730193f343bdd48049c042524e96b8bda289509a37649471e295a045"
+      },
+      "connected": {
+       "loops": 5,
+       "chaikin": 0,
+       "rdp": 5,
+       "raw": 0,
+       "corners": 122,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 4.547473508864641e-13,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 5,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 52.078644,
+       "devMs": 46.445481
+      }
+     }
+    },
+    {
+     "set": "random",
+     "name": "random s=19",
+     "w": 120,
+     "h": 90,
+     "modes": {
+      "bonded": {
+       "loops": 1,
+       "chaikin": 0,
+       "rdp": 1,
+       "raw": 0,
+       "corners": 72,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 1.8189894035458565e-12,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 1,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 36.792262,
+       "devMs": 33.581223,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 1,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 0,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "25c9c6f3fc908909cfe6618d1f0c18f2f593bcad1817552dcce54e7ebe75921f"
+      },
+      "connected": {
+       "loops": 1,
+       "chaikin": 0,
+       "rdp": 1,
+       "raw": 0,
+       "corners": 72,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 1.8189894035458565e-12,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 1,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 35.736814,
+       "devMs": 32.568352
+      }
+     }
+    },
+    {
+     "set": "random",
+     "name": "random s=20",
+     "w": 120,
+     "h": 90,
+     "modes": {
+      "bonded": {
+       "loops": 8,
+       "chaikin": 1,
+       "rdp": 7,
+       "raw": 0,
+       "corners": 314,
+       "cornersRounded": 4,
+       "cornerShare": 0.012738853503184714,
+       "freeCornerShare": 0.013201320132013201,
+       "lengthShare": 0.004968944099378882,
+       "v1PerimShare": 0.006211180124223602,
+       "maxDevUm": 44.54772721475249,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 7,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 125.152476,
+       "devMs": 113.934644,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 3,
+         "overUncondMM2": 0,
+         "sliverUncondUm": 0,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 2,
+         "overUncondMM2": 0.004245,
+         "sliverUncondUm": 30,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 1,
+         "overUncondMM2": 0.0086505,
+         "sliverUncondUm": 14,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 1,
+         "overUncondMM2": 0.0048985,
+         "sliverUncondUm": 16,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 1,
+         "overUncondMM2": 0.055228,
+         "sliverUncondUm": 130,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "592c9370315c1c969e763274e780874d0785e9a426fad342cfe843860750db6a"
+      },
+      "connected": {
+       "loops": 8,
+       "chaikin": 1,
+       "rdp": 7,
+       "raw": 0,
+       "corners": 314,
+       "cornersRounded": 4,
+       "cornerShare": 0.012738853503184714,
+       "freeCornerShare": 0.013201320132013201,
+       "lengthShare": 0.004968944099378882,
+       "v1PerimShare": 0.006211180124223602,
+       "maxDevUm": 44.54772721475249,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 7,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 106.833182,
+       "devMs": 99.864659
+      }
+     }
+    },
+    {
+     "set": "busy768",
+     "name": "busy-768",
+     "w": 768,
+     "h": 512,
+     "modes": {
+      "bonded": {
+       "loops": 120,
+       "chaikin": 10,
+       "rdp": 110,
+       "raw": 0,
+       "corners": 10594,
+       "cornersRounded": 40,
+       "cornerShare": 0.003775722106852936,
+       "freeCornerShare": 0.0037846532311476963,
+       "lengthShare": 0.0016813787305590584,
+       "v1PerimShare": 0.002101723413198823,
+       "maxDevUm": 44.54772721475249,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 110,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 3941.534947,
+       "devMs": 3594.840996,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 24,
+         "overUncondMM2": 0,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 30,
+         "overUncondMM2": 0.076088,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 26,
+         "overUncondMM2": 0.1149355,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 17,
+         "overUncondMM2": 0.113861,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 12,
+         "overUncondMM2": 0.027331,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 6,
+         "loops": 7,
+         "overUncondMM2": 0.0247295,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 7,
+         "loops": 4,
+         "overUncondMM2": 0.016857,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "324042fa93710650410cb786974b330b8b44db82e97df84c6030c6a31ea47973"
+      },
+      "connected": {
+       "loops": 120,
+       "chaikin": 10,
+       "rdp": 110,
+       "raw": 0,
+       "corners": 10594,
+       "cornersRounded": 40,
+       "cornerShare": 0.003775722106852936,
+       "freeCornerShare": 0.0037846532311476963,
+       "lengthShare": 0.0016813787305590584,
+       "v1PerimShare": 0.002101723413198823,
+       "maxDevUm": 44.54772721475249,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 110,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 3621.030375,
+       "devMs": 3394.034929
+      }
+     }
+    },
+    {
+     "set": "busy1536",
+     "name": "busy-1536",
+     "w": 1536,
+     "h": 1024,
+     "modes": {
+      "bonded": {
+       "loops": 106,
+       "chaikin": 3,
+       "rdp": 103,
+       "raw": 0,
+       "corners": 20078,
+       "cornersRounded": 12,
+       "cornerShare": 0.0005976690905468672,
+       "freeCornerShare": 0.0005983545250560958,
+       "lengthShare": 0.00026573658860654375,
+       "v1PerimShare": 0.0003321707357581797,
+       "maxDevUm": 44.54772721475249,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 103,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 6366.621256,
+       "devMs": 5858.705998,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 24,
+         "overUncondMM2": 0,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 26,
+         "overUncondMM2": 0.067801,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 22,
+         "overUncondMM2": 0.1593805,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 18,
+         "overUncondMM2": 0.049521,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 5,
+         "loops": 7,
+         "overUncondMM2": 0.0092635,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 6,
+         "loops": 5,
+         "overUncondMM2": 0.0457555,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 7,
+         "loops": 4,
+         "overUncondMM2": 0.00475,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "9baa546bea9f87fa56178c04e3d0e1156c2ee4c595b776df95e937224149c5e3"
+      },
+      "connected": {
+       "loops": 106,
+       "chaikin": 3,
+       "rdp": 103,
+       "raw": 0,
+       "corners": 20078,
+       "cornersRounded": 12,
+       "cornerShare": 0.0005976690905468672,
+       "freeCornerShare": 0.0005983545250560958,
+       "lengthShare": 0.00026573658860654375,
+       "v1PerimShare": 0.0003321707357581797,
+       "maxDevUm": 44.54772721475249,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 103,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 7226.133554,
+       "devMs": 6614.067316
+      }
+     }
+    },
+    {
+     "set": "images",
+     "name": "photo-mountains-720",
+     "w": 720,
+     "h": 480,
+     "modes": {
+      "bonded": {
+       "loops": 129,
+       "chaikin": 0,
+       "rdp": 129,
+       "raw": 0,
+       "corners": 8150,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 1.4551915228366852e-11,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 129,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 3538.470752,
+       "devMs": 3299.597194,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 16,
+         "overUncondMM2": 0,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 20,
+         "overUncondMM2": 0.0048515,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 48,
+         "overUncondMM2": 0.0073165,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 45,
+         "overUncondMM2": 0.0457615,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "91ee12495ff92e22bfd509b29c15fa7834349628b8629ae867562bfc46d44d72"
+      },
+      "connected": {
+       "loops": 129,
+       "chaikin": 0,
+       "rdp": 129,
+       "raw": 0,
+       "corners": 8150,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 1.4551915228366852e-11,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 129,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 3635.254717,
+       "devMs": 3424.450164
+      }
+     }
+    },
+    {
+     "set": "images",
+     "name": "photo-coffee-720",
+     "w": 720,
+     "h": 404,
+     "modes": {
+      "bonded": {
+       "loops": 213,
+       "chaikin": 0,
+       "rdp": 213,
+       "raw": 0,
+       "corners": 15058,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 1.4551915228366852e-11,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 213,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 6122.487399,
+       "devMs": 5755.564605,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 57,
+         "overUncondMM2": 0,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 52,
+         "overUncondMM2": 0.250515,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 54,
+         "overUncondMM2": 0.239658,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 50,
+         "overUncondMM2": 0.124405,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "30b8f997c046e1f0486ae9c39cbaf8c342d527b89cbde56132e9510c34e54d6f"
+      },
+      "connected": {
+       "loops": 213,
+       "chaikin": 0,
+       "rdp": 213,
+       "raw": 0,
+       "corners": 15058,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 1.4551915228366852e-11,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 213,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 5634.237235,
+       "devMs": 5309.737495
+      }
+     }
+    },
+    {
+     "set": "images",
+     "name": "art-procession-720",
+     "w": 720,
+     "h": 455,
+     "modes": {
+      "bonded": {
+       "loops": 246,
+       "chaikin": 0,
+       "rdp": 246,
+       "raw": 0,
+       "corners": 12554,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 1.4551915228366852e-11,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 246,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 5428.459233,
+       "devMs": 5125.05064,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 32,
+         "overUncondMM2": 0,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 72,
+         "overUncondMM2": 0.1674575,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 73,
+         "overUncondMM2": 0.534197,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 69,
+         "overUncondMM2": 0.7208345,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "c91bb498116c81da8ae610feced6a04ff2f00b11312e5cfe5a06fdc5ce59712b"
+      },
+      "connected": {
+       "loops": 246,
+       "chaikin": 0,
+       "rdp": 246,
+       "raw": 0,
+       "corners": 12554,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 1.4551915228366852e-11,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 246,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 5009.358876,
+       "devMs": 4738.281454
+      }
+     }
+    },
+    {
+     "set": "images",
+     "name": "art-village-720",
+     "w": 720,
+     "h": 538,
+     "modes": {
+      "bonded": {
+       "loops": 197,
+       "chaikin": 0,
+       "rdp": 197,
+       "raw": 0,
+       "corners": 9366,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 1.4551915228366852e-11,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 1,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 197,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 4267.247218,
+       "devMs": 3984.048935,
+       "overhang": [
+        {
+         "layer": 1,
+         "loops": 15,
+         "overUncondMM2": 0,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 2,
+         "loops": 21,
+         "overUncondMM2": 0.2096465,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 3,
+         "loops": 74,
+         "overUncondMM2": 0.018786,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        },
+        {
+         "layer": 4,
+         "loops": 87,
+         "overUncondMM2": 0.498292,
+         "sliverUncondUm": null,
+         "overFinalMM2": 0,
+         "rawOverMM2": 0
+        }
+       ],
+       "hash": "f5a3a9a415d06d67fbdd5c42bfd302363cfcaf432ee57f8e659e59698fd0438b"
+      },
+      "connected": {
+       "loops": 197,
+       "chaikin": 0,
+       "rdp": 197,
+       "raw": 0,
+       "corners": 9366,
+       "cornersRounded": 0,
+       "cornerShare": 0,
+       "freeCornerShare": 0,
+       "lengthShare": 0,
+       "v1PerimShare": 0,
+       "maxDevUm": 1.4551915228366852e-11,
+       "topoOK": true,
+       "nestedOK": true,
+       "sweeps": 0,
+       "steps": 0,
+       "unresolved": 0,
+       "regates": 0,
+       "counts": {
+        "deviation": 197,
+        "topology": 0,
+        "containment": 0
+       },
+       "ms": 4023.76861,
+       "devMs": 3809.775036
+      }
+     }
+    }
+   ]
+  }
+ },
+ "checks": [],
+ "images": [
+  {
+   "id": "photo-mountains",
+   "kind": "photograph (landscape)",
+   "file": "/usr/share/doc/ImageMagick-7/www/image/mountains.jpg",
+   "pkg": "imagemagick 7.1.2.31-1 (Arch package, docs example image)",
+   "sha256": "6835b0d07eaa1694f2b56567385dbb941122c605dc6da8e34f9576c5b62a5062",
+   "size": "1500x1000"
+  },
+  {
+   "id": "photo-coffee",
+   "kind": "photograph (macro, foliage)",
+   "file": "/usr/share/omarchy/themes/ristretto/backgrounds/2-coffee-beans.jpg",
+   "pkg": "omarchy 4.0.4-1 (theme wallpaper)",
+   "sha256": "1f691430c72083f547871019c8c3f3632af1962f882ce54a45fcf07eaf2a330a",
+   "size": "2912x1632"
+  },
+  {
+   "id": "art-procession",
+   "kind": "painting (Flemish landscape, many figures)",
+   "file": "/usr/share/omarchy/themes/gruvbox/backgrounds/4-idyllic-procession.jpg",
+   "pkg": "omarchy 4.0.4-1 (theme wallpaper)",
+   "sha256": "be0ae73263a5eb69416fb13547826a60806859aa31bb031053afc73de60a55c5",
+   "size": "3160x1996"
+  },
+  {
+   "id": "art-village",
+   "kind": "painting (Dutch genre scene)",
+   "file": "/usr/share/omarchy/themes/gruvbox/backgrounds/3-village-square.jpg",
+   "pkg": "omarchy 4.0.4-1 (theme wallpaper)",
+   "sha256": "9ac4d52dbef06876a838e9cf9f97813dd86e99d2b977d9d11c5f389be6451cdc",
+   "size": "3160x2360"
+  }
+ ]
+}
