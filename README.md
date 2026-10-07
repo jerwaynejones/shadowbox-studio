@@ -83,7 +83,7 @@ js/svgout.js        mm-unit SVG export, frame ring, registration holes
 js/zip.js           dependency-free ZIP writer (offline-friendly export)
 js/preview.js       tilting stacked preview with explode + bridge audit
 js/app.js           state, pipeline orchestration, UI wiring, demo scene
-test/run_tests.js   algorithm test suite (29 checks) — `node test/run_tests.js`
+test/run_tests.js   algorithm test suite (run it to see the current count) — `node test/run_tests.js`
 build.js            single-file build — `node build.js` → dist/
 docs/               user guide, algorithm notes, changelog
 ```

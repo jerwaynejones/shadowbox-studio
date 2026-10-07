@@ -664,6 +664,9 @@
   function registerServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
     if (location.protocol === "file:") return;
+    // Local dev hosts: skip the SW so manual checks never run against a cached
+    // older shell.
+    if (["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) return;
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("sw.js").catch(() => {
         /* offline support unavailable; app still works online */

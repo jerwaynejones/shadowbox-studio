@@ -11,16 +11,26 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 
-for (const f of ["util.js", "raster.js", "morph.js", "islands.js", "trace.js", "svgout.js", "zip.js"]) {
+globalThis.crypto ??= require("crypto").webcrypto;
+
+for (const f of require("./modules.js").NODE_MODULES) {
   vm.runInThisContext(fs.readFileSync(path.join(__dirname, "..", "js", f), "utf8"), { filename: f });
 }
 
 let pass = 0, fail = 0;
+const ONLY = (() => { const i = process.argv.indexOf("--only"); return i > 0 ? process.argv[i + 1] : null; })();
+let skipping = false, pending = [];
+const queue = [];
+function section(name) { skipping = !!ONLY && !name.includes(ONLY); if (!skipping) console.log("\n" + name); } // legacy blocks
 function check(name, cond) {
-  if (cond) { pass++; console.log("  ✓ " + name); }
-  else { fail++; console.error("  ✗ " + name); }
+  if (skipping) return;
+  if (cond) { pass++; console.log("  ✓ " + name); } else { fail++; console.error("  ✗ " + name); }
 }
-function section(name) { console.log("\n" + name); }
+function checkAsync(name, p) {
+  if (skipping) return;
+  pending.push(Promise.resolve(p).then((v) => check(name, !!v), (e) => check(name + " (threw " + e.message + ")", false)));
+}
+function suite(name, fn) { queue.push([name, fn]); }
 
 // helper: build a mask from ASCII art ('#' = material)
 function art(rows) {
@@ -260,6 +270,34 @@ section("docs — architecture contract and component inventory (T0.1)");
     ["D1", "D2", "D3", "D4"].every((d) => new RegExp("^#+\\s*" + d + "\\b", "m").test(decisions)));
 }
 
+// ------------------------------------------------ build hygiene (T0.2)
+suite("build — hygiene (four-list rule, inline bundle, versions)", () => {
+  const root = path.join(__dirname, "..");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const sw = fs.readFileSync(path.join(root, "sw.js"), "utf8");
+  const app = fs.readFileSync(path.join(root, "js/app.js"), "utf8");
+  const tags = [...html.matchAll(/<script src="js\/([\w./-]+\.js)"><\/script>/g)].map((m) => m[1]);
+  const shell = [...sw.matchAll(/"\.\/js\/([\w./-]+\.js)"/g)].map((m) => m[1]);
+  const { NODE_MODULES } = require("./modules.js");
+  const domOnly = new Set(["preview.js", "app.js"]);
+  check("build: index.html scripts == sw.js SHELL (same order)", JSON.stringify(tags) === JSON.stringify(shell));
+  check("build: Node list == index.html scripts minus DOM modules",
+    JSON.stringify(NODE_MODULES) === JSON.stringify(tags.filter((t) => !domOnly.has(t))));
+  require("child_process").execFileSync(process.execPath, [path.join(root, "build.js")], { stdio: "ignore" });
+  const dist = fs.readFileSync(path.join(root, "dist/shadowbox-studio.html"), "utf8");
+  check("build: dist has no external <script src=", !/<script src=/.test(dist));
+  check("DEP-02 sw.js VERSION == APP_VERSION",
+    sw.match(/const VERSION\s*=\s*"([^"]+)"/)[1] === app.match(/const APP_VERSION\s*=\s*"([^"]+)"/)[1]);
+  check("dev: service worker skipped on localhost", /localhost|127\.0\.0\.1/.test(app.slice(app.indexOf("function registerServiceWorker"))));
+});
+
 // ------------------------------------------------------------------ report
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+(async () => {
+  for (const [name, fn] of queue) {
+    if (ONLY && !name.includes(ONLY)) continue;
+    skipping = false; console.log("\n" + name); pending = [];
+    try { await fn(); await Promise.all(pending); } catch (e) { check(name + " (suite threw: " + e.message + ")", false); }
+  }
+  console.log(`\n${pass} passed, ${fail} failed`);
+  process.exit(fail ? 1 : 0);
+})();

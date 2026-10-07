@@ -30,7 +30,7 @@
   "use strict";
 
   const I = {};
-  const M = global.SBMorph;
+  const M = () => global.SBMorph; // call-time lookup: no load-order coupling
 
   /**
    * Resolve islands in a sheet mask.
@@ -48,7 +48,7 @@
    */
   I.resolve = function (mask, w, h, opt) {
     const bridges = new Uint8Array(w * h);
-    const comp = M.components(mask, w, h, 1);
+    const comp = M().components(mask, w, h, 1);
     if (comp.count === 0)
       return { bridges, bridged: 0, culled: 0, islandCount: 0 };
 

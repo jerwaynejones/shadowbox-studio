@@ -34,7 +34,7 @@ html = html.replace(
 );
 
 // Inline each script in order.
-html = html.replace(/<script src="js\/([\w.]+)"><\/script>/g, (_, name) =>
+html = html.replace(/<script src="js\/([\w./-]+)"><\/script>/g, (_, name) =>
   "<script>\n" + fs.readFileSync(path.join(root, "js", name), "utf8") + "\n</script>"
 );
 
