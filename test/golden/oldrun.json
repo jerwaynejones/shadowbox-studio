@@ -1,0 +1,45 @@
+{
+ "capturedFrom": "f0552c7",
+ "cfg": {
+  "smoothRadius": 2,
+  "smoothPasses": 1,
+  "nSheets": 5,
+  "thresholdMode": "balanced",
+  "darkFront": true,
+  "widthMM": 120,
+  "minFeatureMM": 1.5,
+  "bridgeMM": 1.5,
+  "cullBelowMM2": 9,
+  "maxBridgeMM": 30,
+  "marginMM": 12,
+  "cornerStyle": "faceted",
+  "detailEps": 0.6
+ },
+ "sheets": [
+  {
+   "mask": "64bf4e7fe668627a965187e536da3baef5a3ae007bd0fd657421b3ff7bea9127",
+   "loops": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "bridges": null
+  },
+  {
+   "mask": "7006f06cd686b2e956be1ca49f336e452078c83317e1ca8d1ee3f498f2b0a078",
+   "loops": "4096447a12f74acca48b9592fc7bb79f9423e1ec258607e551066beeb97a4a69",
+   "bridges": "655a3ef0465a9f30fddf25f4dde0c19a05c6f9069b83961800c1944165955273"
+  },
+  {
+   "mask": "0bbe8c5422b00a20da721174607aa8e713937ef6fc5f444aa42e2aedcf8e28f2",
+   "loops": "6ed482c8cb7695403edcde05c1c2482b9681cda823665c190044f3cddbbda27b",
+   "bridges": "655a3ef0465a9f30fddf25f4dde0c19a05c6f9069b83961800c1944165955273"
+  },
+  {
+   "mask": "9ef62121b86a904ac7fc56c68d36db07aebd237e7244ed68a2b339be2d741965",
+   "loops": "f0a6aa59ff94a97f2e7190b4e6722e8268d92dbdf2a3d131601ea8def59acdef",
+   "bridges": "655a3ef0465a9f30fddf25f4dde0c19a05c6f9069b83961800c1944165955273"
+  },
+  {
+   "mask": "cd56e73288eeec5407d7eff842965f75eecceab9d5d064a2c6cdcd93ec05a4c0",
+   "loops": "713b3299bfc5030436e332955ea11242bb9be225d756ff2bb5328360faaf4a50",
+   "bridges": "655a3ef0465a9f30fddf25f4dde0c19a05c6f9069b83961800c1944165955273"
+  }
+ ]
+}

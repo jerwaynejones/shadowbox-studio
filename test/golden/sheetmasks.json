@@ -1,0 +1,461 @@
+{
+ "capturedFrom": "f0552c7",
+ "sheetmasks": [
+  {
+   "N": 3,
+   "darkFront": true,
+   "mode": "balanced",
+   "thresholds": [
+    85.5,
+    171.5
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "add49d8ab99671b96d8255f1c3d1a083f31de3c6f3ac373f99ecaa44ba997f84",
+    "afa2c781ef9263b58e7f17cc33f49eada38a65679f3a13fc0d4e202cf0221a86"
+   ]
+  },
+  {
+   "N": 3,
+   "darkFront": true,
+   "mode": "linear",
+   "thresholds": [
+    86.66666666666667,
+    168.33333333333334
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "26f0d8284bf48a0bf49fb2be40a8c8d5dbed545003891e21f0b631bc3566dd15",
+    "118b0e96a93ffe663f63615dd23904555f82b87e756a2f576f0d327f7d871f67"
+   ]
+  },
+  {
+   "N": 3,
+   "darkFront": false,
+   "mode": "balanced",
+   "thresholds": [
+    85.5,
+    171.5
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "d6916a5fa67493be7596500ce43017877811563124b547f6fc22a07e5c9a20e1",
+    "fda5bd6c26a04324056eb6a4d0a39ac9d54f57ebb079b13412169a60ec52e9fe"
+   ]
+  },
+  {
+   "N": 3,
+   "darkFront": false,
+   "mode": "linear",
+   "thresholds": [
+    86.66666666666667,
+    168.33333333333334
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "22dea08d46950c8d951d51e6df23231449fd10818724dc04340868b01dc31078",
+    "b5f2ce6ccc31cd05cef8e1aed1ec9ce33ef607c0a3f9b3d8023d205891de0f7b"
+   ]
+  },
+  {
+   "N": 4,
+   "darkFront": true,
+   "mode": "balanced",
+   "thresholds": [
+    64.5,
+    128.5,
+    192.5
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "6f4cd3be5ce8afa5eb4bccac5765fc80a62e8d0df63c6a84217bd7ed49d3f264",
+    "47390724d33ad3ef983ec24f0c3aea6ae337da68340254bd2fd35ef0df281845",
+    "94995b0ef00751fe8721719a3a9b08f3d6de7393e23c4bf12f99e274bd28a703"
+   ]
+  },
+  {
+   "N": 4,
+   "darkFront": true,
+   "mode": "linear",
+   "thresholds": [
+    66.25,
+    127.5,
+    188.75
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "0c7bec8389b690c63ffe9033f5b63be442e84236fd015c68b88d1af88be1c1de",
+    "09b0b0ff93eb5663e3782be867ce9bd615d940b21caa0c2f4881c45b13157670",
+    "084ec26dd1528d0eaff16dc741cc2f330d207f0b76955936161f5d94586ab25b"
+   ]
+  },
+  {
+   "N": 4,
+   "darkFront": false,
+   "mode": "balanced",
+   "thresholds": [
+    64.5,
+    128.5,
+    192.5
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "dba7ef8a17029c8b1b42b10dac165772bbf42404dda01d75e4c1e368ac99625d",
+    "630ccd4896e6d8a366aaf5822db44848aff45dc23379c0d9bce0b304b8ae0a29",
+    "b47b19a00b406164791eeb7415032c2ca31a403b8cc21356b4fe4e7c7202c294"
+   ]
+  },
+  {
+   "N": 4,
+   "darkFront": false,
+   "mode": "linear",
+   "thresholds": [
+    66.25,
+    127.5,
+    188.75
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "0dbcd8cc334853dd4cc7dd1e5c153f3e3aa5f1357409575574f199f915b93c25",
+    "4d422a4ee3359c53226f5651c2c314c6e5b73129001ec4e8d47579c41ae384c1",
+    "001f98fd597a1bbd11aa98d4890b722384a9d3f40bb0cb3588f24e5227706450"
+   ]
+  },
+  {
+   "N": 5,
+   "darkFront": true,
+   "mode": "balanced",
+   "thresholds": [
+    50.5,
+    102.5,
+    153.5,
+    204.5
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "4fa9115e8621dcfdc400702304ca089c957d71ead985d883c96da90102b7b7f8",
+    "102f879a6bd1c269e8514b9f87aa2156b51dbf4c73788af6d7397462452ffd49",
+    "019f917053d6f8ae64a987652c9ccf67c1e5a73f16c20bc41ed560e1628bee83",
+    "d9b362a5a98164edd42b60bcc9562fb7dd6106a601fe828432ab1bc5d48e4206"
+   ]
+  },
+  {
+   "N": 5,
+   "darkFront": true,
+   "mode": "linear",
+   "thresholds": [
+    54,
+    103,
+    152,
+    201
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "16f49341432fe777f71a85004dbec64473253504df8eb31b7dd8fc3762205439",
+    "c365801493cbed608d33eeb75c86d2d14964aef265dddd6fbe3ebe5021781c27",
+    "019f917053d6f8ae64a987652c9ccf67c1e5a73f16c20bc41ed560e1628bee83",
+    "1480f72cf039fa1b376863122a9c34cc124d7e585a0fb9645e679bcc3f32b161"
+   ]
+  },
+  {
+   "N": 5,
+   "darkFront": false,
+   "mode": "balanced",
+   "thresholds": [
+    50.5,
+    102.5,
+    153.5,
+    204.5
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "4887986f0a1d2cbc522ac9db3f209242b6c9e3ec552b1d4a3c0c9e8224c518ad",
+    "df64c7826d30ab5d71038f1eabe60df2462f2befd5c1b6ca20fad749c3898249",
+    "922674e03cdac9d82bb6a3eb29ecbe724c67ee72bd013fa085d2e108e1a56e68",
+    "f8ac98dae17bc583fd5c9d02ea8c1480bb2d42ecf8c1dc75586f88c7edf1ca4a"
+   ]
+  },
+  {
+   "N": 5,
+   "darkFront": false,
+   "mode": "linear",
+   "thresholds": [
+    54,
+    103,
+    152,
+    201
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "1e62e2f2ef9b7a6f5af8994851417c0412353bcacc2686714b1261d010e47192",
+    "df64c7826d30ab5d71038f1eabe60df2462f2befd5c1b6ca20fad749c3898249",
+    "1b18c67b72975c06132c682ecf69ee7816f3ef07f811f430b2f8450ed191c70c",
+    "1fc1fe2db99f0687288b7202e8993f75d82202c4bae4ea1a59e20a68ae4140a8"
+   ]
+  },
+  {
+   "N": 6,
+   "darkFront": true,
+   "mode": "balanced",
+   "thresholds": [
+    42.5,
+    85.5,
+    128.5,
+    171.5,
+    213.5
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "a7e61d6ebef6e447bbc5c5d6478532d4ad95ed067f05721c27ff022c1a9a047e",
+    "add49d8ab99671b96d8255f1c3d1a083f31de3c6f3ac373f99ecaa44ba997f84",
+    "47390724d33ad3ef983ec24f0c3aea6ae337da68340254bd2fd35ef0df281845",
+    "afa2c781ef9263b58e7f17cc33f49eada38a65679f3a13fc0d4e202cf0221a86",
+    "bef1ac6f4e89fe95b42b536f2fff209d3e437c334b8991b18ad86650fe09a396"
+   ]
+  },
+  {
+   "N": 6,
+   "darkFront": true,
+   "mode": "linear",
+   "thresholds": [
+    45.833333333333336,
+    86.66666666666667,
+    127.5,
+    168.33333333333334,
+    209.16666666666666
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "62110cde4d2f019ed446cbb4323f47250d6bb3455d840c727270ec4d60e7b96b",
+    "26f0d8284bf48a0bf49fb2be40a8c8d5dbed545003891e21f0b631bc3566dd15",
+    "09b0b0ff93eb5663e3782be867ce9bd615d940b21caa0c2f4881c45b13157670",
+    "118b0e96a93ffe663f63615dd23904555f82b87e756a2f576f0d327f7d871f67",
+    "40534c74e08e097a5190f16930bf571272faa6f9c10745bef3e140472a803e43"
+   ]
+  },
+  {
+   "N": 6,
+   "darkFront": false,
+   "mode": "balanced",
+   "thresholds": [
+    42.5,
+    85.5,
+    128.5,
+    171.5,
+    213.5
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "3840e2be0c232fd1736d5e067a2e20c1fef7a9dcfd8ec202274c13420c804c12",
+    "d6916a5fa67493be7596500ce43017877811563124b547f6fc22a07e5c9a20e1",
+    "630ccd4896e6d8a366aaf5822db44848aff45dc23379c0d9bce0b304b8ae0a29",
+    "fda5bd6c26a04324056eb6a4d0a39ac9d54f57ebb079b13412169a60ec52e9fe",
+    "29bf6ea60b0bc72393d2d1b7258a44e254f8a5e6efab32b5be031868297b738d"
+   ]
+  },
+  {
+   "N": 6,
+   "darkFront": false,
+   "mode": "linear",
+   "thresholds": [
+    45.833333333333336,
+    86.66666666666667,
+    127.5,
+    168.33333333333334,
+    209.16666666666666
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "939c484dde1036881732155ab5b32e42fdc100968ec9a3be8609afe966c902cb",
+    "22dea08d46950c8d951d51e6df23231449fd10818724dc04340868b01dc31078",
+    "4d422a4ee3359c53226f5651c2c314c6e5b73129001ec4e8d47579c41ae384c1",
+    "b5f2ce6ccc31cd05cef8e1aed1ec9ce33ef607c0a3f9b3d8023d205891de0f7b",
+    "f01ababb32a801bf8fd462bbbd8f1b1bb95a2a03f3f522a2873b93d914374fb3"
+   ]
+  },
+  {
+   "N": 7,
+   "darkFront": true,
+   "mode": "balanced",
+   "thresholds": [
+    36.5,
+    73.5,
+    109.5,
+    145.5,
+    182.5,
+    218.5
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "0119ce938f81d031717141a1dbb04482edfc96d3f7ac84534e4bafcd91b11160",
+    "b18b168c878ac50c0a8ff947eb0213a76d127c46da67879e4ac2525f45e01980",
+    "4f3015005e0e1d4190d746d750c64593d36287885ee74774c25da9e34047f7aa",
+    "042338d47e4dce67b077ca61960479a71f92bdcb2a0ee74895172844de8291e0",
+    "80d8319ddc46fd853680c734dbc1e42cb6c3935d8ba62e82740a4b69f9c87346",
+    "9c6240c65c846fecb8a45477a7f3ebf4bbc6cc9ba51e9be01ac2328c7000f1ef"
+   ]
+  },
+  {
+   "N": 7,
+   "darkFront": true,
+   "mode": "linear",
+   "thresholds": [
+    40,
+    75,
+    110,
+    145,
+    180,
+    215
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "1d838442fec550482a3008a88ae8f6adbda1f7f7682fdea4ae79a3dee1ffcc07",
+    "63f7d96591fb0edf2c7bf2188df7a3cda2cb256d0b7c34fcec58c7cae66105fb",
+    "f266277be64a32ca472c65211c5d5f93096a07deb8e9851adee813dbcd73fccd",
+    "042338d47e4dce67b077ca61960479a71f92bdcb2a0ee74895172844de8291e0",
+    "74662a71d94bef449759a76e5733a859b82841d59313d38184a331e7382424db",
+    "4b9f39a6ad08d7d6300e55cdb4c2cf57b45082b61beb1335836fe92fc841190b"
+   ]
+  },
+  {
+   "N": 7,
+   "darkFront": false,
+   "mode": "balanced",
+   "thresholds": [
+    36.5,
+    73.5,
+    109.5,
+    145.5,
+    182.5,
+    218.5
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "96bf17e400274c8ea3564198cb02e144fadcf896b3feead827a085d7bee6891c",
+    "c44a1146af4d5e1f2323076e2a8a1ff7652cdbdf8a4eccc51697300d8857058f",
+    "d81e609707340b20f082e4add0940f74eff9d5d2d4e9f67a9a6938f27ad7a22b",
+    "d25490b0f690b6a5476c3ee39ddfeb8de624a257d90c48a46e16b8717b980402",
+    "0e6ab9c9f43e1167f13bf01cee350f4c073a6793c042120155b622d96b5932a3",
+    "78254e94ff9c9d8e22be95625074f00ac94c2410aad732155c48fe4823ff3d01"
+   ]
+  },
+  {
+   "N": 7,
+   "darkFront": false,
+   "mode": "linear",
+   "thresholds": [
+    40,
+    75,
+    110,
+    145,
+    180,
+    215
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "2f9491a255458ac142b06e904af62dabff93405f75a3bbf9f80e4ef93f2077ea",
+    "94a5a114c6c3b17388926e8d31a69627273b59c70ab0cd232ad8ce4ff07dfa00",
+    "d81e609707340b20f082e4add0940f74eff9d5d2d4e9f67a9a6938f27ad7a22b",
+    "67f456eb71c7e45287db9a9b7e9878bd0959651ecfb0d033744a2533a864c463",
+    "e635f63d873f9c39445e02aaed35c6931f39d496c8b3878d55990a6de768a1a8",
+    "c321a2866b7ad2292afb9c450c11a45e8d39845d1a974cd37e29390ccb0f30e8"
+   ]
+  },
+  {
+   "N": 8,
+   "darkFront": true,
+   "mode": "balanced",
+   "thresholds": [
+    31.5,
+    64.5,
+    96.5,
+    128.5,
+    160.5,
+    192.5,
+    224.5
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "0bfdb40b3ebaaece1f0bc8ec6851191c28f2958c4ddb10c206342368efd59809",
+    "6f4cd3be5ce8afa5eb4bccac5765fc80a62e8d0df63c6a84217bd7ed49d3f264",
+    "b7eca3b6af9df43c0584e466c72e01ba643cf685f92c08300abe518787f0cf89",
+    "47390724d33ad3ef983ec24f0c3aea6ae337da68340254bd2fd35ef0df281845",
+    "b414edc1a16cb381140d884515e6f4f48a686c7e5a19365239699371d545b816",
+    "94995b0ef00751fe8721719a3a9b08f3d6de7393e23c4bf12f99e274bd28a703",
+    "c146c3e7505f93473798a4d2e4bef797d18f9ce376043a802e54fe80083c5b96"
+   ]
+  },
+  {
+   "N": 8,
+   "darkFront": true,
+   "mode": "linear",
+   "thresholds": [
+    35.625,
+    66.25,
+    96.875,
+    127.5,
+    158.125,
+    188.75,
+    219.375
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "48ad8769bd730e2fc7dcfb06599770a2e756bde38b8aa2325c8f98d06e454e50",
+    "0c7bec8389b690c63ffe9033f5b63be442e84236fd015c68b88d1af88be1c1de",
+    "8391a687fff82dcea691e1a7ef597776abfb8c91c94c02c2a4adc3fef860d1e5",
+    "09b0b0ff93eb5663e3782be867ce9bd615d940b21caa0c2f4881c45b13157670",
+    "b414edc1a16cb381140d884515e6f4f48a686c7e5a19365239699371d545b816",
+    "084ec26dd1528d0eaff16dc741cc2f330d207f0b76955936161f5d94586ab25b",
+    "dfc31f484f49b8fc24df5b239cf6e8ab1498652d644a3ac898abe0ee7d959d98"
+   ]
+  },
+  {
+   "N": 8,
+   "darkFront": false,
+   "mode": "balanced",
+   "thresholds": [
+    31.5,
+    64.5,
+    96.5,
+    128.5,
+    160.5,
+    192.5,
+    224.5
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "414f6439cfc87dcc5bc281665ccf0c248f1a4396e1ecb2c620294ee8895032b7",
+    "dba7ef8a17029c8b1b42b10dac165772bbf42404dda01d75e4c1e368ac99625d",
+    "03eb8c0c3c453666d9ec76f60a96c05b7b2f9c2ddc9f9ff746039638278f0830",
+    "630ccd4896e6d8a366aaf5822db44848aff45dc23379c0d9bce0b304b8ae0a29",
+    "c1dc11a5365486714a24413095c797ffe943de2bad15c8adc4d3882c5f0c6f25",
+    "b47b19a00b406164791eeb7415032c2ca31a403b8cc21356b4fe4e7c7202c294",
+    "2f27f306208dd901a85bdfada846f3d2a0c04e8529a2012642f55a988c37d5dc"
+   ]
+  },
+  {
+   "N": 8,
+   "darkFront": false,
+   "mode": "linear",
+   "thresholds": [
+    35.625,
+    66.25,
+    96.875,
+    127.5,
+    158.125,
+    188.75,
+    219.375
+   ],
+   "masks": [
+    "299cdabc5db94a7c6a53ef02b7c94b322fae20975f523e7f5296564ef2c67d78",
+    "81a9b71cfe0d6899fa543f84ee538c0ed66db0c55c0764b275ecc1d54420358e",
+    "0dbcd8cc334853dd4cc7dd1e5c153f3e3aa5f1357409575574f199f915b93c25",
+    "03eb8c0c3c453666d9ec76f60a96c05b7b2f9c2ddc9f9ff746039638278f0830",
+    "4d422a4ee3359c53226f5651c2c314c6e5b73129001ec4e8d47579c41ae384c1",
+    "a9fbcc93197cea7d5e4b154578c1922a8b63267387e6910d15a5a79a14af1692",
+    "001f98fd597a1bbd11aa98d4890b722384a9d3f40bb0cb3588f24e5227706450",
+    "bd3354921b37d55c5682572330564532d13615e27d0b80fac5791ce311599148"
+   ]
+  }
+ ]
+}
