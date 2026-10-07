@@ -28,7 +28,7 @@ After the G0 license-gap fix: **71 passed, 0 failed** (adds the dist license-not
 | `raster.js` — filter and banding invariants | 4 | original |
 | `svgout.js` — document sanity | 4 | original |
 | docs — architecture contract and component inventory | 6 | T0.1 |
-| build — hygiene | 5 | T0.2 |
+| build — hygiene | 6 | T0.2 (5), G0 license fix (1) |
 | fixtures — determinism | 6 | T0.3 |
 | baseline — characterization (KNOWN-DEFECT) | 11 | T0.4 |
 | `engine.js` — legacyRun seam | 2 | T0.5 |
