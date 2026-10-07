@@ -203,7 +203,19 @@ decision text is filled in when the spike lands.
 
 - Owner: spike S2 (recorded in G1.2 checks).
 - Accepted direction (Appendix B.2): containment-aware per-loop fallback Chaikin → RDP → raw; clip-to-lower only as a reviewed repair.
-- Decision: _pending S2._
+- **Status (2026-10-07): evidence gathered — awaiting product-owner decision.** Spike S2 was reworked after review (the v1 "smoothed perimeter" metric was wrong; the v1 verdict and its recommendation are withdrawn). No option is chosen here. Full record: `docs/spikes/S2.md`; artifacts in `spikes/S2/`.
+- Headline evidence: risk R2 is confirmed for D1 as written. The main cause is whole-loop fallback granularity (one over-tolerance corner demotes a loop of hundreds of corners), not containment. Separately (F3), at the shipped default pitch (417 µm/px) and tolerance (50 µm) no option rounds any corner in either mode; that is an independent product decision (procRes ≥ 1200 for 300 mm, or a looser tolerance).
+
+Corners rounded, layers ≥ 1, 100 µm/px, tol 50 µm; columns are random / busy-768 / busy-1536 / real images. Node prototype timings, spike machine under contention.
+
+| Option | Bonded corners rounded | Connected, same rule | Bonded cost | Plan impact |
+|---|---|---|---|---|
+| (a′) D1 as written (whole-loop fallback) | 28.1 / 8.4 / 6.8 / 2.8 % | 80.2 / 59.0 / 43.2 / 14.4 % | 2.0–3.2 s per image; 4.5 s busy-1536 | none |
+| (a) D1 + shared-boundary pinning | 42.2 / 22.5 / 22.9 / 7.8 % | 51.0 / 29.8 / 25.6 / 9.8 % with pins (hurts connected) | 1.5–2.9 s; 2.7 s | as v1 proposed |
+| (b) bonded mode unsmoothed | 0 % | unchanged | 0 | kill switch |
+| (c) per-vertex lazy pinning | 84.4 / 74.0 / 69.8 / 73.8 % | 96.2 / 98.9 / 99.2 / 79.0 % | 3.1–8.3 s per image; 13.4 s busy-1536 (NFR-03 budget 10 s) | changes Appendix B.2 fallback unit to a vertex; `SMOOTH_FALLBACK` reported as pinned-corner count |
+
+All options end nested within 50 µm with topology unchanged and deterministic outputs. Open for the product owner: which option, whether (c)'s NFR-03 overrun is acceptable pending G1.2 optimisation (with (b) as interim default), and the F3 pitch/tolerance question.
 
 ### D2 — Geometry backend
 
@@ -233,7 +245,12 @@ Contract notes recorded with this decision:
 
 - Owner: spikes S1 and S5; GEO-02 thresholds used by G2.7.
 - Accepted direction (Appendix B.3): support overlap that does not survive a 0.5 µm inward offset blocks export; one that does not survive `minFeatureMM/2` warns. Vertex-touching rings (pixel saddles) are split into simple rings during normalization.
-- Decision: _pending S1/S5._
+- **Status (2026-10-07): blocked.** The spike S5 rework (revision 2, `docs/spikes/S5.md`, `spikes/S5/`) did not return a reviewed result to the integration step (rework result: undefined; review approved: n/a), so its proposed D3 wording is not adopted and nothing was added to `js/geom.js`. Open issues:
+  1. **Review of S5 revision 2 outstanding.** Its corrected normalize rule (node T-contacts → re-pair every shared vertex with the material-separating turn → split remaining repeats → clean/orient/nest/sort), the `interiorConnected` one-part test (`GEO_MULTIPART`) and the exactly certified `survivesInset` must be reviewed before they enter `SBGeom`.
+  2. **Reconcile with the shipped D2 re-chaining.** `js/geom.js` re-chains with the "sharpest left turn" (D2 note 1); S5 specifies the "right-most" turn under Y-down outer-positive orientation. Confirm these are the same rule under the shipped conventions, and close the D2 known limit: T-contacts are not re-chained today, while S5 nodes them first.
+  3. **Finite-width threshold semantics.** S5 defines width as w = 2·r\* (largest inscribed disk): block if w < 0.5 µm (does not survive a 0.25 µm inset), warn `SUPPORT_NARROW` if w < `minFeatureUm`. This differs from the Appendix B.3 reading "does not survive a 0.5 µm inward offset" and from the plan's G2.7 line "survives `offset(−0.5 µm)`"; a 1 µm overlap would warn rather than block. Needs product-owner confirmation.
+  4. **No sub-µm `offset`.** S5 F4 shows Clipper2 `inflatePaths` at |delta| < 1 µm is orientation- and shape-dependent (empty, wrong, or unchanged); the GEO-02 test must not be built on `SBGeom.offset`, and `offset` should refuse non-integer deltas. Pending review with item 1.
+- Unchanged and not blocked: `SBTrace.trace` keeps diagonal-only contact as separate loops (the three plan S5 checks pass), so G1.1 needs no `SBMorph` pre-split.
 
 ### D4 — Hash scope
 
