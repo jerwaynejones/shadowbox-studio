@@ -1,0 +1,258 @@
+{
+ "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36",
+ "decompressionStream": true,
+ "tests": [
+  {
+   "name": "AT-02 raw samples 0,64,128,191,255 exact",
+   "ok": true,
+   "detail": "f2c7b8f611c173e5031fdf550dbe533cf91b4262677907aab07e571526e1d638"
+  },
+  {
+   "name": "AT-02 iCCP/gAMA ignored, samples unchanged",
+   "ok": true,
+   "detail": "f2c7b8f611c173e5031fdf550dbe533cf91b4262677907aab07e571526e1d638"
+  },
+  {
+   "name": "IMG-01 16-bit rejected",
+   "ok": true,
+   "detail": "PNG_16BIT"
+  },
+  {
+   "name": "IMG-01 APNG rejected",
+   "ok": true,
+   "detail": "PNG_APNG"
+  },
+  {
+   "name": "IMG-01 corrupt CRC rejected",
+   "ok": true,
+   "detail": "PNG_CRC"
+  },
+  {
+   "name": "AT-22 truncated PNG rejected",
+   "ok": true,
+   "detail": "PNG_TRUNCATED"
+  },
+  {
+   "name": "IMG-01 unequal RGB rejected in height mode",
+   "ok": true,
+   "detail": "PNG_UNEQUAL_RGB"
+  },
+  {
+   "name": "IMG-01 filter type 1 round-trips exactly",
+   "ok": true,
+   "detail": "f2c7b8f611c173e5031fdf550dbe533cf91b4262677907aab07e571526e1d638"
+  },
+  {
+   "name": "IMG-01 filter type 2 round-trips exactly",
+   "ok": true,
+   "detail": "f2c7b8f611c173e5031fdf550dbe533cf91b4262677907aab07e571526e1d638"
+  },
+  {
+   "name": "IMG-01 filter type 3 round-trips exactly",
+   "ok": true,
+   "detail": "f2c7b8f611c173e5031fdf550dbe533cf91b4262677907aab07e571526e1d638"
+  },
+  {
+   "name": "IMG-01 filter type 4 round-trips exactly",
+   "ok": true,
+   "detail": "f2c7b8f611c173e5031fdf550dbe533cf91b4262677907aab07e571526e1d638"
+  },
+  {
+   "name": "IMG-07 inspect reads w/h without inflating",
+   "ok": true,
+   "detail": "{\"w\":5,\"h\":1,\"bitDepth\":8,\"colorType\":0,\"interlace\":0,\"animated\":false,\"exif\":null,\"paletteGray\":null,\"hasTRNS\":false,\"idatBytes\":14,\"idatCount\":1,\"chunks\":[\"IHDR\",\"IDAT\",\"IEND\"]}"
+  },
+  {
+   "name": "IMG-01 tonal APNG rejected at inspection",
+   "ok": true,
+   "detail": "PNG_APNG"
+  },
+  {
+   "name": "IMG-01 tonal 16-bit rejected at inspection",
+   "ok": true,
+   "detail": "PNG_16BIT"
+  },
+  {
+   "name": "IMG-05 eXIf orientation parsed",
+   "ok": true,
+   "detail": "{\"w\":5,\"h\":1,\"bitDepth\":8,\"colorType\":0,\"interlace\":0,\"animated\":false,\"exif\":6,\"paletteGray\":null,\"hasTRNS\":false,\"idatBytes\":14,\"idatCount\":1,\"chunks\":[\"IHDR\",\"eXIf\",\"IDAT\",\"IEND\"]}"
+  },
+  {
+   "name": "ext Adam7 + mixed filters 37x23",
+   "ok": true,
+   "detail": "b786cc1ae89f5ec79e28f38e5f8a678c88ca82ceb5f0ae29a166815d97331823"
+  },
+  {
+   "name": "ext corrupt Adler-32 → PNG_INFLATE",
+   "ok": true,
+   "detail": "PNG_INFLATE"
+  },
+  {
+   "name": "ext trailing zlib junk → PNG_INFLATE",
+   "ok": true,
+   "detail": "PNG_INFLATE"
+  },
+  {
+   "name": "cm ramp gray8 plain",
+   "ok": true,
+   "detail": "40aff2e9d2d8922e47afd4648e6967497158785fbd1da870e7110266bf944880"
+  },
+  {
+   "name": "cm ramp gray8 gAMA=1.0",
+   "ok": true,
+   "detail": "40aff2e9d2d8922e47afd4648e6967497158785fbd1da870e7110266bf944880"
+  },
+  {
+   "name": "cm ramp gray8 gAMA=0.25",
+   "ok": true,
+   "detail": "40aff2e9d2d8922e47afd4648e6967497158785fbd1da870e7110266bf944880"
+  },
+  {
+   "name": "cm ramp rgb-eq + iCCP from ImageMagick corpus",
+   "ok": true,
+   "detail": "6b2de02b107808ce0555b2526b7e4b0891aa03831f11dccd9d2eb974f84ae456"
+  }
+ ],
+ "canvas": [
+  {
+   "name": "cm ramp gray8 plain",
+   "opts": "default",
+   "pixels": 256,
+   "differingPx": 0,
+   "maxAbsDiff": 0,
+   "sample128": 128
+  },
+  {
+   "name": "cm ramp gray8 plain",
+   "opts": "{\"colorSpaceConversion\":\"none\"}",
+   "pixels": 256,
+   "differingPx": 0,
+   "maxAbsDiff": 0,
+   "sample128": 128
+  },
+  {
+   "name": "cm ramp gray8 gAMA=1.0",
+   "opts": "default",
+   "pixels": 256,
+   "differingPx": 254,
+   "maxAbsDiff": 73,
+   "sample128": 188
+  },
+  {
+   "name": "cm ramp gray8 gAMA=1.0",
+   "opts": "{\"colorSpaceConversion\":\"none\"}",
+   "pixels": 256,
+   "differingPx": 0,
+   "maxAbsDiff": 0,
+   "sample128": 128
+  },
+  {
+   "name": "cm ramp gray8 gAMA=0.25",
+   "opts": "default",
+   "pixels": 256,
+   "differingPx": 254,
+   "maxAbsDiff": 58,
+   "sample128": 71
+  },
+  {
+   "name": "cm ramp gray8 gAMA=0.25",
+   "opts": "{\"colorSpaceConversion\":\"none\"}",
+   "pixels": 256,
+   "differingPx": 0,
+   "maxAbsDiff": 0,
+   "sample128": 128
+  },
+  {
+   "name": "cm ramp rgb-eq + iCCP from ImageMagick corpus",
+   "opts": "default",
+   "pixels": 131841,
+   "differingPx": 0,
+   "maxAbsDiff": 0,
+   "sample128": 128
+  },
+  {
+   "name": "cm ramp rgb-eq + iCCP from ImageMagick corpus",
+   "opts": "{\"colorSpaceConversion\":\"none\"}",
+   "pixels": 131841,
+   "differingPx": 0,
+   "maxAbsDiff": 0,
+   "sample128": 128
+  }
+ ],
+ "corpus": [
+  {
+   "file": "default_write.png",
+   "hash": "6b2de02b107808ce0555b2526b7e4b0891aa03831f11dccd9d2eb974f84ae456"
+  },
+  {
+   "file": "g8.png",
+   "hash": "6b2de02b107808ce0555b2526b7e4b0891aa03831f11dccd9d2eb974f84ae456"
+  },
+  {
+   "file": "g8_adam7.png",
+   "hash": "6b2de02b107808ce0555b2526b7e4b0891aa03831f11dccd9d2eb974f84ae456"
+  },
+  {
+   "file": "g8_iccp.png",
+   "hash": "6b2de02b107808ce0555b2526b7e4b0891aa03831f11dccd9d2eb974f84ae456"
+  },
+  {
+   "file": "ga8.png",
+   "hash": "6b2de02b107808ce0555b2526b7e4b0891aa03831f11dccd9d2eb974f84ae456"
+  },
+  {
+   "file": "pal_gray.png",
+   "hash": "8fcbea9ee5907e10311ee98d190a138d8d6af0304e83904b17b73a5fd60a6693"
+  },
+  {
+   "file": "rgb_eq.png",
+   "hash": "6b2de02b107808ce0555b2526b7e4b0891aa03831f11dccd9d2eb974f84ae456"
+  },
+  {
+   "file": "rgb_eq_adam7.png",
+   "hash": "6b2de02b107808ce0555b2526b7e4b0891aa03831f11dccd9d2eb974f84ae456"
+  },
+  {
+   "file": "rgba_eq.png",
+   "hash": "6b2de02b107808ce0555b2526b7e4b0891aa03831f11dccd9d2eb974f84ae456"
+  }
+ ],
+ "bench": null,
+ "tolerance": [
+  {
+   "name": "tol IDAT CRC corrupt",
+   "chromiumCreateImageBitmap": "rejected (InvalidStateError)",
+   "sbpng": "PNG_CRC"
+  },
+  {
+   "name": "tol ancillary tEXt CRC corrupt",
+   "chromiumCreateImageBitmap": "decoded 37x23",
+   "sbpng": "PNG_CRC"
+  },
+  {
+   "name": "tol truncated mid-IDAT",
+   "chromiumCreateImageBitmap": "rejected (InvalidStateError)",
+   "sbpng": "PNG_TRUNCATED"
+  },
+  {
+   "name": "tol missing IEND",
+   "chromiumCreateImageBitmap": "rejected (InvalidStateError)",
+   "sbpng": "PNG_TRUNCATED"
+  },
+  {
+   "name": "tol APNG (fixture: acTL only, no fcTL — invalid APNG)",
+   "chromiumCreateImageBitmap": "rejected (InvalidStateError)",
+   "sbpng": "PNG_APNG"
+  },
+  {
+   "name": "tol APNG (valid 2-frame APNG from ImageMagick)",
+   "chromiumCreateImageBitmap": "decoded 513x257",
+   "sbpng": "PNG_APNG"
+  },
+  {
+   "name": "tol 16-bit gray",
+   "chromiumCreateImageBitmap": "decoded 2x1",
+   "sbpng": "PNG_16BIT"
+  }
+ ]
+}

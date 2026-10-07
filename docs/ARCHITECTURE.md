@@ -239,3 +239,12 @@ Contract notes recorded with this decision:
 
 - Owner: spike S6 (`SBGeom.canonicalBytes`).
 - Decision: _pending S6._
+
+### D5 — Sub-8-bit gray PNG in height mode
+
+- Owner: spike S4 (`SBPng`, `js/png.js`); product-owner decision requested in `docs/spikes/S4.md` §6.3.
+- **Decision (S4 integration, 2026-10-07): accept, by exact integer scaling — the spike recommendation (`raw-grayN-scaled8`).** 1-, 2- and 4-bit grayscale PNGs (colour type 0) decode in both modes with every raw sample multiplied by 255/(2^N − 1), i.e. ×255, ×85 and ×17. The result is recorded as `policy` / `source.decode` `"raw-gray1-scaled8"`, `"raw-gray2-scaled8"` or `"raw-gray4-scaled8"`. §3 mirrors plan §3 verbatim, so the `source.decode` enum gains these values and `"raw-palette-gray8"` when G2.1 lands (plan Appendix C, S4 bullets). A tRNS gray key is matched against the raw (unscaled) samples. Gray palettes (colour type 3) at any depth are unaffected (`"raw-palette-gray8"`, entries are 8-bit by definition).
+- **Why:** ImageMagick's default PNG writer stores a 4-level gray heightmap as 2-bit gray, so terraced or posterized heightmaps arrive in this form. The scaling is not a precision change: the output matches libpng/ImageMagick byte for byte (0 differing pixels on the spike corpus), and it is deterministic integer arithmetic (NFR-05).
+- **Rejection stays available:** `SBPng.check/decode(…, {lowBitDepth: "reject"})` returns/throws `PNG_BITDEPTH` in height mode. The product owner may switch the intake default to it without a code change in `png.js`; the code remains in `SBPng.CODES` and the G1.0 registry.
+- Pinned by suite "spike S4 — amendments" (`S4-A3 …` checks).
+- Related S4 contract notes: `sampleHash` covers the samples only (identical bytes in a 5×1 and a 1×5 image collide), so it identifies a source only together with `w` and `h`, which `source` always stores next to it; never use it alone as a cache or dedup key. `decode` refuses `w·h > maxPixels` (default `SBPng.MAX_PIXELS` = 2^26) before allocating, independent of the IMG-07 preflight.

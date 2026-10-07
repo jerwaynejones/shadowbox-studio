@@ -594,6 +594,156 @@ suite("spike S1 — test/bench.js geom smoke (--quick)", () => {
     r.B3b_supportPairs_dense_partsGiven.pairs === r.B3b_supportPairs_dense.pairs);
 });
 
+// ------------------------------------------------------------- png.js (S4)
+suite("spike S4 — png.js raw decode and inspection, plan checks (IMG-01/02/05/07, AT-02/22)", () => {
+  const F = require("./fixtures.js");
+  const g = (opts) => F.pngEncode({ w: 5, h: 1, colorType: 0, bitDepth: 8, data: Uint8Array.from([0, 64, 128, 191, 255]), ...opts });
+  const rej = (bytes, code, mode = "height") => SBPng.decode(bytes, { mode }).then(() => false, (e) => e.code === code);
+  checkAsync("AT-02 raw samples 0,64,128,191,255 exact", SBPng.decode(g({}), { mode: "height" }).then((r) => r.samples.join() === "0,64,128,191,255"));
+  checkAsync("AT-02 iCCP/gAMA ignored, samples unchanged",
+    SBPng.decode(g({ extraChunks: [["gAMA", [0, 0, 0xb1, 0x8f]], ["sRGB", [0]]] }), { mode: "height" }).then((r) => r.samples.join() === "0,64,128,191,255"));
+  checkAsync("IMG-01 16-bit rejected", rej(F.pngEncode({ w: 1, h: 1, colorType: 0, bitDepth: 16, data: Uint8Array.from([1, 2]) }), "PNG_16BIT"));
+  checkAsync("IMG-01 APNG rejected", rej(g({ apng: true }), "PNG_APNG"));
+  checkAsync("IMG-01 corrupt CRC rejected", rej(g({ corruptCrc: true }), "PNG_CRC"));
+  checkAsync("AT-22 truncated PNG rejected", rej(g({ truncate: 10 }), "PNG_TRUNCATED"));
+  checkAsync("IMG-01 unequal RGB rejected in height mode",
+    rej(F.pngEncode({ w: 1, h: 1, colorType: 2, bitDepth: 8, data: Uint8Array.from([10, 20, 30]) }), "PNG_UNEQUAL_RGB"));
+  checkAsync("IMG-01 filter types 1-4 round-trip exactly", Promise.all([1, 2, 3, 4].map((f) => SBPng.decode(g({ filter: f }), { mode: "height" })))
+    .then((rs) => rs.every((r) => r.samples.join() === "0,64,128,191,255")));
+  check("IMG-07 inspect reads w/h without inflating", SBPng.inspect(g({})).w === 5 && SBPng.inspect(g({})).h === 1);
+  check("IMG-01 tonal APNG rejected at inspection", SBPng.check(SBPng.inspect(g({ apng: true })), "tonal") === "PNG_APNG");
+  check("IMG-01 tonal 16-bit rejected at inspection",
+    SBPng.check(SBPng.inspect(F.pngEncode({ w: 1, h: 1, colorType: 0, bitDepth: 16, data: Uint8Array.from([1, 2]) })), "tonal") === "PNG_16BIT");
+  check("IMG-05 eXIf orientation parsed", SBPng.inspect(g({ extraChunks: [["eXIf", [0x4d,0x4d,0,42,0,0,0,8,0,1,1,0x12,0,3,0,0,0,1,0,6,0,0]]] })).exif === 6);
+});
+
+suite("spike S4 — png.js extended (interlace, palette, alpha, zlib edge cases, hashing)", () => {
+  const F = require("./fixtures.js"), E = require("./png_enc.js");
+  const rng = F.lcg(7), W = 37, H = 23, N = W * H;
+  const gray = Uint8Array.from({ length: N }, () => (rng() * 256) | 0);
+  const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+  const rej = (bytes, code, mode = "height", opts = {}) => SBPng.decode(bytes, { mode, ...opts }).then(() => false, (e) => e.code === code || console.error("    got", e.code));
+  const ok = (bytes, pred, mode = "height") => SBPng.decode(bytes, { mode }).then(pred);
+  const rgbEq = (a) => Uint8Array.from({ length: a.length * 3 }, (_, i) => a[(i / 3) | 0]);
+  const rgbaEq = (a, al) => Uint8Array.from({ length: a.length * 4 }, (_, i) => (i & 3) === 3 ? al[i >> 2] : a[i >> 2]);
+  const alphaV = Uint8Array.from({ length: N }, (_, i) => (i * 7) & 255);
+
+  checkAsync("Adam7 gray 37x23 random samples exact", ok(E.encode({ w: W, h: H, colorType: 0, data: gray, interlace: 1 }), (r) => same(r.samples, gray)));
+  checkAsync("Adam7 tiny images 1x1..9x9 exact", Promise.all([1, 2, 3, 5, 7, 8, 9].flatMap((w) => [1, 2, 3, 9].map((h) => {
+    const d = Uint8Array.from({ length: w * h }, (_, i) => (i * 37 + w) & 255);
+    return SBPng.decode(E.encode({ w, h, colorType: 0, data: d, interlace: 1, filter: (y) => y % 5 }), { mode: "height" }).then((r) => same(r.samples, d));
+  }))).then((a) => a.every(Boolean)));
+  checkAsync("mixed per-row filters 0-4 exact", ok(E.encode({ w: W, h: H, colorType: 0, data: gray, filter: (y) => y % 5 }), (r) => same(r.samples, gray)));
+  checkAsync("Adam7 + mixed filters on RGBA-equal exact (samples and alpha)",
+    ok(E.encode({ w: W, h: H, colorType: 6, data: rgbaEq(gray, alphaV), interlace: 1, filter: (y) => (y * 3) % 5 }),
+      (r) => same(r.samples, gray) && same(r.alpha, alphaV) && r.policy === "raw-rgb-equal"));
+  checkAsync("RGB-equal → raw-rgb-equal, alpha null", ok(E.encode({ w: W, h: H, colorType: 2, data: rgbEq(gray), filter: 4 }), (r) => same(r.samples, gray) && r.alpha === null && r.policy === "raw-rgb-equal"));
+  checkAsync("gray+alpha (ct4) split", ok(E.encode({ w: W, h: H, colorType: 4, data: Uint8Array.from({ length: 2 * N }, (_, i) => i & 1 ? alphaV[i >> 1] : gray[i >> 1]) }),
+    (r) => same(r.samples, gray) && same(r.alpha, alphaV)));
+  checkAsync("one unequal pixel at the LAST position still rejected", (() => { const d = rgbEq(gray); d[d.length - 1] ^= 1; return rej(E.encode({ w: W, h: H, colorType: 2, data: d }), "PNG_UNEQUAL_RGB"); })());
+  checkAsync("tonal mode keeps unequal RGB as raw-rgb (3 ch)", (() => { const d = Uint8Array.from({ length: 3 * N }, (_, i) => (i * 11) & 255);
+    return ok(E.encode({ w: W, h: H, colorType: 2, data: d }), (r) => r.channels === 3 && r.policy === "raw-rgb" && same(r.samples, d), "tonal"); })());
+  const grayPal = Array.from({ length: 256 }, (_, i) => [255 - i, 255 - i, 255 - i]).flat();
+  checkAsync("gray palette (ct3, 8-bit) → raw-palette-gray8 via lookup", ok(E.encode({ w: W, h: H, colorType: 3, data: gray, plte: grayPal }),
+    (r) => r.policy === "raw-palette-gray8" && r.samples.every((v, i) => v === 255 - gray[i])));
+  checkAsync("gray palette 4-bit + tRNS alpha", (() => { const idx = Uint8Array.from({ length: N }, (_, i) => i % 16);
+    const pal = Array.from({ length: 16 }, (_, i) => [i * 17, i * 17, i * 17]).flat(), tr = Array.from({ length: 16 }, (_, i) => 255 - i);
+    return ok(E.encode({ w: W, h: H, colorType: 3, bitDepth: 4, data: idx, plte: pal, trns: tr }),
+      (r) => r.samples.every((v, i) => v === idx[i] * 17) && r.alpha.every((v, i) => v === 255 - idx[i])); })());
+  checkAsync("Adam7 + 2-bit gray palette 37x23 exact", (() => { const idx = Uint8Array.from({ length: N }, (_, i) => (i * 5 + (i >> 3)) & 3);
+    const pal = [0, 0, 0, 90, 90, 90, 180, 180, 180, 255, 255, 255];
+    return ok(E.encode({ w: W, h: H, colorType: 3, bitDepth: 2, data: idx, plte: pal, interlace: 1, filter: (y) => y % 5 }),
+      (r) => r.samples.every((v, i) => v === pal[3 * idx[i]])); })());
+  checkAsync("colour palette rejected in height (PNG_PALETTE)", rej(E.encode({ w: 2, h: 1, colorType: 3, data: [0, 1], plte: [255, 0, 0, 0, 255, 0] }), "PNG_PALETTE"));
+  check("colour palette passes tonal check", SBPng.check(SBPng.inspect(E.encode({ w: 2, h: 1, colorType: 3, data: [0, 1], plte: [255, 0, 0, 0, 255, 0] })), "tonal") === null);
+  checkAsync("16-bit RGBA rejected in tonal decode too", rej(E.encode({ w: 1, h: 1, colorType: 6, bitDepth: 16, data: [0, 0, 0, 0, 0, 0, 0, 0] }), "PNG_16BIT", "tonal"));
+  checkAsync("IDAT split into 1-byte chunks decodes exactly", ok(E.encode({ w: W, h: H, colorType: 0, data: gray, idatSplit: 1 }), (r) => same(r.samples, gray)));
+  checkAsync("tRNS key on gray → binary alpha", ok(E.encode({ w: 3, h: 1, colorType: 0, data: [5, 6, 5], trns: [0, 5] }), (r) => r.alpha.join() === "0,255,0"));
+  checkAsync("corrupt Adler-32 with valid chunk CRC → PNG_INFLATE", rej(E.encode({ w: W, h: H, colorType: 0, data: gray, corruptAdler: true }), "PNG_INFLATE"));
+  checkAsync("trailing junk after zlib stream → PNG_INFLATE", rej(E.encode({ w: W, h: H, colorType: 0, data: gray, trailing: 4 }), "PNG_INFLATE"));
+  checkAsync("short image data (IHDR claims more rows) → PNG_TRUNCATED", (() => { const p = E.encode({ w: 5, h: 2, colorType: 0, data: Array(10).fill(9) });
+    p[20 + 3] = 3; const c = F.crc32(p.subarray(12, 29)); new DataView(p.buffer).setUint32(29, c); return rej(p, "PNG_TRUNCATED"); })());
+  checkAsync("bad signature → PNG_SIGNATURE", rej(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0]), "PNG_SIGNATURE"));
+  checkAsync("truncated mid-IDAT → PNG_TRUNCATED", rej(E.encode({ w: W, h: H, colorType: 0, data: gray }).subarray(0, 60), "PNG_TRUNCATED"));
+  checkAsync("missing IHDR (first chunk IDAT) → PNG_HEADER", (() => { const p = E.encode({ w: 1, h: 1, colorType: 0, data: [1] });
+    return rej(Uint8Array.from([...p.subarray(0, 8), ...p.subarray(33)]), "PNG_HEADER"); })());
+  check("eXIf little-endian orientation 8 parsed", SBPng.inspect(E.encode({ w: 1, h: 1, colorType: 0, data: [1],
+    extraChunks: [["eXIf", [0x49, 0x49, 42, 0, 8, 0, 0, 0, 1, 0, 0x12, 1, 3, 0, 1, 0, 0, 0, 8, 0, 0, 0]]] })).exif === 8);
+  check("eXIf orientation 9 (invalid) → null", SBPng.inspect(E.encode({ w: 1, h: 1, colorType: 0, data: [1],
+    extraChunks: [["eXIf", [0x4d,0x4d,0,42,0,0,0,8,0,1,1,0x12,0,3,0,0,0,1,0,9,0,0]]] })).exif === null);
+  check("inspect(verifyCrc:false) skips CRC (corrupt IDAT CRC still inspects)",
+    SBPng.inspect(F.pngEncode({ w: 5, h: 1, colorType: 0, bitDepth: 8, data: Uint8Array.from([0, 64, 128, 191, 255]), corruptCrc: true }), { verifyCrc: false }).w === 5);
+  check("inspect output is JSON-clean (no buffers)", !/"_/.test(JSON.stringify(SBPng.inspect(E.encode({ w: 1, h: 1, colorType: 0, data: [1] })))));
+  checkAsync("NFR-05 sampleHash == SBHash.sha256(samples) (async vs sync agree)", ok(E.encode({ w: W, h: H, colorType: 0, data: gray }), (r) => r.sampleHash === SBHash.sha256(r.samples)));
+  checkAsync("gray, RGB-equal, RGBA-equal, Adam7 of same image share one sampleHash", Promise.all([
+    E.encode({ w: W, h: H, colorType: 0, data: gray }), E.encode({ w: W, h: H, colorType: 2, data: rgbEq(gray) }),
+    E.encode({ w: W, h: H, colorType: 6, data: rgbaEq(gray, alphaV), interlace: 1 })].map((b) => SBPng.decode(b, { mode: "height" })))
+    .then((rs) => rs.every((r) => r.sampleHash === rs[0].sampleHash)));
+  checkAsync("FINDING (documented, §3): sampleHash covers samples only (5x1 vs 1x5 collide; store with w, h)", Promise.all([[5, 1], [1, 5]].map(([w, h]) =>
+    SBPng.decode(E.encode({ w, h, colorType: 0, data: [1, 2, 3, 4, 5] }), { mode: "height" }))).then(([a, b]) => a.sampleHash === b.sampleHash));
+  check("NFR-05 png.js uses no Math.random / Date / trig", !/Math\.(random|sin|cos|tan|exp|log)\b|\bDate\b/.test(fs.readFileSync(path.join(__dirname, "../js/png.js"), "utf8")));
+});
+
+suite("spike S4 — amendments (error codes, maxPixels, sub-8-bit gray, CRC in util.js)", () => {
+  const F = require("./fixtures.js"), E = require("./png_enc.js");
+  const rej = (bytes, code, mode = "height", opts = {}) => SBPng.decode(bytes, { mode, ...opts }).then(() => false, (e) => e.code === code || console.error("    got", e.code));
+  // Amendment 1: the full error-code set, exported for the G1.0 diagnostic registry.
+  const ALL = ["PNG_16BIT", "PNG_APNG", "PNG_CRC", "PNG_TRUNCATED", "PNG_UNEQUAL_RGB", "PNG_PALETTE", "PNG_SIGNATURE",
+    "PNG_HEADER", "PNG_INFLATE", "PNG_BITDEPTH", "PNG_TOO_LARGE", "PNG_NO_INFLATE"];
+  check("S4-A1 SBPng.CODES lists the 7 plan codes + 5 spike codes, frozen", Array.isArray(SBPng.CODES) && Object.isFrozen(SBPng.CODES) &&
+    SBPng.CODES.length === ALL.length && ALL.every((c) => SBPng.CODES.includes(c)));
+  checkAsync("S4-A1 PNG_NO_INFLATE when DecompressionStream is unavailable (R8)", (() => {
+    // decode() feature-detects synchronously before its first await, so restore right after the call
+    // (other checks in this suite decode concurrently).
+    const DS = globalThis.DecompressionStream; globalThis.DecompressionStream = undefined;
+    try { return rej(E.encode({ w: 1, h: 1, colorType: 0, data: [1] }), "PNG_NO_INFLATE"); } finally { globalThis.DecompressionStream = DS; }
+  })());
+  checkAsync("S4-A1/AT-22 mini-fuzz: every rejection of 400 mutated PNGs carries a code in SBPng.CODES", (async () => {
+    const r = F.lcg(4242), base = E.encode({ w: 9, h: 7, colorType: 0, data: Array.from({ length: 63 }, (_, i) => i * 4), interlace: 1, filter: (y) => y % 5 });
+    for (let it = 0; it < 400; it++) {
+      const m = Uint8Array.from(base), k = 1 + ((r() * 4) | 0);
+      for (let j = 0; j < k; j++) m[(r() * m.length) | 0] = (r() * 256) | 0;
+      const bytes = r() < 0.2 ? m.subarray(0, (r() * m.length) | 0) : m;
+      try { await SBPng.decode(bytes, { mode: r() < 0.5 ? "height" : "tonal", verifyCrc: r() < 0.5 }); }
+      catch (e) { if (!SBPng.CODES.includes(e.code)) { console.error("    uncoded:", e.message); return false; } }
+    }
+    return true;
+  })());
+  // Amendment 2: allocation ceiling independent of the IMG-07 preflight.
+  checkAsync("S4-A2 FUZZ REGRESSION: IHDR 2^31-1 x 2^31-1 → PNG_TOO_LARGE, no process abort", (() => { const p = E.encode({ w: 1, h: 1, colorType: 0, data: [1] });
+    const dv = new DataView(p.buffer); dv.setUint32(16, 0x7fffffff); dv.setUint32(20, 0x7fffffff); dv.setUint32(29, F.crc32(p.subarray(12, 29))); return rej(p, "PNG_TOO_LARGE"); })());
+  check("S4-A2 default maxPixels ceiling is 2^26", SBPng.MAX_PIXELS === 1 << 26);
+  checkAsync("S4-A2 opts.maxPixels lowers the ceiling (4x4 with maxPixels 15 → PNG_TOO_LARGE; 16 decodes)", (async () => {
+    const p = E.encode({ w: 4, h: 4, colorType: 0, data: Array(16).fill(3) });
+    return (await rej(p, "PNG_TOO_LARGE", "height", { maxPixels: 15 })) && (await SBPng.decode(p, { mode: "height", maxPixels: 16 })).samples.length === 16;
+  })());
+  // Amendment 3 (product-owner decision, ARCHITECTURE.md D5): sub-8-bit gray is accepted in height mode by exact integer scaling.
+  check("S4-A3 check(): 1/2/4-bit gray passes height mode by default", [1, 2, 4].every((d) =>
+    SBPng.check(SBPng.inspect(E.encode({ w: 8, h: 1, colorType: 0, bitDepth: d, data: Array(8).fill(1) })), "height") === null));
+  checkAsync("S4-A3 1-bit gray → raw-gray1-scaled8, samples 0/255", SBPng.decode(E.encode({ w: 9, h: 2, colorType: 0, bitDepth: 1, data: Array.from({ length: 18 }, (_, i) => i & 1) }), { mode: "height" })
+    .then((r) => r.policy === "raw-gray1-scaled8" && r.samples.every((v, i) => v === (i & 1) * 255)));
+  checkAsync("S4-A3 2-bit gray 0..3 → 0,85,170,255 (raw-gray2-scaled8) by default", SBPng.decode(E.encode({ w: 4, h: 1, colorType: 0, bitDepth: 2, data: [0, 1, 2, 3] }), { mode: "height" })
+    .then((r) => r.samples.join() === "0,85,170,255" && r.policy === "raw-gray2-scaled8"));
+  checkAsync("S4-A3 Adam7 4-bit gray 37x23 → ×17 exact, raw-gray4-scaled8", (() => { const d = Uint8Array.from({ length: 37 * 23 }, (_, i) => (i * 7 + (i >> 4)) & 15);
+    return SBPng.decode(E.encode({ w: 37, h: 23, colorType: 0, bitDepth: 4, data: d, interlace: 1, filter: (y) => y % 5 }), { mode: "height" })
+      .then((r) => r.policy === "raw-gray4-scaled8" && r.samples.every((v, i) => v === d[i] * 17)); })());
+  checkAsync("S4-A3 4-bit gray tRNS key → alpha follows the raw key", SBPng.decode(E.encode({ w: 3, h: 1, colorType: 0, bitDepth: 4, data: [5, 6, 5], trns: [0, 5] }), { mode: "height" })
+    .then((r) => r.samples.join() === "85,102,85" && r.alpha.join() === "0,255,0"));
+  checkAsync("S4-A3 lowBitDepth:'reject' restores PNG_BITDEPTH", rej(E.encode({ w: 9, h: 2, colorType: 0, bitDepth: 1, data: Array(18).fill(1) }), "PNG_BITDEPTH", "height", { lowBitDepth: "reject" }));
+  checkAsync("S4-A3 sub-8-bit gray also scales in tonal mode", SBPng.decode(E.encode({ w: 4, h: 1, colorType: 0, bitDepth: 2, data: [0, 1, 2, 3] }), { mode: "tonal" })
+    .then((r) => r.samples.join() === "0,85,170,255"));
+  // CRC-32 moved from zip.js into util.js (plan Task S4 Files).
+  const bytes = new TextEncoder().encode("123456789");
+  check("S4 SBUtil.crc32 reference vector 0xCBF43926", SBUtil.crc32(bytes) === 0xcbf43926);
+  check("S4 SBUtil.crc32(bytes, start, end) == crc32 of the slice", SBUtil.crc32(bytes, 2, 7) === SBUtil.crc32(bytes.subarray(2, 7)));
+  check("S4 SBUtil.crc32Update chains to the one-shot value",
+    ((SBUtil.crc32Update(SBUtil.crc32Update(0xffffffff, bytes, 0, 4), bytes, 4) ^ 0xffffffff) >>> 0) === 0xcbf43926);
+  check("S4 SBZip.crc32 delegates to SBUtil.crc32 (no second table in zip.js)", (() => {
+    const r = F.lcg(9), d = Uint8Array.from({ length: 1000 }, () => (r() * 256) | 0);
+    return SBZip.crc32(d) === SBUtil.crc32(d) && !/CRC_TABLE|0xedb88320/i.test(fs.readFileSync(path.join(__dirname, "../js/zip.js"), "utf8"));
+  })());
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {
