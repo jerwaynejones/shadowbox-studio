@@ -19,7 +19,8 @@
  *     coordinate list; holes the same way.
  *   · canonicalBytes / layerHash / materialHash (decision D4, spike S6) are
  *     built on normalize; integer coordinates within ±2^25 µm only.
- * Only + - * / Math.round/floor/abs/sqrt are used here (NFR-05). No trig.
+ * Only + - * / Math.round/floor/abs/sqrt/min/max, Math.imul (integer hash in the T-split
+ * index) and integer typed-array sorts are used here (NFR-05). No trig.
  * Booleans and offsets delegate to global.Clipper2 (js/vendor/clipper2.js),
  * looked up at call time. Merged from spikes/S1/geom_core.js + geom_clipper.js.
  * ==========================================================================*/
@@ -547,8 +548,10 @@
   /**
    * Canonical score polyline: consecutive duplicates removed, pass-through collinear points dropped
    * (reversals kept), oriented so the smaller (x, y) endpoint comes first. A closed path (first point
-   * repeated last) is cleaned and oriented as a positive ring starting at its smallest vertex, with
-   * the closing point repeated. Returns null for fewer than 2 distinct points.
+   * repeated last) whose cleaned ring still has 3 or more vertices is oriented as a positive ring
+   * starting at its smallest vertex, with the closing point repeated. A path that returns to its start
+   * but encloses no area (an out-and-back such as [0,0, 10,0, 0,0]) stays an OPEN path, so its
+   * reversal is kept and it is never dropped from the hash. Returns null for fewer than 2 distinct points.
    */
   function canonPolyline(src) {
     const pts = [];
@@ -558,9 +561,9 @@
     }
     const n = pts.length >> 1; if (n < 2) return null;
     if (n > 2 && pts[0] === pts[2 * n - 2] && pts[1] === pts[2 * n - 1]) {
-      const c = cleanRing(pts.slice(0, -2)); if (c.length < 6) return null;
-      const r = rotateStart(area2(c) < 0 ? reverseRing(c) : c);
-      return r.concat([r[0], r[1]]);
+      const c = cleanRing(pts.slice(0, -2));
+      if (c.length >= 6) { const r = rotateStart(area2(c) < 0 ? reverseRing(c) : c); return r.concat([r[0], r[1]]); }
+      // degenerate closed path (out-and-back): fall through and keep it as an open polyline
     }
     const keep = [pts[0], pts[1]];
     for (let i = 1; i < n - 1; i++) {
@@ -603,9 +606,14 @@
   }
   const NO_SCORES = [0];
 
-  /** canonicalBytes(layers: {index, material, holes?: {cxUm, cyUm, rUm}[], scorePaths?}[]) → Uint8Array. */
+  /**
+   * canonicalBytes(layers: {index, material, holes?: {cxUm, cyUm, rUm}[], scorePaths?}[]) → Uint8Array.
+   * Layer indices must be distinct: two layers with the same index would be emitted in input order,
+   * so the bytes would depend on it. That throws.
+   */
   C.canonicalBytes = function (layers) {
     const ls = layers.slice().sort((a, b) => a.index - b.index), chunks = [[ls.length]];
+    for (let i = 1; i < ls.length; i++) if (ls[i].index === ls[i - 1].index) throw new Error("SBGeom.canonicalBytes: duplicate layer index " + ls[i].index);
     for (const L of ls) { const s = layerSections(L); chunks.push(s.head, s.score, s.holes); }
     return toBytes(chunks);
   };

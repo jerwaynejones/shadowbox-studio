@@ -12,7 +12,7 @@ globalThis.crypto ??= require("node:crypto").webcrypto;
 for (const f of ["util.js", "hash.js", "trace.js"]) vm.runInThisContext(fs.readFileSync(path.join(ROOT, "js", f), "utf8"), { filename: f });
 vm.runInThisContext(fs.readFileSync(path.join(here, "canon.js"), "utf8"), { filename: "spikes/S6/canon.js" });
 
-export const C2 = await import(path.join(here, "vendor/package/fesm2020/clipper2-js.mjs"));
+export const C2 = await import(path.join(here, "vendor/clipper2-js-1.2.4.mjs"));
 // clipper2-js 1.2.4 port bug: OutRec never initialises .bounds/.path (C# does), so executePolyTree always
 // throws inside buildTree→checkBounds and returns false. Spike-local monkey patch (NOT a vendor edit):
 {

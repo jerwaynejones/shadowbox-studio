@@ -243,7 +243,8 @@ Contract notes recorded with this decision:
 - **T-contacts.** A vertex lying strictly inside another edge (of any ring of the layer, its own included) is inserted into that edge before the S1 re-chaining, so the sharpest-left-turn rule separates it like any shared vertex. This closes the "known limit" in D2 note 1: S6 showed Clipper2 `difference` does emit T-contacts (a square minus a diamond whose corners sit on the square's edge midpoints). It runs inside `assemble`, so every boolean result, `fromPixelLoops` and `normalize` get it. Axis-parallel edges are matched by binary search among the vertices of the same row or column; other edges use a uniform grid whose only division sizes the cells.
 - **Byte stream (`SBGeom.canonicalBytes(layers)` → `Uint8Array`, little-endian int32):** `[layerCount, (index, partCount, (ringCount, (vertexCount, x, y…)…)…, scoreCount, (vertexCount, x, y…)…, holeCount, (cx, cy, r)…)…]`, layers in ascending index order. `canonicalBytes` always normalizes, so the bytes never depend on the caller having done it.
   - **Amendment A — hole section.** Registration holes `{cxUm, cyUm, rUm}` are appended, sorted by (cy, cx, r). A hole that misses material, or moves by less than its effect on the cut, still changes the hash (G3.1).
-  - Score paths: consecutive duplicates removed, pass-through collinear points dropped (reversals kept), oriented so the smaller endpoint comes first; a closed path is oriented and started like a positive ring and keeps its closing point. Then sorted.
+  - Score paths: consecutive duplicates removed, pass-through collinear points dropped (reversals kept), oriented so the smaller endpoint comes first; a closed path is oriented and started like a positive ring and keeps its closing point. A path that returns to its start but encloses no area (an out-and-back such as `[0,0, 10,0, 0,0]`) is **kept as an open path** (its reversal included), never dropped: dropping it would remove a score path from `layerHash` without a diagnostic. Then sorted.
+  - Layer indices must be distinct: `canonicalBytes` throws on a duplicate index, because two layers with the same index would be emitted in input order.
 - **Amendment B — two layer hashes** (breaks the guide/hash cycle of G3.3):
   - `SBGeom.materialHash(L) = sha256(canonicalBytes([{index, material, holes}]))`, i.e. `scoreCount = 0`. It is `MaterialLayer.canonicalHash` and is what guide invalidation (SUP-05, `part.guideRefs`), `Repair.reviewed.beforeHash`/`afterHash`, MAT-04 and part-ID stability use.
   - `SBGeom.layerHash(L) = sha256(canonicalBytes([L]))`. Only this one enters `geometryHash.layers`.
@@ -259,7 +260,7 @@ Differences between the shipped code and the spike reference (`spikes/S6/canon.j
 3. Orphan holes (no containing outer) are dropped, as in S1, instead of throwing.
 4. The spike's dev-only `clipper2-js` 1.2.4 is not used; the property checks run through the shipped backend (`clipper2-ts`, D2).
 
-Measured (spike, Node 26, i7-11800H; hash stage = `canonicalBytes` + `sha256` per layer + project stream, 5 warm-ups, 30 runs):
+Measured on the spike reference (`spikes/S6/canon.js` and its dev-only `clipper2-js`, not the shipped code; Node 26, i7-11800H; hash stage = `canonicalBytes` + `sha256` per layer + project stream, 5 warm-ups, 30 runs):
 
 | Workload | Vertices | Canonical bytes | p50 / p95 |
 |---|---|---|---|
@@ -268,9 +269,20 @@ Measured (spike, Node 26, i7-11800H; hash stage = `canonicalBytes` + `sha256` pe
 | Mobile final 768², 6 layers | 4,498 | 36 KB | 18 / 21 ms |
 | Desktop final, raw staircase (no RDP), 8 layers | 39,962 | 321 KB | 254 / 311 ms |
 
+Measured on the **shipped** `SBGeom` (`js/geom.js` with the T-split; `spikes/S6/bench_shipped.mjs` → `bench_shipped_results.json`; same workloads, same method; material = `SBGeom.union(fromPixelLoops(trace))`; Node 26, i7-11800H, load average 4–6). Vertex and byte counts match the spike rows exactly. Column A is the spike's method; column B is the G2.10b wiring (`layerHashes` per layer, both D4 hashes, no project stream):
+
+| Workload | Vertices | Canonical bytes | A: `canonicalBytes` + `sha256` + project, p50 / p95 | B: `layerHashes`, p50 / p95 |
+|---|---|---|---|---|
+| Desktop final 1536², 8 layers | 16,288 | 131 KB | 55 / 76 ms | 37 / 42 ms |
+| Desktop draft 720², 8 layers | 7,512 | 61 KB | 28 / 46 ms | 19 / 31 ms |
+| Mobile final 768², 6 layers | 4,498 | 36 KB | 15 / 17 ms | 12 / 13 ms |
+| Desktop final, raw staircase (no RDP), 8 layers | 39,962 | 321 KB | 113 / 138 ms | 95 / 124 ms |
+
+The shipped hash stage is within the spike's numbers on every row (at most 1.4 % of the 10 s final budget and about 3 % of the 1.5 s draft budget at p95). G4 re-measures on the reference machines.
+
 Cross-engine (spike): all 8 layer hashes and the project hash of the 1,660-part draft fixture (`spikes/S6/fixture_draft.json`) are byte-identical in Node 26, headless Chromium 152 and headless Firefox 155.
 
-**Cost of the T-split on the S1 B1 workload** (integration, A/B interleaved in one process, 10 runs each, load average 6–8): B1 (14 differences on 8 × 30k–60k-vertex layers) median 1.61–1.88 s without, 1.88–2.16 s with, a ratio of **1.12–1.18**. The split itself costs about 17 ms per 50k-vertex layer (≈40 % of `assemble`). Output is unchanged on lattice input (B1 fingerprint `27fa97ef…` identical). B1 was already a narrow pass (D2), so G4.4 must re-measure it on the reference machines.
+**Cost of the T-split on the S1 B1 workload** (integration, A/B interleaved in one process, 10 runs each, load average 6–8): B1 (14 differences on 8 × 30k–60k-vertex layers) median 1.61–1.88 s without, 1.88–2.16 s with, a ratio of **1.12–1.18**. The split itself costs about 17 ms per 50k-vertex layer (≈40 % of `assemble`). Output is unchanged on lattice input (B1 fingerprint `27fa97ef…` identical). B1 was already a narrow pass (D2). **Open — needs a plan-owner decision:** with the T-split, `node test/bench.js geom` now puts B1 over its 2 s budget under load (review run at load 5–7: p95 2032.6 ms, median 1953.9 ms, `overBudget: ["B1"]`, exit 1 without `--no-fail`). This is a permanent +12–18 % on a gate metric, not only a G4.4 re-measure item; see plan Appendix C, S6 → G4.4.
 
 ### D5 — Sub-8-bit gray PNG in height mode
 

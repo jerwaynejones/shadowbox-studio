@@ -608,7 +608,31 @@ const S6 = (() => {
   const tri = { outer: [10000, 0, 14000, 0, 12000, 3000], holes: [] };
   const sq = { outer: rect(20000, 5000, 23000, 8000), holes: [[20500, 5500, 20500, 6500, 21500, 6500, 21500, 5500]] };
   const base = { index: 3, material: [Lshape, tri, sq], scorePaths: [[1000, 9000, 4000, 9000, 4000, 12000]], holes: [{ cxUm: 30000, cyUm: 30000, rUm: 1500 }] };
-  return { rect, rot, rev, shuffle, throws, noise, pixelSquares, Lshape, tri, sq, base };
+  // Raw Clipper2 (the call underneath SBGeom.union/difference, BEFORE assemble()): rings classified by sign only,
+  // all negative rings handed in as holes of the first outer (normalize flattens the rings, so grouping is irrelevant).
+  const a2 = (r) => { let a = 0; for (let i = 0; i < r.length; i += 2) { const j = (i + 2) % r.length; a += r[i] * r[j + 1] - r[j] * r[i + 1]; } return a; };
+  const paths = (polys) => polys.flatMap((p) => [a2(p.outer) > 0 ? p.outer : rev(p.outer), ...(p.holes || []).map((h) => (a2(h) < 0 ? h : rev(h)))])
+    .map((r) => { const o = []; for (let i = 0; i < r.length; i += 2) o.push({ x: r[i], y: r[i + 1] }); return o; });
+  const raw = (op, a, b) => {
+    const C2 = globalThis.Clipper2, rings = C2[op](paths(a), paths(b || []), C2.FillRule.NonZero).map((p) => p.flatMap((q) => [q.x, q.y]));
+    const pos = rings.filter((r) => a2(r) > 0), neg = rings.filter((r) => a2(r) < 0);
+    return pos.length ? [{ outer: pos[0], holes: neg }, ...pos.slice(1).map((o) => ({ outer: o, holes: [] }))] : [];
+  };
+  const mapPolys = (polys, f) => { const m = (r) => { const o = []; for (let i = 0; i < r.length; i += 2) o.push(...f(r[i], r[i + 1])); return o; };
+    return polys.map((p) => ({ outer: m(p.outer), holes: (p.holes || []).map(m) })); };
+  /** Brute-force O(V·E): does any vertex lie strictly inside an edge of any ring (a T-contact)? */
+  const hasT = (polys) => {
+    const rings = polys.flatMap((p) => [p.outer, ...p.holes]), V = [];
+    for (const r of rings) for (let i = 0; i < r.length; i += 2) V.push(r[i], r[i + 1]);
+    for (const r of rings) for (let i = 0, n = r.length >> 1; i < n; i++) {
+      const j = (i + 1) % n, ax = r[2 * i], ay = r[2 * i + 1], bx = r[2 * j], by = r[2 * j + 1];
+      for (let v = 0; v < V.length; v += 2) { const x = V[v], y = V[v + 1];
+        if ((x === ax && y === ay) || (x === bx && y === by) || (bx - ax) * (y - ay) !== (by - ay) * (x - ax)) continue;
+        if (x >= Math.min(ax, bx) && x <= Math.max(ax, bx) && y >= Math.min(ay, by) && y <= Math.max(ay, by)) return true; }
+    }
+    return false;
+  };
+  return { rect, rot, rev, shuffle, throws, noise, pixelSquares, raw, mapPolys, hasT, Lshape, tri, sq, base };
 })();
 
 suite("spike S6 — plan checks (GEO-09, NFR-05)", () => {
@@ -635,11 +659,17 @@ suite("spike S6 — canonicalBytes layout and D4 hash scope (amendments A, B, C)
   check("D4 empty layer hashes [1, k, 0, 0, 0]", H({ index: 7, material: [] }) === SBHash.sha256(new Uint8Array(new Int32Array([1, 7, 0, 0, 0]).buffer)) &&
     H({ index: 7, material: [] }) === H({ index: 7, material: [], scorePaths: [], holes: [] }));
   check("S6 layer index enters hash", H({ ...base, index: 4 }) !== h0);
+  check("S6 duplicate layer index throws (bytes would depend on input order)", throws(() => G.canonicalBytes([base, { ...base, scorePaths: [] }])) &&
+    throws(() => G.canonicalBytes([{ index: 1, material: [] }, { index: 1, material: [] }])));
   check("S6 multi-layer stream independent of input layer order", SBHash.sha256(G.canonicalBytes([base, { ...base, index: 0 }])) === SBHash.sha256(G.canonicalBytes([{ ...base, index: 0 }, base])));
   check("S6 score path direction invariant", H({ ...base, scorePaths: [rev(base.scorePaths[0])] }) === h0);
   check("S6 score path pass-through collinear point removed", H({ ...base, scorePaths: [[1000, 9000, 2500, 9000, 4000, 9000, 4000, 12000]] }) === h0);
   check("S6 score path duplicate point removed", H({ ...base, scorePaths: [[1000, 9000, 4000, 9000, 4000, 9000, 4000, 12000]] }) === h0);
   check("S6 score path reversal (U-turn) point kept", H({ ...base, scorePaths: [[1000, 9000, 4000, 9000, 3000, 9000]] }) !== H({ ...base, scorePaths: [[1000, 9000, 3000, 9000]] }));
+  check("S6 out-and-back score path (returns to its start, no area) is kept as an open path, not dropped",
+    H({ ...base, scorePaths: [[0, 0, 10, 0, 0, 0]] }) !== H({ ...base, scorePaths: [] }) &&
+    JSON.stringify(G.canonicalBytes([{ index: 0, material: [], scorePaths: [[0, 0, 10, 0, 20, 0, 0, 0]] }])) === JSON.stringify(G.canonicalBytes([{ index: 0, material: [], scorePaths: [[0, 0, 20, 0, 0, 0]] }])) &&
+    words(G.canonicalBytes([{ index: 0, material: [], scorePaths: [[0, 0, 10, 0, 0, 0]] }])).join() === "1,0,0,1,3,0,0,10,0,0,0,0");
   const two = { ...base, scorePaths: [[0, 0, 0, 5], [7, 7, 9, 9]] };
   check("S6 score path order invariant", H(two) === H({ ...two, scorePaths: two.scorePaths.slice().reverse() }));
   check("S6 closed score ring start/direction invariant", H({ ...base, scorePaths: [[100, 100, 900, 100, 900, 900, 100, 900, 100, 100]] }) === H({ ...base, scorePaths: [[900, 900, 900, 100, 100, 100, 100, 900, 900, 900]] }));
@@ -648,7 +678,9 @@ suite("spike S6 — canonicalBytes layout and D4 hash scope (amendments A, B, C)
   check("D4-A registration hole order invariant", H({ ...base, holes: [{ cxUm: 1, cyUm: 2, rUm: 3 }, { cxUm: 4, cyUm: 1, rUm: 3 }] }) === H({ ...base, holes: [{ cxUm: 4, cyUm: 1, rUm: 3 }, { cxUm: 1, cyUm: 2, rUm: 3 }] }));
   check("D4-B materialHash ignores score paths (breaks the guide/hash cycle)", M({ ...base, scorePaths: [] }) === m0 && M({ ...base, scorePaths: [[0, 0, 5, 5]] }) === m0);
   check("D4-B materialHash = sha256(canonicalBytes([{index, material, holes}])) (scoreCount 0)", m0 === SBHash.sha256(G.canonicalBytes([{ index: base.index, material: base.material, holes: base.holes }])));
-  check("D4-B materialHash changes on 1 µm material move and on index", M({ ...base, index: 4 }) !== m0 && M({ ...base, material: base.material.slice(1) }) !== m0);
+  check("D4-B materialHash changes on a 1 µm material move", M({ ...base, material: [{ outer: [0, 0, 6001, 0, 6001, 2000, 2000, 2000, 2000, 8000, 0, 8000], holes: base.material[0].holes }, ...base.material.slice(1)] }) !== m0 &&
+    M({ ...base, material: [base.material[0], { outer: base.material[1].outer.map((v, i) => (i % 2 ? v + 1 : v)), holes: [] }, base.material[2]] }) !== m0);
+  check("D4-B materialHash changes on layer index and on part removal", M({ ...base, index: 4 }) !== m0 && M({ ...base, material: base.material.slice(1) }) !== m0);
   check("D4-B layerHash != materialHash when score paths exist, equal when none", h0 !== m0 && H({ ...base, scorePaths: [] }) === m0);
   const both = G.layerHashes(base);
   check("D4-B layerHashes(layer) returns both hashes from one normalization", both.materialHash === m0 && both.layerHash === h0);
@@ -686,7 +718,12 @@ suite("spike S6 — normalization contract and D3 saddles / T-contacts", () => {
   check("D3 T-contact: diamond-hole polygon == 4 separate corner triangles (same hash)", H({ index: 0, material: [diamond] }) === H({ index: 0, material: tris }));
   check("D3 T-contact: Clipper2 difference(square, diamond) == union of the 4 triangles (same hash)",
     H({ index: 0, material: G.difference([{ outer: rect(0, 0, 20, 20), holes: [] }], [{ outer: [10, 0, 20, 10, 10, 20, 0, 10], holes: [] }]) }) === H({ index: 0, material: G.union(tris, []) }));
-  check("D3 T-contact between two parts (vertex on another part's edge) → 2 components", G.normalize([{ outer: rect(0, 0, 20, 10), holes: [] }, { outer: [10, 10, 15, 20, 5, 20], holes: [] }]).length === 2);
+  // A hole whose two vertices sit inside the outer's top and bottom edges cuts the polygon into two parts that touch
+  // only at those two points: without the T-split this stays 1 part with 1 hole.
+  const cut = G.normalize([{ outer: rect(0, 0, 20, 10), holes: [rev([10, 0, 15, 5, 10, 10, 5, 5])] }]);
+  check("D3 T-contacts cutting a polygon in two (hole vertices inside the outer's edges) → 2 parts, 0 holes == the two parts given separately",
+    cut.length === 2 && cut.every((p) => !p.holes.length) && G.validate(cut).ok &&
+    JSON.stringify(cut) === JSON.stringify(G.normalize([{ outer: [10, 0, 20, 0, 20, 10, 10, 10, 15, 5], holes: [] }, { outer: [0, 0, 10, 0, 5, 5, 10, 10, 0, 10], holes: [] }])));
   const dia = (o) => ({ outer: [20, 0, 40, 20, 20, 40, 0, 20].map((v) => v + o), holes: [rev(rect(10, 10, 30, 30).map((v) => v + o))] });
   check("D3 T-contact on diagonal edges (grid path): square hole at a diamond's edge midpoints → 4 triangles", (() => { const r = G.normalize([dia(0)]); return r.length === 4 && r.every((p) => !p.holes.length); })());
   check("D3 T-contact beyond ±2^25 µm (no Int32 axis path) still split", (() => { const r = G.normalize([{ outer: rect(0, 0, 20, 20).map((v) => v + 4e7), holes: [rev([10, 0, 20, 10, 10, 20, 0, 10].map((v) => v + 4e7))] }]); return r.length === 4; })() &&
@@ -694,24 +731,49 @@ suite("spike S6 — normalization contract and D3 saddles / T-contacts", () => {
   check("D3 normalize stays idempotent with T-contacts", (() => { const a = G.normalize([diamond]); return JSON.stringify(G.normalize(a)) === JSON.stringify(a); })());
 });
 
-suite("spike S6 — strong invariance through Clipper2 (property check)", () => {
-  const G = SBGeom, { rot, rev, shuffle, noise, pixelSquares } = S6, H = (m) => G.layerHash({ index: 0, material: m });
+suite("spike S6 — strong invariance through raw Clipper2 (property checks)", () => {
+  const G = SBGeom, { rect, rot, rev, shuffle, noise, pixelSquares, raw, mapPolys, hasT } = S6, H = (m) => G.layerHash({ index: 0, material: m });
+  const flat = (polys) => JSON.stringify(polys.flatMap((p) => [p.outer, ...p.holes]).map((r) => r.join()).sort());
   // rotate every ring, reverse every other polygon (global winding flip), shuffle parts and holes
   const perturb = (polys, seed) => shuffle(polys, seed).map((p, i) => { const f = (i + seed) % 2 ? rev : (r) => r;
     return { outer: f(rot(p.outer, seed % (p.outer.length >> 1))), holes: shuffle(p.holes, seed + 1).map((h) => f(rot(h, 1))) }; });
-  let agree = 0, runs = 0, repeat = 0, raw = 0;
+  // 1. Pixel masks: raw (un-assembled) Clipper2 output of three different inputs for the same region.
+  let agree = 0, runs = 0, repeat = 0, rawDiff = 0;
   for (const [w, h, dens] of [[24, 20, 0.35], [24, 20, 0.5], [24, 20, 0.65], [40, 30, 0.5]]) for (let seed = 100; seed < 115; seed++) {
     const m = noise(w, h, seed * 7 + w, dens), s = 1000;
     const loops = G.fromPixelLoops(SBTrace.trace(m, w, h), s, s, 0, 0), px = pixelSquares(m, w, h, s);
-    const routes = [loops, G.union(loops, []), G.union(px, []), G.union(shuffle(px, seed).map((p) => ({ outer: rev(p.outer), holes: [] })), [])];
-    if (JSON.stringify(routes[1]) !== JSON.stringify(routes[2])) raw++;
+    const routes = [loops, raw("union", loops), raw("union", px), raw("union", shuffle(px, seed).map((p) => ({ outer: rev(p.outer), holes: [] }))), G.union(px, [])];
+    const canon = flat(G.normalize(loops));
+    if (flat(routes[1]) !== canon && flat(routes[2]) !== canon && flat(routes[1]) !== flat(routes[2])) rawDiff++;
     const hs = routes.map((r, i) => H(perturb(r, seed + i)));
     runs++; if (hs.every((x) => x === hs[0])) agree++;
     for (const r of routes) for (const p of G.normalize(r)) for (const ring of [p.outer, ...p.holes]) {
       const seen = new Set(); for (let i = 0; i < ring.length; i += 2) { const k = ring[i] + "," + ring[i + 1]; if (seen.has(k)) { repeat++; break; } seen.add(k); } }
   }
-  check(`S6 property: ${runs} random masks × 4 routes (trace / union(trace) / union(pixels) / union(reversed shuffled pixels)) + rotate/reverse/shuffle → identical hash (${agree}/${runs})`, agree === runs);
+  check(`S6 property premise: raw Clipper2 union(trace) and union(pixels) differ from each other and from the canonical rings (${rawDiff}/${runs})`, rawDiff === runs);
+  check(`S6 property: ${runs} random masks × 5 routes (trace / raw union(trace) / raw union(pixels) / raw union(reversed shuffled pixels) / SBGeom.union) + rotate/reverse/shuffle → identical hash (${agree}/${runs})`, agree === runs);
   check("D3 property: no normalized ring revisits a vertex", repeat === 0);
+  // 2. T-contacts: square minus 1–4 random diamonds (often centred so a corner lands inside the square's edge or another
+  // diamond's edge). Clipper2's sweep runs along y, so the same difference computed on the plane rotated by 90°/180° or
+  // transposed (then mapped back) chains the T-contacts differently; only the T-split makes those routes agree.
+  const X = [[(x, y) => [y, -x], (x, y) => [-y, x]], [(x, y) => [-x, -y], (x, y) => [-x, -y]], [(x, y) => [y, x], (x, y) => [y, x]]];
+  let tRuns = 0, tAgree = 0, tWithT = 0, tIdem = 0;
+  for (let seed = 1; seed <= 100; seed++) {
+    const rnd = require("./fixtures.js").lcg(seed), S = 40, sqr = [{ outer: rect(0, 0, S, S), holes: [] }], dias = [];
+    for (let i = 0, k = 1 + Math.floor(rnd() * 4); i < k; i++) {
+      const r = 2 + 2 * Math.floor(rnd() * 5); let cx = 2 * Math.floor(rnd() * (S / 2 + 1)), cy = 2 * Math.floor(rnd() * (S / 2 + 1));
+      const e = Math.floor(rnd() * 6); if (e === 0) cy = r; else if (e === 1) cy = S - r; else if (e === 2) cx = r; else if (e === 3) cx = S - r;
+      dias.push({ outer: [cx, cy - r, cx + r, cy, cx, cy + r, cx - r, cy], holes: [] });
+    }
+    const a = raw("difference", sqr, dias); if (hasT(a)) tWithT++;
+    const routes = [a, G.difference(sqr, dias.slice().reverse()), ...X.map(([f, g]) => mapPolys(raw("difference", mapPolys(sqr, f), mapPolys(dias, f)), g))];
+    const hs = routes.map((r, i) => H(perturb(r, seed + i)));
+    tRuns++; if (hs.every((x) => x === hs[0])) tAgree++;
+    const n1 = G.normalize(a); if (JSON.stringify(G.normalize(n1)) === JSON.stringify(n1) && G.validate(n1).ok) tIdem++;
+  }
+  check(`S6 T-contact property premise: raw Clipper2 difference(square, diamonds) emits T-contacts (${tWithT}/${tRuns}, need ≥ 50)`, tWithT >= 50);
+  check(`S6 T-contact property: ${tRuns} random difference(square, diamonds) × 5 routes (raw / SBGeom reversed order / raw on the plane rotated 90°, 180°, transposed) → identical hash (${tAgree}/${tRuns})`, tAgree === tRuns);
+  check(`D3 T-contact property: normalize idempotent and valid (${tIdem}/${tRuns})`, tIdem === tRuns);
 });
 
 suite("spike S6 — NFR-05 static scan of the hashed path", () => {
