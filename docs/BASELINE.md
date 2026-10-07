@@ -17,6 +17,8 @@ This file records the state of Shadowbox Studio at the start of the opaque-layer
 `node test/run_tests.js` at the end of G0 (T0.7): **70 passed, 0 failed** — the 29 original
 checks plus 41 G0 additions.
 
+After the G0 license-gap fix: **71 passed, 0 failed** (adds the dist license-notice check).
+
 | Section | Checks | Origin |
 |---|---|---|
 | `zip.js` — CRC-32 and archive structure | 4 | original |
@@ -85,7 +87,8 @@ Fixture `borderTouch` (8×5 px, layer 1 = a 5×2 px block in the top-left corner
   free of the frame. Contact is a zero-width cut line, never a finite-width bond.
 - GEO-02 requires frame union (and hole subtraction) before boundary extraction. Per
   Appendix B decision 3, after the fix a finite-width overlap < 0.5 µm blocks export and a
-  contact narrower than half the minimum feature width warns.
+  contact that does not survive `offset(−minFeatureUm/2)` (narrower than the full minimum
+  feature width) warns.
 
 ## License check
 
@@ -94,10 +97,11 @@ Fixture `borderTouch` (8×5 px, layer 1 = a 5×2 px block in the top-left corner
   from `f0552c7`). `README.md` points to it.
 - The notice **must be kept in `dist/` and in the fork.** It is kept in the fork (`LICENSE`
   at the repository root).
-- **Finding:** the single-file bundle `dist/shadowbox-studio.html` produced by `build.js`
-  does **not** currently carry the MIT copyright and permission notice. This must be fixed
-  (embed the notice as a leading comment in the bundle and add a build-hygiene check) before
-  any `dist/` artifact is distributed; tracked under NFR-11 (S1 / G4.7 inventory work).
+- **Finding (resolved):** the single-file bundle `dist/shadowbox-studio.html` produced by
+  `build.js` originally did **not** carry the MIT copyright and permission notice. Fixed:
+  `build.js` now embeds the `LICENSE` text verbatim as a comment immediately after the
+  doctype, and the build-hygiene check `build: dist carries the upstream MIT license notice
+  verbatim in a leading comment` fails the suite if it is missing (NFR-11).
 - No third-party runtime dependencies exist at the baseline; `docs/COMPONENTS.md` holds the
   inventory table (NFR-11).
 

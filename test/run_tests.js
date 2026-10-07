@@ -279,6 +279,13 @@ suite("build — hygiene (four-list rule, inline bundle, versions)", () => {
   require("child_process").execFileSync(process.execPath, [path.join(root, "build.js")], { stdio: "ignore" });
   const dist = fs.readFileSync(path.join(root, "dist/shadowbox-studio.html"), "utf8");
   check("build: dist has no external <script src=", !/<script src=/.test(dist));
+  // NFR-11: the upstream MIT notice must ship inside the single-file bundle,
+  // verbatim, inside an HTML comment that precedes all page content.
+  const license = fs.readFileSync(path.join(root, "LICENSE"), "utf8").trim();
+  const firstComment = dist.match(/<!--([\s\S]*?)-->/);
+  check("build: dist carries the upstream MIT license notice verbatim in a leading comment",
+    firstComment !== null && firstComment[1].includes(license) &&
+    dist.indexOf(license) < dist.search(/<html[\s>]/i));
   check("DEP-02 sw.js VERSION == APP_VERSION",
     sw.match(/const VERSION\s*=\s*"([^"]+)"/)[1] === app.match(/const APP_VERSION\s*=\s*"([^"]+)"/)[1]);
   check("dev: service worker skipped on localhost", /localhost|127\.0\.0\.1/.test(app.slice(app.indexOf("function registerServiceWorker"))));

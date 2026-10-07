@@ -2421,7 +2421,7 @@ The product owner accepted all proposed defaults for the blocking open questions
 
 1. Geometry library: Clipper2 JS port (UMD/IIFE or wrapped); fallback in-house exact orthogonal booleans + square-join offsets.
 2. Bonded smoothing: containment-aware per-loop fallback (Chaikin → RDP → raw); clip-to-lower only as a reviewed repair.
-3. GEO-02 finite-width contact: < 0.5 µm overlap blocks export; < half min feature width warns.
+3. GEO-02 finite-width contact: < 0.5 µm overlap blocks export; warns when the contact does not survive `offset(−minFeatureUm/2)`, i.e. contact width below the full minimum feature width.
 4. NFR-10 browser integration: in-repo headless-Chrome harness, no npm.
 
 All non-blocking defaults (guide dimensions, resolutions, Plywood preset, EXIF handling, upstream patches) are accepted as proposed.

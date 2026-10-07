@@ -38,6 +38,14 @@ html = html.replace(/<script src="js\/([\w./-]+)"><\/script>/g, (_, name) =>
   "<script>\n" + fs.readFileSync(path.join(root, "js", name), "utf8") + "\n</script>"
 );
 
+// Preserve the upstream MIT copyright and permission notice in the bundle
+// (NFR-11). It goes in a comment right after the doctype, so it leads the file
+// without pushing the doctype off the first line.
+const license = fs.readFileSync(path.join(root, "LICENSE"), "utf8").trim();
+if (license.includes("--")) throw new Error("LICENSE text cannot be embedded in an HTML comment");
+html = html.replace(/^(<!DOCTYPE html>\n)/i, (doctype) => doctype + "<!--\n" + license + "\n-->\n");
+if (!html.includes(license)) throw new Error("failed to embed LICENSE notice in the bundle");
+
 fs.mkdirSync(path.join(root, "dist"), { recursive: true });
 const out = path.join(root, "dist", "shadowbox-studio.html");
 fs.writeFileSync(out, html);
