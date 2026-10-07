@@ -84,5 +84,20 @@
     return L;
   };
 
+  /**
+   * Canonical JSON for hashing (NFR-05): keys sorted recursively, undefined
+   * object keys dropped. Throws on non-finite numbers, undefined/function
+   * values (including array elements) and typed arrays (hash those bytes
+   * with SBHash.digest instead).
+   */
+  U.stableStringify = function (v) {
+    if (v === null || typeof v === "boolean" || typeof v === "string") return JSON.stringify(v);
+    if (typeof v === "number") { if (!Number.isFinite(v)) throw new Error("stableStringify: non-finite number"); return JSON.stringify(v); }
+    if (v === undefined || typeof v === "function") throw new Error("stableStringify: undefined/function value");
+    if (ArrayBuffer.isView(v)) throw new Error("stableStringify: typed array — hash bytes with SBHash.digest");
+    if (Array.isArray(v)) return "[" + v.map(U.stableStringify).join(",") + "]";
+    return "{" + Object.keys(v).filter((k) => v[k] !== undefined).sort().map((k) => JSON.stringify(k) + ":" + U.stableStringify(v[k])).join(",") + "}";
+  };
+
   global.SBUtil = U;
 })(typeof window !== "undefined" ? window : globalThis);

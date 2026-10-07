@@ -27,6 +27,7 @@ const SHELL = [
   "./manifest.webmanifest",
   "./css/style.css",
   "./js/util.js",
+  "./js/hash.js",
   "./js/raster.js",
   "./js/morph.js",
   "./js/islands.js",

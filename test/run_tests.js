@@ -350,6 +350,22 @@ suite("engine.js — legacyRun seam (NFR-10, DEP-04)", () => {
     (s.bridges ? H(s.bridges) : null) === G.sheets[k].bridges));
 });
 
+// ------------------------------------------------ hash (T0.6)
+suite("hash.js — SHA-256 (GEO-09, EXP-06, NFR-05)", async () => {
+  const enc = (s) => new TextEncoder().encode(s), node = (s) => require("crypto").createHash("sha256").update(s).digest("hex");
+  check("hash: NIST empty", SBHash.sha256(enc("")) === "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+  check("hash: NIST abc", SBHash.sha256(enc("abc")) === "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+  check("hash: 1e6 x 'a' matches node:crypto", SBHash.sha256(enc("a".repeat(1e6))) === node("a".repeat(1e6)));
+  check("hash: 55/56/64-byte padding boundaries", [55, 56, 64].every((n) => SBHash.sha256(enc("x".repeat(n))) === node("x".repeat(n))));
+  check("NFR-05 hash.js uses no Math.cbrt/sin/cos", !/Math\.(cbrt|sin|cos|exp|log)/.test(require("fs").readFileSync(require("path").join(__dirname, "../js/hash.js"), "utf8")));
+  check("hash: digest == sha256", (await SBHash.digest(enc("abc"))) === SBHash.sha256(enc("abc")));
+  check("util: stableStringify sorts keys", SBUtil.stableStringify({ b: 1, a: { d: 2, c: 3 } }) === '{"a":{"c":3,"d":2},"b":1}');
+  const throws = (v) => { try { SBUtil.stableStringify(v); return false; } catch (e) { return true; } };
+  check("NFR-05 stableStringify rejects non-finite", throws({ x: NaN }));
+  check("NFR-05 stableStringify rejects undefined array element", throws([undefined]));
+  check("NFR-05 stableStringify rejects typed arrays", throws({ s: new Uint8Array(3) }));
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

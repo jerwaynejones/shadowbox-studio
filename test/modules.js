@@ -1,4 +1,4 @@
 // test/modules.js — the ONE ordered list of pure modules loaded in Node (§4 order).
 module.exports = {
-  NODE_MODULES: ["util.js", "raster.js", "morph.js", "islands.js", "trace.js", "svgout.js", "zip.js", "engine.js"],
+  NODE_MODULES: ["util.js", "hash.js", "raster.js", "morph.js", "islands.js", "trace.js", "svgout.js", "zip.js", "engine.js"],
 };
