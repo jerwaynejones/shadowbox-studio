@@ -2425,3 +2425,21 @@ The product owner accepted all proposed defaults for the blocking open questions
 4. NFR-10 browser integration: in-repo headless-Chrome harness, no npm.
 
 All non-blocking defaults (guide dimensions, resolutions, Plywood preset, EXIF handling, upstream patches) are accepted as proposed.
+
+## Appendix C — Spike amendments
+
+Plan changes implied by the spike results. Each bullet names the affected tasks; the evidence is in `docs/spikes/` and `docs/ARCHITECTURE.md` (Decisions).
+
+- **S1 → D2, G1–G5:** `<lib>` resolves to `clipper2-ts` 2.0.1-18, vendored as `js/vendor/clipper2.js` (global `Clipper2`) with `js/vendor/LICENSE-clipper2.txt`; module order is `… hash → vendor/clipper2 → geom …`. `SBGeom.backend` (string) is added to the S1 interface table.
+- **S1 → S1 battery, G4.8:** the plan's load-form regex `/^\s*(import|export)\s/m` misses minified mid-line `export{…}`. The regression suite also runs the stricter `/\bimport\s*[{*"'(]|import\.meta|\bexport\s*[{*]|\bexport\s+(default|const|let|var|function|class)\b/`, plus strict-IIFE, worker-global (`self`) and SHA-256 pin checks.
+- **S1 → T0.2, G4.7 (NFR-11):** `build.js` now embeds every `js/vendor/LICENSE-*.txt` verbatim in a leading comment of `dist/shadowbox-studio.html`, because the bundle ships third-party code as source text; T0.2 hygiene checks it.
+- **S1 → G4.1:** `js/worker.js` must `importScripts("vendor/clipper2.js", "geom.js")` in that order after `hash.js` (fourth list of the four-list rule); the vendor file already loads in a worker-like global.
+- **S1 → AT-23, G4.8:** the geometry backend requires ES2020 `BigInt` at runtime; add it to the browser matrix prerequisites.
+- **S1 → D3, S5, S6 (D4):** `SBGeom.normalize` (and every boolean result) re-chains boundary edges canonically at shared vertices (sharpest left turn) before splitting saddles, so canonical bytes depend only on the edge set. S5/S6 must keep this inside normalization and keep the 240-case `components` property check. T-contacts (a vertex on another ring's edge interior) are not re-chained; S5 confirms whether they occur.
+- **S1 → GEO-05, D3, G2.7, G2.8, G3.3 (guides):** `"miter"` (limit 2.0) is the join with exact lattice semantics; `"square"` is Clipper2's chamfered corner (not Chebyshev). Every lattice-exact offset (GEO-02 contact survival, feature checks, guide insets) uses `"miter"`.
+- **S1 → S1 interface, G1.7, G3.4, G5.1 (`SBGeom.circle`):** the vertex rule changes from `Math.round(cx + r*t/1e6)` to `cx + roundHalfAwayFromZero(r*t/1e6)` in exact integer arithmetic (keeps 8-fold symmetry on .5 ties); centre and radius must be integers; the ring is cleaned, so radii < 232 µm yield fewer than 64 vertices. `ASM-04 subtractHoles leaves hole rings equal to SBGeom.circle` compares against this normalized ring.
+- **S1 → S1 Step 2, G4.4 (benchmarks):** "8 layers × 50k vertices pairwise difference" is defined as the 7 adjacent layer pairs in both directions (14 differences per run). B1 passed narrowly (p95 1.58 s in the spike; 2.16 s on a heavily loaded re-run), so G4.4 re-measures it on the reference machines and G4.1 moves it off the main thread.
+- **S1 → G2.7, G4.4 (support benchmark):** `test/bench.js geom` adds **B3b**, the support pass on the dense B1 noise stack (3,407 pairs), with a provisional budget p95 < 6 s (measured 4.55 s). The G2.7 support pass must use one layer-level `intersection` per adjacent pair with piece-to-part attribution (never per part pair: 39 s), and must bring B3b under the 3 s B3 budget (worker, skip containment `difference` when only the graph is needed, reuse B1 differences). `test/bench.js support` (G2.7) runs B3 and B3b.
+- **S1 → G1.2 (smoothing):** Chaikin ×2 roughly triples vertex counts and B1 on smoothed layers takes 5.3 s; apply RDP before Chaikin and re-run the tolerance loop per loop, not per layer.
+- **S1 → G2.8 (feature checks):** offsets are the slowest primitive (−1500 µm on 8 dense layers: 2.7 s); offset only parts whose bbox can be affected, or run in the worker.
+- **S1 → R1 fallback:** the lattice backend (c) is exact and byte-identical to (a) on orthogonal input but cannot represent circles or smoothed contours (blocks G1.2, G1.3, G5.1); it remains the documented design in `spikes/S1/geom_lattice.js`, not shipped code.

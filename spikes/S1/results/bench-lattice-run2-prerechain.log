@@ -1,0 +1,15 @@
+ 16:24:53 up 2 days,  5:23,  1 user,  load average: 4.30, 4.64, 4.97
+B1 input vertices per layer: 29992, 44012, 52858, 57810, 60174, 58806, 54196, 45384  trace+fromPixelLoops+union: 2474 ms
+B1 sanity: {"contained":true,"areasExact":true}
+B1 difference: {"runs":15,"minMs":2547.8,"medianMs":2578.9,"p95Ms":2826.3,"maxMs":2826.3,"ops":"7 adjacent pairs × 2 directions = 14 differences per run","resultVertices":730976}
+B1 single difference L3−L4: {"runs":15,"minMs":239.8,"medianMs":241.7,"p95Ms":253.8,"maxMs":253.8}
+B2 offset −1500 miter ×8: {"runs":7,"minMs":1290.2,"medianMs":1298.5,"p95Ms":1335,"maxMs":1335}
+B2 offset +300 miter ×8: {"runs":7,"minMs":1320.7,"medianMs":1338.4,"p95Ms":1427.2,"maxMs":1427.2}
+validate one layer: {"ms":200,"ok":true,"vertices":57810}
+B3 input vertices per layer: 4, 1188, 246, 0, 0, 0, 0, 0  trace+normalize: 106 ms
+B3 support pairs (naive per-part-pair): {"runs":7,"minMs":26.1,"medianMs":26.8,"p95Ms":31.2,"maxMs":31.2,"pairs":4}
+B3 support pairs: {"runs":7,"minMs":39.6,"medianMs":46,"p95Ms":52.5,"maxMs":52.5,"pairs":4,"contained":true,"includingTraceMsP95":158.2,"algorithm":"layer-level intersection + piece→part attribution"}
+B3b support pairs (dense noise stack): {"runs":3,"minMs":8222.5,"medianMs":8321.6,"p95Ms":8327.9,"maxMs":8327.9,"pairs":3407,"contained":true}
+B3b support pairs, parts precomputed: {"runs":3,"minMs":7185.2,"medianMs":7237.9,"p95Ms":7269.7,"maxMs":7269.7,"pairs":3407}
+memory: 31 MB heap, 292 MB rss
+ 16:27:15 up 2 days,  5:26,  1 user,  load average: 4.03, 4.45, 4.86

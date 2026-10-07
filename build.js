@@ -46,6 +46,22 @@ if (license.includes("--")) throw new Error("LICENSE text cannot be embedded in 
 html = html.replace(/^(<!DOCTYPE html>\n)/i, (doctype) => doctype + "<!--\n" + license + "\n-->\n");
 if (!html.includes(license)) throw new Error("failed to embed LICENSE notice in the bundle");
 
+// Third-party licences (NFR-11): the bundle carries vendored libraries as source text, so each
+// js/vendor/LICENSE-<lib>.txt is embedded verbatim in its own comment right after the MIT notice.
+const vendorDir = path.join(root, "js", "vendor");
+const vendorLicenses = fs.existsSync(vendorDir)
+  ? fs.readdirSync(vendorDir).filter((f) => /^LICENSE-.*\.txt$/.test(f)).sort()
+  : [];
+let thirdParty = "";
+for (const f of vendorLicenses) {
+  const text = fs.readFileSync(path.join(vendorDir, f), "utf8").trim();
+  if (text.includes("--")) throw new Error(f + " cannot be embedded in an HTML comment");
+  thirdParty += "<!--\nThird-party component licence (js/vendor/" + f + "):\n\n" + text + "\n-->\n";
+}
+html = html.replace("\n" + license + "\n-->\n", (m) => m + thirdParty);
+for (const f of vendorLicenses)
+  if (!html.includes(fs.readFileSync(path.join(vendorDir, f), "utf8").trim())) throw new Error("failed to embed " + f);
+
 fs.mkdirSync(path.join(root, "dist"), { recursive: true });
 const out = path.join(root, "dist", "shadowbox-studio.html");
 fs.writeFileSync(out, html);

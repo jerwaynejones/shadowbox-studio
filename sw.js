@@ -28,6 +28,8 @@ const SHELL = [
   "./css/style.css",
   "./js/util.js",
   "./js/hash.js",
+  "./js/vendor/clipper2.js",
+  "./js/geom.js",
   "./js/raster.js",
   "./js/morph.js",
   "./js/islands.js",

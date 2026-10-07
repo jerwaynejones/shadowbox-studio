@@ -1,0 +1,435 @@
+{
+ "clipper": {
+  "label": "(a) Clipper2 JS port (clipper2-ts 2.0.1-18)",
+  "pass": 44,
+  "total": 44,
+  "results": [
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 union of two edge-adjacent squares is one polygon",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 point-touching squares stay two components",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 donut area exact",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 donut has one hole",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 difference of identical sets is empty",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 coincident partial edge difference is empty",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 offset -500µm of 800µm strip is empty",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "NFR-05 round join refused",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 bowtie rejected",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 zero-area ring rejected",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 normalize idempotent",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 outer positive / hole negative area in Y-down",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 fromPixelLoops reverses trace winding (outer positive)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "GEO-03/D3 saddle → 2 simple rings, validate ok",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "NFR-05 circle has no trig and is symmetric",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 results identical across two runs",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — vendor load forms",
+    "name": "NFR-11 vendor loads as a classic script in a fresh vm context",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — vendor load forms",
+    "name": "NFR-11 vendor has no import/export statements",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — vendor load forms",
+    "name": "NFR-11 (extra) vendor has no import/export anywhere (not only at line start)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — vendor load forms",
+    "name": "NFR-11 (extra) vendor references no DOM / require / process / Function constructor",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — vendor load forms",
+    "name": "NFR-11 (extra) vendor runs under strict IIFE and sets exactly global.Clipper2",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — vendor load forms",
+    "name": "NFR-11 (extra) importScripts-style load (vm.Script in a worker-like global with self)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT inclusion–exclusion exact on 150 random orthogonal pairs (150/150)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT A = (A−B) ⊔ (A∩B) exactly (150/150)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT every boolean output validates (150/150)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT every boolean output is already normalized (150/150)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT no throws on orthogonal random cases (0)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT randomNestedStack ×60: area = pixels·sx·sy exactly, validate ok, L_k − L_(k−1) = ∅ (60/60)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT 8×8 checkerboard → 32 components, validate ok",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT pinched hole (vertex-touching) → simple rings, validate ok, area exact",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT pinched hole is ONE component with one hole (material connected the long way round)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT/AT-06 two L-shapes touching diagonally at 2 points around a void → 2 components, no holes, validate ok",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT/AT-06 same two L-shapes built by union of polygons (backend chaining) → 2 components",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT/AT-06 components(L_(k−1) − L_k) = 4-connected pixel components (240/240; seed 23 k=1 is the case raw Clipper2 chaining got wrong)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT offset +250 miter of 1000×600 = 1500×1100 exactly",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT offset −250 miter of 1000×600 = 500×100 exactly",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT offset +d then −d restores a rectangle exactly",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT offset −400 of L-shape: two arms survive, area exact (2200·200+200·2200−200·200 → 3·…)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "INFO offset +200 \"square\" of 1000² square: area 1932622 (miter would be 1960000)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT square minus SBGeom.circle (registration hole) supported",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT diagonal edge boolean exact (triangle ∪ square, area 1 375 000)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT 1 m page coordinates: union area exact",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT containsPoint: boundary counts as inside, hole interior outside",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT circle is 8-fold symmetric (mirror x, mirror y, swap x/y)",
+    "ok": true
+   }
+  ]
+ },
+ "lattice": {
+  "label": "(c) in-house exact orthogonal lattice",
+  "pass": 37,
+  "total": 39,
+  "results": [
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 union of two edge-adjacent squares is one polygon",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 point-touching squares stay two components",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 donut area exact",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 donut has one hole",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 difference of identical sets is empty",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 coincident partial edge difference is empty",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 offset -500µm of 800µm strip is empty",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "NFR-05 round join refused",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 bowtie rejected",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 zero-area ring rejected",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 normalize idempotent",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 outer positive / hole negative area in Y-down",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 fromPixelLoops reverses trace winding (outer positive)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "GEO-03/D3 saddle → 2 simple rings, validate ok",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "NFR-05 circle has no trig and is symmetric",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — SBGeom battery (GEO-01/03/09)",
+    "name": "S1 results identical across two runs",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — vendor load forms",
+    "name": "NFR-11 (no third-party vendor file: in-house code only)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT inclusion–exclusion exact on 150 random orthogonal pairs (150/150)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT A = (A−B) ⊔ (A∩B) exactly (150/150)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT every boolean output validates (150/150)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT every boolean output is already normalized (150/150)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT no throws on orthogonal random cases (0)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT randomNestedStack ×60: area = pixels·sx·sy exactly, validate ok, L_k − L_(k−1) = ∅ (60/60)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT 8×8 checkerboard → 32 components, validate ok",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT pinched hole (vertex-touching) → simple rings, validate ok, area exact",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT pinched hole is ONE component with one hole (material connected the long way round)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT/AT-06 two L-shapes touching diagonally at 2 points around a void → 2 components, no holes, validate ok",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT/AT-06 same two L-shapes built by union of polygons (backend chaining) → 2 components",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT/AT-06 components(L_(k−1) − L_k) = 4-connected pixel components (240/240; seed 23 k=1 is the case raw Clipper2 chaining got wrong)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT offset +250 miter of 1000×600 = 1500×1100 exactly",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT offset −250 miter of 1000×600 = 500×100 exactly",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT offset +d then −d restores a rectangle exactly",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT offset −400 of L-shape: two arms survive, area exact (2200·200+200·2200−200·200 → 3·…)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "INFO offset +200 \"square\" of 1000² square: area 1960000 (miter would be 1960000)",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT square minus SBGeom.circle (registration hole) supported — threw GEO_NOT_ORTHOGONAL",
+    "ok": false
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT diagonal edge boolean exact (triangle ∪ square, area 1 375 000)",
+    "ok": false
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT 1 m page coordinates: union area exact",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT containsPoint: boundary counts as inside, hole interior outside",
+    "ok": true
+   },
+   {
+    "suite": "spike S1 — extended robustness (beyond the plan battery)",
+    "name": "EXT circle is 8-fold symmetric (mirror x, mirror y, swap x/y)",
+    "ok": true
+   }
+  ]
+ },
+ "crossBackend": {
+  "n": 640,
+  "same": 640
+ }
+}

@@ -1,0 +1,22 @@
+{
+ "node": {
+  "engine": "V8 14.6.202.34-node.28",
+  "runtime": "node v26.7.0",
+  "bytes": 522531,
+  "sha256": "19e40c491da2c1a0476d146636d105b4e8a6835ee34e35d987e2f470c78afe87"
+ },
+ "deno": {
+  "engine": "V8 15.0.245.2-rusty",
+  "runtime": "deno 2.9.6",
+  "bytes": 522531,
+  "sha256": "19e40c491da2c1a0476d146636d105b4e8a6835ee34e35d987e2f470c78afe87"
+ },
+ "firefox": {
+  "engine": "SpiderMonkey",
+  "runtime": "Mozilla/5.0 (X11; Linux x86_64; rv:155.0) Gecko/20100101 Firefox/155.0",
+  "bytes": 522531,
+  "sha256": "19e40c491da2c1a0476d146636d105b4e8a6835ee34e35d987e2f470c78afe87",
+  "session": true
+ },
+ "allEqual": true
+}

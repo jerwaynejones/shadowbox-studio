@@ -1,0 +1,180 @@
+{
+ "candidate": "clipper",
+ "backend": "clipper2-ts@2.0.1-18",
+ "node": "v26.7.0",
+ "runs": 15,
+ "page": {
+  "w": 1536,
+  "h": 1024,
+  "sxUm": 200,
+  "syUm": 200
+ },
+ "inputB1": {
+  "generator": "noiseStack(seed 11, 1536×1024, 8 layers, cell 27)",
+  "vertices": [
+   29992,
+   44012,
+   52858,
+   57810,
+   60174,
+   58806,
+   54196,
+   45384
+  ],
+  "parts": [
+   72,
+   159,
+   266,
+   359,
+   475,
+   575,
+   738,
+   835
+  ],
+  "holes": [
+   717,
+   745,
+   645,
+   568,
+   432,
+   342,
+   251,
+   136
+  ],
+  "genMs": 681,
+  "traceAndNormalizeMs": 1930
+ },
+ "sanityB1": {
+  "contained": true,
+  "areasExact": true
+ },
+ "B1_difference": {
+  "runs": 15,
+  "minMs": 1415.3,
+  "medianMs": 1462.5,
+  "p95Ms": 1544.7,
+  "maxMs": 1544.7,
+  "ops": "7 adjacent pairs × 2 directions = 14 differences per run",
+  "resultVertices": 730976
+ },
+ "B1_singleDifference": {
+  "runs": 15,
+  "minMs": 186.8,
+  "medianMs": 199.4,
+  "p95Ms": 243.6,
+  "maxMs": 243.6
+ },
+ "B2_offset_inset1500": {
+  "runs": 7,
+  "minMs": 2498.1,
+  "medianMs": 2726.3,
+  "p95Ms": 2874.1,
+  "maxMs": 2874.1
+ },
+ "B2_offset_grow300": {
+  "runs": 7,
+  "minMs": 1433.8,
+  "medianMs": 1524.1,
+  "p95Ms": 1607.9,
+  "maxMs": 1607.9
+ },
+ "validate50k": {
+  "ms": 215,
+  "ok": true,
+  "vertices": 57810
+ },
+ "fingerprintB1": "2adbb60dae42e47e81dcd2ad93d27c51dc644ba88f9bea9d708e79de0023f40c",
+ "inputB3": {
+  "generator": "randomNestedStack(lcg(1), 1536, 1024, 8)",
+  "vertices": [
+   4,
+   1188,
+   246,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "parts": [
+   1,
+   3,
+   1,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "genMs": 169,
+  "traceAndNormalizeMs": 123
+ },
+ "B3_supportPairs": {
+  "runs": 7,
+  "minMs": 7.9,
+  "medianMs": 19.3,
+  "p95Ms": 33.8,
+  "maxMs": 33.8,
+  "pairs": 4,
+  "contained": true,
+  "includingTraceMsP95": 156.9,
+  "algorithm": "layer-level intersection + piece→part attribution"
+ },
+ "B3_supportPairs_naive": {
+  "runs": 7,
+  "minMs": 4.2,
+  "medianMs": 4.5,
+  "p95Ms": 5.8,
+  "maxMs": 5.8,
+  "pairs": 4
+ },
+ "B3b_supportPairs_dense": {
+  "runs": 3,
+  "minMs": 4589.9,
+  "medianMs": 4599.8,
+  "p95Ms": 4751.1,
+  "maxMs": 4751.1,
+  "pairs": 3407,
+  "contained": true
+ },
+ "B3b_supportPairs_dense_partsGiven": {
+  "runs": 3,
+  "minMs": 3841.2,
+  "medianMs": 3857,
+  "p95Ms": 3862.5,
+  "maxMs": 3862.5,
+  "pairs": 3407
+ },
+ "B3b_supportPairs_dense_naive": {
+  "runs": 1,
+  "minMs": 39369.5,
+  "medianMs": 39369.5,
+  "p95Ms": 39369.5,
+  "maxMs": 39369.5,
+  "pairs": 3407
+ },
+ "inputB4": {
+  "smoothing": "SBTrace.simplify(0.5 px) + SBTrace.chaikin(2), rounded to µm",
+  "vertices": [
+   96656,
+   140936,
+   169016,
+   185000,
+   191504,
+   188416,
+   173616,
+   145904
+  ],
+  "traceSmoothNormalizeMs": 3864
+ },
+ "B4_difference_smoothed": {
+  "runs": 15,
+  "minMs": 4967.2,
+  "medianMs": 5097.3,
+  "p95Ms": 5298.5,
+  "maxMs": 5298.5
+ },
+ "B4_validate": true,
+ "heapUsedMB": 153,
+ "rssMB": 623
+}

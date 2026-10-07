@@ -286,6 +286,13 @@ suite("build — hygiene (four-list rule, inline bundle, versions)", () => {
   check("build: dist carries the upstream MIT license notice verbatim in a leading comment",
     firstComment !== null && firstComment[1].includes(license) &&
     dist.indexOf(license) < dist.search(/<html[\s>]/i));
+  // NFR-11: every vendored licence (js/vendor/LICENSE-*.txt) ships verbatim in a comment before <html>,
+  // because the bundle carries the third-party code as source text (BSL-1.0 for clipper2-ts).
+  const vdir = path.join(root, "js/vendor");
+  const vlic = fs.existsSync(vdir) ? fs.readdirSync(vdir).filter((f) => /^LICENSE-.*\.txt$/.test(f)).sort() : [];
+  const head = dist.slice(0, dist.search(/<html[\s>]/i));
+  check("build: dist carries every js/vendor/LICENSE-*.txt verbatim before <html> (" + vlic.join(", ") + ")",
+    vlic.length > 0 && vlic.every((f) => { const t = fs.readFileSync(path.join(vdir, f), "utf8").trim(); return head.includes(t); }));
   check("DEP-02 sw.js VERSION == APP_VERSION",
     sw.match(/const VERSION\s*=\s*"([^"]+)"/)[1] === app.match(/const APP_VERSION\s*=\s*"([^"]+)"/)[1]);
   check("dev: service worker skipped on localhost", /localhost|127\.0\.0\.1/.test(app.slice(app.indexOf("function registerServiceWorker"))));
@@ -379,6 +386,212 @@ suite("hash.js — SHA-256 (GEO-09, EXP-06, NFR-05)", async () => {
   check("NFR-05 stableStringify rejects non-finite", throws({ x: NaN }));
   check("NFR-05 stableStringify rejects undefined array element", throws([undefined]));
   check("NFR-05 stableStringify rejects typed arrays", throws({ s: new Uint8Array(3) }));
+});
+
+// ------------------------------------------------ geometry backend (spike S1, decision D2)
+// Plan battery (Task S1 Step 1, check bodies verbatim) — the regression suite for SBGeom (R1).
+suite("spike S1 — SBGeom battery (GEO-01/03/09)", () => {
+  const sq = (x0, y0, x1, y1) => ({ outer: [x0, y0, x1, y0, x1, y1, x0, y1], holes: [] });
+  const G = SBGeom, shoe = (r) => { let a = 0; for (let i = 0; i < r.length; i += 2) { const j = (i + 2) % r.length; a += r[i] * r[j + 1] - r[j] * r[i + 1]; } return a / 2; };
+  check("S1 union of two edge-adjacent squares is one polygon", G.union([sq(0,0,10,10)], [sq(10,0,20,10)]).length === 1);
+  check("S1 point-touching squares stay two components", G.components(G.union([sq(0,0,10,10)], [sq(10,10,20,20)])).length === 2);
+  const donut = G.difference([sq(0,0,30,30)], [sq(10,10,20,20)]);
+  check("S1 donut area exact", G.area(donut) === 900 - 100);
+  check("S1 donut has one hole", donut.length === 1 && donut[0].holes.length === 1);
+  check("S1 difference of identical sets is empty", G.isEmpty(G.difference([sq(0,0,10,10)], [sq(0,0,10,10)])));
+  check("S1 coincident partial edge difference is empty", G.isEmpty(G.difference([sq(0,0,10,5)], [sq(0,0,10,10)])));
+  check("S1 offset -500µm of 800µm strip is empty", G.isEmpty(G.offset([sq(0,0,800,10000)], -500, "miter")));
+  let threw = false; try { G.offset([sq(0,0,10,10)], 1, "round"); } catch (e) { threw = true; }
+  check("NFR-05 round join refused", threw);
+  check("S1 bowtie rejected", !G.validate([{ outer: [0,0,10,10,10,0,0,10], holes: [] }]).ok);
+  check("S1 zero-area ring rejected", !G.validate([{ outer: [0,0,10,0,20,0], holes: [] }]).ok);
+  const n = G.normalize(donut);
+  check("S1 normalize idempotent", JSON.stringify(G.normalize(n)) === JSON.stringify(n));
+  check("S1 outer positive / hole negative area in Y-down", shoe(n[0].outer) > 0 && shoe(n[0].holes[0]) < 0);
+  const traced = G.fromPixelLoops(SBTrace.trace(require("./fixtures.js").art(["###", "#.#", "###"]).m, 3, 3), 1000, 1000, 0, 0);
+  check("S1 fromPixelLoops reverses trace winding (outer positive)", shoe(G.normalize(traced)[0].outer) > 0);
+  const saddle = G.normalize(G.union([sq(0,0,10,10)], [sq(10,10,20,20)]));
+  check("GEO-03/D3 saddle → 2 simple rings, validate ok", saddle.length === 2 && G.validate(saddle).ok);
+  check("NFR-05 circle has no trig and is symmetric", G.circle(0, 0, 1500).outer.length === 128 && G.area([G.circle(0,0,1500)]) > 0);
+  check("S1 results identical across two runs", JSON.stringify(G.union([sq(0,0,7,9)], [sq(3,3,13,13)])) === JSON.stringify(G.union([sq(0,0,7,9)], [sq(3,3,13,13)])));
+});
+
+suite("spike S1 — vendor load forms and pin (NFR-11)", () => {
+  const vendorFile = require("./modules.js").NODE_MODULES.find((m) => m.startsWith("vendor/"));
+  const src = require("fs").readFileSync(require("path").join(__dirname, "../js/vendor", vendorFile.slice(7)), "utf8");
+  check("NFR-11 vendor loads as a classic script in a fresh vm context", (() => { const c = require("vm").createContext({}); c.globalThis = c; require("vm").runInContext(src, c); return Object.keys(c).length > 1; })());
+  check("NFR-11 vendor has no import/export statements", !/^\s*(import|export)\s/m.test(src));
+  // The plan's line-start regex misses minified `export{…}` mid-line (spike S1 Finding 3); this one does not.
+  check("NFR-11 vendor has no import/export anywhere (not only at line start)",
+    !/\bimport\s*[{*"'(]|import\.meta|\bexport\s*[{*]|\bexport\s+(default|const|let|var|function|class)\b/.test(src));
+  check("NFR-11 vendor references no DOM / require / process / Function constructor",
+    !/\b(document|window\.|require\(|process\.|new Function)\b/.test(src.replace(/typeof window !== "undefined" \? window : globalThis/, "")));
+  check("NFR-11 vendor runs as a strict IIFE and sets exactly global.Clipper2",
+    (() => { const c = require("vm").createContext({}); require("vm").runInContext(src, c); return JSON.stringify(Object.keys(c)) === '["Clipper2"]'; })());
+  check("NFR-11 vendor loads in a worker-like global (self, importScripts form)",
+    (() => { const c = require("vm").createContext({}); c.self = c; new (require("vm").Script)(src).runInContext(c); return typeof c.Clipper2.union === "function"; })());
+  check("NFR-05 vendor has no Math.random / Date", !/Math\.random|\bDate\b/.test(src));
+  const sha = require("crypto").createHash("sha256").update(fs.readFileSync(path.join(__dirname, "../js/vendor/clipper2.js"))).digest("hex");
+  const comp = fs.readFileSync(path.join(__dirname, "../docs/COMPONENTS.md"), "utf8");
+  const row = comp.split("\n").find((l) => l.includes("js/vendor/clipper2.js")) || "";
+  check("NFR-11 js/vendor/clipper2.js SHA-256 matches the pinned wrap output", sha === "3770b90cddbfca46596ef944117f66c67325870708ffd7eb7aa289080b888994");
+  check("NFR-11 COMPONENTS.md row: clipper2-ts 2.0.1-18, BSL-1.0, SHA-256, shim, runtime",
+    /clipper2-ts/.test(row) && /2\.0\.1-18/.test(row) && /BSL-1\.0/.test(row) && row.includes(sha) && /shim/.test(row) && /runtime/.test(row));
+  const lic = (() => { try { return fs.readFileSync(path.join(__dirname, "../js/vendor/LICENSE-clipper2.txt"), "utf8"); } catch (e) { return ""; } })();
+  check("NFR-11 js/vendor/LICENSE-clipper2.txt is the Boost Software License 1.0", /Boost Software License - Version 1\.0/.test(lic));
+  check("D2 SBGeom.backend names the pinned library", SBGeom.backend === "clipper2-ts@2.0.1-18");
+});
+
+suite("spike S1 — SBGeom extended robustness (beyond the plan battery)", () => {
+  const G = SBGeom, F = require("./fixtures.js");
+  const sq = (x0, y0, x1, y1) => ({ outer: [x0, y0, x1, y0, x1, y1, x0, y1], holes: [] });
+  const safe = (fn) => { try { return fn(); } catch (e) { return false; } };
+  const rng = F.lcg(7), ri = (a, b) => a + Math.floor(rng() * (b - a + 1));
+  // random orthogonal unions of rectangles on a 200 µm lattice
+  const randOrtho = () => { let acc = []; for (let k = 0; k < 6; k++) { const x = ri(0, 20) * 200, y = ri(0, 20) * 200; acc = G.union(acc, [sq(x, y, x + ri(1, 8) * 200, y + ri(1, 8) * 200)]); } return acc; };
+  let incl = 0, part = 0, valid = 0, idem = 0, threw = 0; const nCase = 150;
+  for (let t = 0; t < nCase; t++) {
+    try {
+      const A = randOrtho(), B = randOrtho();
+      const U = G.union(A, B), I = G.intersection(A, B), D = G.difference(A, B);
+      if (G.area(U) === G.area(A) + G.area(B) - G.area(I)) incl++;
+      if (G.area(D) + G.area(I) === G.area(A) && G.isEmpty(G.intersection(D, B))) part++;
+      if ([U, I, D].every((p) => G.validate(p).ok)) valid++;
+      if ([U, I, D].every((p) => JSON.stringify(G.normalize(p)) === JSON.stringify(p))) idem++;
+    } catch (e) { threw++; }
+  }
+  check(`GEO-01 inclusion–exclusion exact on ${nCase} random orthogonal pairs (${incl}/${nCase})`, incl === nCase);
+  check(`GEO-01 A = (A−B) ⊔ (A∩B) exactly (${part}/${nCase})`, part === nCase);
+  check(`GEO-03 every boolean output validates (${valid}/${nCase})`, valid === nCase);
+  check(`GEO-03 every boolean output is already normalized (${idem}/${nCase})`, idem === nCase);
+  check(`S1 no throws on random orthogonal cases (${threw})`, threw === 0);
+
+  // nested random stacks (the product's real input): exact area, containment, validity
+  let okStack = 0; const NS = 60;
+  for (let s = 1; s <= NS; s++) {
+    try {
+      const st = F.randomNestedStack(F.lcg(s), 40, 30, 5); let prev = null, ok = true;
+      for (let k = 0; k < st.length; k++) {
+        const L = G.union(G.fromPixelLoops(SBTrace.trace(st[k], 40, 30), 250, 200, 1000, 3000), []);
+        const px = st[k].reduce((a, b) => a + b, 0);
+        if (G.area(L) !== px * 250 * 200 || !G.validate(L).ok) ok = false;
+        if (prev && !G.isEmpty(G.difference(L, prev))) ok = false;
+        prev = L;
+      }
+      if (ok) okStack++;
+    } catch (e) { /* counted as failure */ }
+  }
+  check(`GEO-09 randomNestedStack ×${NS}: area = pixels·sx·sy exactly, validate ok, L_k − L_(k−1) = ∅ (${okStack}/${NS})`, okStack === NS);
+
+  const cb = []; for (let y = 0; y < 8; y++) { let row = ""; for (let x = 0; x < 8; x++) row += (x + y) % 2 ? "#" : "."; cb.push(row); }
+  const cbp = G.union(G.fromPixelLoops(SBTrace.trace(F.art(cb).m, 8, 8), 1000, 1000, 0, 0), []);
+  check("GEO-03/D3 8×8 checkerboard → 32 components, validate ok", safe(() => G.components(cbp).length === 32 && G.validate(cbp).ok));
+  const pinch = G.difference([sq(0, 0, 30, 30)], [sq(0, 0, 10, 10), sq(10, 10, 20, 20)]);
+  check("GEO-03 pinched hole (vertex-touching) → simple rings, validate ok, area exact", safe(() => G.validate(pinch).ok && G.area(pinch) === 900 - 200));
+  check("AT-06 pinched hole is ONE component with one hole", safe(() => G.components(pinch).length === 1 && pinch.length === 1 && pinch[0].holes.length === 1));
+  const twoL = G.union(G.fromPixelLoops(SBTrace.trace(F.art(["###.", "#..#", "#..#", ".###"]).m, 4, 4), 1000, 1000, 0, 0), []);
+  check("AT-06 two L-shapes touching diagonally at 2 points → 2 components, no holes, validate ok",
+    safe(() => G.components(twoL).length === 2 && twoL.every((p) => p.holes.length === 0) && G.validate(twoL).ok));
+  const twoLb = G.union([{ outer: [0,0,3000,0,3000,1000,1000,1000,1000,3000,0,3000], holes: [] }], [{ outer: [3000,1000,4000,1000,4000,4000,1000,4000,1000,3000,3000,3000], holes: [] }]);
+  check("AT-06/D4 same L-shapes built by polygon union (backend chaining) → identical canonical output", safe(() => G.components(twoLb).length === 2 && JSON.stringify(twoLb) === JSON.stringify(twoL)));
+
+  // property: components() == 4-connected pixel components of the band mask (diagonal-only contact = separate)
+  const comp4 = (m, w, h) => { const lab = new Int32Array(m.length); let n = 0;
+    for (let i = 0; i < m.length; i++) if (m[i] && !lab[i]) { n++; const q = [i]; lab[i] = n;
+      while (q.length) { const p = q.pop(), x = p % w, y = (p / w) | 0;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (X < 0 || Y < 0 || X >= w || Y >= h) continue; const j = Y * w + X; if (m[j] && !lab[j]) { lab[j] = n; q.push(j); } } } }
+    return n; };
+  let cOk = 0, cN = 0;
+  for (let sd = 1; sd <= 60; sd++) {
+    const st = F.randomNestedStack(F.lcg(sd), 60, 40, 5);
+    const LL = st.map((m) => G.union(G.fromPixelLoops(SBTrace.trace(m, 60, 40), 200, 200, 0, 0), []));
+    for (let k = 1; k < 5; k++) { cN++;
+      try { const band = st[k - 1].map((v, i) => (v && !st[k][i] ? 1 : 0));
+        if (G.components(G.difference(LL[k - 1], LL[k])).length === comp4(band, 60, 40)) cOk++; } catch (e) { /* fail */ } }
+  }
+  check(`AT-06/D3 components(L_(k−1) − L_k) = 4-connected pixel components (${cOk}/${cN}; seed 23 k=1 needs canonical re-chaining)`, cOk === cN);
+
+  const r = [sq(0, 0, 1000, 600)];
+  check("GEO-05 offset +250 miter of 1000×600 = 1500×1100 exactly", safe(() => G.area(G.offset(r, 250, "miter")) === 1500 * 1100));
+  check("GEO-05 offset −250 miter of 1000×600 = 500×100 exactly", safe(() => G.area(G.offset(r, -250, "miter")) === 500 * 100));
+  check("GEO-05 offset +d then −d restores a rectangle exactly", safe(() => JSON.stringify(G.offset(G.offset(r, 300, "miter"), -300, "miter")) === JSON.stringify(G.normalize(r))));
+  const Lsh = G.union([sq(0, 0, 3000, 1000)], [sq(0, 0, 1000, 3000)]);
+  check("GEO-05 offset −400 miter of an L-shape: area exact", safe(() => G.area(G.offset(Lsh, -400, "miter")) === 2200 * 200 + 200 * 2200 - 200 * 200));
+  check("GEO-05 \"square\" join is Clipper2's chamfer (+200 on 1000²: 1 932 622 µm², not the miter 1 960 000)",
+    safe(() => G.area(G.offset([sq(0, 0, 1000, 1000)], 200, "square")) === 1932622));
+  let nonInt = false; try { G.offset(r, 0.5, "miter"); } catch (e) { nonInt = true; }
+  check("GEO-09 offset refuses a non-integer delta", nonInt);
+
+  const circ = safe(() => G.difference([sq(-5000, -5000, 5000, 5000)], [G.circle(0, 0, 1500)]));
+  check("ASM-04 square minus SBGeom.circle (registration hole) → one ring with one hole, area within 0.5 %",
+    !!circ && G.validate(circ).ok && circ[0].holes.length === 1 && Math.abs(G.area(circ) - (1e8 - Math.PI * 1500 * 1500)) < 0.005 * Math.PI * 1500 * 1500);
+  check("GEO-01 diagonal edge boolean exact (triangle ∪ square, area 1 375 000)",
+    safe(() => G.area(G.union([{ outer: [0, 0, 1000, 0, 0, 1000], holes: [] }], [sq(500, 0, 1500, 1000)])) === 500000 + 1000000 - 125000));
+  const big = G.union([sq(0, 0, 999999, 999999)], [sq(500000, 500000, 1000000, 1000001)]);
+  check("GEO-09 1 m page coordinates: union area exact", safe(() => G.area(big) === 999999 * 999999 + 500000 * 500001 - 499999 * 499999));
+  const dn = G.difference([sq(0, 0, 30, 30)], [sq(10, 10, 20, 20)]);
+  check("S1 containsPoint: boundary counts as inside, hole interior outside", G.containsPoint(dn, [10, 15]) && !G.containsPoint(dn, [15, 15]));
+});
+
+suite("spike S1 — SBGeom.circle symmetry and validity (NFR-05, ASM-04)", () => {
+  const G = SBGeom;
+  const sym8 = (cx, cy, r) => {
+    const c = G.circle(cx, cy, r).outer, set = new Set();
+    for (let i = 0; i < c.length; i += 2) set.add((c[i] - cx) + "," + (c[i + 1] - cy));
+    for (let i = 0; i < c.length; i += 2) { const x = c[i] - cx, y = c[i + 1] - cy;
+      if (!set.has(-x + "," + y) || !set.has(x + "," + -y) || !set.has(y + "," + x)) return false; }
+    return true;
+  };
+  check("NFR-05 circle 8-fold symmetric at r=1500 about the origin", sym8(0, 0, 1500));
+  // r·cos = …500000 exactly → a .5 tie; Math.round(cx + t) rounds +x.5 up but −x.5 toward zero.
+  check("NFR-05 circle 8-fold symmetric on exact .5 ties (r=500000) and off-origin centres", sym8(0, 0, 500000) && sym8(12345, -678, 500000) && sym8(-7, 3, 2500));
+  const radii = []; for (let r = 1; r <= 4000; r += r < 64 ? 1 : 37) radii.push(r);
+  const bad = radii.filter((r) => { const c = [G.circle(1000, 2000, r)]; return !G.validate(c).ok || JSON.stringify(G.normalize(c)) !== JSON.stringify(c); });
+  check(`GEO-03 circle validates and is already normalized for every radius 1…4000 µm (${radii.length - bad.length}/${radii.length}${bad.length ? "; bad r=" + bad.slice(0, 5).join(",") : ""})`, bad.length === 0);
+  check("NFR-05 circle keeps all 64 vertices at a 1.5 mm radius", G.circle(0, 0, 1500).outer.length === 128);
+  let threw = false; try { G.circle(0.5, 0, 10); } catch (e) { threw = true; }
+  check("GEO-09 circle refuses non-integer centre/radius", threw);
+  check("NFR-05 geom.js uses no trig / Math.random / Date", !/Math\.(sin|cos|tan|atan2?|acos|asin|exp|log|cbrt|random)\b|\bDate\b/.test(fs.readFileSync(path.join(__dirname, "../js/geom.js"), "utf8")));
+});
+
+suite("spike S1 — SBGeom.validate edge cases (GEO-03)", () => {
+  const G = SBGeom;
+  check("GEO-03 validate: empty list is ok", G.validate([]).ok);
+  check("GEO-03 validate: non-integer coordinate → GEO_OPEN", G.validate([{ outer: [0, 0, 10, 0, 10, 10.5], holes: [] }]).errors.some((e) => e.code === "GEO_OPEN"));
+  check("GEO-03 validate: missing outer → GEO_OPEN (no throw)", (() => { try { return G.validate([{ holes: [] }]).errors[0].code === "GEO_OPEN"; } catch (e) { return false; } })());
+  check("GEO-03 validate: odd-length ring → GEO_OPEN", G.validate([{ outer: [0, 0, 10, 0, 10, 10, 0], holes: [] }]).errors[0].code === "GEO_OPEN");
+  check("GEO-03 validate: repeated consecutive vertex → GEO_DUPLICATE", G.validate([{ outer: [0, 0, 10, 0, 10, 0, 10, 10, 0, 10], holes: [] }]).errors[0].code === "GEO_DUPLICATE");
+  check("GEO-03 validate: the same ring twice (either orientation) → GEO_DUPLICATE",
+    G.validate([{ outer: [0, 0, 10, 0, 10, 10, 0, 10], holes: [] }, { outer: [0, 0, 0, 10, 10, 10, 10, 0], holes: [] }]).errors.some((e) => e.code === "GEO_DUPLICATE"));
+  check("GEO-03 validate: hole crossing its outer → GEO_SELF_INTERSECT",
+    G.validate([{ outer: [0, 0, 10, 0, 10, 10, 0, 10], holes: [[5, 5, 5, 15, 15, 15, 15, 5]] }]).errors.some((e) => e.code === "GEO_SELF_INTERSECT"));
+  check("GEO-03 validate: spike (edge doubling back) → GEO_SELF_INTERSECT", !G.validate([{ outer: [0, 0, 10, 0, 20, 0, 10, 0, 10, 10], holes: [] }]).ok);
+  check("GEO-03 validate: ring revisiting a vertex (unsplit saddle) → GEO_SELF_INTERSECT",
+    G.validate([{ outer: [0, 0, 10, 0, 10, 10, 20, 10, 20, 20, 10, 20, 10, 10, 0, 10], holes: [] }]).errors.some((e) => e.code === "GEO_SELF_INTERSECT"));
+  // A ring whose first vertex is repeated used to lose a corner in normalization (both copies of a
+  // duplicate were dropped together with the stale wrap-around neighbour) — found via SBGeom.circle(…, 1).
+  const dupStart = G.normalize([{ outer: [1, 0, 1, 0, 1, 1, 1, 1, 0, 1, -1, 1, -1, 0, -1, -1, 0, -1, 1, -1], holes: [] }]);
+  check("GEO-03 normalize: duplicate + collinear vertices at the ring start keep every corner (2×2 square)",
+    dupStart.length === 1 && G.area(dupStart) === 4 && JSON.stringify(dupStart[0].outer) === JSON.stringify([-1, -1, 1, -1, 1, 1, -1, 1]));
+  check("GEO-03 validate: two simple rings sharing one vertex (split saddle) are ok", G.validate(G.union([{ outer: [0,0,10,0,10,10,0,10], holes: [] }], [{ outer: [10,10,20,10,20,20,10,20], holes: [] }])).ok);
+  check("GEO-03 validate: error ring ids name poly and ring index",
+    (() => { const e = G.validate([{ outer: [0,0,10,0,10,10,0,10], holes: [] }, { outer: [0,0,10,10,10,0,0,10], holes: [] }]).errors; return e.length === 1 && e[0].ring.poly === 1 && e[0].ring.ring === 0; })());
+});
+
+suite("spike S1 — test/bench.js geom smoke (--quick)", () => {
+  const out = path.join(require("os").tmpdir(), "sb-bench-geom-" + process.pid + ".json");
+  let r = null;
+  try {
+    require("child_process").execFileSync(process.execPath, [path.join(__dirname, "bench.js"), "geom", "--quick", "--json", out], { stdio: "ignore" });
+    r = JSON.parse(fs.readFileSync(out, "utf8"));
+  } catch (e) { /* r stays null */ } finally { try { fs.unlinkSync(out); } catch (e) { /* none */ } }
+  check("bench geom --quick runs and writes JSON", !!r && r.stage === "geom" && r.backend === SBGeom.backend);
+  check("bench geom: B1 input nested and areas exact", !!r && r.sanityB1.contained && r.sanityB1.areasExact);
+  check("bench geom: reports B1, B2, B3 and B3b with budgets 2 s / 3 s / 6 s", !!r &&
+    ["B1_difference", "B2_offset_inset1500", "B2_offset_grow300", "B3_supportPairs", "B3b_supportPairs_dense"].every((k) => r[k] && r[k].p95Ms >= 0) &&
+    r.budgetsMs.B1 === 2000 && r.budgetsMs.B3 === 3000 && r.budgetsMs.B3b === 6000);
+  check("bench geom: support pass finds pairs and containment on the dense stack", !!r && r.B3b_supportPairs_dense.pairs > 0 && r.B3b_supportPairs_dense.contained &&
+    r.B3b_supportPairs_dense_partsGiven.pairs === r.B3b_supportPairs_dense.pairs);
 });
 
 // ------------------------------------------------------------------ report
