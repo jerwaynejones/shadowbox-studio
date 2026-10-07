@@ -1,0 +1,4 @@
+# Regenerable spike outputs (spikes/S4/gen_corpus.sh)
+spikes/S4/out/corpus/
+# Extracted copy of spikes/S6/vendor/clipper2-js-1.2.4.tgz (the harness imports clipper2-js-1.2.4.mjs)
+spikes/S6/vendor/package/
