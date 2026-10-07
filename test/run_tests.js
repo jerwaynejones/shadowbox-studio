@@ -648,7 +648,7 @@ suite("spike S6 — plan checks (GEO-09, NFR-05)", () => {
 });
 
 suite("spike S6 — canonicalBytes layout and D4 hash scope (amendments A, B, C)", () => {
-  const G = SBGeom, { rect, rev, throws, base } = S6, H = (L) => G.layerHash(L), M = (L) => G.materialHash(L), h0 = H(base), m0 = M(base);
+  const G = SBGeom, { rect, rot, rev, throws, base } = S6, H = (L) => G.layerHash(L), M = (L) => G.materialHash(L), h0 = H(base), m0 = M(base);
   const words = (u8) => Array.from(new Int32Array(u8.buffer, u8.byteOffset, u8.byteLength / 4));
   const tiny = G.canonicalBytes([{ index: 2, material: [{ outer: rev(rect(0, 0, 10, 10)), holes: [] }], scorePaths: [[5, 5, 1, 1]] }]);
   check("S6 byte layout = [layerCount, index, partCount, ringCount, vertexCount, x,y…, scoreCount, vertexCount, x,y…, holeCount]",
@@ -673,6 +673,18 @@ suite("spike S6 — canonicalBytes layout and D4 hash scope (amendments A, B, C)
   const two = { ...base, scorePaths: [[0, 0, 0, 5], [7, 7, 9, 9]] };
   check("S6 score path order invariant", H(two) === H({ ...two, scorePaths: two.scorePaths.slice().reverse() }));
   check("S6 closed score ring start/direction invariant", H({ ...base, scorePaths: [[100, 100, 900, 100, 900, 900, 100, 900, 100, 100]] }) === H({ ...base, scorePaths: [[900, 900, 900, 100, 100, 100, 100, 900, 900, 900]] }));
+  const L0 = (sp) => G.layerHash({ index: 0, material: [], scorePaths: [sp] });
+  const ring = [0, 0, 100, 0, 100, 100, 0, 100, 0, 0], tail = [0, 0, 100, 0, 100, 50, 200, 50, 100, 50, 100, 100, 0, 100, 0, 0];
+  check("S6 closed score ring with an out-and-back tail hashes differently from the plain ring (spikes kept)", L0(tail) !== L0(ring) &&
+    L0(tail) === L0(rev(tail)) && L0(tail) === L0(rot(tail.slice(0, -2), 3).concat(rot(tail.slice(0, -2), 3).slice(0, 2))));
+  check("S6 closed score ring: duplicate and pass-through points removed cyclically, incl. across the closing point",
+    L0(ring) === L0([50, 0, 100, 0, 100, 100, 0, 100, 0, 0, 0, 0, 50, 0]) && L0(ring) === L0([0, 50, 0, 0, 100, 0, 100, 100, 0, 100, 0, 50]));
+  const closedCases = [[0, 0, 10, 0, 10, 10, 10, 0, 20, 0, 0, 0], [0, 0, 10, 10, 10, 0, 0, 10, 0, 0], [0, 0, 10, 0, 0, 0], [5, 5, 0, 0, 10, 0, 0, 0, 5, 5]];
+  check("S6 degenerate closed score paths (zero area, bowtie, out-and-back) are start- and direction-invariant", closedCases.every((c) => {
+    const cyc = c.slice(0, -2), n = cyc.length >> 1, h = L0(c);
+    for (let k = 0; k < n; k++) for (const r of [rot(cyc, k), rev(rot(cyc, k))]) if (L0(r.concat(r.slice(0, 2))) !== h) return false;
+    return true;
+  }));
   check("D4-A registration hole radius change changes hash", H({ ...base, holes: [{ cxUm: 30000, cyUm: 30000, rUm: 1501 }] }) !== h0 && M({ ...base, holes: [{ cxUm: 30000, cyUm: 30000, rUm: 1501 }] }) !== m0);
   check("D4-A registration hole that misses material still changes hash", H({ ...base, holes: [] }) !== h0);
   check("D4-A registration hole order invariant", H({ ...base, holes: [{ cxUm: 1, cyUm: 2, rUm: 3 }, { cxUm: 4, cyUm: 1, rUm: 3 }] }) === H({ ...base, holes: [{ cxUm: 4, cyUm: 1, rUm: 3 }, { cxUm: 1, cyUm: 2, rUm: 3 }] }));
@@ -689,6 +701,14 @@ suite("spike S6 — canonicalBytes layout and D4 hash scope (amendments A, B, C)
     !throws(() => G.canonicalBytes([{ index: 0, material: [{ outer: [0, 0, 2 ** 25, 0, 10, 10], holes: [] }] }])));
   check("D4-C non-integer / out-of-range score path, hole or index throws", throws(() => G.canonicalBytes([{ index: 0, material: [], scorePaths: [[0, 0, 1.5, 0]] }])) &&
     throws(() => G.canonicalBytes([{ index: 0, material: [], holes: [{ cxUm: 0, cyUm: -(2 ** 25) - 1, rUm: 1 }] }])) && throws(() => G.canonicalBytes([{ index: 0.5, material: [] }])));
+  check("S6 hole with no containing outer throws (amendment C: never dropped silently)",
+    throws(() => G.canonicalBytes([{ index: 0, material: [{ outer: rect(0, 0, 10, 10), holes: [rect(100, 100, 110, 110)] }] }])) &&
+    throws(() => G.canonicalBytes([{ index: 0, material: [{ outer: rect(0, 0, 10, 10), holes: [] }, { outer: rect(50, 50, 60, 60), holes: [rect(100, 100, 110, 110)] }] }])) &&
+    !throws(() => G.canonicalBytes([{ index: 0, material: [{ outer: rect(0, 0, 10, 10), holes: [rect(2, 2, 8, 8)] }] }])));
+  check("S6 registration hole radius <= 0 and negative layer index throw", throws(() => G.canonicalBytes([{ index: 0, material: [], holes: [{ cxUm: 0, cyUm: 0, rUm: -5 }] }])) &&
+    throws(() => G.canonicalBytes([{ index: 0, material: [], holes: [{ cxUm: 0, cyUm: 0, rUm: 0 }] }])) && throws(() => G.canonicalBytes([{ index: -1, material: [] }])));
+  check("S6 typed-array ring is refused with the real reason (not 'odd coordinate count')", (() => {
+    try { G.canonicalBytes([{ index: 0, material: [{ outer: new Int32Array([0, 0, 10, 0, 10, 10]), holes: [] }] }]); return false; } catch (e) { return /plain Array/.test(e.message) && /Int32Array/.test(e.message); } })());
   check("S6 zero-area part dropped", H({ ...base, material: [...base.material, { outer: [0, 50000, 100, 50000, 200, 50000], holes: [] }] }) === h0);
   check("S6 SBHash.sha256(canonicalBytes) == node:crypto", SBHash.sha256(G.canonicalBytes([base])) === require("crypto").createHash("sha256").update(G.canonicalBytes([base])).digest("hex"));
   check("S6 canonicalBytes does not mutate its input", (() => { const s = JSON.stringify(base); G.canonicalBytes([base]); return JSON.stringify(base) === s; })());

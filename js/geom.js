@@ -356,7 +356,7 @@
    * rings: flat integer rings whose role is given by sign (area2 > 0 → outer, < 0 → hole).
    * Returns normalized PolygonWithHoles[]. Orphan holes (no containing outer) are dropped.
    */
-  function assemble(rings) {
+  function assemble(rings, stats) {
     const outers = [], holes = [];
     const cleaned = []; for (const r0 of rings) { const c = cleanRing(r0); if (c.length >= 6) cleaned.push(c); }
     for (const r0 of rechain(splitTJunctions(cleaned))) {
@@ -379,7 +379,7 @@
           for (let gx = Math.floor((b[0] - gx0) / cw); gx <= Math.floor((b[2] - gx0) / cw); gx++) (grid[gy * GN + gx] || (grid[gy * GN + gx] = [])).push(p);
       }
       for (const h of holes) {
-        if (h.b[0] < gx0 || h.b[1] < gy0 || h.b[2] > gx1 || h.b[3] > gy1) continue;
+        if (h.b[0] < gx0 || h.b[1] < gy0 || h.b[2] > gx1 || h.b[3] > gy1) { if (stats) stats.orphans++; continue; }
         const cell = grid[Math.floor((h.b[1] - gy0) / ch) * GN + Math.floor((h.b[0] - gx0) / cw)] || [];
         let best = null;
         for (const p of cell) {
@@ -388,6 +388,7 @@
           if (ringInside(h.r, p.o.X || (p.o.X = bandIndex(p.o.r)))) { best = p; break; }
         }
         if (best) best.holes.push(h.r); // orphan holes (no containing outer) are dropped: they carry no material
+        else if (stats) stats.orphans++;
       }
     }
     const keyed = (r) => { const m = minXY(r); return { r: rotateStart(r), y: m[1], x: m[0] }; };
@@ -409,14 +410,16 @@
   C.assemble = assemble;
 
   /** Rings with roles: outer forced positive, holes forced negative, then assemble. */
-  C.normalize = function (polys) {
+  C.normalize = (polys) => normalizeWith(polys, null);
+  /** stats (optional) receives {orphans}: holes dropped because no outer contains them. */
+  function normalizeWith(polys, stats) {
     const rings = [];
     for (const p of polys) {
       const o = p.outer; rings.push(area2(o) < 0 ? reverseRing(o) : o);
       for (const h of p.holes || []) rings.push(area2(h) > 0 ? reverseRing(h) : h);
     }
-    return assemble(rings);
-  };
+    return assemble(rings, stats);
+  }
 
   C.fromPixelLoops = function (loops, sx, sy, ox, oy) {
     const rings = loops.map((L) => {
@@ -542,16 +545,24 @@
   function checkCoord(v) {
     if (!Number.isInteger(v) || v > LIM || v < -LIM) throw new Error("SBGeom.canonicalBytes: coordinate is not an integer µm within ±2^25: " + v);
   }
-  function checkRing(r) { if (!Array.isArray(r) || r.length % 2) throw new Error("SBGeom.canonicalBytes: ring has an odd coordinate count"); for (const v of r) checkCoord(v); }
+  function checkRing(r) {
+    if (!Array.isArray(r)) throw new Error("SBGeom.canonicalBytes: ring or path must be a plain Array of integer µm (got " + (r === null ? "null" : ArrayBuffer.isView(r) ? r.constructor.name : typeof r) + ")");
+    if (r.length % 2) throw new Error("SBGeom.canonicalBytes: ring has an odd coordinate count");
+    for (const v of r) checkCoord(v);
+  }
   function cmpSeq(a, b) { const n = Math.min(a.length, b.length); for (let i = 0; i < n; i++) if (a[i] !== b[i]) return a[i] - b[i]; return a.length - b.length; }
 
   /**
    * Canonical score polyline: consecutive duplicates removed, pass-through collinear points dropped
-   * (reversals kept), oriented so the smaller (x, y) endpoint comes first. A closed path (first point
-   * repeated last) whose cleaned ring still has 3 or more vertices is oriented as a positive ring
-   * starting at its smallest vertex, with the closing point repeated. A path that returns to its start
-   * but encloses no area (an out-and-back such as [0,0, 10,0, 0,0]) stays an OPEN path, so its
-   * reversal is kept and it is never dropped from the hash. Returns null for fewer than 2 distinct points.
+   * (reversals and spikes always kept: every vertex that turns back is part of a line that is burned).
+   * An open path is oriented so the smaller (x, y) endpoint comes first. A closed path (first point
+   * repeated last) is treated as a cycle: duplicates and pass-through points are removed cyclically
+   * (never spikes or out-and-back tails, so a ring with a tail hashes differently from the plain ring),
+   * then it is written as the lexicographically smallest of its rotations that start at its smallest
+   * (x, y) vertex, in the positive direction when it encloses signed area and in either direction
+   * when it does not (out-and-back, self-cancelling bowtie). The closing point is repeated. So the
+   * result is invariant to start vertex and direction for every closed path, degenerate ones included.
+   * Returns null for fewer than 2 distinct points.
    */
   function canonPolyline(src) {
     const pts = [];
@@ -560,11 +571,7 @@
       pts.push(src[i], src[i + 1]);
     }
     const n = pts.length >> 1; if (n < 2) return null;
-    if (n > 2 && pts[0] === pts[2 * n - 2] && pts[1] === pts[2 * n - 1]) {
-      const c = cleanRing(pts.slice(0, -2));
-      if (c.length >= 6) { const r = rotateStart(area2(c) < 0 ? reverseRing(c) : c); return r.concat([r[0], r[1]]); }
-      // degenerate closed path (out-and-back): fall through and keep it as an open polyline
-    }
+    if (n > 2 && pts[0] === pts[2 * n - 2] && pts[1] === pts[2 * n - 1]) return canonClosed(pts.slice(0, -2));
     const keep = [pts[0], pts[1]];
     for (let i = 1; i < n - 1; i++) {
       const ax = keep[keep.length - 2], ay = keep[keep.length - 1], bx = pts[2 * i], by = pts[2 * i + 1], cx = pts[2 * i + 2], cy = pts[2 * i + 3];
@@ -575,14 +582,42 @@
     const m = keep.length;
     return keep[m - 2] < keep[0] || (keep[m - 2] === keep[0] && keep[m - 1] < keep[1]) ? reverseRing(keep) : keep;
   }
+  /**
+   * c: a cycle of ≥ 2 points without its closing point, no two consecutive points equal (cyclically).
+   * Drops pass-through collinear vertices only: removing one never changes the direction of the edges
+   * around its neighbours, so one pass over the original neighbours is exact.
+   */
+  function canonClosed(c) {
+    const n = c.length >> 1, v = [];
+    for (let i = 0; i < n; i++) {
+      const p = (i + n - 1) % n, q = (i + 1) % n;
+      const ux = c[2 * i] - c[2 * p], uy = c[2 * i + 1] - c[2 * p + 1], wx = c[2 * q] - c[2 * i], wy = c[2 * q + 1] - c[2 * i + 1];
+      if (n > 2 && ux * wy - uy * wx === 0 && ux * wx + uy * wy > 0) continue;
+      v.push(c[2 * i], c[2 * i + 1]);
+    }
+    const a = area2(v), dirs = a > 0 ? [v] : a < 0 ? [reverseRing(v)] : [v, reverseRing(v)];
+    let mx = v[0], my = v[1];
+    for (let i = 2; i < v.length; i += 2) if (v[i] < mx || (v[i] === mx && v[i + 1] < my)) { mx = v[i]; my = v[i + 1]; }
+    let best = null;
+    for (const d of dirs) for (let i = 0; i < d.length; i += 2) {
+      if (d[i] !== mx || d[i + 1] !== my) continue;
+      const r = d.slice(i).concat(d.slice(0, i));
+      if (!best || cmpSeq(r, best) < 0) best = r;
+    }
+    return best.concat([mx, my]);
+  }
   C.canonPolyline = canonPolyline;
 
   /** The three word sections of one layer: {head: index + material, score, holes}. */
   function layerSections(L) {
     checkCoord(L.index);
+    if (L.index < 0) throw new Error("SBGeom.canonicalBytes: negative layer index " + L.index);
     const mat = L.material || [];
     for (const p of mat) { checkRing(p.outer); for (const h of p.holes || []) checkRing(h); }
-    const head = [L.index], polys = C.normalize(mat);
+    const st = { orphans: 0 }, head = [L.index], polys = normalizeWith(mat, st);
+    // Amendment C: never lose input silently. A hole with no containing outer cannot occur on
+    // boolean-resolved input; anywhere else it would vanish from the hash, so it throws.
+    if (st.orphans) throw new Error("SBGeom.canonicalBytes: " + st.orphans + " hole(s) of layer " + L.index + " lie in no outer (input is not boolean-resolved)");
     head.push(polys.length);
     for (const p of polys) {
       head.push(1 + p.holes.length);
@@ -593,7 +628,7 @@
     sc.sort(cmpSeq);
     const score = [sc.length];
     for (const s of sc) { score.push(s.length >> 1); for (const v of s) score.push(v); }
-    const hs = (L.holes || []).map((h) => { checkCoord(h.cxUm); checkCoord(h.cyUm); checkCoord(h.rUm); return [h.cyUm, h.cxUm, h.rUm]; }).sort(cmpSeq);
+    const hs = (L.holes || []).map((h) => { checkCoord(h.cxUm); checkCoord(h.cyUm); checkCoord(h.rUm); if (h.rUm <= 0) throw new Error("SBGeom.canonicalBytes: registration hole radius must be > 0 µm: " + h.rUm); return [h.cyUm, h.cxUm, h.rUm]; }).sort(cmpSeq);
     const holes = [hs.length];
     for (const h of hs) holes.push(h[1], h[0], h[2]);
     return { head, score, holes };
