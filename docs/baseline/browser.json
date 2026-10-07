@@ -1,0 +1,18 @@
+{
+  "product": "Chrome/152.0.7977.82",
+  "protocolVersion": "1.3",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36",
+  "jsVersion": "15.2.124.21",
+  "headless": "--headless=new",
+  "viewport": {
+    "width": 1440,
+    "height": 900,
+    "deviceScaleFactor": 1
+  },
+  "url": "http://127.0.0.1:8939/index.html",
+  "pipelineStatus": "720×544px · 5 sheets · 0 bridged · 5 culled · 7.94 m of cuts · 883 ms",
+  "exportStatus": "saved night-over-the-valley_shadowbox.zip to your downloads",
+  "zip": "night-over-the-valley_shadowbox.zip",
+  "serviceWorkerRegistrations": 0,
+  "pageExceptions": []
+}

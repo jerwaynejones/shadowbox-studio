@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Shadowbox Studio export — RED = cut, BLUE = score -->
+<svg xmlns="http://www.w3.org/2000/svg" width="324mm" height="250.667mm" viewBox="0 0 324 250.667">
+<g fill="none" stroke="#FF0000" stroke-width="0.1">
+<rect x="0" y="0" width="324" height="250.667"/>
+<circle cx="6" cy="6" r="2"/>
+<circle cx="318" cy="6" r="2"/>
+<circle cx="6" cy="244.667" r="2"/>
+<circle cx="318" cy="244.667" r="2"/>
+</g>
+<g><text x="2" y="248.667" font-family="monospace" font-size="4" fill="none" stroke="#0000FF" stroke-width="0.1">night-over-the-valley 1/5</text></g>
+</svg>

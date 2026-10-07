@@ -118,12 +118,52 @@ Fixture `borderTouch` (8×5 px, layer 1 = a 5×2 px block in the top-left corner
 | `preview` | rework for proof mode |
 | `app` | controller rework |
 
-## Manual preview capture
+## Preview capture (T0.7 Step 2)
 
-**Pending (manual step).** Load the demo on `localhost` (the service worker is skipped
-there since T0.2), then save one preview PNG and the exported ZIP to `docs/baseline/`.
-Record here:
+**Done, automated** (no manual browser session needed). Captured on 2026-10-07 at the
+working tree of `9a883f3` (app `v1.1.0`) by `node tools/capture_baseline.mjs`.
 
-- Browser and version: _to be recorded_
-- Preview PNG: `docs/baseline/` _to be added_
-- Exported ZIP: `docs/baseline/` _to be added_
+- Browser and version: **Chromium 152.0.7977.82 (Arch Linux)**, headless (`--headless=new`),
+  DevTools product `Chrome/152.0.7977.82`, V8 `15.2.124.21`, user agent
+  `HeadlessChrome/152.0.0.0` on X11 Linux x86_64. Viewport 1440×900, device scale factor 1.
+  Full record: `docs/baseline/browser.json`. (Firefox 155.0.1 is also installed; not used.)
+- Host: `http://127.0.0.1:<random port>/index.html` served by `python3 -m http.server`
+  from the repo root. Service-worker registrations after load: **0** (the T0.2 local-host
+  skip works). Page exceptions: none.
+- Scene: the built-in demo the app opens on (`night-over-the-valley`, default settings —
+  see `docs/baseline/export/settings.json`). Status line after the pipeline:
+  `720×544px · 5 sheets · 0 bridged · 5 culled · 7.94 m of cuts` (timing omitted).
+
+Steps the script performs:
+
+1. Serve the repo on `127.0.0.1`; launch `chromium --headless=new --remote-debugging-port=0`
+   with a throw-away profile and drive it over the DevTools protocol (Node's built-in
+   `WebSocket`, no npm packages).
+2. Navigate to `index.html`; wait until `#statusline` stops ending in `…`; wait 1.5 s.
+3. Save the `#stackcanvas` pixels (`canvas.toBlob("image/png")`, same call as the app's
+   `preview.snapshot()`) to `preview_stack.png`, and a viewport screenshot to
+   `app_screenshot.png`.
+4. Click `#btn-export` ("Download cut files (.zip)"); capture the browser download
+   (`Browser.setDownloadBehavior`) into `docs/baseline/`.
+5. The ZIP was then unpacked into `docs/baseline/export/` (`unzip -d export`).
+
+Artifacts (`docs/baseline/`):
+
+| File | SHA-256 |
+|---|---|
+| `preview_stack.png` (= `export/preview.png`) | `39e2eadfc4b612ce271ef908eeaaecbd4c1e5e89e13317e71522a963e1e4a655` |
+| `app_screenshot.png` | `c4d3c839f23746b01f5f56eafc20370b6039c2760e82832bd3f4a25a72b15608` |
+| `night-over-the-valley_shadowbox.zip` | `39de248f8418111632105add46648b3ea64071e9af35a06d81e1fdff24c07cd9` |
+| `export/sheet_01.svg` | `26389cd5533585defcfc44824dff929c9ba0d74425d65f433a7c90b2786b6279` |
+| `export/sheet_02.svg` | `36af244259815a49272deeac47762d064d639c694d8735b7051c88adf710cf4c` |
+| `export/sheet_03.svg` | `d6c417cc7c6e54dce9f4e037bcb0a7c36ce249993631c7aeeb4ae322b54a17fd` |
+| `export/sheet_04.svg` | `93218c5bac095a010984d558ba8ce6668d2b9890e8f488766c32588613eba10c` |
+| `export/sheet_05.svg` | `94dd0c6624d9e5909ad7f0ad24ecd1b8bef2da611db7d3ee8cecc76226ca28ea` |
+| `export/proof.svg` | `aa6be2fe62f107193f4e5b0a6906fb3ed747ed910da8a4ce30b837397dbff8d9` |
+| `export/ASSEMBLY.md` | `911df0eda33fa51cd90e6f716f1fde308c0e92723b5e561dccf97045001a7e95` |
+| `export/settings.json` | `301d52f0f83d1417e6daa12b966674a51d43ad7d639b974c75ece8ff187177e8` |
+
+Reproducibility: a second run produced byte-identical PNG and every extracted file; only
+the ZIP container differed (entry modification timestamps). `app_screenshot.png` shows
+today's date in the title block, so it differs from day to day. These are visual/reference
+baselines, not test goldens; the hashed regression goldens remain `test/golden/*.json`.

@@ -1,0 +1,21 @@
+{
+  "projectName": "night-over-the-valley",
+  "sourceName": "demo scene",
+  "procRes": 720,
+  "smoothRadius": 4,
+  "smoothPasses": 2,
+  "nSheets": 5,
+  "thresholdMode": "balanced",
+  "darkFront": true,
+  "palette": "Midnight (Starry Night)",
+  "widthMM": 300,
+  "marginMM": 12,
+  "minFeatureMM": 1.2,
+  "bridgeMM": 1.8,
+  "cullBelowMM2": 9,
+  "maxBridgeMM": 40,
+  "holes": true,
+  "holeDiaMM": 4,
+  "cornerStyle": "smooth",
+  "detailEps": 0.8
+}
