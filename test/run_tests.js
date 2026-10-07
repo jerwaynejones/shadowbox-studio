@@ -32,15 +32,8 @@ function checkAsync(name, p) {
 }
 function suite(name, fn) { queue.push([name, fn]); }
 
-// helper: build a mask from ASCII art ('#' = material)
-function art(rows) {
-  const h = rows.length, w = rows[0].length;
-  const m = new Uint8Array(w * h);
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++)
-      m[y * w + x] = rows[y][x] === "#" ? 1 : 0;
-  return { m, w, h };
-}
+// helper: build a mask from ASCII art ('#' = material) — lives in fixtures.js
+const { art } = require("./fixtures.js");
 
 // ---------------------------------------------------------------- zip/crc
 section("zip.js — CRC-32 and archive structure");
@@ -289,6 +282,23 @@ suite("build — hygiene (four-list rule, inline bundle, versions)", () => {
   check("DEP-02 sw.js VERSION == APP_VERSION",
     sw.match(/const VERSION\s*=\s*"([^"]+)"/)[1] === app.match(/const APP_VERSION\s*=\s*"([^"]+)"/)[1]);
   check("dev: service worker skipped on localhost", /localhost|127\.0\.0\.1/.test(app.slice(app.indexOf("function registerServiceWorker"))));
+});
+
+// ------------------------------------------------ fixtures (T0.3)
+suite("fixtures — determinism", () => {
+  const F = require("./fixtures.js");
+  const a = F.randomNestedStack(F.lcg(42), 24, 16, 5), b = F.randomNestedStack(F.lcg(42), 24, 16, 5);
+  check("fixtures: seeded stack identical across calls", a.every((m, k) => m.every((v, i) => v === b[k][i])));
+  check("fixtures: random stack is nested", a.every((m, k) => k === 0 || m.every((v, i) => !v || a[k - 1][i])));
+  const png = F.pngEncode({ w: 5, h: 1, colorType: 0, bitDepth: 8, data: Uint8Array.from([0, 64, 128, 191, 255]) });
+  check("fixtures: PNG signature", png[0] === 0x89 && png[1] === 0x50 && png[2] === 0x4e && png[3] === 0x47);
+  const j = F.jpegHeader({ w: 640, h: 480, exif: 6 });
+  check("fixtures: JPEG SOI", j[0] === 0xff && j[1] === 0xd8);
+  check("fixtures: all named masks present",
+    ["donutIsland","crescent","crescentInterior","borderTouch","lowerHoleUnderPart","emptyIntermediate","orientationF","diagonalTouch","looseBridge"]
+      .every((k) => F.MASKS[k] && F.MASKS[k].layers.length >= 2));
+  const ci = F.MASKS.crescentInterior;
+  check("fixtures: crescentInterior does not touch the border", [0, ci.w - 1].every((x) => [...Array(ci.h).keys()].every((y) => !ci.layers[1][y * ci.w + x])));
 });
 
 // ------------------------------------------------------------------ report
