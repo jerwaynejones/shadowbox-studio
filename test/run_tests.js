@@ -802,6 +802,16 @@ suite("spike S6 — NFR-05 static scan of the hashed path", () => {
 });
 
 // ------------------------------------------------------------- png.js (S4)
+// ------------------------------------------------ frame contact and saddles (spike S5, decision D3)
+suite("spike S5 — trace saddles & frame contact (GEO-02/03, AT-06)", () => {
+  const F = require("./fixtures.js");
+  const d = F.MASKS.diagonalTouch;
+  check("S5 trace of diagonal-only contact yields two outer loops", SBTrace.trace(d.layers[1], d.w, d.h).length === 2);
+  const polys = SBGeom.normalize(SBGeom.union(SBGeom.fromPixelLoops(SBTrace.trace(d.layers[1], d.w, d.h), 1000, 1000, 0, 0), []));
+  check("AT-06 diagonal-only contact = 2 components", SBGeom.components(polys).length === 2);
+  check("GEO-03 diagonal-only contact validates (simple rings)", SBGeom.validate(polys).ok);
+});
+
 suite("spike S4 — png.js raw decode and inspection, plan checks (IMG-01/02/05/07, AT-02/22)", () => {
   const F = require("./fixtures.js");
   const g = (opts) => F.pngEncode({ w: 5, h: 1, colorType: 0, bitDepth: 8, data: Uint8Array.from([0, 64, 128, 191, 255]), ...opts });

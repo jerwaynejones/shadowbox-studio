@@ -199,6 +199,11 @@ Each decision is recorded here by the spike that owns it, with its measurement t
 Product-owner direction accepted on 2026-10-07 (plan Appendix B) is noted; the final
 decision text is filled in when the spike lands.
 
+**Gate status (2026-10-07): G1 is gated.** The plan's gate rule requires S1, S2, S5 and S6
+merged with their decisions recorded before G1 starts. D2 (S1) and D4 (S6) are recorded.
+D1 (S2) awaits a product-owner decision, and D3 (S5) awaits a review of S5 revision 2 and
+then a decision. G1 does not start until both are recorded here.
+
 ### D1 — Smoothing rule
 
 - Owner: spike S2 (recorded in G1.2 checks).
@@ -237,7 +242,7 @@ Supplementary (no plan target): single 50k × 58k difference p95 0.24 s (a) / 0.
 
 Contract notes recorded with this decision:
 
-1. **Canonical re-chaining (feeds D3, D4).** Raw Clipper2 chaining at vertex contacts is not canonical (seed 23: two diagonally touching pieces came back as one outer with a vertex-touching hole, so `components` said 1 instead of 2). `SBGeom` re-chains every result: at each vertex shared by several boundary edges, the arriving edge continues on the sharpest left turn (exact integer cross/dot products), then splits saddles. The normalized output — and therefore any geometry hash — depends only on the edge set, not on the backend. Pinned by the 240-case property check `components(L_(k−1) − L_k) = 4-connected pixel components` in suite "spike S1". Known limit: a vertex touching the interior of another ring's edge (T-contact) is not re-chained; it did not occur in any test (S5 to confirm).
+1. **Canonical re-chaining (feeds D3, D4).** Raw Clipper2 chaining at vertex contacts is not canonical (seed 23: two diagonally touching pieces came back as one outer with a vertex-touching hole, so `components` said 1 instead of 2). `SBGeom` re-chains every result: at each vertex shared by several boundary edges, the arriving edge continues on the sharpest left turn (exact integer cross/dot products), then splits saddles. The normalized output — and therefore any geometry hash — depends only on the edge set, not on the backend. Pinned by the 240-case property check `components(L_(k−1) − L_k) = 4-connected pixel components` in suite "spike S1". Known limit at S1: a vertex touching the interior of another ring's edge (T-contact) was not re-chained. Closed by spike S6: `SBGeom` now inserts T-contact vertices before re-chaining (see D4, "T-contacts").
 2. **Offset joins (GEO-05).** `"miter"` (limit 2.0) is exact on the pixel lattice: every 90° corner stays square. It is the join for exact lattice semantics. `"square"` is Clipper2's squared (chamfered) corner, not a Chebyshev square: +200 µm on a 1000² square gives 1,932,622 µm², against 1,960,000 for miter. `"round"` is refused (NFR-05).
 3. **Circles (NFR-05, ASM-04).** `SBGeom.circle` rounds each offset `r·t/1e6` half away from zero in exact integer arithmetic, so the ring is 8-fold symmetric about the centre even on exact .5 ties (plain `Math.round(cx + r·t/1e6)` is not: r = 500,000 µm breaks it). The ring is cleaned like any output, so it has 64 vertices for every radius ≥ 232 µm (checked to 200 mm); below that, rounding makes some vertices coincide or fall collinear and they are removed. It validates at every radius checked (1 µm–20 mm). Centre and radius must be integers.
 
@@ -245,12 +250,15 @@ Contract notes recorded with this decision:
 
 - Owner: spikes S1 and S5; GEO-02 thresholds used by G2.7.
 - Accepted direction (Appendix B.3): support overlap that does not survive a 0.5 µm inward offset blocks export; one that does not survive `minFeatureMM/2` warns. Vertex-touching rings (pixel saddles) are split into simple rings during normalization.
-- **Status (2026-10-07): blocked.** The spike S5 rework (revision 2, `docs/spikes/S5.md`, `spikes/S5/`) did not return a reviewed result to the integration step (rework result: undefined; review approved: n/a), so its proposed D3 wording is not adopted and nothing was added to `js/geom.js`. Open issues:
+- **Status (2026-10-07): blocked.** Spike S5 revision 2 (`docs/spikes/S5.md`, `spikes/S5/`) has not been reviewed, so its proposed D3 wording is not adopted and nothing from it was added to `js/geom.js`. Open issues:
   1. **Review of S5 revision 2 outstanding.** Its corrected normalize rule (node T-contacts → re-pair every shared vertex with the material-separating turn → split remaining repeats → clean/orient/nest/sort), the `interiorConnected` one-part test (`GEO_MULTIPART`) and the exactly certified `survivesInset` must be reviewed before they enter `SBGeom`.
-  2. **Reconcile with the shipped D2 re-chaining.** `js/geom.js` re-chains with the "sharpest left turn" (D2 note 1); S5 specifies the "right-most" turn under Y-down outer-positive orientation. Confirm these are the same rule under the shipped conventions, and close the D2 known limit: T-contacts are not re-chained today, while S5 nodes them first.
-  3. **Finite-width threshold semantics.** S5 defines width as w = 2·r\* (largest inscribed disk): block if w < 0.5 µm (does not survive a 0.25 µm inset), warn `SUPPORT_NARROW` if w < `minFeatureUm`. This differs from the Appendix B.3 reading "does not survive a 0.5 µm inward offset" and from the plan's G2.7 line "survives `offset(−0.5 µm)`"; a 1 µm overlap would warn rather than block. Needs product-owner confirmation.
+  2. **Reconcile the turn rule with the shipped re-chaining.** `js/geom.js` re-chains with the "sharpest left turn" (D2 note 1); S5 specifies the "right-most" turn under Y-down outer-positive orientation. Confirm these are the same rule under the shipped conventions. T-contacts are already handled: `splitTJunctions` (spike S6) inserts them before re-chaining (D4, "T-contacts"), so S5's noding step adds nothing new there.
+  3. **Finite-width threshold semantics.** The open question is whether the 0.5 µm in Appendix B.3 and the plan's G2.7 line is a contact *width* or an *inset distance*. B.3 states it both ways: "< 0.5 µm overlap blocks" (a width) and, in its default, "does not survive an inward offset of 0.5 µm" (an inset), as does G2.7 ("survives `offset(−0.5 µm)`").
+     - Width reading (S5 revision 2): w = 2·r\* (largest inscribed disk); block if w < 0.5 µm, i.e. the contact does not survive a 0.25 µm inset; warn `SUPPORT_NARROW` if w < `minFeatureUm` (inset `minFeatureUm/2`, matching B.3's warning clause). S5 argues this makes B.3's two clauses consistent. A 1 µm overlap warns.
+     - Inset reading: block if the contact does not survive a 0.5 µm inset, i.e. w < 1 µm. A 1 µm overlap is at the limit.
+     The product owner picks one; G2.7 is then edited to match.
   4. **No sub-µm `offset`.** S5 F4 shows Clipper2 `inflatePaths` at |delta| < 1 µm is orientation- and shape-dependent (empty, wrong, or unchanged); the GEO-02 test must not be built on `SBGeom.offset`, and `offset` should refuse non-integer deltas. Pending review with item 1.
-- Unchanged and not blocked: `SBTrace.trace` keeps diagonal-only contact as separate loops (the three plan S5 checks pass), so G1.1 needs no `SBMorph` pre-split.
+- Unchanged and not blocked: `SBTrace.trace` keeps diagonal-only contact as separate loops, so G1.1 needs no `SBMorph` pre-split. Pinned by the three plan S5 checks in suite "spike S5 — trace saddles & frame contact (GEO-02/03, AT-06)" in `test/run_tests.js`.
 
 ### D4 — Hash scope
 
