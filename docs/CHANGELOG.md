@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Baseline (G0): upstream `f0552c7` frozen, characterization checks and persisted
+  goldens (including the legacy `sheetSVG`/`proofSVG` shims), license check and per-module
+  reuse decisions. See [docs/BASELINE.md](BASELINE.md).
+
 ## v1.1.0 — 2026-07-09
 
 Installable PWA and a working export path on mobile.

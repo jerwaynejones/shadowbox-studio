@@ -1,0 +1,59 @@
+{
+ "capturedFrom": "f0552c7",
+ "cases": [
+  {
+   "name": "borderTouch",
+   "params": {
+    "pxW": 8,
+    "pxH": 5,
+    "widthMM": 80,
+    "marginMM": 10,
+    "holes": false,
+    "holeDiaMM": 3,
+    "label": "t"
+   },
+   "sheets": [
+    "66aa1fe94636386fab989997da925dff4836986fe69aec5293aa00103e3a8af2",
+    "c659a303787ba796ba963924db4917e7ec72c9b4c40ec55986044d39867aa605"
+   ],
+   "proof": "76d35d33a910a70ab64b92055707a1c935f27fda9871d206361c0fe9ef46dd43"
+  },
+  {
+   "name": "donutIsland",
+   "params": {
+    "pxW": 9,
+    "pxH": 9,
+    "widthMM": 90,
+    "marginMM": 10,
+    "holes": true,
+    "holeDiaMM": 3,
+    "label": "donut"
+   },
+   "sheets": [
+    "77c8d06b7399414ea118caa7f7323582a2fd86cc1d6efb34ce6cfea3bbd4b233",
+    "096296833ae7c2580b2dbc5f24a9d97722fa645fc09a5148ab5d611af0834ff8"
+   ],
+   "proof": "db2f8597cd1c615cd8d6b3903dde4304fbf39f088c79ef1f2b629861ce147934"
+  },
+  {
+   "name": "legacyRunRGBA",
+   "params": {
+    "pxW": 40,
+    "pxH": 30,
+    "widthMM": 120,
+    "marginMM": 12,
+    "holes": true,
+    "holeDiaMM": 3,
+    "label": "baseline"
+   },
+   "sheets": [
+    "693242c96cf7156ce0d4f0b19b13ab8a3eb34d87cefb9beb651460df545538c8",
+    "270f9862cab2a13d257bce568112ebeacb46fc2b00b0ceb7875d4f3eb15d22bc",
+    "33d82a683efc4e0fb703922fc4d60cb9d01093caf0116ccf834902f6a1da3c68",
+    "30cddc8e93c31245f51da8b6dfb89e8840c92e499e5fa5ad10146a4397068582",
+    "95ddf4460f2ae3f7416a53e03537fd611e75796b507efd0de9b936260dc410ec"
+   ],
+   "proof": "7decf6ebcd95b87c8bf60682070e6a02a821fefe233aa58030e2700f29da8dec"
+  }
+ ]
+}

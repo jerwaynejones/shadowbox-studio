@@ -350,6 +350,14 @@ suite("engine.js — legacyRun seam (NFR-10, DEP-04)", () => {
     (s.bridges ? H(s.bridges) : null) === G.sheets[k].bridges));
 });
 
+// ------------------------------------------------ legacy SVG shims frozen (T0.7)
+suite("baseline — legacy sheetSVG/proofSVG goldens (T0.7)", () => {
+  let G = null; try { G = require("./golden/legacy_svg.json"); } catch (e) { /* missing golden fails below */ }
+  const cur = require("./legacy_svg_cases.js").legacySvgCases();
+  check("G0 legacy sheetSVG/proofSVG byte-identical to goldens (3 fixtures)", !!G && G.cases.length === 3 &&
+    cur.length === 3 && cur.every((c, i) => JSON.stringify(c) === JSON.stringify(G.cases[i])));
+});
+
 // ------------------------------------------------ hash (T0.6)
 suite("hash.js — SHA-256 (GEO-09, EXP-06, NFR-05)", async () => {
   const enc = (s) => new TextEncoder().encode(s), node = (s) => require("crypto").createHash("sha256").update(s).digest("hex");
