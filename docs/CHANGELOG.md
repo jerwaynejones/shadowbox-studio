@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **G2.4b, legacy settings adapter (engine only; import UI lands in G3.8):**
+  `SBSchema.fromLegacySettings(json)` maps a v1.1.0 `settings.json` onto the project model as
+  tonal + connected-sheet (acrylic preset base): sheets, threshold rule, polarity, smoothing,
+  palette, frame from `marginMM`, cleanup/bridge, registration holes, `faceted` → `sharp`,
+  `sizeBy: "width"` with `targetMM` = page width (art + 2 × margin), and the default
+  `xtool-s1-feeder` machine (an oversized piece is reported by the envelope check, never
+  rescaled). Missing keys take the v1.1.0 defaults; an unrecognised `thresholdMode` keeps the
+  v1.1.0 balanced fallback. The whole original JSON is kept in `extras.legacy`. Until a source is
+  attached `geometry.heightMM` is `null` and `LEGACY_NEEDS_SOURCE` (blocking) is raised
+  (`SBSchema.legacyDiagnostics`). `SBSchema.resolveLegacy(project, srcW, srcH)` sets the height
+  from the source aspect, `fabPitchMM` = long side / `procRes` on the 0.001 mm grid (so a v1.1.0
+  project keeps its resolution: 300 × 200 mm at 720 → 0.417 mm/px) and `toleranceMM` =
+  max(0.05, `detailEps` × width / the real v1.1.0 working width, portrait included). The AT-21
+  guarantee is **same bands, polarity and connected semantics**, not byte-identical masks end to
+  end: v1.1.0 resampled twice on a canvas (the 2000 px pre-cap, then `procRes`), which the new
+  single deterministic resample does not reproduce.
+
 - **G2.4, tonal path (engine only; not yet wired into the app):** `SBRaster.thresholds(L, N,
   mode, {manual, domain})` adds `manual` thresholds (N−1 normalized values in [0, 1],
   non-decreasing, × 255; a descending list is rejected with `THRESHOLD_ORDER`, a wrong count or

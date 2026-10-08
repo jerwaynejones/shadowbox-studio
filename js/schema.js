@@ -28,6 +28,14 @@
  *   SBSchema.toMM / fromMM           lossless units, quantized to 0.001 mm.
  *   SBSchema.modeChangeDiff(p, patch) → [{path, from, to, reason}] (G2.11e).
  *   SBSchema.sourceTemplate()        a valid placeholder `source` record.
+ *   SBSchema.fromLegacySettings(json) → {project, diagnostics}: v1.1.0
+ *                                    settings.json → tonal + connected-sheet
+ *                                    (DEP-04, G2.4b); heightMM null raises
+ *                                    LEGACY_NEEDS_SOURCE; original JSON kept
+ *                                    in extras.legacy.
+ *   SBSchema.resolveLegacy(p, w, h)  → project with heightMM, the legacy pitch
+ *                                    (longSide/procRes) and toleranceMM.
+ *   SBSchema.legacyDiagnostics(p)    → [LEGACY_NEEDS_SOURCE] or [].
  *
  * Notes binding later tasks:
  *  - D1: bonded mode is unsmoothed; the plywood preset's cornerStyle is
@@ -44,7 +52,8 @@
  *    (G2.10a), not a schema error: the schema only checks the profile itself.
  *
  * Errors thrown by helpers carry e.code: SCHEMA_PRESET, SCHEMA_SIZE,
- * SCHEMA_DEVICE, SCHEMA_UNIT, SCHEMA_MODE. No other SB* global is used.
+ * SCHEMA_DEVICE, SCHEMA_UNIT, SCHEMA_MODE, SCHEMA_LEGACY. SBDiag is looked up
+ * at call time (legacy diagnostics only); no other SB* global is used.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -356,6 +365,82 @@
     }
     project.extras = extras;
     return { project, movedToExtras };
+  };
+
+  // ------------------------------------------------------------ legacy settings.json v1.1.0 (DEP-04, AT-21; G2.4b)
+  // The v1.1.0 app.js state defaults for the settingsJSON() keys: a key missing from an imported file takes its v1.1.0 value.
+  const LEGACY_DEFAULTS = deepFreeze({
+    projectName: "untitled", sourceName: null, procRes: 720, smoothRadius: 4, smoothPasses: 2, nSheets: 5,
+    thresholdMode: "balanced", darkFront: true, palette: "Midnight (Starry Night)", widthMM: 300, marginMM: 12,
+    minFeatureMM: 1.2, bridgeMM: 1.8, cullBelowMM2: 9, maxBridgeMM: 40, holes: true, holeDiaMM: 4,
+    cornerStyle: "smooth", detailEps: 0.8,
+  });
+  const grid = (v) => Math.round(v * 1000) / 1000;
+  const r6 = (v) => Math.round(v * 1e6) / 1e6;
+  const isLegacy = (p) => isObj(p) && isObj(p.extras) && isObj(p.extras.legacy);
+
+  /** [LEGACY_NEEDS_SOURCE] while a legacy import has no source-derived height (heightMM null), else []. */
+  S.legacyDiagnostics = function (p) {
+    return isLegacy(p) && isObj(p.geometry) && p.geometry.heightMM === null
+      ? [global.SBDiag.make("LEGACY_NEEDS_SOURCE", { detail: "settings.json v1.1.0 has no image; dimensions resolve when its source is attached" })]
+      : [];
+  };
+
+  /**
+   * v1.1.0 settings.json → {project, diagnostics}. Tonal + connected-sheet on the acrylic preset; the whole original JSON is
+   * kept in extras.legacy; geometry.heightMM stays null (LEGACY_NEEDS_SOURCE) until resolveLegacy. Never rescales: an
+   * oversized piece is left to the machine-envelope check. Throws SCHEMA_LEGACY for a non-object.
+   */
+  S.fromLegacySettings = function (json) {
+    if (!isObj(json)) throw fail("SCHEMA_LEGACY", "legacy settings must be a JSON object");
+    const L = Object.assign({}, LEGACY_DEFAULTS);
+    for (const k of Object.keys(LEGACY_DEFAULTS)) if (json[k] !== undefined) L[k] = json[k];
+    const p = PRESETS.acrylic();
+    p.title = typeof L.projectName === "string" ? L.projectName : LEGACY_DEFAULTS.projectName;
+    const it = p.interpretation;
+    it.mode = "tonal";
+    it.polarity = L.darkFront ? "dark-front" : "light-front";
+    it.thresholdRule = L.thresholdMode === "linear" ? "linear" : "balanced";   // v1.1.0: anything but linear bands as balanced
+    it.smoothing = { radius: L.smoothRadius, passes: L.smoothPasses };
+    const c = p.construction;
+    c.mode = "connected-sheet";
+    c.sheets = L.nSheets;
+    c.frame = { enabled: L.marginMM > 0, widthMM: L.marginMM };
+    // v1.1.0 legacyRun: speck = max(4 px, cull·0.5), hole fill = minFeature²·2 (the acrylic preset's derivation).
+    c.cleanup = { minFeatureMM: L.minFeatureMM, speckMM2: r6(L.cullBelowMM2 * 0.5), holeMM2: r6(L.minFeatureMM * L.minFeatureMM * 2),
+      cornerStyle: L.cornerStyle === "faceted" ? "sharp" : "smooth", toleranceMM: c.cleanup.toleranceMM };
+    c.bridge = { bridgeMM: L.bridgeMM, cullBelowMM2: L.cullBelowMM2, maxBridgeMM: L.maxBridgeMM, cullEnabled: false };
+    c.registration = Object.assign(c.registration, { enabled: !!L.holes, diaMM: L.holeDiaMM });
+    p.material.minFeatureMM = L.minFeatureMM;
+    p.material.advisoryFeatureMM = L.minFeatureMM;
+    p.material.minPartMM2 = L.cullBelowMM2;
+    p.appearance.mode = "palette";
+    if (typeof L.palette === "string") p.appearance.palette = L.palette;
+    const g = p.geometry;
+    g.sizeBy = "width"; g.lockAspect = true;
+    g.widthMM = L.widthMM; g.heightMM = null;
+    g.targetMM = grid(L.widthMM + (L.marginMM > 0 ? 2 * L.marginMM : 0));   // page width = art + frame on both sides
+    p.machine = clone(S.MACHINES[S.DEFAULT_MACHINE]);
+    p.extras = { legacy: clone(json) };
+    return { project: p, diagnostics: S.legacyDiagnostics(p) };
+  };
+
+  /**
+   * Attach the (oriented) source size to a legacy import: heightMM from the aspect, fabPitchMM = the v1.1.0 pitch
+   * longSideMM / procRes on the 0.001 mm grid, toleranceMM = max(0.05, detailEps × widthMM / working width px), where the
+   * working width is v1.1.0's max(32, round(srcW·procRes / max(srcW, srcH))). Returns a new project; input not mutated.
+   */
+  S.resolveLegacy = function (project, srcW, srcH) {
+    if (!isLegacy(project)) throw fail("SCHEMA_LEGACY", "resolveLegacy needs a project from fromLegacySettings (extras.legacy)");
+    const p = clone(project);
+    const leg = Object.assign({}, LEGACY_DEFAULTS, p.extras.legacy);
+    const sz = S.resolveSize(p, srcW, srcH);   // validates the source size (SCHEMA_SIZE) and range-checks both art axes
+    const g = p.geometry;
+    g.widthMM = sz.artWMM; g.heightMM = sz.artHMM;
+    g.fabPitchMM = grid(Math.max(sz.artWMM, sz.artHMM) / leg.procRes);
+    const workW = Math.max(32, Math.round(srcW * leg.procRes / Math.max(srcW, srcH)));
+    p.construction.cleanup.toleranceMM = grid(Math.max(0.05, leg.detailEps * sz.artWMM / workW));
+    return p;
   };
 
   // ------------------------------------------------------------ geometry key (PRJ-02, D4)

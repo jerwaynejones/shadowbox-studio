@@ -2763,6 +2763,98 @@ suite("schema.js — G2.1 extended (strict keys, presets, sizing, units, geometr
   check("PRJ-02 modeChangeDiff rejects an unknown mode", codeOf(() => S.modeChangeDiff(p, { construction: { mode: "glued" } })) === "SCHEMA_MODE");
 });
 
+suite("schema.js — G2.4b legacy settings adapter: fromLegacySettings, resolveLegacy (DEP-04, AT-21, PO-LASER-4)", () => {
+  const S = SBSchema;
+  // The v1.1.0 settings.json keys, read from the settingsJSON() keep list in js/app.js (the exporter itself).
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8");
+  const keepM = /function settingsJSON\(\)\s*\{\s*const keep = \[([\s\S]*?)\];/.exec(appSrc);
+  const KEYS = keepM ? Array.from(keepM[1].matchAll(/"([A-Za-z0-9]+)"/g), (m) => m[1]) : [];
+  const V110 = { projectName: "Starry", sourceName: "starry.jpg", procRes: 720, smoothRadius: 4, smoothPasses: 2, nSheets: 5,
+    thresholdMode: "balanced", darkFront: true, palette: "Midnight (Starry Night)", widthMM: 300, marginMM: 12, minFeatureMM: 1.2,
+    bridgeMM: 1.8, cullBelowMM2: 9, maxBridgeMM: 40, holes: true, holeDiaMM: 4, cornerStyle: "smooth", detailEps: 0.8 };
+  const imp = (o) => S.fromLegacySettings(JSON.parse(JSON.stringify(o)));
+  const noExtras = (p) => { const q = JSON.parse(JSON.stringify(p)); delete q.extras; return JSON.stringify(q); };
+  check("DEP-04 settingsJSON keep list found in js/app.js (19 keys) and matches the fixture", KEYS.length === 19 &&
+    KEYS.slice().sort().join() === Object.keys(V110).sort().join());
+
+  // Each key: changing it changes a mapped project field, or it is an extras-only key that resolveLegacy consumes.
+  const EXTRAS_ONLY = { sourceName: "other.png", procRes: 1000, detailEps: 1.6 };
+  const ALT = { projectName: "Renamed", smoothRadius: 6, smoothPasses: 3, nSheets: 7, thresholdMode: "linear", darkFront: false,
+    palette: "Ember", widthMM: 420, marginMM: 0, minFeatureMM: 2, bridgeMM: 2.5, cullBelowMM2: 20, maxBridgeMM: 60, holes: false,
+    holeDiaMM: 6, cornerStyle: "faceted" };
+  const base = imp(V110).project, baseR = S.resolveLegacy(base, 600, 400);
+  check("DEP-04 every settingsJSON key (app.js settingsJSON) is mapped or kept in extras", KEYS.every((k) => {
+    const o = Object.assign({}, V110); const p = imp(Object.assign(o, { [k]: k in ALT ? ALT[k] : EXTRAS_ONLY[k] })).project;
+    if (JSON.stringify(p.extras.legacy[k]) !== JSON.stringify(o[k])) return false;
+    if (k in ALT) return noExtras(p) !== noExtras(base);
+    if (k === "sourceName") return p.extras.legacy.sourceName === "other.png";
+    return noExtras(S.resolveLegacy(p, 600, 400)) !== noExtras(baseR);   // procRes, detailEps resolved later
+  }));
+  const { project: P, diagnostics: D } = imp(V110);
+  check("DEP-04 mapping: title, tonal + connected-sheet, polarity, thresholdRule, smoothing, sheets",
+    P.title === "Starry" && P.interpretation.mode === "tonal" && P.construction.mode === "connected-sheet" &&
+    P.interpretation.polarity === "dark-front" && imp(Object.assign({}, V110, { darkFront: false })).project.interpretation.polarity === "light-front" &&
+    P.interpretation.thresholdRule === "balanced" && P.interpretation.smoothing.radius === 4 && P.interpretation.smoothing.passes === 2 &&
+    P.construction.sheets === 5);
+  check("DEP-04 mapping: palette appearance, frame from margin, cleanup/bridge, registration, faceted → sharp",
+    P.appearance.mode === "palette" && P.appearance.palette === "Midnight (Starry Night)" &&
+    P.construction.frame.enabled === true && P.construction.frame.widthMM === 12 &&
+    imp(Object.assign({}, V110, { marginMM: 0 })).project.construction.frame.enabled === false &&
+    P.construction.cleanup.minFeatureMM === 1.2 && P.construction.bridge.bridgeMM === 1.8 && P.construction.bridge.cullBelowMM2 === 9 &&
+    P.construction.bridge.maxBridgeMM === 40 && P.construction.registration.enabled === true && P.construction.registration.diaMM === 4 &&
+    P.construction.cleanup.cornerStyle === "smooth" &&
+    imp(Object.assign({}, V110, { cornerStyle: "faceted" })).project.construction.cleanup.cornerStyle === "sharp");
+  check("DEP-04 mapping: sizeBy width, widthMM = art width, targetMM = page width, default machine profile",
+    P.geometry.sizeBy === "width" && P.geometry.widthMM === 300 && P.geometry.targetMM === 324 && P.geometry.lockAspect === true &&
+    JSON.stringify(P.machine) === JSON.stringify(S.MACHINES["xtool-s1-feeder"]));
+  check("DEP-04 imported project validates", S.validate(P).ok);
+  check("DEP-04 legacy JSON preserved in extras", JSON.stringify(P.extras.legacy) === JSON.stringify(V110) &&
+    P.extras.legacy.sourceName === "starry.jpg" && P.extras.legacy.procRes === 720 && P.extras.legacy.detailEps === 0.8);
+  check("DEP-04 input JSON not mutated", (() => { const o = JSON.parse(JSON.stringify(V110)); S.fromLegacySettings(o); return JSON.stringify(o) === JSON.stringify(V110); })());
+  check("DEP-04 missing keys take the v1.1.0 defaults; unknown thresholdMode keeps the v1.1.0 balanced fallback", (() => {
+    const p = S.fromLegacySettings({}).project, q = S.fromLegacySettings({ thresholdMode: "median" }).project;
+    return S.validate(p).ok && p.title === "untitled" && p.construction.sheets === 5 && p.geometry.widthMM === 300 && p.geometry.targetMM === 324 &&
+      q.interpretation.thresholdRule === "balanced" && q.extras.legacy.thresholdMode === "median"; })());
+  check("DEP-04 non-object settings rejected (SCHEMA_LEGACY)", [null, 3, "x", []].every((v) => { try { S.fromLegacySettings(v); return false; } catch (e) { return e.code === "SCHEMA_LEGACY"; } }));
+
+  // heightMM null → LEGACY_NEEDS_SOURCE (blocking) until resolveLegacy.
+  check("DEP-04 heightMM null → LEGACY_NEEDS_SOURCE until resolveLegacy", P.geometry.heightMM === null &&
+    D.length === 1 && D[0].code === "LEGACY_NEEDS_SOURCE" && D[0].severity === "blocking" &&
+    S.legacyDiagnostics(P).length === 1 && S.legacyDiagnostics(P)[0].code === "LEGACY_NEEDS_SOURCE" &&
+    S.legacyDiagnostics(S.resolveLegacy(P, 600, 400)).length === 0 && S.legacyDiagnostics(S.defaults("acrylic")).length === 0);
+  const R = S.resolveLegacy(P, 600, 400);
+  check("DEP-04 resolveLegacy: heightMM from the source aspect, validates, input not mutated",
+    R.geometry.heightMM === 200 && R.geometry.widthMM === 300 && S.validate(R).ok && P.geometry.heightMM === null && P.geometry.fabPitchMM === 0.1);
+  check("DEP-04/PO-LASER-4 legacy procRes 720, 300 × 200 mm → sizeBy width, fabPitchMM 0.417",
+    R.geometry.sizeBy === "width" && R.geometry.fabPitchMM === 0.417);
+  check("DEP-04 portrait legacy pitch uses the long (height) side: 300 × 600 mm, procRes 720 → 0.833", S.resolveLegacy(P, 400, 800).geometry.fabPitchMM === 0.833 &&
+    S.resolveLegacy(P, 400, 800).geometry.heightMM === 600);
+  // toleranceMM = max(0.05, detailEps × widthMM / working width px); landscape working width = procRes.
+  check("DEP-04 landscape: toleranceMM = detailEps × widthMM / procRes (0.8 × 300 / 720 → 0.333)", R.construction.cleanup.toleranceMM === 0.333);
+  check("DEP-04 portrait source: toleranceMM uses real working width", (() => {
+    const t = S.resolveLegacy(P, 200, 400).construction.cleanup.toleranceMM;   // working width round(200·720/400) = 360 → 0.667, not 0.333
+    return t === 0.667; })());
+  check("DEP-04 toleranceMM floor 0.05", S.resolveLegacy(imp(Object.assign({}, V110, { detailEps: 0.01 })).project, 600, 400).construction.cleanup.toleranceMM === 0.05);
+  check("DEP-04 resolveLegacy rejects a bad source size (SCHEMA_SIZE)", (() => { try { S.resolveLegacy(P, 0, 400); return false; } catch (e) { return e.code === "SCHEMA_SIZE"; } })());
+  check("DEP-04 resolveLegacy needs a legacy project (SCHEMA_LEGACY)", (() => { try { S.resolveLegacy(S.defaults("acrylic"), 600, 400); return false; } catch (e) { return e.code === "SCHEMA_LEGACY"; } })());
+  check("DEP-04 resolveLegacy does not rescale an oversized legacy piece (envelope check reports it)", (() => {
+    const big = S.resolveLegacy(imp(Object.assign({}, V110, { widthMM: 600 })).project, 600, 400);
+    return big.geometry.widthMM === 600 && big.geometry.heightMM === 400 && big.geometry.targetMM === 624; })());
+
+  // AT-21: legacy settings + fixed luminance → masks equal the persisted v1.1.0 golden, via the tonal path with resample "none".
+  const G = require("./golden/sheetmasks.json"), H = (u8) => require("crypto").createHash("sha256").update(Buffer.from(u8)).digest("hex");
+  const L = new Float32Array(37 * 11); for (let i = 0; i < L.length; i++) L[i] = (i * 97) % 256;
+  check("AT-21 legacy settings + fixed luminance input → masks equal the persisted golden (24 configs)", G.sheetmasks.every((g) => {
+    const p = S.resolveLegacy(imp(Object.assign({}, V110, { nSheets: g.N, thresholdMode: g.mode, darkFront: g.darkFront })).project, 37, 11);
+    const it = p.interpretation, N = p.construction.sheets;
+    if (it.mode !== "tonal" || p.construction.mode !== "connected-sheet") return false;
+    const Lr = SBRaster.resample(L, 1, 37, 11, 37, 11, "none");
+    const th = SBRaster.thresholds(Lr, N, it.thresholdRule);
+    return JSON.stringify(Array.from(th)) === JSON.stringify(g.thresholds) &&
+      SBRaster.sheetMasks(SBRaster.bands(Lr, th), N, 37, 11, it.polarity === "dark-front").every((m, k) => H(m) === g.masks[k]);
+  }));
+});
+
 suite("engine.js — G2.1b draft/fabrication raster snapshot: rasterPlan, qualityPair (LYR-06, GEO-06, NFR-04, PO-LASER-4/5)", () => {
   const S = SBSchema, E = SBEngine, p = S.defaults("plywood");
   const clone = (o) => JSON.parse(JSON.stringify(o));

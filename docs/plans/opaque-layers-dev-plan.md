@@ -1996,14 +1996,14 @@ The integer rule was verified against the float definition for every N in 1..16 
   - `SBSchema.resolveLegacy(project, srcW, srcH) → project`. It sets `heightMM` from the source aspect, `fabPitchMM` = the legacy pitch `longSideMM / procRes` quantized to 0.001 mm (so a v1.1.0 project keeps its resolution instead of jumping to 0.1 mm/px), and `toleranceMM = max(0.05, detailEps × widthMM / round(srcW·procRes/max(srcW, srcH)))`, which uses the real working width for portrait sources too.
 - The AT-21 guarantee is **same bands, polarity and connected semantics**. It is not byte-identical masks end to end, because v1.1.0 resampled twice on a canvas (the 2000 px pre-cap, then `procRes`). The CHANGELOG records this.
 
-- [ ] **Tests:**
+- [x] **Tests:**
   - `DEP-04 every settingsJSON key (app.js:364-374) is mapped or kept in extras`
   - `AT-21 legacy settings + fixed luminance input → masks equal the persisted golden` (via the engine tonal path with `resample: "none"`)
   - `DEP-04 heightMM null → LEGACY_NEEDS_SOURCE until resolveLegacy`
   - `DEP-04 portrait source: toleranceMM uses real working width`
   - `DEP-04/PO-LASER-4 legacy procRes 720, 300 × 200 mm → sizeBy width, fabPitchMM 0.417`
   - `DEP-04 legacy JSON preserved in extras`
-- **Commit.**
+- [x] **Commit.**
 
 ### Task G2.5: Domain mask and orientation (IMG-04/05)
 
