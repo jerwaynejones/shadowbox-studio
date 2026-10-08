@@ -220,7 +220,9 @@ D3 (S5 revision 2, which passed adversarial review; implemented in `js/geom.js`)
 Product-owner laser target (2026-10-07): **D6** (machine profile, size by height, physical
 fabrication pitch, 6 mm ply feature defaults; G2 order G2.0 → G2.1 → G2.1b → G2.2b → rest).
 Tracked known item carried into G1–G4: **KI-B1**, the B1 benchmark overrun (D2, D4;
-plan Appendix C), resolved in G4.4.
+plan Appendix C), resolved in G4.4. Tracked since 2026-10-08: **KI-CONN-PERF**, the
+connected-mode large-image cost (D6 item 11; plan Appendix D.8), resolved in G4 by the
+G4.1 worker pool and/or smoothing optimisation.
 
 ### D1 — Smoothing rule
 
@@ -371,16 +373,23 @@ Cross-engine (spike): all 8 layer hashes and the project hash of the 1,660-part 
   8. **Thickness (PO-LASER-8).** 6.35 mm nominal stays (PRJ-01), editable, with a hint that 1/4" ply is often 5.5–6 mm and a measured value should be entered.
   9. **Performance (PO-LASER-9, NFR-03/04).** The SRS §12.3 workloads and NFR-03 budgets are unchanged and remain the acceptance workloads. G2.2b adds laser-detail workloads (4–25 Mpx, and a 470 mm-high page at 0.1 mm/px) and sets the budgets by the rule in plan G2.2b: the desktop budget is the largest of 16/20/25 Mpx within 512 MiB and the laser-detail target; the target is 10 s unless 16 Mpx cannot meet it, in which case a relaxed target (measured p95 rounded up to 5 s, at most 60 s, else escalate) is recorded in the table below and applies only to fabrication generation above the SRS workload size. G2.7 must bring B3b (dense support pass) under the 3 s B3 budget with one layer-level intersection per adjacent pair and `survivesInset`.
   10. **G2 order (PO-LASER-10):** G2.0 → G2.1 → G2.1b → G2.2b → G2.2 … G2.14 in plan order (plan Appendix D.4).
+  11. **G2.2b stop condition — decided (product owner, 2026-10-08): option (a).** The exploratory run hit the G2.2b stop rule (no mobile candidate ≥ 2 Mpx qualified), driven by connected-mode cost. Decision:
+      - **Bonded mode gates.** The pixel budgets and NFR-03 gating are measured in **bonded mode** (the plywood/laser default, D1 unsmoothed). Connected mode is still measured and reported by `node test/bench.js large` (`stages.finalConnected`, `knownOver`), but never gates.
+      - **KI-CONN-PERF (tracked known item).** Connected-mode final + validation costs about **18 s** p95 on the SRS §12.3 desktop reference (NFR-03: 10 s), dominated by `maxDeviationUm` (`segDist` / `distToGrid`) and the T-junction split. It is resolved in G4 by the worker pool (G4.1) and/or smoothing optimisation; until then connected mode stays functional and its measured times are documented (`docs/perf/large-image.json`, the table below). Reported as `KNOWN-OVER (tracked)` with id `KI-CONN-PERF` (`TRACKED_LARGE` in `test/bench.js`).
+      - **Mobile.** Candidates below 2 Mpx are added: **1.0, 1.25 and 1.5 Mpx** (rows `r1`, `r1.25`, `r1.5`) next to 2/4/6/8 Mpx, under the unchanged mobile rule (working set ≤ 192 MiB, desktop p95 × k ≤ 8 s, k = 4 provisional). If none qualifies in bonded mode, **mobile fabrication is draft-only**: fabrication export is disabled on mobile with a clear diagnostic (`FAB_DEVICE_DRAFT_ONLY`, registered and emitted when the outcome is recorded — G2.2b part 2, enforced by G2.14 preflight and the G2.2 export gate), draft stays available. The outcome is recorded; it does not stop G2.
+      - **Worker pool (G4.1, expanded).** A pool of Web Workers sized from `navigator.hardwareConcurrency` (capped) parallelises the per-layer and per-adjacent-pair stages (trace / `fromMasks`, smoothing, differences, support pass, `layerSVG` / hashes) with a deterministic merge order, so every hash is unchanged; the engine-version handshake stays. It may be pulled earlier if performance blocks progress.
+      - **Machines.** Benchmarks run on the Linux development machine (i7-11800H, 16 threads); budgets measured there are conservative for the owner's other machine (MacBook Air M5). Safari / JavaScriptCore coverage stays in G4.8.
 - **Rationale:** the S1 with the feeder cuts pieces far larger than the 300 mm the long-side caps were sized for; a 470 mm-high piece at 1536 px is about 0.31 mm/px, too coarse for 1.5 mm features to round well and close to the 0.5 mm/px sampling limit. A physical pitch keeps detail constant in millimetres; the pixel budget keeps the working set and time bounded per device, and reporting the cap keeps NFR-04 honest. Sizing by height matches how the feeder constrains the piece (processing height 470 mm, length up to 3000 mm).
 - **Resolves S2 F3** (D1): no corner rounded at the shipped 417 µm/px with the 50 µm tolerance. Resolved by finer resolution, not tolerance: the 0.1 mm/px target is where S2 measured 62–99 % of corners rounded across the variants (0 % at 417 µm/px). For the shipped connected-mode rule (whole-loop fallback) the D1 table gives 14.4 % on real images to 80.2 % on random input at 100 µm/px; that remaining gap is the R2 granularity question (deferred option (c)), not F3. The tolerance stays 0.05 mm; bonded mode stays unsmoothed.
 - **SRS deviations to carry into the next SRS revision (not blocking):** LYR-06 "1536 … up to 4096" wording; MAT-03 3 mm starting value; laser-detail targets next to NFR-03; IMG-07's 16 MP / 8 MP source limits cap the fabrication raster (never upsampled), so a desktop budget above 16 Mpx has effect only if IMG-07 is raised.
 - **New diagnostic codes:** `FAB_PITCH_CAPPED` (info), `FEATURE_MARGINAL` (warning), `MACHINE_THICKNESS` (blocking); `PAGE_OVERFLOW` and `FAB_EXCEEDS_SOURCE` are reused with the payloads above.
 
-Laser-detail performance targets (PO-LASER-9). Provisional until G2.2b fills the measured columns; G4.4 re-measures on the reference machines.
+Laser-detail performance targets (PO-LASER-9). Provisional until G2.2b fills the measured columns; G4.4 re-measures on the reference machines. All targets gate on **bonded** mode (item 11); connected-mode p95 is reported next to each row as KI-CONN-PERF.
 
 | Workload | Pixels | Budget source | Final + validation p95 target | Measured p95 | Working set limit |
 |---|---|---|---|---|---|
 | SRS desktop reference (§12.3) | 1536 × 1536, 8 layers | SRS | 10 s (NFR-03, unchanged) | G2.2b / G4.4 | 512 MiB |
 | SRS mobile reference (§12.3) | 768 × 768, 6 layers | SRS | 8 s (unchanged) | G4.4 | 192 MiB |
 | Laser-detail desktop | ≤ `fabPxBudget` (provisional 16 Mpx) | G2.2b | 10 s, or the relaxed target recorded here | G2.2b | 512 MiB |
-| Laser-detail mobile | ≤ `fabPxBudget` (provisional 4 Mpx) | G2.2b | 8 s, or the relaxed target recorded here | G2.2b (scaled), G4.4 (device) | 192 MiB |
+| Laser-detail mobile | ≤ `fabPxBudget` (provisional 4 Mpx; candidates 1–8 Mpx), or **draft-only** if none qualifies | G2.2b | 8 s, or the relaxed target recorded here | G2.2b (scaled), G4.4 (device) | 192 MiB |
+| Connected mode (KI-CONN-PERF) | SRS desktop reference and the budget rows | G2.2b (reported) | not gating; ≈18 s p95 on the SRS desktop reference (exploratory run); resolved in G4 (G4.1 pool, smoothing) | G2.2b / G4.4 | — |

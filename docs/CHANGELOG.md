@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **G2.2b decision (product owner, 2026-10-08), option (a):** pixel budgets and the NFR-03
+  performance gate are measured in bonded mode (the plywood/laser default). Connected mode
+  stays functional and is still measured and reported, but its cost (about 18 s on the SRS
+  desktop reference) is a tracked known item, KI-CONN-PERF, to be fixed in G4 by a pool of
+  background workers and/or faster smoothing. Mobile now also tries 1, 1.25 and 1.5 Mpx; if
+  none is fast enough, mobile becomes draft-only (fabrication export disabled on mobile with a
+  clear message). `node test/bench.js large` gates on bonded mode, reports connected mode as
+  `KNOWN-OVER (tracked)`, and records a draft-only mobile outcome instead of failing.
+  Benchmarks run on the Linux development machine (i7-11800H); the MacBook Air M5 is expected
+  to be faster. Recorded in D6 ([docs/ARCHITECTURE.md](ARCHITECTURE.md)) and Appendix D.8 of
+  the [development plan](plans/opaque-layers-dev-plan.md).
+
 - **Fixes (G2.0/G2.1 review):** `FAB_EXCEEDS_SOURCE` now reports the source and target pixels
   on the most-short axis (so the measured value is always below the limit when it warns);
   `FAB_PITCH_CAPPED` reports only the coarsening the pixel budget caused and names the source

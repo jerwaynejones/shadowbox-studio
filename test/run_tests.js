@@ -2670,16 +2670,40 @@ suite("engine.js — G2.1b draft/fabrication raster snapshot: rasterPlan, qualit
 });
 
 suite("G2.2b — large-image benchmark and per-device pixel budgets (PO-LASER-4/9, NFR-03/04, AT-24)", () => {
-  // Pending the product-owner decision (G2.2b stop rule: no mobile candidate ≥ 2 Mpx qualifies; see `node test/bench.js
-  // large`): "PO-LASER-4 SBSchema.limits budgets equal docs/perf/large-image.json" and "PO-LASER-9 large-image targets
-  // recorded for desktop and mobile" are added with the recorded decision.
-  const { LARGE_WORKLOADS } = require("./bench.js");
+  // Product-owner decision 2026-10-08 (G2.2b stop condition, option (a)): budgets gate on BONDED mode; connected is
+  // measured and reported as KI-CONN-PERF; mobile adds sub-2 Mpx candidates and records "draft-only" if none qualifies.
+  // "PO-LASER-4 SBSchema.limits budgets equal docs/perf/large-image.json" and "PO-LASER-9 large-image targets recorded
+  // for desktop and mobile" are added with the recorded run (G2.2b part 2).
+  const { LARGE_WORKLOADS, LARGE, decideLarge, gateLarge } = require("./bench.js");
   const W = LARGE_WORKLOADS || [];
   const has = (w, h, fam) => W.some((r) => r.w === w && r.h === h && r.family === fam && r.layers === 8);
   const sizes = [[2309, 1732], [3464, 2598], [4000, 3000], [4618, 3464], [5164, 3873], [5774, 4330]];
   check("PO-LASER-9 bench workload list covers 4–25 Mpx and the 470 mm-high page",
     sizes.every(([w, h]) => has(w, h, "realistic") && has(w, h, "busy")) && has(3525, 4700, "realistic") && has(3525, 4700, "busy") &&
     W.some((r) => r.w === 1536 && r.h === 1536 && r.layers === 8 && r.calibration) && W.some((r) => r.w === 768 && r.h === 768 && r.layers === 6 && r.calibration));
+  check("PO-LASER-9 mobile candidates include sub-2 Mpx realistic rows (1, 1.25, 1.5 Mpx) next to 2/4/6/8",
+    JSON.stringify(LARGE.mobile.candidates) === "[1,1.25,1.5,2,4,6,8]" &&
+    LARGE.mobile.candidates.every((mp) => W.some((r) => r.id === "r" + mp && r.family === "realistic" && r.role === "mobile" && Math.abs(r.mpx - mp) < 0.01 && r.runs === 30)));
+  // synthetic rows: bonded fast, connected slow (the G2.2b exploratory shape)
+  const row = (id, bonded, connected, ws) => [id, { id, workingSetMiB: ws, stages: { final: { p95Ms: bonded }, finalBonded: { p95Ms: bonded }, finalConnected: { p95Ms: connected } },
+    shape: { maxPartsPerLayer: 10, maxVerticesPerLayer: 100, verticesBonded: 800 } }];
+  const rows = (mob) => new Map([row("srs-desktop", 3000, 18000, 100), row("r16", 9000, 60000, 400), row("r20", 9500, 70000, 450), row("r25", 12000, 80000, 600),
+    row("b16", 9000, 60000, 400), ...mob]);
+  { const d = decideLarge(rows([row("r1", 1500, 9000, 60), row("r1.25", 1900, 11000, 70), row("r1.5", 2500, 14000, 80), row("r2", 3000, 18000, 90)]));
+    check("NFR-03 G2.2b decision gates on bonded mode: desktop 20 Mpx at 10 s although connected is 70 s; connected reported, not gating (KI-CONN-PERF)",
+      d.gatingMode === "bonded" && d.desktop.row === "r20" && d.desktop.targetMs === 10000 && !d.desktop.relaxed && d.desktop.connectedP95Ms === 70000 &&
+      d.srsDesktop.p95Ms === 3000 && d.srsDesktop.connectedP95Ms === 18000 && d.knownItems.some((k) => k.id === "KI-CONN-PERF") && d.escalate.length === 0 &&
+      gateLarge(rows([]).set("r1.25", rows([row("r1.25", 1900, 11000, 70)]).get("r1.25")), d).length === 0);
+    check("NFR-03 G2.2b mobile picks the largest qualifying candidate, sub-2 Mpx included (1.25 Mpx: 1900 × 4 ≤ 8 s)",
+      d.mobile.fabrication === "enabled" && d.mobile.row === "r1.25" && d.mobile.fabPxBudget === 1.25e6 && d.mobile.p95Ms === 7600); }
+  { const d = decideLarge(rows([row("r1", 2100, 9000, 60), row("r1.5", 2500, 14000, 80), row("r2", 3000, 18000, 90)]));
+    const over = gateLarge(rows([row("r1", 2100, 9000, 60)]), d);
+    check("NFR-03 G2.2b no mobile candidate qualifies → mobile fabrication recorded as draft-only (diagnostic named), not escalated, gate passes",
+      d.mobile.fabrication === "draft-only" && d.mobile.fabPxBudget === null && d.mobile.diagnostic === "FAB_DEVICE_DRAFT_ONLY" && /1 Mpx/.test(d.mobile.reason) &&
+      d.escalate.length === 0 && over.length === 0); }
+  { const d = decideLarge(rows([row("r1", 1500, 9000, 60)]));
+    const slow = rows([]); slow.set("srs-desktop", rows([row("srs-desktop", 11000, 18000, 100)]).get("srs-desktop"));
+    check("NFR-03 G2.2b gate still fails on a bonded overrun of the SRS desktop reference", gateLarge(slow, d).some((x) => /SRS desktop/.test(x))); }
   const F = require("./fixtures.js");
   const a = F.heightMap(7, 400, 300), b = F.heightMap(7, 400, 300), c = F.heightMap(8, 400, 300);
   check("PO-LASER-9 realistic height fixture is seeded and deterministic",

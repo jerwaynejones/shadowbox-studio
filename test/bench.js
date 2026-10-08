@@ -10,6 +10,11 @@
  * realistic and busy height maps, the 470 mm-high page at 0.1 mm/px), stages 1–5 per row, final + validation per
  * mode, working set from one gc'd instrumented pass (re-execs itself with --expose-gc). --record applies the G2.2b
  * decision rule and writes docs/perf/large-image.json; without it the rows are gated against the recorded targets.
+ * Product-owner decision 2026-10-08 (G2.2b stop condition, option (a)): budgets and NFR-03 gating use BONDED mode (the
+ * plywood/laser default); connected mode is measured and reported, never gating, as tracked item KI-CONN-PERF
+ * (TRACKED_LARGE). Mobile candidates include 1, 1.25 and 1.5 Mpx; if none qualifies, mobile fabrication is recorded as
+ * "draft-only" (FAB_DEVICE_DRAFT_ONLY) instead of escalating. Machine: the measured budgets are conservative for the
+ * owner's MacBook Air M5; Safari/JavaScriptCore coverage is G4.8.
  *
  * Stage "geom" (spike S1, decision D2) — page 1536×1024 px at 200 µm/px:
  *   B1   8 layers × ~50k vertices, difference of every ADJACENT layer pair in
@@ -199,7 +204,7 @@ function benchGeom() {
 /**
  * Large-image benchmark (plan G2.2b; PO-LASER-4/9, NFR-03/04, AT-24). Workloads are seeded and 4:3 unless noted.
  * role: "calibration" (SRS §12.3 reference rows), "desktop" (budget candidates 16/20/25 Mpx), "mobile" (budget
- * candidates 2/4/6/8 Mpx), "exploration" (9/12 Mpx, the busy family, the 470 mm-high page). runs/warm per the plan:
+ * candidates 1/1.25/1.5/2/4/6/8 Mpx), "exploration" (9/12 Mpx, the busy family, the 470 mm-high page). runs/warm per the plan:
  * 5 + 30 at the gated candidate points, 1 + 5 elsewhere.
  */
 const LARGE_WORKLOADS = (() => {
@@ -210,7 +215,7 @@ const LARGE_WORKLOADS = (() => {
   };
   add("srs-desktop", 1536, 1536, "realistic", "calibration", 8, { calibration: "SRS §12.3 desktop reference (NFR-03 10 s)" });
   add("srs-mobile", 768, 768, "realistic", "calibration", 6, { calibration: "SRS §12.3 mobile reference (8 s on device)" });
-  for (const [mp, w, h] of [[2, 1633, 1225], [6, 2828, 2121], [8, 3266, 2449]]) add("r" + mp, w, h, "realistic", "mobile");
+  for (const [mp, w, h] of [[1, 1155, 866], [1.25, 1291, 968], [1.5, 1414, 1061], [2, 1633, 1225], [6, 2828, 2121], [8, 3266, 2449]]) add("r" + mp, w, h, "realistic", "mobile");
   for (const [mp, w, h] of [[4, 2309, 1732], [9, 3464, 2598], [12, 4000, 3000], [16, 4618, 3464], [20, 5164, 3873], [25, 5774, 4330]]) {
     const role = mp === 4 ? "mobile" : mp >= 16 ? "desktop" : "exploration";
     add("r" + mp, w, h, "realistic", role);
@@ -225,7 +230,8 @@ const LARGE = {
   seeds: { realistic: 2022, busy: 11 }, busyCellPx: 27, pitchUm: 100, tolUm: 50, minFeatureUm: 1500, advisoryFeatureUm: 2000,
   source16: [4618, 3464],
   desktop: { candidates: [16, 20, 25], wsMiB: 512, targetMs: 10000, relaxStepMs: 5000, relaxMaxMs: 60000 },
-  mobile: { candidates: [2, 4, 6, 8], wsMiB: 192, targetMs: 8000, k: 4, kProvisional: true },
+  mobile: { candidates: [1, 1.25, 1.5, 2, 4, 6, 8], wsMiB: 192, targetMs: 8000, k: 4, kProvisional: true },
+  gatingMode: "bonded",
   perfJson: path.join(__dirname, "..", "docs", "perf", "large-image.json"),
 };
 
@@ -293,7 +299,7 @@ function largePass(wl, samples, src, mem) {
   t.package = now() - t0; sample();
   t.finalBonded = t.materialBonded + t.diffBonded + t.supportBonded;
   t.finalConnected = t.materialConnected + t.diffConnected + t.supportConnected;
-  t.final = Math.max(t.finalBonded, t.finalConnected);
+  t.final = t.finalBonded; // gated value: bonded mode (PO decision 2026-10-08); connected is reported (KI-CONN-PERF)
   const verts = (L) => L.reduce((s, l) => s + l.stats.vertices, 0);
   const shape = {
     partsPerLayer: bonded.map((l) => l.parts.length), verticesBonded: verts(bonded), verticesConnected: verts(connected),
@@ -326,7 +332,7 @@ function benchLarge() {
     const row = Object.assign({}, wl, { stages: st, shape: memPass.shape, workingSetMiB: +(memPass.peakBytes / 2 ** 20).toFixed(1),
       wallS: +((performance.now() - t0) / 1000).toFixed(1), loadAvg: os.loadavg().map((x) => +x.toFixed(2)) });
     report.rows.push(row);
-    console.error(`[large] ${wl.id} ${wl.w}×${wl.h} ${wl.family}: final p95 ${st.final.p95Ms} ms (bonded ${st.finalBonded.p95Ms}, connected ${st.finalConnected.p95Ms}), ws ${row.workingSetMiB} MiB, parts ≤${row.shape.maxPartsPerLayer}/layer, ${row.wallS} s wall`);
+    console.error(`[large] ${wl.id} ${wl.w}×${wl.h} ${wl.family}: final (bonded, gated) p95 ${st.final.p95Ms} ms, connected ${st.finalConnected.p95Ms} ms (reported, KI-CONN-PERF), ws ${row.workingSetMiB} MiB, parts ≤${row.shape.maxPartsPerLayer}/layer, ${row.wallS} s wall`);
   }
   report.loadAvgEnd = os.loadavg().map((x) => +x.toFixed(2));
   if (QUICK) { report.overBudget = []; return report; }
@@ -344,20 +350,50 @@ function benchLarge() {
   if (record) { fs.mkdirSync(path.dirname(LARGE.perfJson), { recursive: true }); fs.writeFileSync(LARGE.perfJson, JSON.stringify(merged, null, 1) + "\n"); }
   report.decision = decision;
   report.overBudget = gateLarge(byId, decision);
-  report.rows = report.rows.map((r) => ({ id: r.id, finalP95Ms: r.stages.final.p95Ms, workingSetMiB: r.workingSetMiB, xRef: r.xRef }));
+  report.tracked = TRACKED_LARGE;
+  report.knownOver = knownOverLarge(byId, decision);
+  report.rows = report.rows.map((r) => ({ id: r.id, finalP95Ms: r.stages.final.p95Ms, connectedP95Ms: r.stages.finalConnected.p95Ms, workingSetMiB: r.workingSetMiB, xRef: r.xRef }));
   return report;
 }
 
+/**
+ * Known, tracked large-stage items: measured and reported, not gating (PO decision 2026-10-08, option (a)).
+ */
+const TRACKED_LARGE = {
+  connected: {
+    id: "KI-CONN-PERF",
+    decided: "2026-10-08 (product owner, G2.2b stop condition option (a))",
+    cause: "connected-mode smoothing (G1.2): maxDeviationUm segDist/distToGrid and the T-junction split dominate (≈18 s on the SRS desktop reference)",
+    resolution: "G4.1 worker pool (per-layer / per-adjacent-pair stages in parallel, deterministic merge) and/or smoothing optimisation in G4; connected mode stays functional with its measured times documented",
+    ref: "docs/plans/opaque-layers-dev-plan.md Appendix D.8 and G4.1; docs/ARCHITECTURE.md D6 (KI-CONN-PERF)",
+  },
+};
+
+/** Connected-mode p95 on the gated rows, reported against the gated target as KNOWN-OVER (tracked), never failing. */
+function knownOverLarge(byId, d) {
+  if (!d) return [];
+  const out = [], T = TRACKED_LARGE.connected;
+  const chk = (id, scale, target) => { const r = byId.get(id); if (!r || !r.stages.finalConnected) return;
+    const v = +(r.stages.finalConnected.p95Ms * scale).toFixed(1);
+    if (v > target) out.push({ metric: "connected " + id, p95Ms: v, budgetMs: target, status: "KNOWN-OVER (tracked)", id: T.id, ref: T.ref }); };
+  chk("srs-desktop", 1, d.srsDesktop.targetMs);
+  chk(d.desktop.row, 1, d.desktop.targetMs);
+  if (d.mobile && d.mobile.fabrication === "enabled") chk(d.mobile.row, d.mobile.k, d.mobile.targetMs);
+  return out;
+}
+
 const LARGE_METHOD = {
-  final: "final + validation = stage 3 (trace + SBMaterial.fromMasks, fabrication quality) + stage 4 (adjacent-pair difference ×2 directions, support pass: one layer-level intersection per adjacent pair, classifyContact(piece, minFeature) then survivesInset(advisory/2) per piece), timed per run for bonded (D1 unsmoothed) and connected (G1.2 smoothing); the gated value is max(bonded, connected) per run",
+  final: "final + validation = stage 3 (trace + SBMaterial.fromMasks, fabrication quality) + stage 4 (adjacent-pair difference ×2 directions, support pass: one layer-level intersection per adjacent pair, classifyContact(piece, minFeature) then survivesInset(advisory/2) per piece), timed per run for bonded (D1 unsmoothed) and connected (G1.2 smoothing); the gated value (stages.final) is BONDED mode (PO decision 2026-10-08); connected (stages.finalConnected) is reported as KI-CONN-PERF, not gating",
   workingSet: "one instrumented pass per row after gc(): peak of process.memoryUsage() arrayBuffers + heapUsed minus the pre-pipeline baseline, sampled after every stage (algorithm-owned, SRS §12.3); the input samples are outside it",
-  desktopRule: "largest of 16/20/25 Mpx (realistic) with working set ≤ 512 MiB and final p95 ≤ target; target 10 s if 16 Mpx meets it, else 16 Mpx p95 rounded up to 5 s (≤ 60 s, else escalate)",
-  mobileRule: "largest of 2/4/6/8 Mpx (realistic) with working set ≤ 192 MiB and desktop final p95 × k ≤ 8 s; k = 4 provisional until the ≥ 4 GB reference device (G4.4)",
+  desktopRule: "largest of 16/20/25 Mpx (realistic) with working set ≤ 512 MiB and bonded final p95 ≤ target; target 10 s if 16 Mpx meets it, else 16 Mpx p95 rounded up to 5 s (≤ 60 s, else escalate)",
+  mobileRule: "largest of 1/1.25/1.5/2/4/6/8 Mpx (realistic) with working set ≤ 192 MiB and desktop bonded final p95 × k ≤ 8 s; k = 4 provisional until the ≥ 4 GB reference device (G4.4); if none qualifies, mobile fabrication is draft-only (FAB_DEVICE_DRAFT_ONLY), recorded, not escalated",
+  machine: "budgets are measured on the Linux i7-11800H (16 threads) development machine and are conservative for the owner's MacBook Air M5; Safari/JavaScriptCore coverage is G4.8",
   stages: "1 resample area/nearest from a 16 MP source (realistic rows smaller than it); 2 masks tonal (R.thresholds/bands/sheetMasks) and height (inline nearest-layer rule); 3 material bonded/connected; 4 difference + support; 5 layerSVG + layerHashes",
 };
 
 function decideLarge(byId) {
-  const p95 = (id) => byId.get(id).stages.final.p95Ms, ws = (id) => byId.get(id).workingSetMiB;
+  const p95 = (id) => byId.get(id).stages.final.p95Ms, ws = (id) => byId.get(id).workingSetMiB;   // final = bonded (gated)
+  const conn = (id) => { const r = byId.get(id); return r && r.stages.finalConnected ? r.stages.finalConnected.p95Ms : null; };
   const D = LARGE.desktop, Mo = LARGE.mobile, escalate = [];
   if (ws("r16") > D.wsMiB) escalate.push(`16 Mpx working set ${ws("r16")} MiB > ${D.wsMiB} MiB`);
   let target = D.targetMs, relaxed = false;
@@ -367,27 +403,35 @@ function decideLarge(byId) {
   for (const mp of D.candidates) if (byId.has("r" + mp) && ws("r" + mp) <= D.wsMiB && p95("r" + mp) <= target) dMp = Math.max(dMp, mp);
   let mMp = null;
   for (const mp of Mo.candidates) if (byId.has("r" + mp) && ws("r" + mp) <= Mo.wsMiB && p95("r" + mp) * Mo.k <= Mo.targetMs) mMp = mp;
-  if (mMp === null) escalate.push("no mobile candidate ≥ 2 Mpx qualifies");
+  const measured = Mo.candidates.filter((mp) => byId.has("r" + mp));
   const cx = (id) => { const r = byId.get(id); return r ? { maxPartsPerLayer: r.shape.maxPartsPerLayer, maxVerticesPerLayer: r.shape.maxVerticesPerLayer, vertices: r.shape.verticesBonded } : null; };
   return {
+    gatingMode: LARGE.gatingMode,
+    knownItems: [Object.assign({ mode: "connected", gating: false }, TRACKED_LARGE.connected)],
     desktop: { fabPxBudget: dMp * 1e6, row: "r" + dMp, targetMs: target, relaxed, relaxedAppliesTo: relaxed ? "fabrication generation of workloads larger than the SRS §12.3 reference" : null,
-      p95Ms: p95("r" + dMp), workingSetMiB: ws("r" + dMp), r16P95Ms: p95("r16") },
-    mobile: mMp === null ? null : { fabPxBudget: mMp * 1e6, row: "r" + mMp, targetMs: Mo.targetMs, k: Mo.k, kProvisional: Mo.kProvisional,
-      desktopP95Ms: p95("r" + mMp), p95Ms: +(p95("r" + mMp) * Mo.k).toFixed(1), workingSetMiB: ws("r" + mMp) },
-    srsDesktop: { targetMs: 10000, p95Ms: p95("srs-desktop") },
-    complexityStart: { desktop: cx("r" + dMp), desktopBusy: cx("b" + dMp), mobile: mMp ? cx("r" + mMp) : null, mobileBusy: mMp ? cx("b" + mMp) : null },
+      p95Ms: p95("r" + dMp), workingSetMiB: ws("r" + dMp), r16P95Ms: p95("r16"), connectedP95Ms: conn("r" + dMp) },
+    mobile: mMp === null
+      ? { fabrication: "draft-only", fabPxBudget: null, row: null, targetMs: Mo.targetMs, k: Mo.k, kProvisional: Mo.kProvisional, diagnostic: "FAB_DEVICE_DRAFT_ONLY",
+          reason: `no mobile candidate qualifies in bonded mode (measured ${measured.map((mp) => mp + " Mpx").join(", ") || "none"}; working set ≤ ${Mo.wsMiB} MiB and desktop p95 × ${Mo.k} ≤ ${Mo.targetMs} ms): fabrication export is disabled on mobile with a diagnostic, draft stays available` }
+      : { fabrication: "enabled", fabPxBudget: mMp * 1e6, row: "r" + mMp, targetMs: Mo.targetMs, k: Mo.k, kProvisional: Mo.kProvisional,
+          desktopP95Ms: p95("r" + mMp), p95Ms: +(p95("r" + mMp) * Mo.k).toFixed(1), workingSetMiB: ws("r" + mMp), connectedDesktopP95Ms: conn("r" + mMp) },
+    srsDesktop: { targetMs: 10000, p95Ms: p95("srs-desktop"), connectedP95Ms: conn("srs-desktop") },
+    complexityStart: { desktop: cx("r" + dMp), desktopBusy: cx("b" + dMp), mobile: mMp !== null ? cx("r" + mMp) : null, mobileBusy: mMp !== null ? cx("b" + mMp) : null },
     escalate,
   };
 }
 
-/** Gated rows: the desktop and mobile budget rows (realistic) and the SRS desktop reference. Returns the failures. */
+/**
+ * Gated rows (bonded mode): the desktop and mobile budget rows (realistic) and the SRS desktop reference. A draft-only
+ * mobile outcome has no mobile row to gate. Returns the failures.
+ */
 function gateLarge(byId, d) {
   if (!d) return ["no recorded decision (run with --record)"];
   const over = [...(d.escalate || [])];
   const chk = (id, scale, target, label) => { const r = byId.get(id); if (!r) { over.push(label + ": row " + id + " not measured"); return; }
     const v = r.stages.final.p95Ms * scale; if (v > target) over.push(`${label}: ${id} p95 ${v.toFixed(0)} ms > ${target} ms`); };
   chk(d.desktop.row, 1, d.desktop.targetMs, "desktop");
-  if (d.mobile) chk(d.mobile.row, d.mobile.k, d.mobile.targetMs, "mobile (scaled)");
+  if (d.mobile && d.mobile.fabrication !== "draft-only" && d.mobile.row) chk(d.mobile.row, d.mobile.k, d.mobile.targetMs, "mobile (scaled)");
   chk("srs-desktop", 1, d.srsDesktop.targetMs, "SRS desktop reference");
   return over;
 }
@@ -409,5 +453,5 @@ function main() {
     process.exit(1);
   }
 }
-module.exports = { LARGE_WORKLOADS };
+module.exports = { LARGE_WORKLOADS, LARGE, TRACKED_LARGE, decideLarge, gateLarge, knownOverLarge };
 if (MAIN) main();
