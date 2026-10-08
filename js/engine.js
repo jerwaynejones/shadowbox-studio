@@ -3,7 +3,8 @@
  * ----------------------------------------------------------------------------
  * SBEngine: the DOM-free engine. T0.5 seam: legacyRun is the v1.1.0
  * runPipeline() body after getImageData, moved verbatim (state -> cfg).
- * The full SBEngine.generate lands in G2.10a/b.
+ * connectedLayers/connectedFiles (G1.7) carry the connected export on the
+ * canonical path. The full SBEngine.generate lands in G2.10a/b.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -69,6 +70,55 @@
       };
     });
     return { sheets, totals };
+  };
+
+  // ------------------------------------------------ connected export, canonical path (plan G1.7)
+
+  /** v1.1.0 smoothing intent → G1.2 connected-mode smoothing: "smooth" is bounded to 0.05 mm, "faceted" stays raw. */
+  const CONNECTED_SMOOTH_TOL_UM = 50;
+
+  /**
+   * connectedLayers(sheets, w, h, cfg) → {page, layers: MaterialLayer[]}
+   *
+   * The v1.1.0 connected export rebuilt on canonical material (plan G1.7, DEP-04). Input is the legacyRun
+   * result: sheet 0 is the solid backing (as in v1.1.0, whatever its mask), sheets 1.. use their final masks
+   * (after morphology and islands). The legacy simplified/Chaikin pixel loops are not used.
+   *   - page: art = cfg.widthMM × h·widthMM/w, frame ring = cfg.marginMM (SBMaterial.page, 1 µm grid);
+   *   - SBMaterial.fromMasks in one GEO-02 pass: bounded smoothing on the pixel loops (connected mode, D1,
+   *     tol 0.05 mm, only for cornerStyle "smooth"; no containment) → frame union (applyFrame order) →
+   *     corner holes (subtractHoles order) → normalize → validate → parts;
+   *   - holes: the four v1.1.0 corners at margin/2 from each page edge, diameter cfg.holeDiaMM, on every layer,
+   *     only when cfg.holes and marginMM > 0 (until G3.4 replaces them with validated positions).
+   * cfg keys read: widthMM, marginMM, holes, holeDiaMM, cornerStyle.
+   */
+  E.connectedLayers = function (sheets, w, h, cfg) {
+    const M = global.SBMaterial;
+    const page = M.page({ artWMM: cfg.widthMM, artHMM: (h * cfg.widthMM) / w, frameMM: cfg.marginMM > 0 ? cfg.marginMM : 0 });
+    const WU = Math.round(page.wMM * 1000), HU = Math.round(page.hMM * 1000), fU = Math.round(page.frameMM * 1000);
+    const rU = Math.round((cfg.holeDiaMM || 0) * 500), inset = Math.round(fU / 2);
+    const holes = cfg.holes && fU > 0 && rU >= 1
+      ? [[inset, inset], [WU - inset, inset], [inset, HU - inset], [WU - inset, HU - inset]].map(([x, y]) => ({ cxUm: x, cyUm: y, rUm: rU }))
+      : [];
+    const masks = sheets.map((s, k) => (k === 0 ? new Uint8Array(w * h).fill(1) : s.mask));
+    const opts = { frame: fU > 0, holes, holeLayers: "all" };
+    if (cfg.cornerStyle === "smooth") opts.smooth = { mode: "connected", tolUm: CONNECTED_SMOOTH_TOL_UM };
+    return { page, layers: M.fromMasks(masks, w, h, page, opts) };
+  };
+
+  /**
+   * connectedFiles(sheets, w, h, cfg, colors) → [{name, data}]
+   * Legacy file names (the §9.4 layout arrives in G3.9): sheet_NN.svg = SBSvg.layerSVG with the v1.1.0 text
+   * label ("{projectName} {k+1}/{n}", legacyTextLabel until G3.2), then proof.svg = SBSvg.assemblySVG in the
+   * same page frame. cfg additionally reads projectName.
+   */
+  E.connectedFiles = function (sheets, w, h, cfg, colors) {
+    const S = global.SBSvg, C = E.connectedLayers(sheets, w, h, cfg), n = C.layers.length;
+    const files = C.layers.map((l) => ({
+      name: "sheet_" + String(l.index + 1).padStart(2, "0") + ".svg",
+      data: S.layerSVG(l, C.page, { construction: "connected", legacyTextLabel: cfg.projectName + " " + (l.index + 1) + "/" + n }),
+    }));
+    files.push({ name: "proof.svg", data: S.assemblySVG(C.layers, C.page, colors) });
+    return files;
   };
 
   global.SBEngine = E;

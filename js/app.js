@@ -20,7 +20,7 @@
   // Single source of truth for the visible version. The service worker keeps
   // its own matching cache-version string (sw.js); bump both together on every
   // release so users can confirm at a glance which build they are running.
-  const APP_VERSION = "1.1.0";
+  const APP_VERSION = "2.0.0-alpha.1";
 
   // ------------------------------------------------------------------ state
   const PALETTES = {
@@ -350,24 +350,9 @@
 
   async function buildAndDeliver() {
     const colors = sheetColors();
-    const files = [];
-    state.sheets.forEach((sheet, s) => {
-      files.push({
-        name: `sheet_${String(s + 1).padStart(2, "0")}.svg`,
-        data: SBSvg.sheetSVG({
-          loops: sheet.loops,
-          pxW: state.procW, pxH: state.procH,
-          widthMM: state.widthMM, marginMM: state.marginMM,
-          holes: state.holes, holeDiaMM: state.holeDiaMM,
-          label: `${state.projectName} ${s + 1}/${state.sheets.length}`,
-          isBacking: s === 0,
-        }),
-      });
-    });
-    files.push({
-      name: "proof.svg",
-      data: SBSvg.proofSVG(state.sheets, state.procW, state.procH, state.widthMM, colors),
-    });
+    // G1.7: cut files and proof come from canonical polygons (SBMaterial → layerSVG/assemblySVG):
+    // frame unioned with edge art, v1.1.0 corner holes and text label kept, legacy file names.
+    const files = SBEngine.connectedFiles(state.sheets, state.procW, state.procH, state, colors);
     files.push({ name: "ASSEMBLY.md", data: buildAssemblyMD(colors) });
     files.push({ name: "settings.json", data: settingsJSON() });
 

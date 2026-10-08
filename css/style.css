@@ -237,6 +237,18 @@ select {
   cursor: grab;
 }
 #stackcanvas:active { cursor: grabbing; }
+/* G1.7 → G2.12: the raster preview is only a draft of the polygon cut files. */
+.draftbadge {
+  position: absolute; top: 10px; left: 12px;
+  padding: 3px 8px;
+  font: 11px var(--mono);
+  letter-spacing: 0.04em;
+  color: var(--amber);
+  background: rgba(0,0,0,0.45);
+  border: 1px solid rgba(240,162,39,0.5);
+  border-radius: 3px;
+  pointer-events: none;
+}
 
 .stacktools {
   display: flex; align-items: center; gap: 18px;

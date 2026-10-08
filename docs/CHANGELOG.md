@@ -1,10 +1,38 @@
 # Changelog
 
-## Unreleased
+## v2.0.0-alpha.1 — 2026-10-07
 
+First alpha of the opaque-layers rework (plan G1). Connected export now runs through the
+canonical polygon path: `SBMaterial.fromMasks` → `SBSvg.layerSVG` / `SBSvg.assemblySVG`.
+File names (`sheet_NN.svg`, `proof.svg`), the corner registration holes and the sheet
+label are unchanged. Intentional connected-mode changes (DEP-04):
+
+- The frame is now unioned with edge art: art touching the image border is one cut part
+  with the frame ring instead of a separate outline cut against it (GEO-02).
+- Cut files have `<g id="CUT">` (`#FF0000`) and `<g id="SCORE">` (`#0000FF`) groups, no
+  fill on cuts and no page `<rect>`; the outline of every sheet comes from its material
+  ring, and every coordinate is exact on the 1 µm grid (EXP-01/02, GEO-09).
+- The proof is drawn from the same polygons in the page frame (artwork plus frame), so
+  `proof.svg` lines up with the cut files (GEO-01).
+- Smoothing is bounded to 0.05 mm, on the pixel contours, with pinned frame-edge vertices
+  (connected mode, G1.2). Outlines that cannot round within 0.05 mm stay on the raw pixel
+  contour, so at the default working resolution (about 0.42 mm per pixel) "smooth" corners
+  export as the faceted lattice outline; the legacy Chaikin/RDP outline is no longer used
+  for cutting.
+- The stack preview carries a "Draft preview: cut files come from polygons" badge until
+  the polygon preview lands (G2.12).
+
+Holes and labels are unchanged: four registration holes at `margin/2` from the page
+corners when holes are on (now `SBGeom.circle` polygons), and the live `<text>` label
+inside `SCORE`.
+
+Also in this release (no change to connected-mode output beyond the list above):
 - Baseline (G0): upstream `f0552c7` frozen, characterization checks and persisted
   goldens (including the legacy `sheetSVG`/`proofSVG` shims), license check and per-module
   reuse decisions. See [docs/BASELINE.md](BASELINE.md).
+- Canonical geometry (G1.0–G1.6): `SBDiag` registry, `SBMaterial` (integer-µm polygons,
+  deterministic part IDs, frame and holes as material), bounded smoothing (bonded mode
+  unsmoothed, D1), SVG writer v2, `SBSvgRead` round trip and the opaque proof.
 
 ## v1.1.0 — 2026-07-09
 

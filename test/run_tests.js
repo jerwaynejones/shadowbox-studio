@@ -2099,6 +2099,116 @@ suite("svgout.js — assemblySVG: opaque proof from material in the shared page 
   check("G1.6 legacy proofSVG shim still exported (frozen by T0.7)", typeof S.proofSVG === "function");
 });
 
+// ------------------------------------------------ connected export through the canonical path (G1.7)
+suite("engine.js — connected export through the canonical path (DEP-04, GEO-02, AT-06/11/12; G1.7)", () => {
+  const E = SBEngine, M = SBMaterial, S = SBSvg, G = SBGeom, R = SBSvgRead;
+  check("G1.7 API present", typeof E.connectedLayers === "function" && typeof E.connectedFiles === "function");
+  if (typeof E.connectedLayers !== "function" || typeof E.connectedFiles !== "function") return;
+  const root = path.join(__dirname, "..");
+  const GC = require("./golden/oldrun.json").cfg;
+  const w = 40, h = 30, rgba = new Uint8ClampedArray(w * h * 4);
+  for (let i = 0; i < w * h; i++) { const v = ((i % w) * 6 + Math.floor(i / w) * 3) % 256; rgba.set([v, v, v, 255], i * 4); }
+  const cfgOf = (o) => Object.assign({}, GC, { projectName: "demo <&>", holes: true, holeDiaMM: 4 }, o || {});
+  const ringsOf = (polys) => { const o = []; for (const p of polys) o.push(p.outer, ...p.holes); return o; };
+  const groupOf = (svg, id) => { const m = svg.match(new RegExp('<g id="' + id + '"[^>]*>([\\s\\S]*?)</g>')); return m ? m[1] : null; };
+  const vb = (s) => (s.match(/viewBox="([^"]+)"/) || [])[1];
+  const run = (o) => { const cfg = cfgOf(o), r = E.legacyRun(rgba, w, h, cfg); return { cfg, sheets: r.sheets }; };
+  const colors = ["#dceff7", "#8fc3e4", "#3f7cc0", "#1d3f7e", "#0c1b3d"];
+
+  for (const corner of ["faceted", "smooth"]) {
+    const { cfg, sheets } = run({ cornerStyle: corner });
+    const C = E.connectedLayers(sheets, w, h, cfg), files = E.connectedFiles(sheets, w, h, cfg, colors);
+    const byName = new Map(files.map((f) => [f.name, f.data]));
+    const P = C.page, WU = Math.round(P.wMM * 1000), HU = Math.round(P.hMM * 1000), fU = Math.round(cfg.marginMM * 1000);
+    const tag = " [" + corner + "]";
+    check("G1.7 page: art = widthMM × (h·widthMM/w), frame = marginMM, on the 1 µm grid" + tag,
+      P.artWMM === 120 && P.artHMM === 90 && P.frameMM === 12 && P.wMM === 144 && P.hMM === 114);
+    check("G1.7 one MaterialLayer per legacy sheet, index = sheet number − 1" + tag,
+      C.layers.length === sheets.length && C.layers.every((l, k) => l.index === k && l.canonicalHash === G.materialHash(l)));
+    // ---- G1 E2E round trip
+    const back = C.layers.map((l) => R.toMaterial(R.parse(byName.get("sheet_" + String(l.index + 1).padStart(2, "0") + ".svg")).cut));
+    check("G1 E2E connected: legacyRun → fromMasks → layerSVG → parse → union equals material" + tag,
+      C.layers.every((l, k) => JSON.stringify(back[k]) === JSON.stringify(l.material) &&
+        G.ringTopology(back[k]) === G.ringTopology(l.material)));
+    check("G1 E2E cut files carry nothing unsupported but the legacy label, no open cut paths" + tag, C.layers.every((l) => {
+      const p = R.parse(byName.get("sheet_" + String(l.index + 1).padStart(2, "0") + ".svg"));
+      return p.cut.length === ringsOf(l.material).length && p.unsupported.every((u) => /text/.test(u)); }));
+    // ---- GEO-02: the frame is attached material on every layer
+    const frame = { outer: [0, 0, WU, 0, WU, HU, 0, HU], holes: [[fU, fU, fU, HU - fU, WU - fU, HU - fU, WU - fU, fU]] };
+    const holeCircles = C.layers[0].holes.map((x) => G.circle(x.cxUm, x.cyUm, x.rUm));
+    check("GEO-02 connected export: every layer contains the whole frame ring (minus the corner holes)" + tag,
+      C.layers.every((l) => G.isEmpty(G.difference(G.difference([frame], holeCircles), l.material))));
+    check("GEO-02 connected export: every layer is one part whose outer ring is the page rectangle" + tag,
+      C.layers.every((l) => l.material.filter((p) => G.bbox(p).join() === [0, 0, WU, HU].join()).length === 1));
+    check("AT-07 connected backing is solid: page rectangle minus the four holes" + tag,
+      JSON.stringify(C.layers[0].material) === JSON.stringify(G.normalize(G.difference([{ outer: [0, 0, WU, 0, WU, HU, 0, HU], holes: [] }], holeCircles))));
+    // ---- DEP-04 holes
+    const inset = Math.round(fU / 2), rU = 2000;
+    const expect = [[inset, inset], [WU - inset, inset], [inset, HU - inset], [WU - inset, HU - inset]]
+      .map(([x, y]) => ({ cxUm: x, cyUm: y, rUm: rU })).sort((a, b) => (a.cyUm - b.cyUm) || (a.cxUm - b.cxUm));
+    check("DEP-04 connected export keeps 4 corner holes at v1.1.0 positions when holes on" + tag,
+      C.layers.every((l) => JSON.stringify(l.holes) === JSON.stringify(expect)));
+    check("ASM-04 every corner hole is a cut ring equal to SBGeom.circle in every sheet file" + tag, C.layers.every((l) => {
+      const cut = R.parse(byName.get("sheet_" + String(l.index + 1).padStart(2, "0") + ".svg")).cut.map((r) => JSON.stringify(r));
+      return expect.every((x) => { const c = G.normalize(G.difference([{ outer: [0, 0, WU, 0, WU, HU, 0, HU], holes: [] }], [G.circle(x.cxUm, x.cyUm, x.rUm)]))[0].holes[0];
+        return cut.includes(JSON.stringify(c)); }); }));
+    // ---- DEP-04 label
+    check("DEP-04 connected export keeps the sheet label (v1.1.0 text, inside SCORE)" + tag, C.layers.every((l, k) => {
+      const s = byName.get("sheet_" + String(k + 1).padStart(2, "0") + ".svg");
+      return new RegExp('<text x="2" y="112" font-family="monospace" font-size="4" fill="none" stroke="#0000FF" stroke-width="0\\.1">demo &lt;&amp;&gt; ' + (k + 1) + "/" + sheets.length + "</text>").test(groupOf(s, "SCORE")) &&
+        (s.match(/<text /g) || []).length === 1; }));
+    // ---- files
+    check("G1.7 legacy filenames: sheet_NN.svg per layer, then proof.svg" + tag,
+      JSON.stringify(files.map((f) => f.name)) === JSON.stringify(sheets.map((_, k) => "sheet_" + String(k + 1).padStart(2, "0") + ".svg").concat(["proof.svg"])));
+    check("G1.7 sheet files are layerSVG (CUT/SCORE groups, no <rect>, shared viewBox)" + tag, C.layers.every((l, k) => {
+      const s = byName.get("sheet_" + String(k + 1).padStart(2, "0") + ".svg");
+      return s === S.layerSVG(l, P, { construction: "connected", legacyTextLabel: "demo <&> " + (k + 1) + "/" + sheets.length }) &&
+        /<g id="CUT"/.test(s) && /<g id="SCORE"/.test(s) && !/<rect/.test(s) && vb(s) === "0 0 144 114"; }));
+    check("GEO-01 proof.svg is assemblySVG in the same page frame as the cuts" + tag,
+      byName.get("proof.svg") === S.assemblySVG(C.layers, P, colors) && vb(byName.get("proof.svg")) === "0 0 144 114");
+    check("AT-16 connected export is deterministic" + tag,
+      JSON.stringify(E.connectedFiles(sheets, w, h, cfg, colors)) === JSON.stringify(files));
+  }
+
+  // ---- smoothing: connected mode, bounded, only for cornerStyle "smooth". The masks come from the 3 mm/px run; the
+  // export is re-scaled to 100 µm/px (widthMM 4, margin 1) because at 3 mm/px no corner can round within 50 µm (S2 F3).
+  const fac = run({ cornerStyle: "faceted" }), fine = { widthMM: 4, marginMM: 1, holeDiaMM: 0.5 };
+  fac.cfg = Object.assign({}, fac.cfg, fine);
+  const smo = { sheets: fac.sheets, cfg: Object.assign({}, fac.cfg, { cornerStyle: "smooth" }) };
+  const Lf = E.connectedLayers(fac.sheets, w, h, fac.cfg).layers, Ls = E.connectedLayers(smo.sheets, w, h, smo.cfg).layers;
+  const raw = (s, cfg) => { const P = E.connectedLayers(s, w, h, cfg).page;
+    return M.fromMasks(s.map((x, k) => (k ? x.mask : new Uint8Array(w * h).fill(1))), w, h, P, { frame: true }).map((l) => l.material); };
+  check("D1 faceted connected export is the raw lattice contour (no smoothing)",
+    (() => { const r = raw(fac.sheets, fac.cfg), hc = Lf[0].holes.map((x) => G.circle(x.cxUm, x.cyUm, x.rUm));
+      return Lf.every((l, k) => JSON.stringify(l.material) === JSON.stringify(G.normalize(G.difference(r[k], hc)))); })());
+  check("GEO-04 smooth connected export is smoothed (differs from faceted) and keeps the layer topology",
+    Ls.some((l, k) => JSON.stringify(l.material) !== JSON.stringify(Lf[k].material)) &&
+    Ls.every((l, k) => G.ringTopology(l.material) === G.ringTopology(Lf[k].material)));
+  check("GEO-04 smooth connected export deviates from the raw contour by ≤ 50 µm (+1 µm rounding) per ring",
+    Ls.every((l, k) => { const a = ringsOf(l.material), b = ringsOf(Lf[k].material); return a.length === b.length && a.every((r, i) => G.maxDeviationUm(r, b[i], 1) <= 51); }));
+
+  // ---- holes off, margin 0
+  { const { cfg, sheets } = run({ holes: false }), C = E.connectedLayers(sheets, w, h, cfg), fs2 = E.connectedFiles(sheets, w, h, cfg, colors);
+    check("DEP-04 holes off → no holes in any layer or file", C.layers.every((l) => l.holes.length === 0) &&
+      fs2.slice(0, -1).every((f) => R.parse(f.data).cut.length === C.layers[fs2.indexOf(f)].material.reduce((a, p) => a + 1 + p.holes.length, 0))); }
+  { const { cfg, sheets } = run({ marginMM: 0 }), C = E.connectedLayers(sheets, w, h, cfg);
+    check("DEP-04 margin 0 → no frame and no holes even with holes on (v1.1.0: holes live in the frame)",
+      C.page.frameMM === 0 && C.page.wMM === 120 && C.layers.every((l) => l.holes.length === 0) &&
+      JSON.stringify(C.layers[0].material) === JSON.stringify([{ outer: [0, 0, 120000, 0, 120000, 90000, 0, 90000], holes: [] }])); }
+
+  // ---- app wiring and release
+  const app = fs.readFileSync(path.join(root, "js/app.js"), "utf8"), html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const bad = app.slice(app.indexOf("async function buildAndDeliver"), app.indexOf("async function deliverFile"));
+  check("G1.7 buildAndDeliver uses the canonical path (SBEngine.connectedFiles), not the legacy shims",
+    /SBEngine\.connectedFiles\(/.test(bad) && !/sheetSVG|proofSVG/.test(bad) && !/SBSvg\.(sheetSVG|proofSVG)/.test(app));
+  check("G1.7 preview badge: \"Draft preview: cut files come from polygons\"",
+    (app + html).includes("Draft preview: cut files come from polygons"));
+  check("DEP-02 release 2.0.0-alpha.1 (APP_VERSION)", /const APP_VERSION\s*=\s*"2\.0\.0-alpha\.1"/.test(app));
+  const cl = fs.readFileSync(path.join(root, "docs/CHANGELOG.md"), "utf8"), sec = (cl.split(/^## v2\.0\.0-alpha\.1\b.*$/m)[1] || "").split(/^## /m)[0];
+  check("DEP-04 CHANGELOG v2.0.0-alpha.1 lists the intentional connected-mode changes",
+    /frame/i.test(sec) && /CUT/.test(sec) && /SCORE/.test(sec) && /proof/i.test(sec) && /0\.05 mm/.test(sec) && /holes/i.test(sec) && /label/i.test(sec));
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {
