@@ -147,5 +147,54 @@
     });
   };
 
+  // ------------------------------------------------------------ clip dialog model (G2.13d; SUP-04, D-4.6, PRJ-04)
+  const layerName = (k) => "Layer " + (k + 1);
+  const ringsOfPolys = (polys) => { const r = []; for (const p of polys || []) { r.push(p.outer); for (const h of p.holes || []) r.push(h); } return r; };
+
+  /**
+   * clipReview(proposal) → {layer, title, removedMM2, partCountBefore, partCountAfter, empty, summary, rings}: the clip
+   * dialog's text for one SBSupport.proposeClip result (1-based layer names; rings = the removed polygons' rings in µm,
+   * page frame, for the overlay). empty = nothing would be removed. The proposal is not copied or mutated.
+   */
+  P.clipReview = function (pr) {
+    if (!pr || !Number.isInteger(pr.layer) || pr.layer < 1 || !Number.isFinite(pr.removedAreaMM2))
+      throw new Error("SBProof.clipReview: needs a proposal from SBSupport.proposeClip");
+    const k = pr.layer, empty = !(pr.removedAreaMM2 > 0);
+    const summary = empty
+      ? layerName(k) + " lies entirely on " + layerName(k - 1) + ": there is nothing to clip."
+      : "Removes " + fmtMM2(pr.removedAreaMM2) + " mm² of " + layerName(k) + " that has no material of " + layerName(k - 1) +
+        " under it; parts " + pr.partCountBefore + " → " + pr.partCountAfter + ". Reviewed at " + pr.quality + " quality.";
+    return { layer: k, title: "Clip " + layerName(k) + " to " + layerName(k - 1), removedMM2: pr.removedAreaMM2,
+      partCountBefore: pr.partCountBefore, partCountAfter: pr.partCountAfter, empty, summary, rings: ringsOfPolys(pr.removed) };
+  };
+
+  /**
+   * repairRows(repairs, {applied}) → [{index, layer, status: "applied" | "stale" | "pending", laterCount, text}]: one
+   * row per construction.repairs entry for the Repairs list (each with a Revert button). status "stale" = not replayed
+   * on the shown result (REPAIR_STALE); "pending" = no current result (applied not given); laterCount = the later entries a Revert of this one also removes (removeRepair).
+   */
+  P.repairRows = function (repairs, ctx) {
+    const applied = ctx && Array.isArray(ctx.applied) ? ctx.applied : null;
+    const n = (repairs || []).length;
+    return (repairs || []).map((r, i) => {
+      const rv = (r && r.reviewed) || {}, k = r && r.layer;
+      const status = !applied ? "pending" : applied.includes(i) ? "applied" : "stale";
+      const text = "Clip " + layerName(k) + " to " + layerName(k - 1) + " (revision " + r.sourceRevision + " → " + r.resultRevision +
+        "; reviewed at " + rv.quality + ": −" + fmtMM2(rv.removedAreaMM2 || 0) + " mm², parts " + rv.partCountBefore + " → " + rv.partCountAfter + "). " +
+        (status === "pending" ? "Checked when the result is built." : status === "applied" ? "Applied." : "Not applied: the settings or the layer changed since the review; review the clip again or revert it.");
+      return { index: i, layer: k, status, laterCount: n - 1 - i, text };
+    });
+  };
+
+  /**
+   * repairForDiagnostic(d, repairs, applied) → the construction.repairs index a repair diagnostic refers to, or −1:
+   * REPAIR_STALE → the first entry on d.layer that was not replayed; REPAIR_REVIEW_FAB → the first replayed one.
+   */
+  P.repairForDiagnostic = function (d, repairs, applied) {
+    if (!d || (d.code !== "REPAIR_STALE" && d.code !== "REPAIR_REVIEW_FAB")) return -1;
+    const done = applied || [], want = d.code === "REPAIR_REVIEW_FAB";
+    return (repairs || []).findIndex((r, i) => r && r.layer === d.layer && done.includes(i) === want);
+  };
+
   global.SBProof = P;
 })(typeof window !== "undefined" ? window : globalThis);

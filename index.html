@@ -191,6 +191,10 @@
         <p id="diag-summary" class="diag-summary" role="status" aria-live="polite">Generate to check the layers</p>
         <ul id="diag-list" class="diag-list" aria-labelledby="h-diag"></ul>
         <button id="diag-clear" class="btn" type="button" hidden>Clear highlight</button>
+        <!-- G2.13d (SUP-04, D-4.6): every reviewed construction.repairs entry, with a Revert button -->
+        <h3 id="h-repairs">Repairs</h3>
+        <p id="repair-summary" class="diag-summary">No repairs. An unsupported layer offers “Clip to lower layer…”.</p>
+        <ul id="repair-list" class="diag-list repair-list" aria-labelledby="h-repairs"></ul>
       </div>
       <div class="row"><label for="in-appearance">Appearance</label>
         <select id="in-appearance">
@@ -274,6 +278,21 @@
     <div class="modal-actions">
       <button class="btn" value="cancel" autofocus>Cancel</button>
       <button class="btn primary" value="accept">Accept</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- G2.13d (SUP-04): a clip-to-lower repair is reviewed before it is applied (removed area, mm², parts before/after) -->
+<dialog id="dlg-clip" class="modal" aria-labelledby="dlg-clip-title" aria-describedby="dlg-clip-summary">
+  <form method="dialog">
+    <h2 id="dlg-clip-title">Clip to lower layer</h2>
+    <canvas id="dlg-clip-canvas" class="clipcard" role="img" aria-label="The layer with the area the clip removes outlined"></canvas>
+    <p id="dlg-clip-summary"></p>
+    <p id="dlg-clip-note" class="why" hidden></p>
+    <div class="modal-actions">
+      <button class="btn" value="revert" id="dlg-clip-revert" hidden>Revert this repair</button>
+      <button class="btn" value="cancel" autofocus>Cancel</button>
+      <button class="btn primary" value="accept" id="dlg-clip-accept">Accept clip</button>
     </div>
   </form>
 </dialog>

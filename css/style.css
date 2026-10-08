@@ -439,3 +439,9 @@ button.diag-go:hover .diag-msg { text-decoration: underline; }
 .dimbar details summary { cursor: pointer; text-decoration: underline dotted; }
 .dimbar details[open] { flex-basis: 100%; }
 .dimbar details ol { margin: 4px 0 6px 18px; padding: 0; columns: 2; }
+
+/* G2.13d (SUP-04): clip dialog card and the Repairs list */
+.clipcard { display: block; max-width: 100%; height: auto; margin: 0 0 10px; border: 1px solid var(--line); border-radius: 4px; }
+.repair-list .diag-item { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.repair-list .diag-item[data-status="stale"] { border-color: var(--cut); border-style: dashed; }
+.diag-actions { display: flex; gap: 6px; margin-top: 4px; }

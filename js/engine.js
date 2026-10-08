@@ -11,7 +11,8 @@
  * generate (G2.10a) is the §11.1 pipeline through validation, with the machine-envelope check; G2.10b completes it with
  * the Z model, trailing-empty accounting, stats, the D4 hashes (layerHash, guideHash, geometryHash) and a deep freeze.
  * legacyDiagnostics/legacySnapshotHash (G2.13c) give the app's legacy draft run the same final-polygon checks and an
- * ack-scoping snapshot hash until the app adopts generate.
+ * ack-scoping snapshot hash until the app adopts generate. legacyView (G2.13d) replays the project's reviewed
+ * clip repairs on that geometry (review views, diagnostics and the cut files).
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -152,6 +153,23 @@
   };
 
   /**
+   * G2.13d (SUP-04, D-4.6): legacyView(sheets, w, h, cfg, project) → {page, layers, diagnostics, applied}: the app's
+   * interim review/export geometry. connectedLayers, then the project's construction.repairs replayed by
+   * SBSupport.replayRepairs at draft quality and the project revision (an accepted clip-to-lower is cut; a repair
+   * reviewed under other settings or on another pre-repair layer raises REPAIR_STALE and is skipped). diagnostics are
+   * the replay's; applied the replayed entry indices. Legacy-path note: the legacy layers already carry their corner
+   * holes, so the clip runs after the holes here (generate replays before them); a repair's hashes therefore belong
+   * to this path, and they fail closed (REPAIR_STALE) when the app adopts generate. Pure.
+   */
+  E.legacyView = function (sheets, w, h, cfg, project) {
+    const C = E.connectedLayers(sheets, w, h, cfg);
+    const repairs = (project && project.construction && project.construction.repairs) || [];
+    if (!repairs.length) return { page: C.page, layers: C.layers, diagnostics: [], applied: [] };
+    const rp = global.SBSupport.replayRepairs(C.layers, repairs, { project, quality: "draft", revision: project.revision });
+    return { page: C.page, layers: rp.layers, diagnostics: rp.diagnostics, applied: rp.applied };
+  };
+
+  /**
    * G2.13c (UI-04): legacyDiagnostics(view, w, h, project) → Diagnostic[] for a legacyRun result whose polygons are
    * `view` (connectedLayers, ideally after SBMaterial.assignParts so part diagnostics carry IDs). The app's interim
    * diagnostics source until it adopts SBEngine.generate; the same final-polygon checks generate runs at step 12, at
@@ -165,6 +183,7 @@
     const M = global.SBMaterial, S = global.SBSupport, mat = project.material, page = view.page;
     const dOpts = { revision: project.revision, quality: "draft" };
     const out = [];
+    for (const d of view.diagnostics || []) out.push(Object.assign({}, d, dOpts));   // G2.13d: legacyView's repair diagnostics
     for (const L of view.layers) for (const d of L.diagnostics || []) out.push(Object.assign({}, d, dOpts));
     out.push(...S.validate(view.layers, project.construction.mode, { minFeatureMM: mat.minFeatureMM, advisoryFeatureMM: mat.advisoryFeatureMM,
       revision: dOpts.revision, quality: dOpts.quality }).diagnostics);
@@ -190,10 +209,11 @@
    * connectedFiles(sheets, w, h, cfg, colors) → [{name, data}]
    * Legacy file names (the §9.4 layout arrives in G3.9): sheet_NN.svg = SBSvg.layerSVG with the v1.1.0 text
    * label ("{projectName} {k+1}/{n}", legacyTextLabel until G3.2), then proof.svg = SBSvg.assemblySVG in the
-   * same page frame. cfg additionally reads projectName.
+   * same page frame. cfg additionally reads projectName. G2.13d: with `project`, the layers are SBEngine.legacyView's
+   * (the project's reviewed construction.repairs replayed), so the cut files match the proof the user reviewed.
    */
-  E.connectedFiles = function (sheets, w, h, cfg, colors) {
-    const S = global.SBSvg, C = E.connectedLayers(sheets, w, h, cfg), n = C.layers.length;
+  E.connectedFiles = function (sheets, w, h, cfg, colors, project) {
+    const S = global.SBSvg, C = project ? E.legacyView(sheets, w, h, cfg, project) : E.connectedLayers(sheets, w, h, cfg), n = C.layers.length;
     const files = C.layers.map((l) => ({
       name: "sheet_" + String(l.index + 1).padStart(2, "0") + ".svg",
       data: S.layerSVG(l, C.page, { construction: "connected", legacyTextLabel: cfg.projectName + " " + (l.index + 1) + "/" + n }),

@@ -55,6 +55,7 @@
     geometryHash: null,  // G2.13c (§9.5): SBEngine.legacySnapshotHash of the shown view; scopes the acknowledgements
     acks: new Set(),     // G2.13c: SBDiag.ackKey strings acknowledged on run.geometryHash (cleared with a new hash)
     focus: null,         // G2.13c: the diagnostics focus shown in the proof ({layer, parts, regions, label}), re-applied per snapshot
+    applied: null,       // G2.13d: construction.repairs indices replayed on the shown view (SBEngine.legacyView); null until built
     report: "",
   };
 
@@ -150,6 +151,7 @@
     run.overlays = null;   // G2.13b: rebuilt with the view
     run.viewError = null;
     run.diagnostics = null; run.diagError = null; run.focus = null;   // G2.13c: rebuilt with the view
+    run.applied = null;   // G2.13d: rebuilt with the view
     run.viewToken++;   // a view build still pending for the previous run is dropped
     let totalBridged = totals.bridged, totalCulled = totals.culled, totalCutMM = totals.cutMM;
     run.procW = w; run.procH = h; run.revision = project.revision;
@@ -228,8 +230,11 @@
     const t0 = performance.now();
     try {
       const c = cfg();
-      const v = SBEngine.connectedLayers(run.sheets, run.procW, run.procH, c);
-      run.view = { page: v.page, layers: SBMaterial.assignParts(v.layers) };   // G2.13c: part IDs for diagnostics and focus
+      // G2.13d (SUP-04): the project's reviewed clip repairs are replayed on the legacy polygons (stale ones raise
+      // REPAIR_STALE and are skipped), so the views, the diagnostics and the export all show the repaired layers.
+      const v = SBEngine.legacyView(run.sheets, run.procW, run.procH, c, project);
+      run.view = { page: v.page, layers: SBMaterial.assignParts(v.layers), diagnostics: v.diagnostics };   // G2.13c: part IDs for diagnostics and focus
+      run.applied = v.applied;
       // G2.13c (UI-04): the final-polygon checks on the view (legacy interim source until the app adopts generate).
       // A failure here never costs the proof: the panel says so and the views still update.
       try {
@@ -285,6 +290,7 @@
    * items have none (§9.5). Interim: the legacy draft run exports regardless (the export gate arrives with G3.10).
    */
   function renderDiagnostics() {
+    renderRepairs();
     const list = $("diag-list"), sum = $("diag-summary");
     if (!list || !sum) return;
     list.textContent = "";
@@ -351,6 +357,8 @@
     fix.className = "diag-fix";
     fix.textContent = "Fix: " + it.fix;
     li.appendChild(fix);
+    const act = clipAction(d);
+    if (act) li.appendChild(act);
     if (it.severity === "warning" && run.geometryHash) {
       const key = SBDiag.ackKey(d, run.geometryHash);
       const lab = document.createElement("label");
@@ -392,6 +400,138 @@
     try { preview.setFocus(null); } catch (_) { /* nothing shown */ }
     document.querySelectorAll("#diag-list .diag-item[aria-current]").forEach((x) => x.removeAttribute("aria-current"));
     $("diag-clear").hidden = true;
+  }
+
+  // ------------------------------------------------------- reviewed clip repair (G2.13d: SUP-04, D-4.6, PRJ-04)
+
+  /** True while the shown view is the current revision's (a proposal must be reviewed on the geometry it changes). */
+  const viewCurrent = () => !!run.view && run.applied !== null && run.revision === project.revision;
+
+  /**
+   * The repair action of one diagnostic item: BOND_UNSUPPORTED (bonded, layer ≥ 1) offers "Clip to lower layer…";
+   * REPAIR_STALE and REPAIR_REVIEW_FAB link back to the clip dialog for the repair entry they refer to.
+   */
+  function clipAction(d) {
+    const repairs = project.construction.repairs;
+    let label = null, ri = -1;
+    if (d.code === "BOND_UNSUPPORTED" && Number.isInteger(d.layer) && d.layer >= 1 && project.construction.mode === "bonded-relief") label = "Clip to lower layer…";
+    else if (d.code === "REPAIR_STALE" || d.code === "REPAIR_REVIEW_FAB") {
+      ri = SBProof.repairForDiagnostic(d, repairs, run.applied || []);
+      if (ri >= 0) label = "Review clip " + (ri + 1) + "…";
+    }
+    if (!label) return null;
+    const box = document.createElement("div");
+    box.className = "diag-actions";
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "btn"; b.textContent = label;
+    b.addEventListener("click", () => openClipDialog(d.layer, ri, b));
+    box.appendChild(b);
+    return box;
+  }
+
+  /**
+   * The Repairs list: one row per construction.repairs entry (SBProof.repairRows: its reviewed record and whether the
+   * shown result replays it), each with Revert (SBSupport.removeRepair: a new revision without this entry and every
+   * later one; D-4.6) and, for a stale entry, "Review clip…".
+   */
+  function renderRepairs() {
+    const list = $("repair-list"), sum = $("repair-summary");
+    if (!list || !sum) return;
+    list.textContent = "";
+    const repairs = project.construction.repairs;
+    const rows = SBProof.repairRows(repairs, { applied: viewCurrent() ? run.applied : undefined });
+    sum.textContent = rows.length ? rows.length + (rows.length === 1 ? " reviewed repair" : " reviewed repairs") + " in the project."
+      : "No repairs. An unsupported layer offers “Clip to lower layer…”.";
+    for (const r of rows) {
+      const li = document.createElement("li");
+      li.className = "diag-item";
+      li.dataset.status = r.status;
+      const t = document.createElement("span");
+      t.textContent = (r.index + 1) + ". " + r.text;
+      li.appendChild(t);
+      const box = document.createElement("div");
+      box.className = "diag-actions";
+      if (r.status === "stale") {
+        const rb = document.createElement("button");
+        rb.type = "button"; rb.className = "btn"; rb.textContent = "Review clip…";
+        rb.addEventListener("click", () => openClipDialog(r.layer, r.index, rb));
+        box.appendChild(rb);
+      }
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "btn";
+      b.textContent = r.laterCount ? "Revert (and the " + r.laterCount + " later)" : "Revert";
+      b.setAttribute("aria-label", "Revert repair " + (r.index + 1) + (r.laterCount ? " and the " + r.laterCount + " later repairs" : ""));
+      b.addEventListener("click", () => revertRepair(r.index));
+      box.appendChild(b);
+      li.appendChild(box);
+      list.appendChild(li);
+    }
+  }
+
+  function revertRepair(i) {
+    let next;
+    try { next = SBSupport.removeRepair(project, i); }
+    catch (err) { setStatus(`cannot revert repair ${i + 1}: ${err.message || err}`, true); return; }
+    commitProject(next, "repair");
+    setStatus(`Reverted repair ${i + 1}: revision ${next.revision}; regenerating`, true);
+  }
+
+  /**
+   * The clip dialog (SUP-04): SBSupport.proposeClip on the shown view for layer k, shown as the layer card with the
+   * removed area (preview.drawClipCard), the removed mm² and the part count before → after (SBProof.clipReview).
+   * Accept calls SBSupport.applyClip (a new revision with a reviewed repairs[] entry; the run then replays it).
+   * Opened from a repair entry ri: Revert removes it (removeRepair); Accept replaces a stale entry by this review only
+   * when it is the last entry (then the shown view is exactly the geometry without it); otherwise the dialog says to
+   * revert first. Nothing is applied without Accept; Cancel or Escape leaves the project as it is.
+   */
+  function openClipDialog(k, ri, opener) {
+    if (!viewCurrent() || !preview.hasSnapshot()) { setStatus(`${run.report} · the result is not ready; review the clip once the proof is built`, true); return; }
+    let proposal, review;
+    try {
+      proposal = SBSupport.proposeClip({ layers: run.view.layers, quality: "draft", revision: project.revision }, k);
+      review = SBProof.clipReview(proposal);
+    } catch (err) { setStatus(`cannot propose a clip on layer ${k + 1}: ${err.message || err}`, true); return; }
+    const repairs = project.construction.repairs;
+    const fromRepair = ri >= 0 && ri < repairs.length;
+    const stale = fromRepair && !run.applied.includes(ri);
+    const replaceable = !fromRepair || (stale && ri === repairs.length - 1);
+    const dlg = $("dlg-clip"), note = $("dlg-clip-note"), accept = $("dlg-clip-accept"), revert = $("dlg-clip-revert");
+    $("dlg-clip-title").textContent = review.title;
+    $("dlg-clip-summary").textContent = review.summary;
+    const cvs = $("dlg-clip-canvas");
+    preview.drawClipCard(cvs, k, proposal.removed, { maxPx: 480 });
+    cvs.setAttribute("aria-label", review.title + ": " + review.summary);
+    let why = "";
+    if (fromRepair) {
+      const row = SBProof.repairRows(repairs, { applied: run.applied })[ri];
+      why = "Repair " + (ri + 1) + ": " + row.text;
+      if (stale && !replaceable) why += " Later repairs depend on it: revert it first (the later ones are reverted with it), then review the clip again.";
+      else if (!stale) why += " It is applied on this draft; its fabrication review happens in the export review.";
+    }
+    if (review.empty && !fromRepair) why = "Nothing to accept.";
+    note.textContent = why; note.hidden = !why;
+    accept.disabled = review.empty || !replaceable || (fromRepair && !stale);
+    accept.textContent = fromRepair && stale ? "Replace with this clip" : "Accept clip";
+    revert.hidden = !fromRepair;
+    const finish = (value) => {
+      try {
+        if (value === "accept" && !accept.disabled) {
+          let base = project, p = proposal;
+          if (fromRepair) { base = SBSupport.removeRepair(project, ri); p = Object.assign({}, proposal, { revision: base.revision }); }
+          const next = SBSupport.applyClip(base, p);
+          commitProject(next, "repair");
+          setStatus(`Clipped Layer ${k + 1} to Layer ${k}: −${SBUtil.fmt(review.removedMM2, 2)} mm², revision ${next.revision}; regenerating`, true);
+        } else if (value === "revert" && fromRepair) revertRepair(ri);
+      } catch (err) { setStatus(`clip not applied: ${err.message || err}`, true); }
+      if (opener && opener.isConnected) opener.focus();
+    };
+    if (typeof dlg.showModal !== "function") {
+      finish(!accept.disabled && window.confirm(review.title + "? " + review.summary) ? "accept" : "cancel");
+      return;
+    }
+    dlg.returnValue = "";
+    dlg.addEventListener("close", () => finish(dlg.returnValue), { once: true });
+    dlg.showModal();
   }
 
   /** The v1.1.0 raster composite of the current masks (interim view while the polygons build, and the fallback). */
@@ -637,7 +777,7 @@
     // G1.7: cut files and proof come from canonical polygons (SBMaterial → layerSVG/assemblySVG):
     // frame unioned with edge art, v1.1.0 corner holes and text label kept, legacy file names.
     const state = cfg();
-    const files = SBEngine.connectedFiles(run.sheets, run.procW, run.procH, state, colors);
+    const files = SBEngine.connectedFiles(run.sheets, run.procW, run.procH, state, colors, project);   // G2.13d: reviewed repairs replayed
     files.push({ name: "ASSEMBLY.md", data: buildAssemblyMD(colors) });
     files.push({ name: "settings.json", data: settingsJSON() });
 

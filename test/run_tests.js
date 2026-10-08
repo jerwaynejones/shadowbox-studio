@@ -4544,11 +4544,11 @@ suite("proof.js/preview.js/index.html/app.js — G2.12 opaque proof, stack secti
     html.indexOf('src="js/proof.js"') > 0 && html.indexOf('src="js/proof.js"') < html.indexOf('src="js/preview.js"') &&
     require("./modules.js").NODE_MODULES.includes("proof.js"));
   check("UI-02 app.js: switchTab sets the preview mode; renderAll feeds setSnapshot from canonical polygons",
-    /preview\.setMode\(/.test(appSrc) && /preview\.setSnapshot\(/.test(appSrc) && /SBEngine\.connectedLayers\(/.test(appSrc));
+    /preview\.setMode\(/.test(appSrc) && /preview\.setSnapshot\(/.test(appSrc) && /SBEngine\.(connectedLayers|legacyView)\(/.test(appSrc));   // G2.13d: legacyView = connectedLayers + repairs
   check("KI-CONN-PERF app.js: renderAll defers the polygon build (raster first, rAF + task, superseded by viewToken) and reports failures",
     (() => { const ra = appSrc.slice(appSrc.indexOf("function renderAll()"), appSrc.indexOf("function renderSheetGrid(")); return /requestAnimationFrame\(\(\) => setTimeout\(/.test(ra) &&
       /token !== run\.viewToken/.test(ra) && /preview\.setSheets\(/.test(ra) && /proof unavailable/.test(ra) && /catch \(err\)/.test(ra) &&
-      ra.indexOf("renderSheetGrid(") < ra.indexOf("connectedLayers("); })());
+      ra.indexOf("renderSheetGrid(") < ra.search(/connectedLayers\(|legacyView\(/); })());
   check("G2.12 app.js: the export bundle image is the proof (preview.snapshot(\"proof\"))", /preview\.snapshot\("proof"\)/.test(appSrc));
   check("UI-02 the draft badge is gone; the tilt view carries an Illustrative note",
     !/Draft preview: cut files come from polygons/.test(html) && /id="tiltnote"[^>]*>[^<]*Illustrative/.test(html));
@@ -4908,6 +4908,129 @@ suite("diag.js/engine.js/preview.js/app.js/style.css — G2.13c diagnostics pane
     /Acknowledge/.test(appSrc) && /SBDiag\.ackKey\(/.test(appSrc) && /run\.geometryHash/.test(appSrc) && /severity === "warning"/.test(appSrc));
   check("NFR-07 app.js: icons are aria-hidden and the severity is in text", /aria-hidden/.test(appSrc) && /severityLabel/.test(appSrc));
   check("UI-04 style.css: .diag-list and .badge rules; a visible keyboard focus style", /\.diag-list\b/.test(css) && /\.badge\b/.test(css) && /\.diag-list[^{]*:focus-visible/.test(css));
+});
+
+suite("support.js/engine.js/proof.js/preview.js/app.js — G2.13d clip dialog and revert (SUP-04, D-4.6, PRJ-04, AT-09/15)", () => {
+  const E = SBEngine, S = SBSupport, G = SBGeom;
+  const throws = (f, re) => { try { f(); return false; } catch (x) { return !re || re.test(x.message); } };
+  check("G2.13d API present", typeof E.legacyView === "function" && typeof SBProof.clipReview === "function" && typeof SBProof.repairRows === "function");
+  if (typeof E.legacyView !== "function" || typeof SBProof.clipReview !== "function" || typeof SBProof.repairRows !== "function") return;
+
+  // A legacy run of three 10 × 8 px sheets at 1 mm/px (no frame, no holes): sheet 0 is the solid backing, sheet 1 has a
+  // 2 mm gap (x 4..6), sheet 2 spans it (x 1..9, y 2..5), so layer 2 overhangs the gap by 8 mm² (the G2.9 fixture).
+  const grid = (w, h, f) => { const m = new Uint8Array(w * h); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = f(x, y) ? 1 : 0; return m; };
+  const W = 10, H = 8;
+  const sheets = [{ mask: grid(W, H, () => 1) }, { mask: grid(W, H, (x) => x < 4 || x >= 6) }, { mask: grid(W, H, (x, y) => x >= 1 && x < 9 && y >= 2 && y < 6) }];
+  const cfgL = { widthMM: 10, marginMM: 0, holes: false, holeDiaMM: 0, cornerStyle: "faceted", projectName: "t" };
+  const P0 = SBSchema.defaults("plywood"); P0.construction.sheets = 3; P0.revision = 5;
+  const frozen = JSON.stringify(P0);
+  const base = E.connectedLayers(sheets, W, H, cfgL);
+  const v0 = E.legacyView(sheets, W, H, cfgL, P0);
+  const unsup = (v, p, k) => E.legacyDiagnostics(v, W, H, p).some((d) => d.code === "BOND_UNSUPPORTED" && d.layer === k);
+  check("SUP-04 legacyView without repairs == connectedLayers (same page and layer hashes), no repair diagnostics",
+    JSON.stringify(v0.page) === JSON.stringify(base.page) && v0.layers.length === 3 &&
+    v0.layers.every((L, k) => L.canonicalHash === base.layers[k].canonicalHash) && v0.diagnostics.length === 0 && v0.applied.length === 0 &&
+    unsup(v0, P0, 2));
+
+  const prop = S.proposeClip({ layers: v0.layers, quality: "draft", revision: P0.revision }, 2);
+  const P1 = S.applyClip(P0, prop);
+  const v1 = E.legacyView(sheets, W, H, cfgL, P1);
+  check("AT-09 accepted clip is replayed by legacyView: layer 2 becomes the reviewed afterHash and is no longer unsupported",
+    prop.removedAreaMM2 === 8 && P1.revision === 6 && JSON.stringify(P0) === frozen &&
+    JSON.stringify(v1.applied) === "[0]" && v1.diagnostics.length === 0 && v1.layers[2].canonicalHash === prop.afterHash &&
+    v1.layers[1].canonicalHash === v0.layers[1].canonicalHash && !unsup(v1, P1, 2));
+
+  const P2 = JSON.parse(JSON.stringify(P1)); P2.material.minFeatureMM = 1.6;
+  const v2 = E.legacyView(sheets, W, H, cfgL, P2);
+  check("SUP-04 settings changed after the review → REPAIR_STALE (blocking) in legacyDiagnostics, clip not applied",
+    v2.applied.length === 0 && v2.layers[2].canonicalHash === v0.layers[2].canonicalHash &&
+    (() => { const ds = E.legacyDiagnostics(v2, W, H, P2), st = ds.find((d) => d.code === "REPAIR_STALE");
+      return !!st && st.layer === 2 && SBDiag.describe(st).severity === "blocking" && ds.some((d) => d.code === "BOND_UNSUPPORTED" && d.layer === 2); })());
+
+  const P3 = S.removeRepair(P1, 0);
+  const v3 = E.legacyView(sheets, W, H, cfgL, P3);
+  check("D-4.6 Revert (removeRepair) restores the pre-repair layer hash on a new revision",
+    P3.revision === 7 && P3.construction.repairs.length === 0 && v3.layers[2].canonicalHash === prop.beforeHash && unsup(v3, P3, 2));
+
+  check("SUP-04 export: connectedFiles with the project cuts the clipped layer (sheet_03 and proof.svg change; others equal)", (() => {
+    const a = E.connectedFiles(sheets, W, H, cfgL, ["#111111", "#555555", "#999999"]);
+    const b = E.connectedFiles(sheets, W, H, cfgL, ["#111111", "#555555", "#999999"], P1);
+    const c = E.connectedFiles(sheets, W, H, cfgL, ["#111111", "#555555", "#999999"], P0);
+    const f = (fs2, n) => fs2.find((x) => x.name === n).data;
+    return f(a, "sheet_03.svg") !== f(b, "sheet_03.svg") && f(a, "proof.svg") !== f(b, "proof.svg") &&
+      f(a, "sheet_02.svg") === f(b, "sheet_02.svg") && JSON.stringify(a) === JSON.stringify(c); })());
+  check("NFR-05 legacyView is deterministic and does not mutate the sheets or the project", (() => {
+    const s0 = JSON.stringify(P1), m0 = Array.from(sheets[2].mask).join("");
+    const again = E.legacyView(sheets, W, H, cfgL, P1);
+    return JSON.stringify(again.layers.map((L) => L.canonicalHash)) === JSON.stringify(v1.layers.map((L) => L.canonicalHash)) &&
+      JSON.stringify(P1) === s0 && Array.from(sheets[2].mask).join("") === m0; })());
+
+  // ---- the dialog model (pure)
+  const rv = SBProof.clipReview(prop);
+  check("SUP-04 clipReview: removed mm², part count before → after, 1-based layer names, the removed rings",
+    rv.layer === 2 && rv.removedMM2 === 8 && rv.partCountBefore === 1 && rv.partCountAfter === 2 && rv.empty === false &&
+    /Layer 3/.test(rv.title) && /Layer 2/.test(rv.title) && /8 mm²/.test(rv.summary) && /1 → 2/.test(rv.summary) &&
+    Array.isArray(rv.rings) && rv.rings.length === 1 && rv.rings[0] === prop.removed[0].outer);
+  const noop = S.proposeClip({ layers: v1.layers, quality: "draft", revision: P1.revision }, 2);
+  check("SUP-04 clipReview: nothing to remove → empty, said in text", SBProof.clipReview(noop).empty === true &&
+    /nothing/i.test(SBProof.clipReview(noop).summary) && throws(() => SBProof.clipReview(null), /clipReview/));
+  const rows = SBProof.repairRows(P1.construction.repairs, { applied: [0] });
+  const rowsStale = SBProof.repairRows(P1.construction.repairs, { applied: [] });
+  check("D-4.6 repairRows: one row per construction.repairs entry with its reviewed record and status (applied / stale)",
+    rows.length === 1 && rows[0].index === 0 && rows[0].layer === 2 && rows[0].status === "applied" && /Layer 3/.test(rows[0].text) &&
+    /8 mm²/.test(rows[0].text) && /draft/.test(rows[0].text) && /revision 5/.test(rows[0].text) && rowsStale[0].status === "stale" &&
+    /review/i.test(rowsStale[0].text) && SBProof.repairRows([], { applied: [] }).length === 0);
+  check("D-4.6 repairRows: no current result (applied unknown) → status pending, never claimed applied",
+    (() => { const r = SBProof.repairRows(P1.construction.repairs, {})[0]; return r.status === "pending" && !/Applied/.test(r.text); })());
+  check("D-4.6 repairRows: reverting entry i also reverts every later entry (laterCount)", (() => {
+    const two = P1.construction.repairs.concat([Object.assign({}, P1.construction.repairs[0], { layer: 1 })]);
+    const r2 = SBProof.repairRows(two, { applied: [0, 1] });
+    return r2[0].laterCount === 1 && r2[1].laterCount === 0; })());
+  check("SUP-04 repairForDiagnostic: a REPAIR_STALE item finds its skipped entry on that layer; REPAIR_REVIEW_FAB an applied one", (() => {
+    const st = SBDiag.make("REPAIR_STALE", { layer: 2 }), rf = SBDiag.make("REPAIR_REVIEW_FAB", { layer: 2 });
+    return SBProof.repairForDiagnostic(st, P1.construction.repairs, []) === 0 && SBProof.repairForDiagnostic(st, P1.construction.repairs, [0]) === -1 &&
+      SBProof.repairForDiagnostic(rf, P1.construction.repairs, [0]) === 0 && SBProof.repairForDiagnostic(SBDiag.make("MAT_UNCALIBRATED", {}), P1.construction.repairs, []) === -1; })());
+
+  // ---- preview: the removed-area overlay card (recording 2D context, no DOM)
+  const log = { strokes: [], fills: [], draws: 0, dashes: [] };
+  const mkCtx = () => { const st = { imageSmoothingEnabled: true, fillStyle: "#000", strokeStyle: "#000", lineWidth: 1 }; const stack = []; let dash = [];
+    return Object.assign(st, { setTransform() {}, clearRect() {}, save() { stack.push(Object.assign({}, st)); }, restore() { Object.assign(st, stack.pop() || {}); },
+      fillRect() { log.fills.push(st.fillStyle); }, strokeRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, rect() {}, arc() {},
+      setLineDash(d) { dash = d.slice(); }, getLineDash() { return dash.slice(); },
+      stroke() { log.strokes.push(st.strokeStyle); log.dashes.push(dash.length); }, fillText() {}, fill() { log.fills.push(st.fillStyle); },
+      createImageData: (w2, h2) => ({ data: new Uint8ClampedArray(w2 * h2 * 4) }), putImageData() {}, measureText: (x) => ({ width: x.length * 6 }),
+      drawImage() { log.draws++; } }); };
+  const mkCanvas = () => ({ width: 0, height: 0, clientWidth: 400, clientHeight: 300, _ctx: null,
+    getContext() { return this._ctx || (this._ctx = mkCtx()); }, addEventListener() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 300 }), toBlob(cb) { cb(null); } });
+  const ctx = vm.createContext({ console, Math, Uint8Array, Uint8ClampedArray, Promise, SBUtil, SBProof: globalThis.SBProof, devicePixelRatio: 1,
+    document: { createElement: () => mkCanvas() }, addEventListener() {}, requestAnimationFrame() {},
+    Path2D: function () { this.moveTo = () => {}; this.lineTo = () => {}; this.closePath = () => {}; } });
+  ctx.globalThis = ctx; ctx.window = ctx;
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "js", "preview.js"), "utf8"), ctx, { filename: "preview.js" });
+  const pv = ctx.SBPreview.create(mkCanvas());
+  check("SUP-04 preview exposes drawClipCard; false without a polygon snapshot", typeof pv.drawClipCard === "function" && pv.drawClipCard(mkCanvas(), 2, prop.removed) === false);
+  if (typeof pv.drawClipCard === "function") {
+    pv.setSnapshot({ page: v0.page, layers: v0.layers, tMM: 3, gMM: 0 }, "#808080");
+    log.strokes = []; log.fills = []; log.draws = 0; log.dashes = [];
+    const card = mkCanvas();
+    const ok = pv.drawClipCard(card, 2, prop.removed);
+    check("SUP-04 drawClipCard: the layer card from the cache plus the removed area filled and outlined dashed (not colour only)",
+      ok === true && card.width > 0 && log.draws >= 2 && log.fills.some((f) => /rgba\(/.test(String(f))) && log.dashes.some((n) => n > 0));
+  }
+
+  // ---- wiring
+  const root = path.join(__dirname, ".."), appSrc = fs.readFileSync(path.join(root, "js", "app.js"), "utf8"),
+    html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  check("SUP-04 index.html: a #dlg-clip modal with a canvas, the summary, Accept and Cancel; a Repairs list in Review",
+    /<dialog id="dlg-clip"[^>]*aria-labelledby="dlg-clip-title"/.test(html) && /id="dlg-clip-canvas"/.test(html) && /id="dlg-clip-summary"/.test(html) &&
+    /value="accept"/.test(/<dialog id="dlg-clip"[\s\S]*?<\/dialog>/.exec(html)[0]) && /value="cancel"/.test(/<dialog id="dlg-clip"[\s\S]*?<\/dialog>/.exec(html)[0]) &&
+    (() => { const m = /<section class="step" id="stage-review"[\s\S]*?<\/section>/.exec(html); return !!m && /id="repair-list"/.test(m[0]); })());
+  check("SUP-04 app.js: Clip to lower layer opens proposeClip, Accept calls applyClip, Revert calls removeRepair; the view replays repairs",
+    /Clip to lower layer/.test(appSrc) && /SBSupport\.proposeClip\(/.test(appSrc) && /SBSupport\.applyClip\(/.test(appSrc) &&
+    /SBSupport\.removeRepair\(/.test(appSrc) && /SBEngine\.legacyView\(/.test(appSrc) && /preview\.drawClipCard\(/.test(appSrc) && /Revert/.test(appSrc));
+  check("SUP-04 app.js: REPAIR_STALE and REPAIR_REVIEW_FAB items link back to the clip dialog; the export passes the project",
+    /REPAIR_STALE/.test(appSrc) && /REPAIR_REVIEW_FAB/.test(appSrc) && /SBProof\.repairForDiagnostic\(/.test(appSrc) &&
+    /SBEngine\.connectedFiles\([^)]*project\)/.test(appSrc));
 });
 
 // ------------------------------------------------------------------ report

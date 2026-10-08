@@ -23,6 +23,8 @@
  * G2.13c: setFocus() takes a diagnostics-panel focus {layer, parts, regions, label}: the proof veils the stack, redraws
  * that layer on top and outlines its parts and regions with a dark-and-light double stroke and a text tag.
  *
+ * G2.13d: drawClipCard() draws one layer's card with the area a reviewed clip would remove (the clip dialog).
+ *
  * setSnapshot() rasterizes each layer's Path2D (from the µm rings) once per snapshot into
  * an offscreen canvas; frames only composite. The explode slider is display-only: it moves
  * layers in the tilt view and never touches geometry. setSheets() keeps the v1.1.0 raster
@@ -45,6 +47,7 @@
   const FOCUS_DARK = "#0A1018";
   const FOCUS_LIGHT = "#FFFFFF";
   const FOCUS_TAG = "rgba(10,16,24,0.85)";
+  const CLIP_FILL = "rgba(229,72,77,0.55)";   // G2.13d: the area a clip would remove (plus a dashed outline)
   const HATCH = "rgba(255,255,255,0.16)";   // waste hatch strokes on the bed colour
   const HATCH_PX = 7;                       // hatch pitch in card pixels
   const CARD_MAX_PX = 480;                  // long side of a layer card canvas
@@ -180,6 +183,42 @@
         c.imageSmoothingEnabled = global.SBProof.drawParams("proof").smoothing;
         c.drawImage(im.canvas, 0, 0, w, h);
       }
+      return true;
+    }
+
+    /**
+     * G2.13d (SUP-04): the clip dialog's card: the waste hatch, the lower layer (layerIndex − 1) dimmed for context, the
+     * layer itself (both from the per-snapshot cache), then the area the clip would remove (µm
+     * polygons, page frame) filled in translucent red and outlined dashed in a dark-and-light double stroke, so the
+     * removed area does not rely on colour alone. Returns false (and draws nothing) without a polygon snapshot.
+     */
+    function drawClipCard(cardCanvas, layerIndex, removed, opts) {
+      if (!drawCard(cardCanvas, layerIndex, opts)) return false;
+      const s = state.snap, c = cardCanvas.getContext("2d");
+      const lo = s.images.find((e) => e.layerIndex === layerIndex - 1), up = s.images.find((e) => e.layerIndex === layerIndex);
+      if (lo) {   // redraw: hatch, lower layer dimmed, then the layer on top
+        P.drawWasteHatch(c, cardCanvas.width, cardCanvas.height);
+        c.save();
+        c.imageSmoothingEnabled = global.SBProof.drawParams("proof").smoothing;
+        c.globalAlpha = 0.4;
+        c.drawImage(lo.canvas, 0, 0, cardCanvas.width, cardCanvas.height);
+        c.globalAlpha = 1;
+        if (up) c.drawImage(up.canvas, 0, 0, cardCanvas.width, cardCanvas.height);
+        c.restore();
+      }
+      const k = cardCanvas.width / (s.page.wMM * 1000);   // card px per µm
+      const path = new Path2D();
+      for (const p of removed || []) for (const r of [p.outer].concat(p.holes || [])) {
+        path.moveTo(r[0] * k, r[1] * k);
+        for (let i = 2; i + 1 < r.length; i += 2) path.lineTo(r[i] * k, r[i + 1] * k);
+        path.closePath();
+      }
+      c.save();
+      c.fillStyle = CLIP_FILL;
+      c.fill(path, "evenodd");
+      c.lineWidth = 3; c.strokeStyle = FOCUS_DARK; c.setLineDash([]); c.stroke(path);
+      c.lineWidth = 1.5; c.strokeStyle = FOCUS_LIGHT; c.setLineDash(OV_DASH); c.stroke(path);
+      c.restore();
       return true;
     }
 
@@ -483,6 +522,7 @@
       setSheets,
       setSnapshot,
       drawCard,
+      drawClipCard,
       /** True while the polygon snapshot (not the interim raster) is the source of the views and cards. */
       hasSnapshot() { return !!state.snap; },
       /** "proof" | "section" | "tilt" (SBProof.drawParams validates the name). */
