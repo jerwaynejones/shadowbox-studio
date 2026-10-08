@@ -455,8 +455,23 @@
   const safeName = (s) => (s.trim() || "untitled").replace(/[^\w\-]+/g, "_").toLowerCase();
 
   // ------------------------------------------------------------- UI wiring
+  // The v1.1.0 controls bound through setLegacy, re-shown by syncControls when another control changes their value (for
+  // example a mode change that defaults the frame ring to 0, G2.11d).
+  const LEGACY_BOUND = [];
+  function syncLegacy() {
+    if (!LEGACY_BOUND.length) return;
+    const c = cfg();
+    for (const b of LEGACY_BOUND) {
+      if (document.activeElement === b.el) continue;
+      if (b.el.type === "checkbox") b.el.checked = !!c[b.key];
+      else b.el.value = String(c[b.key]);
+      if (b.out) $(b.out).textContent = b.fmt(c[b.key]);
+    }
+  }
+
   function bindRange(id, key, out, fmt = (v) => v) {
     const el = $(id);
+    LEGACY_BOUND.push({ el, key, out, fmt });
     const v0 = cfg()[key];
     el.value = v0;
     if (out) $(out).textContent = fmt(v0);
@@ -517,13 +532,38 @@
       const el = $("in-" + id);
       if (el && document.activeElement !== el) el.value = vals["in-" + id];
     }
-    const mf = $("in-manual-th");
-    if (mf) mf.disabled = project.interpretation.thresholdRule !== "manual";
-    for (const id of ["m-height", "m-length", "m-matwidth", "m-thick", "m-kerf"]) $("in-" + id).disabled = project.machine === null;
+    const co = $("in-cullon");
+    if (co) co.checked = project.construction.bridge.cullEnabled;
+    syncLegacy();
+    applyApplicability();
     document.querySelectorAll(".u").forEach((u) => { u.textContent = project.units; });
   }
 
+  /**
+   * G2.11d (UI-01): every mode-dependent control follows SBSchema.applicability. A control that does not apply is
+   * disabled, its row gets .disabled and a .why reason (created on demand, id "why-in-…") that the control names in
+   * aria-describedby; the reason is removed again when the control applies.
+   */
+  function applyApplicability() {
+    const ap = SBSchema.applicability(project);
+    for (const id of Object.keys(ap)) {
+      const el = $(id);
+      if (!el) continue;
+      const reason = ap[id], row = el.closest(".row"), whyId = "why-" + id;
+      el.disabled = reason !== null;
+      if (row) row.classList.toggle("disabled", reason !== null);
+      let w = $(whyId);
+      if (!w && reason !== null && row) { w = document.createElement("p"); w.id = whyId; w.className = "why"; row.appendChild(w); }
+      if (w) { w.textContent = reason || ""; w.hidden = reason === null; }
+      const tokens = (el.getAttribute("aria-describedby") || "").split(/\s+/).filter((t) => t && t !== whyId);
+      if (reason !== null) tokens.push(whyId);
+      if (tokens.length) el.setAttribute("aria-describedby", tokens.join(" ")); else el.removeAttribute("aria-describedby");
+    }
+  }
+
   function bindControls() {
+    // G2.11d: the bonded cull opt-in (construction.bridge.cullEnabled) is a checkbox
+    $("in-cullon").addEventListener("change", (e) => onControl("cullon", e.target.checked));
     for (const id of CONTROLS) {
       const el = $("in-" + id);
       // text and number entries apply on change (a half-typed value is not a geometry change); selects, colour and the
@@ -573,6 +613,7 @@
 
   function bindSelect(id, key) {
     const el = $(id);
+    LEGACY_BOUND.push({ el, key, out: null, fmt: String });
     el.value = String(cfg()[key]);
     el.addEventListener("change", () => {
       setLegacy(key, el.type === "checkbox" ? el.checked
@@ -583,6 +624,7 @@
 
   function bindCheck(id, key) {
     const el = $(id);
+    LEGACY_BOUND.push({ el, key, out: null, fmt: String });
     el.checked = cfg()[key];
     el.addEventListener("change", () => { setLegacy(key, el.checked); recompute(); });
   }

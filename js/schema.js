@@ -53,6 +53,13 @@
  *                                    iff geometryKey changes.
  *   SBSchema.controlValues(p)        → {inputId: displayed string} (G2.11c).
  *   SBSchema.polaritiesFor(mode)     → the polarity options of a mode.
+ *   SBSchema.applicability(p)        → {"in-…": reason | null} for every
+ *                                    mode-dependent control (G2.11d, UI-01):
+ *                                    null = applicable, else why it is disabled.
+ *   SBSchema.ignoredSettings(p)      → [DISPLAY_ONLY_IGNORED info]: settings
+ *                                    whose value is kept but unused by the
+ *                                    project's modes (§9.5, G2.11d); importLoose
+ *                                    reports them as `diagnostics`.
  *   SBSchema.fromLegacySettings(json) → {project, diagnostics}: v1.1.0
  *                                    settings.json → tonal + connected-sheet
  *                                    (DEP-04, G2.4b); heightMM null raises
@@ -388,7 +395,7 @@
 
   // ------------------------------------------------------------ import
   S.importLoose = function (obj) {
-    if (!isObj(obj)) return { project: obj, movedToExtras: [] };
+    if (!isObj(obj)) return { project: obj, movedToExtras: [], diagnostics: [] };
     const project = {}, movedToExtras = [];
     const extras = isObj(obj.extras) ? clone(obj.extras) : {};
     for (const k of Object.keys(obj)) {
@@ -397,7 +404,10 @@
       else { extras[k] = clone(obj[k]); movedToExtras.push(k); }
     }
     project.extras = extras;
-    return { project, movedToExtras };
+    // §9.5 (G2.11d): a valid import that sets a value its modes do not use is kept and reported (info); an invalid one
+    // is left to validate.
+    const diagnostics = S.validate(project).ok ? S.ignoredSettings(project) : [];
+    return { project, movedToExtras, diagnostics };
   };
 
   // ------------------------------------------------------------ legacy settings.json v1.1.0 (DEP-04, AT-21; G2.4b)
@@ -612,7 +622,7 @@
    * the "in-" prefix; length values are entered in project.units (SBSchema.toMM, 0.001 mm grid) and clamped to the
    * schema ranges. ctx = {srcW, srcH} (optional) lets a sizeBy switch keep the finished page size (PO-LASER-3).
    *   interp, construction   apply SBSchema.modeChangeDiff's target values (G2.11e puts its review dialog in front)
-   *   polarity, thmode, manual-th ("0.2, 0.5, …": N − 1 increasing values in (0, 1)), thickness, thickstate, gap,
+   *   polarity, thmode, cullon (bonded only: construction.bridge.cullEnabled), manual-th ("0.2, 0.5, …": N − 1 increasing values in (0, 1)), thickness, thickstate, gap,
    *   sizeby, target, machine (profile id | "none"), m-height, m-length, m-matwidth, m-thick, m-kerf  — geometry
    *   units, appearance, color (#rrggbb), explode (view.explodeMM)                                     — not geometry
    * A non-numeric entry, an unknown option or a result that fails SBSchema.validate leaves the project unchanged
@@ -647,6 +657,12 @@
         const v = length(0, 25);
         if (v === null || c.mode === "bonded-relief") return unchanged();   // D1: the bonded gap is 0
         c.gapMM = v; break;
+      }
+      case "cullon": {   // G2.11d: removing small parts is an explicit opt-in in bonded mode only (connected always culls)
+        if (c.mode !== "bonded-relief") return unchanged();
+        const on = value === true || value === "true" ? true : value === false || value === "false" ? false : null;
+        if (on === null) return unchanged();
+        c.bridge.cullEnabled = on; break;
       }
       case "sizeby": {
         if (!E.sizeBy.includes(value)) return unchanged();
@@ -694,12 +710,73 @@
       "in-interp": p.interpretation.mode, "in-polarity": p.interpretation.polarity, "in-construction": p.construction.mode,
       "in-thmode": p.interpretation.thresholdRule, "in-manual-th": p.interpretation.manual.join(", "),
       "in-thickness": L(p.material.thicknessMM), "in-thickstate": p.material.thicknessState, "in-gap": L(p.construction.gapMM),
-      "in-units": unit, "in-appearance": p.appearance.mode, "in-color": p.appearance.color.toLowerCase(), "in-explode": String(p.view.explodeMM),
+      "in-cullon": String(p.construction.bridge.cullEnabled), "in-units": unit, "in-appearance": p.appearance.mode, "in-color": p.appearance.color.toLowerCase(), "in-explode": String(p.view.explodeMM),
       "in-sizeby": p.geometry.sizeBy, "in-target": L(p.geometry.targetMM), "in-machine": machineId,
       "in-m-height": mach ? L(mach.maxProcessingHeightMM) : "", "in-m-length": mach ? L(mach.maxLengthMM) : "",
       "in-m-matwidth": mach ? L(mach.maxMaterialWidthMM) : "", "in-m-thick": mach ? L(mach.maxThicknessMM) : "",
       "in-m-kerf": mach ? L(mach.kerfMM) : "",
     };
+  };
+
+  // ------------------------------------------------------------ applicability (G2.11d, UI-01, §9.5)
+  const BONDED = (p) => p.construction.mode === "bonded-relief";
+  const HEIGHT = (p) => p.interpretation.mode === "height";
+  const R = {
+    bondedBridge: "Not used in bonded mode: bonded never adds bridges.",
+    bondedGap: "Bonded layers are glued face to face: the gap is 0.",
+    bondedCorner: "Not used in bonded mode: bonded contours are unsmoothed (D1).",
+    connectedCull: "Not used in connected mode: loose islands below the cull size are always removed there.",
+    heightThreshold: "Not used in height mode: nearest-layer quantization replaces tone thresholds.",
+    heightSmoothing: "Not used in height mode (no default filter, IMG-03).",
+    tonalFilter: "Not used in tonal mode.",
+  };
+  /**
+   * The mode-dependent rules. `controls` are disabled with `reason` while `off(p)`; `path` (when given) is the setting
+   * those controls write, reported by ignoredSettings when it differs from `neutral` (the value of the preset that has
+   * the mode which ignores it: plywood for bonded/height, acrylic for connected/tonal).
+   */
+  const RULES = [
+    { controls: ["in-bridge"], off: BONDED, reason: R.bondedBridge, path: "construction.bridge.bridgeMM", neutral: 1.8 },
+    { controls: ["in-maxbridge"], off: BONDED, reason: R.bondedBridge, path: "construction.bridge.maxBridgeMM", neutral: 40 },
+    { controls: ["in-gap"], off: BONDED, reason: R.bondedGap },   // validate already pins the bonded gap to 0
+    { controls: ["in-corner"], off: BONDED, reason: R.bondedCorner, path: "construction.cleanup.cornerStyle", neutral: "sharp" },
+    { controls: [], off: BONDED, reason: R.bondedCorner, path: "construction.cleanup.toleranceMM", neutral: 0.05 },
+    { controls: ["in-cullon"], off: (p) => !BONDED(p), reason: R.connectedCull, path: "construction.bridge.cullEnabled", neutral: false },
+    { controls: ["in-thmode"], off: HEIGHT, reason: R.heightThreshold, path: "interpretation.thresholdRule", neutral: "balanced" },
+    { controls: ["in-manual-th"], off: HEIGHT, reason: R.heightThreshold, path: "interpretation.manual", neutral: [] },
+    { controls: ["in-smooth", "in-passes"], off: HEIGHT, reason: R.heightSmoothing, path: "interpretation.smoothing", neutral: { radius: 0, passes: 0 } },
+    { controls: [], off: (p) => !HEIGHT(p), reason: R.tonalFilter, path: "interpretation.heightFilter", neutral: null },
+    { controls: ["in-manual-th"], off: (p) => !HEIGHT(p) && p.interpretation.thresholdRule !== "manual", reason: "Choose the Manual tone split to enter thresholds." },
+    { controls: ["in-holedia"], off: (p) => !p.construction.registration.enabled, reason: "Registration holes are off: turn them on to set the diameter." },
+    { controls: ["in-m-height", "in-m-length", "in-m-matwidth", "in-m-thick", "in-m-kerf"], off: (p) => p.machine === null,
+      reason: "No laser profile: choose one to edit its limits." },
+  ];
+  // Always-applicable controls listed so the result names every mode-dependent row (null = enabled).
+  const ALWAYS = ["in-cull", "in-margin", "in-holes"];
+  const getPath = (o, path) => path.split(".").reduce((t, k) => (t === null || t === undefined ? t : t[k]), o);
+
+  /** {"in-…": reason | null}: why each mode-dependent control is disabled, or null when it applies. Pure. */
+  S.applicability = function (project) {
+    const out = {};
+    for (const id of ALWAYS) out[id] = null;
+    for (const r of RULES) for (const id of r.controls) if (!(id in out)) out[id] = null;
+    for (const r of RULES) if (r.off(project)) for (const id of r.controls) if (out[id] === null) out[id] = r.reason;
+    return out;
+  };
+
+  /**
+   * §9.5: one DISPLAY_ONLY_IGNORED (info) per setting the project's modes do not use whose value differs from the
+   * neutral value — it is kept (and shown) but has no effect on the output. Pure; the project must be valid.
+   */
+  S.ignoredSettings = function (project) {
+    const out = [];
+    for (const r of RULES) {
+      if (!r.path || !r.off(project)) continue;
+      const v = getPath(project, r.path);
+      if (JSON.stringify(v) === JSON.stringify(r.neutral)) continue;
+      out.push(global.SBDiag.make("DISPLAY_ONLY_IGNORED", { revision: project.revision, detail: r.path + " = " + JSON.stringify(v) + " (" + r.reason + ")" }));
+    }
+    return out;
   };
 
   // ------------------------------------------------------------ geometry key (PRJ-02, D4)
@@ -780,6 +857,7 @@
       add("construction.mode", c.mode, cMode, "Requested construction mode change.");
       if (cMode === "bonded-relief") {
         add("construction.gapMM", c.gapMM, 0, "Bonded layers are glued face to face: the gap is 0.");
+        if (c.frame.enabled || c.frame.widthMM !== 0) add("construction.frame", c.frame, { enabled: false, widthMM: 0 }, "Bonded relief defaults to no frame ring (0); the finished size is kept and a ring can be set again.");
         if (c.registration.enabled) add("construction.registration.enabled", true, false, "Registration holes are off by default in bonded mode (ASM-04); they can be re-enabled.");
         for (const k of ["bridgeMM", "maxBridgeMM"]) add("construction.bridge." + k, c.bridge[k], c.bridge[k], "Not used in bonded mode: bonded never adds bridges.");
         add("construction.bridge.cullEnabled", c.bridge.cullEnabled, c.bridge.cullEnabled, "Used in bonded mode: removing small parts is an explicit opt-in.");

@@ -209,6 +209,10 @@ select {
 .btn:disabled, .btn:disabled:hover { opacity: 0.5; cursor: not-allowed; background: var(--film); border-color: var(--film); color: inherit; }
 .why { margin: 6px 0 0; font-size: 12px; opacity: 0.75; }
 .why[hidden] { display: none; }
+/* G2.11d (UI-01): a control that does not apply to the current modes stays visible, dimmed, with its reason */
+.row.disabled > label, .row.disabled output { opacity: 0.5; }
+.row.disabled input, .row.disabled select { cursor: not-allowed; }
+.row.disabled .why { opacity: 0.9; }
 .filebtn { position: relative; overflow: hidden; flex: 1; }
 .filebtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 

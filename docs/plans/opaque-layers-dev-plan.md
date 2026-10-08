@@ -2438,11 +2438,18 @@ Runs right after G2.7 (Appendix D.4, D.9). **Why:** G2.2b showed that the pixel 
   - Each disabled row shows `.why` text and an `aria-describedby` reason.
   - A settings import that sets an inapplicable display-only value raises `DISPLAY_ONLY_IGNORED` (info).
 
-- [ ] **Tests:**
+- [x] **Tests:**
   - `UI-01 bonded disables bridge controls with reason`
   - `UI-01 connected enables gap`
   - `§9.5 inapplicable imported setting → DISPLAY_ONLY_IGNORED info`
-- **Commit.**
+- [x] **Commit.**
+
+**Result (2026-10-08):**
+- **Pure parts.** `SBSchema.applicability(project)` returns `{"in-…": reason | null}` over one fixed key set (bridge, maxbridge, gap, corner, cull, cullon, margin, holes, holedia, thmode, manual-th, smooth, passes, m-height/length/matwidth/thick/kerf), from one rule table shared with `SBSchema.ignoredSettings(project)`. Bonded: bridge, max bridge and gap disabled with reasons; corner style disabled too (D1 unsmoothed, the same note `modeChangeDiff` gives); `#in-cull` stays enabled and the opt-in is the new `#in-cullon` checkbox (`construction.bridge.cullEnabled`, applyControl `cullon`, bonded only; disabled in connected, which always culls); `#in-margin` stays enabled. Height mode disables tone split, manual thresholds and smoothing; manual thresholds otherwise need the Manual split; machine None disables the limits; holes off disables the diameter (the latter three replace ad-hoc `disabled` lines in app.js).
+- **Frame default.** `modeChangeDiff` to bonded now adds `construction.frame → {enabled: false, widthMM: 0}` when a frame is set ("#in-margin defaults to 0"); `targetMM` is kept, so the finished size is unchanged. G2.11e shows it in the review dialog.
+- **§9.5.** `importLoose` now also returns `diagnostics`: for a valid import, one `DISPLAY_ONLY_IGNORED` (info) per setting the project's modes do not use whose value differs from the neutral value of the preset with that mode (bonded: bridge 1.8, max bridge 40, corner sharp, tolerance 0.05; connected: cull opt-in false; height: balanced, no manual list, smoothing 0/0; tonal: height filter null). The value is kept, not rewritten. An invalid import gets none (validate reports it). There is no import UI yet; G3.6/G3.9 surface these.
+- **App.** `applyApplicability()` runs in `syncControls`: disabled control, `.row.disabled`, a `.why` reason (`id="why-in-…"`, created on demand) appended to the control's `aria-describedby` and removed when it applies. The v1.1.0 `setLegacy` controls are now re-shown on sync, so the margin slider follows a mode change. Headless Chromium smoke check on `dist`: acrylic → cull opt-in disabled; Demo + bonded → bridge/max bridge/gap/corner disabled with reasons, margin 0; height → smoothing and thresholds disabled; back to connected → gap and bridges enabled, reasons hidden; no page errors.
+- **Deviation.** The plan lists only bridge, maxbridge and gap as bonded-disabled; corner style is also disabled (D1) and the cull opt-in is a separate checkbox rather than the slider, so the threshold stays editable as the spec asks.
 
 ### Task G2.11e: Mode-change review (PRJ-02, AT-21)
 

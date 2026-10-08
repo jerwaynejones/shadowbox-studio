@@ -52,3 +52,17 @@ that added it.
 - [ ] Review shows Appearance (uniform colour / palette proof), the stock colour and the MAT-04
       palette disclaimer; changing them or the Explode slider recolours or moves the preview without
       regenerating.
+
+## Applicability and disabled-with-reason controls (UI-01, §9.5, D1, G2.11d)
+
+- [ ] With Construction = Bonded relief, Bridge width, Max bridge reach, Gap between sheets and Corner
+      style are dimmed and disabled, each with a short reason under it; a screen reader announces
+      the reason as the control's description. Cull islands stays enabled and "Remove parts under the
+      cull size (bonded opt-in)" can be ticked.
+- [ ] Switching a framed connected project to Bonded relief sets the Frame ring slider to 0 and keeps
+      the finished size.
+- [ ] With Connected sheets, Gap and the bridge controls are enabled with no reason shown; the bonded
+      cull opt-in is disabled with its reason.
+- [ ] Read the image as Height disables Tone split, Manual thresholds and the smoothing sliders with a
+      reason; Manual thresholds is otherwise enabled only with the Manual tone split. Laser profile
+      None disables the five limits; Registration holes off disables Hole diameter.

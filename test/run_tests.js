@@ -4289,6 +4289,75 @@ suite("docs.js/schema.js/index.html/app.js — G2.11c control groups, dimension 
     /<details[^>]*id="dim-thresholds"/.test(html) && html.indexOf('id="dim-thresholds"') > html.indexOf('id="dimbar"'));
 });
 
+suite("schema.js/index.html/app.js — G2.11d applicability and disabled-with-reason controls (UI-01, §9.5, D1)", () => {
+  const S = SBSchema;
+  const root = path.join(__dirname, "..");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const appSrc = fs.readFileSync(path.join(root, "js", "app.js"), "utf8");
+  const css = fs.readFileSync(path.join(root, "css", "style.css"), "utf8");
+  const tagOf = (id) => { const m = new RegExp("<[a-z]+\\b[^>]*\\bid=\"" + id + "\"[^>]*>").exec(html); return m ? m[0] : ""; };
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  const withAt = (o, p, v) => { const c = clone(o); const ks = p.split("."); let t = c; for (const k of ks.slice(0, -1)) t = t[k]; t[ks[ks.length - 1]] = v; return c; };
+  const P = S.defaults("plywood"), A = S.defaults("acrylic"), P0 = JSON.stringify(P);
+  const why = (r) => typeof r === "string" && r.length > 0;
+  const apP = S.applicability(P), apA = S.applicability(A);
+
+  check("UI-01 bonded disables bridge controls with reason",
+    why(apP["in-bridge"]) && why(apP["in-maxbridge"]) && why(apP["in-gap"]) && /bonded/i.test(apP["in-bridge"]) && /gap is 0/i.test(apP["in-gap"]));
+  check("UI-01 bonded: #in-cull stays enabled and culling is an explicit opt-in (#in-cullon)", apP["in-cull"] === null && apP["in-cullon"] === null);
+  check("UI-01 bonded: #in-margin stays enabled (the bonded preset frame is 0)", apP["in-margin"] === null && P.construction.frame.widthMM === 0);
+  check("D1 bonded disables corner smoothing with reason (bonded contours are unsmoothed)", why(apP["in-corner"]) && /D1|unsmoothed/i.test(apP["in-corner"]));
+  check("UI-01 connected enables gap", apA["in-gap"] === null && apA["in-bridge"] === null && apA["in-maxbridge"] === null && apA["in-corner"] === null);
+  check("UI-01 connected: the cull opt-in is not applicable (connected always culls)", why(apA["in-cullon"]) && apA["in-cull"] === null);
+  check("UI-01 height mode disables tone split, manual thresholds and smoothing with reason",
+    ["in-thmode", "in-manual-th", "in-smooth", "in-passes"].every((id) => why(apP[id])) &&
+    ["in-thmode", "in-smooth", "in-passes"].every((id) => apA[id] === null));
+  check("UI-01 tonal: manual thresholds are applicable only with the manual tone split",
+    why(apA["in-manual-th"]) && S.applicability(S.applyControl(A, "thmode", "manual"))["in-manual-th"] === null);
+  check("PO-LASER-1 machine None disables the limit fields with reason",
+    ["in-m-height", "in-m-length", "in-m-matwidth", "in-m-thick", "in-m-kerf"].every((id) => apP[id] === null && why(S.applicability(S.applyControl(P, "machine", "none"))[id])));
+  check("ASM-04 hole diameter needs registration holes", why(apP["in-holedia"]) && apA["in-holedia"] === null && apP["in-holes"] === null);
+  check("applicability is pure, total over one key set, and every value is a reason string or null", (() => {
+    const keys = JSON.stringify(Object.keys(apP).sort());
+    return JSON.stringify(P) === P0 && keys === JSON.stringify(Object.keys(apA).sort()) &&
+      Object.values(apP).concat(Object.values(apA)).every((v) => v === null || why(v)); })());
+
+  // ---- bonded cull opt-in and the bonded frame default
+  check("UI-01 cullon toggles construction.bridge.cullEnabled in bonded (geometry: revision + 1); refused in connected", (() => {
+    const on = S.applyControl(P, "cullon", true), off = S.applyControl(on, "cullon", "false");
+    return on.construction.bridge.cullEnabled === true && on.revision === P.revision + 1 && off.construction.bridge.cullEnabled === false &&
+      JSON.stringify(S.applyControl(A, "cullon", true)) === JSON.stringify(A) && S.controlValues(on)["in-cullon"] === "true"; })());
+  check("UI-01 entering bonded mode defaults the frame ring (#in-margin) to 0; the finished size is kept", (() => {
+    const d = S.modeChangeDiff(A, { construction: { mode: "bonded-relief" } }).find((x) => x.path === "construction.frame");
+    const b = S.applyControl(A, "construction", "bonded-relief");
+    return d && d.from.widthMM === 12 && d.to.enabled === false && d.to.widthMM === 0 && why(d.reason) &&
+      b.construction.frame.enabled === false && b.geometry.targetMM === A.geometry.targetMM && S.validate(b).ok &&
+      S.modeChangeDiff(P, { construction: { mode: "bonded-relief" } }).length === 0; })());
+
+  // ---- §9.5 DISPLAY_ONLY_IGNORED
+  const ignored = (obj) => S.importLoose(obj).diagnostics.filter((d) => d.code === "DISPLAY_ONLY_IGNORED");
+  check("§9.5 inapplicable imported setting → DISPLAY_ONLY_IGNORED info", (() => {
+    const ds = ignored(withAt(P, "construction.bridge.bridgeMM", 3));
+    return ds.length === 1 && ds[0].severity === "info" && /construction\.bridge\.bridgeMM/.test(ds[0].message) && /bonded/i.test(ds[0].message); })());
+  check("§9.5 the presets import with no ignored settings", ignored(P).length === 0 && ignored(A).length === 0);
+  check("§9.5 a connected cull opt-in and height-mode smoothing are reported as ignored", (() => {
+    const c = ignored(withAt(A, "construction.bridge.cullEnabled", true)), s = ignored(withAt(P, "interpretation.smoothing", { radius: 4, passes: 2 }));
+    return c.length === 1 && /cullEnabled/.test(c[0].message) && s.length === 1 && /smoothing/.test(s[0].message); })());
+  check("§9.5 an invalid import gets no applicability diagnostics (validate reports it)",
+    S.importLoose(withAt(P, "construction.sheets", 99)).diagnostics.length === 0 && Array.isArray(S.importLoose(null).diagnostics));
+  check("§9.5 SBSchema.ignoredSettings(p) is the same list importLoose reports",
+    JSON.stringify(S.ignoredSettings(withAt(P, "construction.bridge.maxBridgeMM", 80))) === JSON.stringify(S.importLoose(withAt(P, "construction.bridge.maxBridgeMM", 80)).diagnostics));
+
+  // ---- markup and bindings
+  check("UI-01 every applicability control exists in index.html with a label",
+    Object.keys(apP).every((id) => tagOf(id) !== "" && new RegExp("<label[^>]*for=\"" + id + "\"").test(html)));
+  check("UI-01 #in-cullon is a checkbox in the Construction stage",
+    /type="checkbox"/.test(tagOf("in-cullon")) && html.indexOf('id="in-cullon"') > html.indexOf('id="stage-construction"') && html.indexOf('id="in-cullon"') < html.indexOf('id="stage-review"'));
+  check("UI-01 app.js drives disabled rows from SBSchema.applicability with .why text and aria-describedby",
+    /SBSchema\.applicability\(/.test(appSrc) && /classList\.toggle\("disabled"/.test(appSrc) && /aria-describedby/.test(appSrc) && /"why"/.test(appSrc));
+  check("UI-01 style.css styles .row.disabled and .why", /\.row\.disabled\b/.test(css) && /\.why\b/.test(css));
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {
