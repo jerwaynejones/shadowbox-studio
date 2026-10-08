@@ -46,6 +46,8 @@
     sheets: [],          // [{mask, bridges, loops, stats}]
     procW: 0, procH: 0,
     view: null,          // G2.12: {page, layers} canonical polygons of the last run for the review views
+    viewToken: 0,        // bumps on every run or re-render; a deferred view build runs only while still current
+    viewError: null,     // message when connectedLayers failed for this run (the views fall back to the raster)
     report: "",
   };
 
@@ -109,7 +111,9 @@
     // 2-5. DOM-free engine (T0.5 seam).
     const { sheets, totals } = SBEngine.legacyRun(rgba, w, h, state);
     run.sheets = sheets;
-    run.view = null;   // G2.12: canonical polygons for Proof/Section/Tilt, rebuilt lazily per run (viewLayers)
+    run.view = null;   // G2.12: canonical polygons for Proof/Section/Tilt, rebuilt lazily per run (renderAll)
+    run.viewError = null;
+    run.viewToken++;   // a view build still pending for the previous run is dropped
     let totalBridged = totals.bridged, totalCulled = totals.culled, totalCutMM = totals.cutMM;
     run.procW = w; run.procH = h; run.revision = project.revision;
 
@@ -158,21 +162,60 @@
   /**
    * G2.12: the review views are drawn from the same canonical polygons as the cut files and proof.svg
    * (SBEngine.connectedLayers), built once per pipeline run; appearance changes only re-tint them.
+   *
+   * KI-CONN-PERF: connectedLayers runs on the main thread and, with smooth corners (the acrylic default), costs
+   * about 1.8 s on a simple 720 px draft and about 11 s on a busy one (sharp corners: 0.2–1 s), on top of
+   * legacyRun. So the build is deferred: the Layers grid, the chips, the status line and a raster composite of
+   * the new masks (preview.setSheets) are shown and painted first, then the polygons replace the raster. A newer
+   * run or re-render supersedes a pending build (run.viewToken). The build itself still blocks until G4.1 moves
+   * it to a worker. A failure (geometry, or a colour refused with COLOR) is reported in the status line and the
+   * views keep the raster composite; it never stops the grid or the chips from updating.
    */
-  function viewLayers() {
-    if (!run.view) run.view = SBEngine.connectedLayers(run.sheets, run.procW, run.procH, cfg());
-    return run.view;
-  }
-
   function renderAll() {
     if (!run.sheets.length) return;
     const colors = sheetColors();
-    const v = viewLayers();
+    const token = ++run.viewToken;
+    try { renderSheetGrid(colors); renderPaletteChips(colors); }
+    catch (err) { setStatus(`${run.report} · layer cards unavailable: ${err.message || err}`); }
+    if (run.view) { showView(colors); return; }
+    showRaster(colors);
+    if (run.viewError) { setStatus(`${run.report} · proof unavailable: ${run.viewError}`); return; }
+    setStatus(`${run.report} · building proof geometry…`);
+    // Two hops (a frame, then a task) so the browser paints the status and the raster before the build blocks.
+    requestAnimationFrame(() => setTimeout(() => buildView(token), 0));
+  }
+
+  function buildView(token) {
+    if (token !== run.viewToken || run.view || !run.sheets.length) return;   // superseded, or already built
+    const t0 = performance.now();
+    try {
+      run.view = SBEngine.connectedLayers(run.sheets, run.procW, run.procH, cfg());
+    } catch (err) {
+      run.viewError = String(err && err.message || err);
+      setStatus(`${run.report} · proof unavailable: ${run.viewError}`);
+      return;
+    }
+    run.report += ` · proof ${(performance.now() - t0).toFixed(0)} ms`;
+    setStatus(run.report);
+    showView(sheetColors());
+  }
+
+  /** Feed the polygon views; a refused colour (COLOR) or any other failure falls back to the raster composite. */
+  function showView(colors) {
     const bonded = project.construction.mode === "bonded-relief";
-    preview.setSnapshot({ page: v.page, layers: v.layers, tMM: project.material.thicknessMM, gMM: bonded ? 0 : project.construction.gapMM },
-      colors, { bridges: { masks: run.sheets.map((sh) => sh.bridges || null), w: run.procW, h: run.procH } });
-    renderSheetGrid(colors);
-    renderPaletteChips(colors);
+    try {
+      preview.setSnapshot({ page: run.view.page, layers: run.view.layers, tMM: project.material.thicknessMM, gMM: bonded ? 0 : project.construction.gapMM },
+        colors, { bridges: { masks: run.sheets.map((sh) => sh.bridges || null), w: run.procW, h: run.procH } });
+      setStatus(run.report);
+    } catch (err) {
+      setStatus(`${run.report} · proof unavailable: ${err.message || err}`);
+      showRaster(colors);
+    }
+  }
+
+  /** The v1.1.0 raster composite of the current masks (interim view while the polygons build, and the fallback). */
+  function showRaster(colors) {
+    try { preview.setSheets(run.sheets, colors, run.procW, run.procH); } catch (_) { /* reported by the caller */ }
   }
 
   /** The "Layer sheets" tab: one card per sheet with its cut preview + stats. */
@@ -399,7 +442,7 @@
     files.push({ name: "ASSEMBLY.md", data: buildAssemblyMD(colors) });
     files.push({ name: "settings.json", data: settingsJSON() });
 
-    const snap = await preview.snapshot();
+    const snap = await preview.snapshot("proof");   // the bundle image is always the opaque proof, whatever tab is open
     if (snap) files.push({ name: "preview.png", data: new Uint8Array(await snap.arrayBuffer()) });
 
     const zipName = `${safeName(state.projectName)}_shadowbox.zip`;

@@ -7,7 +7,10 @@
  *            the shared page frame, back to front, with no image smoothing, no shadows
  *            and no parallax or explode offsets. It matches proof.svg (assemblySVG).
  *   section  a stack section across the page at one y (SBProof.section): every layer's
- *            material spans at its real Z band (thickness t, gap g), dimensioned.
+ *            material spans at its real Z band (thickness t, gap g), with width and height
+ *            dimension lines, Z ticks and a page gauge at the right edge that marks the
+ *            section line (the gauge spans the canvas height, so a vertical drag maps the
+ *            pointer to the page y it points at on the gauge).
  *   tilt     illustrative only: the same layers composited with a parallax offset driven
  *            by pointer position (drag to tilt), a soft drop shadow per layer and the
  *            explode spread. Nothing here is a measurement.
@@ -82,6 +85,7 @@
           ? maskToCanvas(sheet.bridges, w, h, AMBER, false)
           : null,
       }));
+      state.snap = null;   // the raster replaces any polygon snapshot (interim view while the polygons build)
       state.dirty = true;
     }
 
@@ -237,22 +241,39 @@
       }
     }
 
-    /** Dimensioned stack section: x across the page (mm), z up, real t and g (UI-03). */
+    /**
+     * Dimensioned stack section: x across the page (mm), z up, real t and g (UI-03). Below the bars a width
+     * dimension line, left of them a height dimension line with Z ticks; at the right edge a page gauge (top of
+     * the canvas = page top, bottom = page bottom) marks where the section line sits on the page.
+     * Only the background and the bars use fillRect (one per interval); dimensions are stroked lines.
+     */
     function drawSection(cw, ch) {
       const s = state.snap, sec = s.section || [];
       const zMax = sec.length ? sec[sec.length - 1].z1 : s.tMM;
-      const padL = 64, padR = 24, padT = 40, padB = 48;
+      const padL = 64, padR = 56, padT = 40, padB = 64;
       const scale = Math.min((cw - padL - padR) / s.page.wMM, (ch - padT - padB) / Math.max(zMax, 1e-6));
-      const ox = padL, base = padT + zMax * scale;
+      const ox = padL, base = padT + zMax * scale, right = ox + s.page.wMM * scale, top = base - zMax * scale;
       ctx.imageSmoothingEnabled = false;
       ctx.fillStyle = "rgba(255,255,255,0.04)";
-      ctx.fillRect(ox, padT, s.page.wMM * scale, zMax * scale);
+      ctx.fillRect(ox, top, s.page.wMM * scale, zMax * scale);
       for (const r of sec) {
         ctx.fillStyle = s.fills[r.layerIndex] || "#3a4450";
         const y = base - r.z1 * scale, hgt = Math.max(1, (r.z1 - r.z0) * scale);
         for (const [x0, x1] of r.intervals) ctx.fillRect(ox + x0 * scale, y, Math.max(1, (x1 - x0) * scale), hgt);
       }
-      // Dimensions: Z ticks per layer, and the t / g / total callouts.
+      const line = (x0, y0, x1, y1) => { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); };
+      ctx.strokeStyle = "#C9D3DD";
+      ctx.lineWidth = 1;
+      // Width dimension line: extension lines down from the page edges, the dimension line with end ticks, the value.
+      const dy = base + 14;
+      line(ox, base + 2, ox, dy + 4); line(right, base + 2, right, dy + 4);
+      line(ox, dy, right, dy); line(ox - 3, dy + 3, ox + 3, dy - 3); line(right - 3, dy + 3, right + 3, dy - 3);
+      // Height dimension line: left of the Z ticks' labels' column, from z = 0 to the stack top.
+      const dx = padL - 10;
+      line(dx - 4, base, ox - 2, base); line(dx - 4, top, ox - 2, top);
+      line(dx, base, dx, top); line(dx - 3, base + 3, dx + 3, base - 3); line(dx - 3, top + 3, dx + 3, top - 3);
+      // Z ticks per layer top.
+      for (const r of sec) { const ty = base - r.z1 * scale; line(ox - 6, ty, ox, ty); }
       ctx.fillStyle = "#C9D3DD";
       ctx.font = "11px ui-monospace, monospace";
       ctx.fillText("0", 6, base + 4);
@@ -261,10 +282,19 @@
         const ty = base - r.z1 * scale;
         if (lastY - ty >= 12) { ctx.fillText(SBUtil.fmt(r.z1, 2), 6, ty + 4); lastY = ty; }
       }
+      ctx.fillText(`${SBUtil.fmt(s.page.wMM, 1)} mm`, (ox + right) / 2 - 24, dy + 16);
       ctx.fillText(
         `section at y = ${SBUtil.fmt(s.sectionY, 1)} mm · t = ${SBUtil.fmt(s.tMM, 2)} mm · g = ${SBUtil.fmt(s.gMM, 2)} mm · ` +
-        `height ${SBUtil.fmt(zMax, 2)} mm · width ${SBUtil.fmt(s.page.wMM, 1)} mm`, padL, padT - 16);
-      ctx.fillText("drag up/down to move the section line", padL, base + 28);
+        `height ${SBUtil.fmt(zMax, 2)} mm`, padL, padT - 16);
+      // Page gauge: full canvas height = page height, so the drag mapping (pointer y → page y) is geometric here.
+      const gx = cw - 30, gw = 14, gy = 0.5, gh = ch - 1, my = gy + (s.sectionY / s.page.hMM) * gh;
+      ctx.strokeRect(gx, gy, gw, gh);
+      ctx.strokeStyle = "#F0A227";
+      ctx.lineWidth = 2;
+      line(gx - 6, my, gx + gw + 6, my);
+      ctx.fillStyle = "#C9D3DD";
+      ctx.fillText("page", gx - 4, gy + 14);
+      ctx.fillText("drag up/down: the amber mark on the page gauge is the section line", padL, dy + 36);
     }
 
     return {
@@ -279,10 +309,17 @@
       setExplode(v) { state.explode = v; state.dirty = true; },
       setShowBridges(v) { state.showBridges = v; state.dirty = true; },
       redraw() { state.dirty = true; },
-      /** Snapshot the current composite for the export bundle. */
-      snapshot() {
+      /**
+       * Snapshot a composite for the export bundle. mode ("proof" | "section" | "tilt") draws that view for the
+       * capture and then restores the active one; omitted, the active view is captured.
+       */
+      snapshot(mode) {
         return new Promise((resolve) => {
+          const active = state.mode;
+          if (mode !== undefined) { global.SBProof.drawParams(mode); state.mode = mode; }
           draw();
+          state.mode = active;
+          state.dirty = true;
           canvas.toBlob((b) => resolve(b), "image/png");
         });
       },

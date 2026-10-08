@@ -10,6 +10,16 @@
   dimensions (drag up or down to move the line). Tilt keeps the drag-to-tilt, shadows, explode and
   bridge highlight and is labelled "Illustrative: not to scale". The "Draft preview" badge is gone.
   New pure module `js/proof.js` (`SBProof.model`, `section`, `drawParams`, `modelHash`).
+  **Known cost (KI-CONN-PERF):** the views are built from `SBEngine.connectedLayers` after every
+  geometry change, on the main thread; with smooth corners (the acrylic default) that adds about
+  2 s on a simple image and about 11 s on a busy one at the 720 px draft (sharp corners: 0.2–1 s).
+  The Layers grid, status line and a raster preview of the new layers now appear first and the
+  polygons follow (the status line shows `proof N ms`); a newer change cancels a pending build.
+  The page is still busy while the polygons build, until the G4.1 worker pool. A failure while
+  building the views shows `proof unavailable: …` in the status line instead of freezing the
+  preview. Section now has width and height dimension lines and a page gauge marking the section
+  line; the exported `preview.png` is always the proof, whichever tab is open. The proof and
+  `proof.svg` share one fill and edge-stroke rule (`SBSvg.paint`).
 
 - **G2.11b, stages and the fabrication pitch input (UI-01, PO-LASER-4, LYR-01):** the control rail
   is now the five UI-01 stages, Source, Interpretation, Construction, Review and Export, in order.

@@ -4458,6 +4458,18 @@ suite("proof.js/preview.js/index.html/app.js — G2.12 opaque proof, stack secti
     P.model(LC, pal, { edgeStroke: true }).every((e) => !!e.stroke) && P.model(LC, "#808080", { edgeStroke: false }).every((e) => e.stroke === null) &&
     P.model(LC, ["#888", "#888", "#888"], {}).every((e) => e.fill === "#888888" && !!e.stroke));
   check("NFR-06 model refuses a non-hex color", throws(() => P.model(LC, ['#fff" x', "#000"], {}), /COLOR/) && throws(() => P.model(LC, "red", {}), /COLOR/));
+  check("G2.12 model refuses a non-integer layer.index (NONINTEGER), as assemblySVG does",
+    throws(() => P.model([{ index: 0.5, material: LC[1].material }], "#808080", {}), /SBProof\.model: NONINTEGER/) &&
+    throws(() => S.assemblySVG([{ index: 0.5, material: LC[1].material }], pgC, "#808080"), /SBSvg\.assemblySVG: NONINTEGER/));
+  check("G2.12 model and assemblySVG share one paint rule (SBSvg.paint); proof.js keeps no copy of hexColor/darker", (() => {
+    const src = fs.readFileSync(path.join(__dirname, "..", "js", "proof.js"), "utf8");
+    const cases = [[pal, {}], ["#808080", {}], [pal, { edgeStroke: true }], ["#abc", { edgeStroke: false }], [["#888", "#888", "#888"], {}]];
+    return typeof S.paint === "function" && !/function hexColor|function darker/.test(src) && /SBSvg\.paint\(/.test(src) &&
+      cases.every(([c, o]) => { const p = S.paint(LC, c, o), m = P.model(LC, c, o);
+        return JSON.stringify(m.map((e) => [e.layerIndex, e.fill, e.stroke])) === JSON.stringify(p.layers.map((l, j) => [l.index, p.fills[j], p.strokes[j]])); }); })());
+  check("AT-11 explode is a view setting: applyControl(explode) keeps the revision and SBSchema.geometryKey", (() => {
+    const p0 = SBSchema.defaults("acrylic"), p1 = SBSchema.applyControl(p0, "explode", 40);
+    return p1.view.explodeMM === 40 && p1.revision === p0.revision && JSON.stringify(SBSchema.geometryKey(p1)) === JSON.stringify(SBSchema.geometryKey(p0)); })());
   check("MAT-04 proof colors do not change any layer canonicalHash and do not mutate layers", (() => {
     const L = M.fromMasks(bt.layers, 8, 5, pgC, { frame: true }), before = JSON.stringify(L);
     P.model(L, pal, {}); P.model(L, "#123456", { edgeStroke: true }); P.section(L, 30, { tMM: 3, gMM: 1 });
@@ -4467,12 +4479,12 @@ suite("proof.js/preview.js/index.html/app.js — G2.12 opaque proof, stack secti
 
   // ---- preview.js with a recording 2D context (no DOM)
   const rec = (() => {
-    const log = { canvases: 0, fills: 0, draws: [], rects: 0 };
+    const log = { canvases: 0, fills: 0, draws: [], rects: 0, strokes: 0, strokeRects: 0 };
     const mkCtx = () => { const st = { imageSmoothingEnabled: true, shadowBlur: 0, shadowColor: "rgba(0,0,0,0)", fillStyle: "#000", strokeStyle: "#000", lineWidth: 1 };
       const stack = [];
       return Object.assign(st, {
         setTransform() {}, clearRect() {}, save() { stack.push(Object.assign({}, st)); }, restore() { Object.assign(st, stack.pop() || {}); },
-        fillRect() { log.rects++; }, strokeRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, fillText() {}, translate() {}, scale() {},
+        fillRect() { log.rects++; }, strokeRect() { log.strokeRects++; }, beginPath() {}, moveTo() {}, lineTo() {}, stroke() { log.strokes++; }, fillText() {}, translate() {}, scale() {},
         fill() { log.fills++; }, createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData() {},
         drawImage(img, x, y, w, h) { log.draws.push({ x, y, w, h, smoothing: st.imageSmoothingEnabled, blur: st.shadowBlur, img }); },
         measureText: (t) => ({ width: t.length * 6 }) }); };
@@ -4494,7 +4506,7 @@ suite("proof.js/preview.js/index.html/app.js — G2.12 opaque proof, stack secti
   pv.setSnapshot(snap, pal);
   const made = rec.log.canvases - c0, nonEmpty = LC.filter((l) => l.material.length).length;
   check("UI-02 setSnapshot rasterizes each layer's Path2D once into an offscreen canvas", made === nonEmpty && rec.log.fills === nonEmpty);
-  const frame = () => { rec.log.draws = []; rec.log.rects = 0; pv.snapshot(); return rec.log.draws.slice(); };
+  const frame = (mode) => { rec.log.draws = []; rec.log.rects = 0; rec.log.strokes = 0; rec.log.strokeRects = 0; pv.snapshot(mode); return rec.log.draws.slice(); };
   pv.setMode("tilt"); pv.setExplode(1); frame(); frame();
   check("UI-02 tilt frames only composite (no re-rasterization)", rec.log.canvases - c0 === made && rec.log.fills === nonEmpty);
   const td = frame();
@@ -4506,7 +4518,20 @@ suite("proof.js/preview.js/index.html/app.js — G2.12 opaque proof, stack secti
     pd.length === nonEmpty && pd.every((d) => d.smoothing === false && d.blur === 0 && d.x === pd[0].x && d.y === pd[0].y && d.w === pd[0].w));
   pv.setMode("section"); const sd = frame();
   const nInt = P.section(LC, pgC.hMM / 2, { tMM: 3, gMM: 2 }).reduce((a, r) => a + r.intervals.length, 0);
-  check("UI-03 section mode draws one bar per SBProof.section interval (mid-page by default), no layer images", sd.length === 0 && rec.log.rects >= nInt && nInt > 0);
+  check("UI-03 section mode draws one bar per SBProof.section interval (mid-page by default), no layer images", sd.length === 0 && rec.log.rects === nInt + 1 && nInt > 0);
+  check("UI-03 section is dimensioned: width and height dimension lines, Z ticks and a page gauge marking the section line",
+    rec.log.strokes >= 10 + P.section(LC, pgC.hMM / 2, { tMM: 3, gMM: 2 }).length + 1 && rec.log.strokeRects === 1);
+  const xd = frame("proof");
+  check("G2.12 snapshot(\"proof\") captures the proof from any tab and restores the active mode (bundle preview.png)",
+    xd.length === nonEmpty && xd.every((d) => d.smoothing === false && d.blur === 0) && pv.getMode() === "section");
+  pv.setMode("proof");
+  const pvb = rec.ctx.SBPreview.create(rec.mkCanvas()), masks = LC.map((l, k) => (k === 1 ? new Uint8Array([0, 1, 1, 0]) : null));
+  pvb.setSnapshot(snap, pal, { bridges: { masks, w: 2, h: 2 } });
+  const bpp = (() => { rec.log.draws = []; pvb.setMode("proof"); pvb.snapshot(); return rec.log.draws.slice(); })();
+  const bt_ = (() => { rec.log.draws = []; pvb.setMode("tilt"); pvb.snapshot(); return rec.log.draws.slice(); })();
+  check("UI-02 bridge highlight is drawn in Tilt only, never in Proof", bpp.length === nonEmpty && bt_.length === nonEmpty + 1);
+  pvb.setSheets([{ mask: new Uint8Array(4), bridges: null }], ["#808080"], 2, 2); rec.log.draws = []; pvb.snapshot();
+  check("G2.12 setSheets (raster interim view) replaces the polygon snapshot", rec.log.draws.length === 1);
   check("UI-02 setMode refuses an unknown mode", throws(() => pv.setMode("glow"), /MODE/));
 
   // ---- markup and wiring
@@ -4520,6 +4545,11 @@ suite("proof.js/preview.js/index.html/app.js — G2.12 opaque proof, stack secti
     require("./modules.js").NODE_MODULES.includes("proof.js"));
   check("UI-02 app.js: switchTab sets the preview mode; renderAll feeds setSnapshot from canonical polygons",
     /preview\.setMode\(/.test(appSrc) && /preview\.setSnapshot\(/.test(appSrc) && /SBEngine\.connectedLayers\(/.test(appSrc));
+  check("KI-CONN-PERF app.js: renderAll defers the polygon build (raster first, rAF + task, superseded by viewToken) and reports failures",
+    (() => { const ra = appSrc.slice(appSrc.indexOf("function renderAll()"), appSrc.indexOf("/** The \"Layer sheets\" tab")); return /requestAnimationFrame\(\(\) => setTimeout\(/.test(ra) &&
+      /token !== run\.viewToken/.test(ra) && /preview\.setSheets\(/.test(ra) && /proof unavailable/.test(ra) && /catch \(err\)/.test(ra) &&
+      ra.indexOf("renderSheetGrid(") < ra.indexOf("connectedLayers("); })());
+  check("G2.12 app.js: the export bundle image is the proof (preview.snapshot(\"proof\"))", /preview\.snapshot\("proof"\)/.test(appSrc));
   check("UI-02 the draft badge is gone; the tilt view carries an Illustrative note",
     !/Draft preview: cut files come from polygons/.test(html) && /id="tiltnote"[^>]*>[^<]*Illustrative/.test(html));
 });

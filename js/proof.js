@@ -9,7 +9,8 @@
  *   modelHash(model)                     → sha256 hex of the model
  *
  * Everything is read from layer.material (the canonical polygons that also feed layerSVG and assemblySVG),
- * so the on-screen proof, the section and the cut files share one source. Appearance never touches
+ * so the on-screen proof, the section and the cut files share one source. Fill and edge-stroke rules come from
+ * SBSvg.paint, the helper assemblySVG uses, so the proof and proof.svg cannot drift. Appearance never touches
  * geometry: nothing here mutates a layer or enters a geometry hash. No DOM.
  * ==========================================================================*/
 (function (global) {
@@ -29,22 +30,6 @@
     return MODES[mode];
   };
 
-  /** "#rgb" / "#rrggbb" → lowercase "#rrggbb"; anything else is refused (NFR-06). Same rule as SBSvg.assemblySVG. */
-  function hexColor(c, k) {
-    if (typeof c === "string" && /^#[0-9a-fA-F]{6}$/.test(c)) return c.toLowerCase();
-    if (typeof c === "string" && /^#[0-9a-fA-F]{3}$/.test(c)) return ("#" + c[1] + c[1] + c[2] + c[2] + c[3] + c[3]).toLowerCase();
-    throw new Error("SBProof.model: COLOR — color for layer " + k + " must be #rgb or #rrggbb (got " + JSON.stringify(c) + ")");
-  }
-
-  /** Edge stroke: each channel scaled to 60 % (integer math), identical to SBSvg.assemblySVG. */
-  function darker(hex) {
-    let out = "#";
-    for (let i = 1; i < 7; i += 2) out += Math.floor((parseInt(hex.slice(i, i + 2), 16) * 3) / 5).toString(16).padStart(2, "0");
-    return out;
-  }
-
-  const nonEmptySorted = (layers) => (layers || []).filter((l) => l && l.material && l.material.length).slice().sort((a, b) => a.index - b.index);
-
   /**
    * Retained/waste proof model: one entry per non-empty layer, back to front by index. rings are the layer's
    * material rings (outer, then its holes, per polygon) in µm, painted even-odd; everything else on the page is
@@ -52,16 +37,11 @@
    * appearance is uniform, as in assemblySVG.
    */
   P.model = function (layers, colors, opts) {
-    const o = opts || {};
-    const uniform = typeof colors === "string";
-    const L = nonEmptySorted(layers);
-    const fills = L.map((l) => hexColor(uniform ? colors : (Array.isArray(colors) ? colors[l.index] : undefined), l.index));
-    const same = uniform || fills.every((c) => c === fills[0]);
-    const stroke = o.edgeStroke === undefined ? same : !!o.edgeStroke;
+    const { layers: L, fills, strokes } = global.SBSvg.paint(layers, colors, opts, "SBProof.model");   // the assemblySVG rule
     return L.map((l, j) => {
       const rings = [];
       for (const p of l.material) { rings.push(p.outer.slice()); for (const h of p.holes || []) rings.push(h.slice()); }
-      return { layerIndex: l.index, fill: fills[j], stroke: stroke ? darker(fills[j]) : null, rings };
+      return { layerIndex: l.index, fill: fills[j], stroke: strokes[j], rings };
     });
   };
 

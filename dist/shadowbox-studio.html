@@ -6431,6 +6431,26 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   };
 
   /**
+   * The paint rule shared by assemblySVG and SBProof.model (one source, so the on-screen proof cannot drift from
+   * proof.svg): the non-empty layers sorted back to front by index (a non-integer index is refused, NONINTEGER),
+   * each one's fill ("#rgb"/"#rrggbb" normalized to lowercase "#rrggbb"; anything else refused, COLOR) and its
+   * edge stroke (60 % of the fill per channel, or null). edgeStroke defaults to true when the appearance is
+   * uniform (one color, or every painted layer the same color). who names the caller in error messages.
+   * Pure: layers are not mutated.
+   */
+  S.paint = function (layers, colors, opts, who) {
+    const o = opts || {}, fn = who || "SBSvg.paint";
+    const uniform = typeof colors === "string";
+    const L = (layers || []).filter((l) => l && l.material && l.material.length).slice();
+    for (const l of L) if (!Number.isInteger(l.index)) throw new Error(fn + ": NONINTEGER — layer.index must be an integer (got " + l.index + ")");
+    L.sort((a, b) => a.index - b.index);
+    const fills = L.map((l) => hexColor(uniform ? colors : (Array.isArray(colors) ? colors[l.index] : undefined), l.index, fn));
+    const same = uniform || fills.every((c) => c === fills[0]);
+    const stroke = o.edgeStroke === undefined ? same : !!o.edgeStroke;
+    return { layers: L, fills, strokes: fills.map((c) => (stroke ? darker(c) : null)) };
+  };
+
+  /**
    * Opaque proof of the assembled stack (GEO-01, MAT-04, UI-02). Not a cut file.
    *
    *   assemblySVG(layers: MaterialLayer[], page: {wMM, hMM}, colors: string | string[], {edgeStroke?}) → string
@@ -6446,23 +6466,14 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    * Pure: appearance never touches geometry; layers are not mutated and nothing here enters a hash (MAT-04).
    */
   S.assemblySVG = function (layers, page, colors, opts) {
-    const o = opts || {};
     const wUm = pageUm(page && page.wMM, "wMM", "assemblySVG"), hUm = pageUm(page && page.hMM, "hMM", "assemblySVG");
     const W = S.fmtUm(wUm), H = S.fmtUm(hUm);
-    const uniform = typeof colors === "string";
-    const fillOf = (k) => hexColor(uniform ? colors : (Array.isArray(colors) ? colors[k] : undefined), k);
-
-    const L = (layers || []).filter((l) => l && l.material && l.material.length).slice();
-    for (const l of L) if (!Number.isInteger(l.index)) throw new Error("SBSvg.assemblySVG: NONINTEGER — layer.index must be an integer (got " + l.index + ")");
-    L.sort((a, b) => a.index - b.index);
-    const fills = L.map((l) => fillOf(l.index));
-    const same = uniform || fills.every((c) => c === fills[0]);
-    const stroke = o.edgeStroke === undefined ? same : !!o.edgeStroke;
+    const { layers: L, fills, strokes } = S.paint(layers, colors, opts, "SBSvg.assemblySVG");
 
     const body = L.map((l, j) => {
       const d = [];
       for (const p of l.material) for (const r of [p.outer, ...(p.holes || [])]) d.push(ringD(r, true));
-      const st = stroke ? ` stroke="${darker(fills[j])}" stroke-width="0.2" stroke-linejoin="round"` : "";
+      const st = strokes[j] ? ` stroke="${strokes[j]}" stroke-width="0.2" stroke-linejoin="round"` : "";
       return `<path d="${d.join(" ")}" fill="${fills[j]}" fill-rule="evenodd"${st}/>`;
     });
 
@@ -6477,10 +6488,10 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   };
 
   /** "#rgb" / "#rrggbb" → lowercase "#rrggbb"; anything else is refused (NFR-06: no attribute injection). */
-  function hexColor(c, k) {
+  function hexColor(c, k, fn) {
     if (typeof c === "string" && /^#[0-9a-fA-F]{6}$/.test(c)) return c.toLowerCase();
     if (typeof c === "string" && /^#[0-9a-fA-F]{3}$/.test(c)) return ("#" + c[1] + c[1] + c[2] + c[2] + c[3] + c[3]).toLowerCase();
-    throw new Error("SBSvg.assemblySVG: COLOR — color for layer " + k + " must be #rgb or #rrggbb (got " + JSON.stringify(c) + ")");
+    throw new Error((fn || "SBSvg.assemblySVG") + ": COLOR — color for layer " + k + " must be #rgb or #rrggbb (got " + JSON.stringify(c) + ")");
   }
 
   /** Edge stroke: each channel scaled to 60 % (integer math), so it is darker than any non-black fill. */
@@ -6738,7 +6749,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *   modelHash(model)                     → sha256 hex of the model
  *
  * Everything is read from layer.material (the canonical polygons that also feed layerSVG and assemblySVG),
- * so the on-screen proof, the section and the cut files share one source. Appearance never touches
+ * so the on-screen proof, the section and the cut files share one source. Fill and edge-stroke rules come from
+ * SBSvg.paint, the helper assemblySVG uses, so the proof and proof.svg cannot drift. Appearance never touches
  * geometry: nothing here mutates a layer or enters a geometry hash. No DOM.
  * ==========================================================================*/
 (function (global) {
@@ -6758,22 +6770,6 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     return MODES[mode];
   };
 
-  /** "#rgb" / "#rrggbb" → lowercase "#rrggbb"; anything else is refused (NFR-06). Same rule as SBSvg.assemblySVG. */
-  function hexColor(c, k) {
-    if (typeof c === "string" && /^#[0-9a-fA-F]{6}$/.test(c)) return c.toLowerCase();
-    if (typeof c === "string" && /^#[0-9a-fA-F]{3}$/.test(c)) return ("#" + c[1] + c[1] + c[2] + c[2] + c[3] + c[3]).toLowerCase();
-    throw new Error("SBProof.model: COLOR — color for layer " + k + " must be #rgb or #rrggbb (got " + JSON.stringify(c) + ")");
-  }
-
-  /** Edge stroke: each channel scaled to 60 % (integer math), identical to SBSvg.assemblySVG. */
-  function darker(hex) {
-    let out = "#";
-    for (let i = 1; i < 7; i += 2) out += Math.floor((parseInt(hex.slice(i, i + 2), 16) * 3) / 5).toString(16).padStart(2, "0");
-    return out;
-  }
-
-  const nonEmptySorted = (layers) => (layers || []).filter((l) => l && l.material && l.material.length).slice().sort((a, b) => a.index - b.index);
-
   /**
    * Retained/waste proof model: one entry per non-empty layer, back to front by index. rings are the layer's
    * material rings (outer, then its holes, per polygon) in µm, painted even-odd; everything else on the page is
@@ -6781,16 +6777,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    * appearance is uniform, as in assemblySVG.
    */
   P.model = function (layers, colors, opts) {
-    const o = opts || {};
-    const uniform = typeof colors === "string";
-    const L = nonEmptySorted(layers);
-    const fills = L.map((l) => hexColor(uniform ? colors : (Array.isArray(colors) ? colors[l.index] : undefined), l.index));
-    const same = uniform || fills.every((c) => c === fills[0]);
-    const stroke = o.edgeStroke === undefined ? same : !!o.edgeStroke;
+    const { layers: L, fills, strokes } = global.SBSvg.paint(layers, colors, opts, "SBProof.model");   // the assemblySVG rule
     return L.map((l, j) => {
       const rings = [];
       for (const p of l.material) { rings.push(p.outer.slice()); for (const h of p.holes || []) rings.push(h.slice()); }
-      return { layerIndex: l.index, fill: fills[j], stroke: stroke ? darker(fills[j]) : null, rings };
+      return { layerIndex: l.index, fill: fills[j], stroke: strokes[j], rings };
     });
   };
 
@@ -7660,7 +7651,10 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *            the shared page frame, back to front, with no image smoothing, no shadows
  *            and no parallax or explode offsets. It matches proof.svg (assemblySVG).
  *   section  a stack section across the page at one y (SBProof.section): every layer's
- *            material spans at its real Z band (thickness t, gap g), dimensioned.
+ *            material spans at its real Z band (thickness t, gap g), with width and height
+ *            dimension lines, Z ticks and a page gauge at the right edge that marks the
+ *            section line (the gauge spans the canvas height, so a vertical drag maps the
+ *            pointer to the page y it points at on the gauge).
  *   tilt     illustrative only: the same layers composited with a parallax offset driven
  *            by pointer position (drag to tilt), a soft drop shadow per layer and the
  *            explode spread. Nothing here is a measurement.
@@ -7735,6 +7729,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
           ? maskToCanvas(sheet.bridges, w, h, AMBER, false)
           : null,
       }));
+      state.snap = null;   // the raster replaces any polygon snapshot (interim view while the polygons build)
       state.dirty = true;
     }
 
@@ -7890,22 +7885,39 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       }
     }
 
-    /** Dimensioned stack section: x across the page (mm), z up, real t and g (UI-03). */
+    /**
+     * Dimensioned stack section: x across the page (mm), z up, real t and g (UI-03). Below the bars a width
+     * dimension line, left of them a height dimension line with Z ticks; at the right edge a page gauge (top of
+     * the canvas = page top, bottom = page bottom) marks where the section line sits on the page.
+     * Only the background and the bars use fillRect (one per interval); dimensions are stroked lines.
+     */
     function drawSection(cw, ch) {
       const s = state.snap, sec = s.section || [];
       const zMax = sec.length ? sec[sec.length - 1].z1 : s.tMM;
-      const padL = 64, padR = 24, padT = 40, padB = 48;
+      const padL = 64, padR = 56, padT = 40, padB = 64;
       const scale = Math.min((cw - padL - padR) / s.page.wMM, (ch - padT - padB) / Math.max(zMax, 1e-6));
-      const ox = padL, base = padT + zMax * scale;
+      const ox = padL, base = padT + zMax * scale, right = ox + s.page.wMM * scale, top = base - zMax * scale;
       ctx.imageSmoothingEnabled = false;
       ctx.fillStyle = "rgba(255,255,255,0.04)";
-      ctx.fillRect(ox, padT, s.page.wMM * scale, zMax * scale);
+      ctx.fillRect(ox, top, s.page.wMM * scale, zMax * scale);
       for (const r of sec) {
         ctx.fillStyle = s.fills[r.layerIndex] || "#3a4450";
         const y = base - r.z1 * scale, hgt = Math.max(1, (r.z1 - r.z0) * scale);
         for (const [x0, x1] of r.intervals) ctx.fillRect(ox + x0 * scale, y, Math.max(1, (x1 - x0) * scale), hgt);
       }
-      // Dimensions: Z ticks per layer, and the t / g / total callouts.
+      const line = (x0, y0, x1, y1) => { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); };
+      ctx.strokeStyle = "#C9D3DD";
+      ctx.lineWidth = 1;
+      // Width dimension line: extension lines down from the page edges, the dimension line with end ticks, the value.
+      const dy = base + 14;
+      line(ox, base + 2, ox, dy + 4); line(right, base + 2, right, dy + 4);
+      line(ox, dy, right, dy); line(ox - 3, dy + 3, ox + 3, dy - 3); line(right - 3, dy + 3, right + 3, dy - 3);
+      // Height dimension line: left of the Z ticks' labels' column, from z = 0 to the stack top.
+      const dx = padL - 10;
+      line(dx - 4, base, ox - 2, base); line(dx - 4, top, ox - 2, top);
+      line(dx, base, dx, top); line(dx - 3, base + 3, dx + 3, base - 3); line(dx - 3, top + 3, dx + 3, top - 3);
+      // Z ticks per layer top.
+      for (const r of sec) { const ty = base - r.z1 * scale; line(ox - 6, ty, ox, ty); }
       ctx.fillStyle = "#C9D3DD";
       ctx.font = "11px ui-monospace, monospace";
       ctx.fillText("0", 6, base + 4);
@@ -7914,10 +7926,19 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
         const ty = base - r.z1 * scale;
         if (lastY - ty >= 12) { ctx.fillText(SBUtil.fmt(r.z1, 2), 6, ty + 4); lastY = ty; }
       }
+      ctx.fillText(`${SBUtil.fmt(s.page.wMM, 1)} mm`, (ox + right) / 2 - 24, dy + 16);
       ctx.fillText(
         `section at y = ${SBUtil.fmt(s.sectionY, 1)} mm · t = ${SBUtil.fmt(s.tMM, 2)} mm · g = ${SBUtil.fmt(s.gMM, 2)} mm · ` +
-        `height ${SBUtil.fmt(zMax, 2)} mm · width ${SBUtil.fmt(s.page.wMM, 1)} mm`, padL, padT - 16);
-      ctx.fillText("drag up/down to move the section line", padL, base + 28);
+        `height ${SBUtil.fmt(zMax, 2)} mm`, padL, padT - 16);
+      // Page gauge: full canvas height = page height, so the drag mapping (pointer y → page y) is geometric here.
+      const gx = cw - 30, gw = 14, gy = 0.5, gh = ch - 1, my = gy + (s.sectionY / s.page.hMM) * gh;
+      ctx.strokeRect(gx, gy, gw, gh);
+      ctx.strokeStyle = "#F0A227";
+      ctx.lineWidth = 2;
+      line(gx - 6, my, gx + gw + 6, my);
+      ctx.fillStyle = "#C9D3DD";
+      ctx.fillText("page", gx - 4, gy + 14);
+      ctx.fillText("drag up/down: the amber mark on the page gauge is the section line", padL, dy + 36);
     }
 
     return {
@@ -7932,10 +7953,17 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       setExplode(v) { state.explode = v; state.dirty = true; },
       setShowBridges(v) { state.showBridges = v; state.dirty = true; },
       redraw() { state.dirty = true; },
-      /** Snapshot the current composite for the export bundle. */
-      snapshot() {
+      /**
+       * Snapshot a composite for the export bundle. mode ("proof" | "section" | "tilt") draws that view for the
+       * capture and then restores the active one; omitted, the active view is captured.
+       */
+      snapshot(mode) {
         return new Promise((resolve) => {
+          const active = state.mode;
+          if (mode !== undefined) { global.SBProof.drawParams(mode); state.mode = mode; }
           draw();
+          state.mode = active;
+          state.dirty = true;
           canvas.toBlob((b) => resolve(b), "image/png");
         });
       },
@@ -7995,6 +8023,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     sheets: [],          // [{mask, bridges, loops, stats}]
     procW: 0, procH: 0,
     view: null,          // G2.12: {page, layers} canonical polygons of the last run for the review views
+    viewToken: 0,        // bumps on every run or re-render; a deferred view build runs only while still current
+    viewError: null,     // message when connectedLayers failed for this run (the views fall back to the raster)
     report: "",
   };
 
@@ -8058,7 +8088,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     // 2-5. DOM-free engine (T0.5 seam).
     const { sheets, totals } = SBEngine.legacyRun(rgba, w, h, state);
     run.sheets = sheets;
-    run.view = null;   // G2.12: canonical polygons for Proof/Section/Tilt, rebuilt lazily per run (viewLayers)
+    run.view = null;   // G2.12: canonical polygons for Proof/Section/Tilt, rebuilt lazily per run (renderAll)
+    run.viewError = null;
+    run.viewToken++;   // a view build still pending for the previous run is dropped
     let totalBridged = totals.bridged, totalCulled = totals.culled, totalCutMM = totals.cutMM;
     run.procW = w; run.procH = h; run.revision = project.revision;
 
@@ -8107,21 +8139,60 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   /**
    * G2.12: the review views are drawn from the same canonical polygons as the cut files and proof.svg
    * (SBEngine.connectedLayers), built once per pipeline run; appearance changes only re-tint them.
+   *
+   * KI-CONN-PERF: connectedLayers runs on the main thread and, with smooth corners (the acrylic default), costs
+   * about 1.8 s on a simple 720 px draft and about 11 s on a busy one (sharp corners: 0.2–1 s), on top of
+   * legacyRun. So the build is deferred: the Layers grid, the chips, the status line and a raster composite of
+   * the new masks (preview.setSheets) are shown and painted first, then the polygons replace the raster. A newer
+   * run or re-render supersedes a pending build (run.viewToken). The build itself still blocks until G4.1 moves
+   * it to a worker. A failure (geometry, or a colour refused with COLOR) is reported in the status line and the
+   * views keep the raster composite; it never stops the grid or the chips from updating.
    */
-  function viewLayers() {
-    if (!run.view) run.view = SBEngine.connectedLayers(run.sheets, run.procW, run.procH, cfg());
-    return run.view;
-  }
-
   function renderAll() {
     if (!run.sheets.length) return;
     const colors = sheetColors();
-    const v = viewLayers();
+    const token = ++run.viewToken;
+    try { renderSheetGrid(colors); renderPaletteChips(colors); }
+    catch (err) { setStatus(`${run.report} · layer cards unavailable: ${err.message || err}`); }
+    if (run.view) { showView(colors); return; }
+    showRaster(colors);
+    if (run.viewError) { setStatus(`${run.report} · proof unavailable: ${run.viewError}`); return; }
+    setStatus(`${run.report} · building proof geometry…`);
+    // Two hops (a frame, then a task) so the browser paints the status and the raster before the build blocks.
+    requestAnimationFrame(() => setTimeout(() => buildView(token), 0));
+  }
+
+  function buildView(token) {
+    if (token !== run.viewToken || run.view || !run.sheets.length) return;   // superseded, or already built
+    const t0 = performance.now();
+    try {
+      run.view = SBEngine.connectedLayers(run.sheets, run.procW, run.procH, cfg());
+    } catch (err) {
+      run.viewError = String(err && err.message || err);
+      setStatus(`${run.report} · proof unavailable: ${run.viewError}`);
+      return;
+    }
+    run.report += ` · proof ${(performance.now() - t0).toFixed(0)} ms`;
+    setStatus(run.report);
+    showView(sheetColors());
+  }
+
+  /** Feed the polygon views; a refused colour (COLOR) or any other failure falls back to the raster composite. */
+  function showView(colors) {
     const bonded = project.construction.mode === "bonded-relief";
-    preview.setSnapshot({ page: v.page, layers: v.layers, tMM: project.material.thicknessMM, gMM: bonded ? 0 : project.construction.gapMM },
-      colors, { bridges: { masks: run.sheets.map((sh) => sh.bridges || null), w: run.procW, h: run.procH } });
-    renderSheetGrid(colors);
-    renderPaletteChips(colors);
+    try {
+      preview.setSnapshot({ page: run.view.page, layers: run.view.layers, tMM: project.material.thicknessMM, gMM: bonded ? 0 : project.construction.gapMM },
+        colors, { bridges: { masks: run.sheets.map((sh) => sh.bridges || null), w: run.procW, h: run.procH } });
+      setStatus(run.report);
+    } catch (err) {
+      setStatus(`${run.report} · proof unavailable: ${err.message || err}`);
+      showRaster(colors);
+    }
+  }
+
+  /** The v1.1.0 raster composite of the current masks (interim view while the polygons build, and the fallback). */
+  function showRaster(colors) {
+    try { preview.setSheets(run.sheets, colors, run.procW, run.procH); } catch (_) { /* reported by the caller */ }
   }
 
   /** The "Layer sheets" tab: one card per sheet with its cut preview + stats. */
@@ -8348,7 +8419,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     files.push({ name: "ASSEMBLY.md", data: buildAssemblyMD(colors) });
     files.push({ name: "settings.json", data: settingsJSON() });
 
-    const snap = await preview.snapshot();
+    const snap = await preview.snapshot("proof");   // the bundle image is always the opaque proof, whatever tab is open
     if (snap) files.push({ name: "preview.png", data: new Uint8Array(await snap.arrayBuffer()) });
 
     const zipName = `${safeName(state.projectName)}_shadowbox.zip`;

@@ -78,3 +78,8 @@ that added it.
       up and down moves the line.
 - [ ] Tilt shows "Illustrative: not to scale"; Explode spreads the layers and does not change the
       exported files; Explode and Show bridges are only shown on Tilt.
+- [ ] After a slider change the status line and Layers grid update before the proof does (a raster
+      preview shows meanwhile); the status line then ends with `proof N ms` (KI-CONN-PERF).
+- [ ] Section shows a width dimension line under the bands, a height dimension line on the left, and
+      an amber mark on the page gauge at the right that follows the drag.
+- [ ] Export from the Section tab: `preview.png` in the ZIP is the proof, not the section chart.

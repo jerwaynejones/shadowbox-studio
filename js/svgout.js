@@ -164,6 +164,26 @@
   };
 
   /**
+   * The paint rule shared by assemblySVG and SBProof.model (one source, so the on-screen proof cannot drift from
+   * proof.svg): the non-empty layers sorted back to front by index (a non-integer index is refused, NONINTEGER),
+   * each one's fill ("#rgb"/"#rrggbb" normalized to lowercase "#rrggbb"; anything else refused, COLOR) and its
+   * edge stroke (60 % of the fill per channel, or null). edgeStroke defaults to true when the appearance is
+   * uniform (one color, or every painted layer the same color). who names the caller in error messages.
+   * Pure: layers are not mutated.
+   */
+  S.paint = function (layers, colors, opts, who) {
+    const o = opts || {}, fn = who || "SBSvg.paint";
+    const uniform = typeof colors === "string";
+    const L = (layers || []).filter((l) => l && l.material && l.material.length).slice();
+    for (const l of L) if (!Number.isInteger(l.index)) throw new Error(fn + ": NONINTEGER — layer.index must be an integer (got " + l.index + ")");
+    L.sort((a, b) => a.index - b.index);
+    const fills = L.map((l) => hexColor(uniform ? colors : (Array.isArray(colors) ? colors[l.index] : undefined), l.index, fn));
+    const same = uniform || fills.every((c) => c === fills[0]);
+    const stroke = o.edgeStroke === undefined ? same : !!o.edgeStroke;
+    return { layers: L, fills, strokes: fills.map((c) => (stroke ? darker(c) : null)) };
+  };
+
+  /**
    * Opaque proof of the assembled stack (GEO-01, MAT-04, UI-02). Not a cut file.
    *
    *   assemblySVG(layers: MaterialLayer[], page: {wMM, hMM}, colors: string | string[], {edgeStroke?}) → string
@@ -179,23 +199,14 @@
    * Pure: appearance never touches geometry; layers are not mutated and nothing here enters a hash (MAT-04).
    */
   S.assemblySVG = function (layers, page, colors, opts) {
-    const o = opts || {};
     const wUm = pageUm(page && page.wMM, "wMM", "assemblySVG"), hUm = pageUm(page && page.hMM, "hMM", "assemblySVG");
     const W = S.fmtUm(wUm), H = S.fmtUm(hUm);
-    const uniform = typeof colors === "string";
-    const fillOf = (k) => hexColor(uniform ? colors : (Array.isArray(colors) ? colors[k] : undefined), k);
-
-    const L = (layers || []).filter((l) => l && l.material && l.material.length).slice();
-    for (const l of L) if (!Number.isInteger(l.index)) throw new Error("SBSvg.assemblySVG: NONINTEGER — layer.index must be an integer (got " + l.index + ")");
-    L.sort((a, b) => a.index - b.index);
-    const fills = L.map((l) => fillOf(l.index));
-    const same = uniform || fills.every((c) => c === fills[0]);
-    const stroke = o.edgeStroke === undefined ? same : !!o.edgeStroke;
+    const { layers: L, fills, strokes } = S.paint(layers, colors, opts, "SBSvg.assemblySVG");
 
     const body = L.map((l, j) => {
       const d = [];
       for (const p of l.material) for (const r of [p.outer, ...(p.holes || [])]) d.push(ringD(r, true));
-      const st = stroke ? ` stroke="${darker(fills[j])}" stroke-width="0.2" stroke-linejoin="round"` : "";
+      const st = strokes[j] ? ` stroke="${strokes[j]}" stroke-width="0.2" stroke-linejoin="round"` : "";
       return `<path d="${d.join(" ")}" fill="${fills[j]}" fill-rule="evenodd"${st}/>`;
     });
 
@@ -210,10 +221,10 @@
   };
 
   /** "#rgb" / "#rrggbb" → lowercase "#rrggbb"; anything else is refused (NFR-06: no attribute injection). */
-  function hexColor(c, k) {
+  function hexColor(c, k, fn) {
     if (typeof c === "string" && /^#[0-9a-fA-F]{6}$/.test(c)) return c.toLowerCase();
     if (typeof c === "string" && /^#[0-9a-fA-F]{3}$/.test(c)) return ("#" + c[1] + c[1] + c[2] + c[2] + c[3] + c[3]).toLowerCase();
-    throw new Error("SBSvg.assemblySVG: COLOR — color for layer " + k + " must be #rgb or #rrggbb (got " + JSON.stringify(c) + ")");
+    throw new Error((fn || "SBSvg.assemblySVG") + ": COLOR — color for layer " + k + " must be #rgb or #rrggbb (got " + JSON.stringify(c) + ")");
   }
 
   /** Edge stroke: each channel scaled to 60 % (integer math), so it is darker than any non-black fill. */
