@@ -812,6 +812,199 @@ suite("spike S5 — trace saddles & frame contact (GEO-02/03, AT-06)", () => {
   check("GEO-03 diagonal-only contact validates (simple rings)", SBGeom.validate(polys).ok);
 });
 
+// Ported from spikes/S5/{s5_extra_checks,s5_d3_property,s5_inset}.mjs (decision D3 as adopted 2026-10-07). The oracle is
+// test/oracle_raster.js (independent BFS labelling + exact pixel-centre rasterization; no repo module, no Clipper2).
+// Default sizes keep the suite fast; `node test/run_tests.js --only "spike S5" --s5-full` runs the spike's full sweeps.
+const S5 = (() => {
+  const F = require("./fixtures.js"), O = require("./oracle_raster.js"), FULL = process.argv.includes("--s5-full");
+  const a2 = (r) => { let a = 0; for (let i = 0; i < r.length; i += 2) { const j = (i + 2) % r.length; a += r[i] * r[j + 1] - r[j] * r[i + 1]; } return a; };
+  const rev = (f) => { const o = []; for (let i = f.length - 2; i >= 0; i -= 2) o.push(f[i], f[i + 1]); return o; };
+  const toP = (r) => { const p = []; for (let i = 0; i < r.length; i += 2) p.push({ x: r[i], y: r[i + 1] }); return p; };
+  const C2 = () => globalThis.Clipper2;
+  /** Traced loops → §3-oriented rings (reversed trace order), NOT normalized. */
+  const tracedRings = (m, w, h, s = 1000, o = 0) => SBTrace.trace(m, w, h).map((L) => { const f = []; for (let i = L.length - 1; i >= 0; i--) f.push(Math.round(L[i][0] * s + o), Math.round(L[i][1] * s + o)); return f; });
+  /** Raw Clipper2 union (no SBGeom normalization): its own ring pairing at touch points. */
+  const rawUnion = (rings) => C2().union(rings.map(toP), [], C2().FillRule.NonZero).map((p) => p.flatMap((q) => [q.x, q.y]));
+  const pipe = (m, w, h, s = 1000, o = 0) => SBGeom.union(SBGeom.fromPixelLoops(SBTrace.trace(m, w, h), s, s, o, o), []);
+  // ---- the plan's ORIGINAL rule (split rings at repeated vertices, keep Clipper2's pairing) — characterization only
+  const dropCollinear = (f) => { let r = f, ch = true; while (ch && r.length >= 6) { ch = false; const n = r.length / 2, o = [];
+    for (let i = 0; i < n; i++) { const p = (i + n - 1) % n, q = (i + 1) % n, ax = r[2 * p], ay = r[2 * p + 1], bx = r[2 * i], by = r[2 * i + 1], cx = r[2 * q], cy = r[2 * q + 1];
+      if ((ax === bx && ay === by) || (bx - ax) * (cy - ay) - (by - ay) * (cx - ax) === 0) { ch = true; continue; } o.push(bx, by); } r = o; } return r; };
+  const splitAtRepeats = (f) => { const out = [], st = [f]; while (st.length) { const r = st.pop(), n = r.length / 2, seen = new Map(); let sp = false;
+    for (let i = 0; i < n; i++) { const k = r[2 * i] + "," + r[2 * i + 1]; if (seen.has(k)) { const j = seen.get(k); st.push(r.slice(2 * j, 2 * i), r.slice(2 * i).concat(r.slice(0, 2 * j))); sp = true; break; } seen.set(k, i); }
+    if (!sp) out.push(r); } return out; };
+  const pip2 = (r, px, py) => { let inside = false; const n = r.length / 2;
+    for (let i = 0, j = n - 1; i < n; j = i++) { const xi = 2 * r[2 * i], yi = 2 * r[2 * i + 1], xj = 2 * r[2 * j], yj = 2 * r[2 * j + 1], cr = (xj - xi) * (py - yi) - (yj - yi) * (px - xi);
+      if (cr === 0 && Math.min(xi, xj) <= px && px <= Math.max(xi, xj) && Math.min(yi, yj) <= py && py <= Math.max(yi, yj)) return -1;
+      if ((yi > py) !== (yj > py)) { const s = (px - xi) * (yj - yi) - (xj - xi) * (py - yi); if (yj - yi > 0 ? s < 0 : s > 0) inside = !inside; } } return inside ? 1 : 0; };
+  const splitOnly = (raw) => {
+    const pieces = raw.flatMap(splitAtRepeats).map(dropCollinear).filter((r) => r.length >= 6 && a2(r) !== 0);
+    const outers = pieces.filter((r) => a2(r) > 0).sort((p, q) => a2(p) - a2(q)).map((o) => ({ outer: o, holes: [] }));
+    for (const h of pieces.filter((r) => a2(r) < 0)) {
+      const inO = (o) => { for (let i = 0, n = h.length / 2; i < n; i++) { const j = (i + 1) % n, s = pip2(o, h[2 * i] + h[2 * j], h[2 * i + 1] + h[2 * j + 1]); if (s >= 0) return s === 1; } return false; };
+      const host = outers.find((o) => inO(o.outer)); if (host) host.holes.push(h);
+    }
+    return outers;
+  };
+  // ---- S5's turn rule (right-most in Y-down: material lies to the right of travel for outer-positive rings), exact
+  const half = (ux, uy, vx, vy) => { const c = ux * vy - uy * vx; return c > 0 || (c === 0 && ux * vx + uy * vy < 0) ? 1 : 0; };
+  const moreRight = (ux, uy, ax, ay, bx, by) => { const ha = half(ux, uy, ax, ay), hb = half(ux, uy, bx, by); if (ha !== hb) return ha > hb; return bx * ay - by * ax > 0; };
+  /** Successor of every directed edge a→b under S5's rule: the right-most outgoing edge at b. */
+  const rightMostSuccessor = (rings) => { const outs = new Map();
+    for (const r of rings) for (let i = 0, n = r.length / 2; i < n; i++) { const j = (i + 1) % n, k = r[2 * i] + "," + r[2 * i + 1]; if (!outs.has(k)) outs.set(k, []); outs.get(k).push([r[2 * j] - r[2 * i], r[2 * j + 1] - r[2 * i + 1]]); }
+    return (ax, ay, bx, by) => { const ux = bx - ax, uy = by - ay, o = outs.get(bx + "," + by); let best = o[0]; for (const c of o) if (moreRight(ux, uy, c[0], c[1], best[0], best[1])) best = c; return [bx + best[0], by + best[1], o.length]; }; };
+  /** Clipper2's own continuations at shared vertices: separating (= right-most) vs joining. */
+  const clipperPairing = (raw) => { const succ = rightMostSuccessor(raw); let vertices = 0, separating = 0, joining = 0; const counted = new Set();
+    for (const r of raw) for (let i = 0, n = r.length / 2; i < n; i++) { const p = (i + n - 1) % n, q = (i + 1) % n, [cx, cy, deg] = succ(r[2 * p], r[2 * p + 1], r[2 * i], r[2 * i + 1]); if (deg < 2) continue;
+      const k = r[2 * i] + "," + r[2 * i + 1]; if (!counted.has(k)) { counted.add(k); vertices++; } if (cx === r[2 * q] && cy === r[2 * q + 1]) separating++; else joining++; }
+    return { vertices, separating, joining }; };
+  // ---- mask generators (spikes/S5/s5_d3_property.mjs)
+  const noise = (r, w, h, p) => { const m = new Uint8Array(w * h); for (let i = 0; i < m.length; i++) m[i] = r() < p ? 1 : 0; return m; };
+  const blockChecker = (r, w, h, b, drop, sprinkle) => { const m = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = ((Math.floor(x / b) + Math.floor(y / b)) & 1) === 0 ? 1 : 0;
+    for (let by = 0; by * b < h; by++) for (let bx = 0; bx * b < w; bx++) if (r() < drop) for (let y = by * b; y < Math.min(h, by * b + b); y++) for (let x = bx * b; x < Math.min(w, bx * b + b); x++) m[y * w + x] = 0;
+    for (let i = 0; i < m.length; i++) if (r() < sprinkle) m[i] ^= 1; return m; };
+  const diamondRings = (r, w, h, k) => { const m = new Uint8Array(w * h), cx = Math.floor(w / (2 * k)), cy = Math.floor(h / (2 * k)), radii = [];
+    for (let R = 1 + Math.floor(r() * 2); R < Math.min(cx, cy); R += 2 + Math.floor(r() * 2)) radii.push(R);
+    for (let by = 0; by * k < h; by++) for (let bx = 0; bx * k < w; bx++) if (radii.includes(Math.abs(bx - cx) + Math.abs(by - cy)) && r() > 0.05)
+      for (let y = by * k; y < Math.min(h, by * k + k); y++) for (let x = bx * k; x < Math.min(w, bx * k + k); x++) m[y * w + x] = 1; return m; };
+  const chainCycles = (r, w, h) => { const m = new Uint8Array(w * h);
+    for (let t = 0; t < 6; t++) { let x = 2 + Math.floor(r() * (w - 4)), y = 2 + Math.floor(r() * (h - 4)); const n = 4 + Math.floor(r() * 10);
+      for (const [dx, dy] of [[1, 1], [1, -1], [-1, -1], [-1, 1]]) for (let s = 0; s < n; s++) { x += dx; y += dy; if (x >= 0 && y >= 0 && x < w && y < h) m[y * w + x] = 1; } }
+    for (let i = 0; i < m.length; i++) if (r() < 0.08) m[i] = 1; return m; };
+  return { F, O, FULL, a2, rev, toP, tracedRings, rawUnion, pipe, splitOnly, rightMostSuccessor, clipperPairing, noise, blockChecker, diamondRings, chainCycles };
+})();
+
+suite("spike S5 — D3 normalize: one polygon per part (F1: re-pair, interiorConnected, GEO_MULTIPART)", () => {
+  const G = SBGeom, { F, O, tracedRings, rawUnion, pipe, splitOnly, clipperPairing } = S5;
+  // Two 4-components touching at THREE saddle points: Clipper2 returns ONE ring through all three, separating at two and
+  // joining at one. Splitting at repeats flips the pairing at each split point → 1 polygon + 2 holes, interior in two pieces.
+  const cyc = F.art(["##.#.", "#.###", "##.##", "###.."]);
+  const raw = rawUnion(tracedRings(cyc.m, cyc.w, cyc.h));
+  const rep = raw.length === 1 ? raw[0].filter((v, i) => i % 2 === 0).map((x, i) => x + "," + raw[0][2 * i + 1]).filter((k, i, a) => a.indexOf(k) !== i) : [];
+  check("F1 (characterization) Clipper2 union returns ONE ring (no hole) with 3 repeated vertices", raw.length === 1 && rep.length === 3);
+  const cp = clipperPairing(raw);
+  check("F1 (characterization) Clipper2 pairs mixed at the 3 touch vertices (4 separating, 2 joining continuations)", cp.vertices === 3 && cp.separating === 4 && cp.joining === 2);
+  const sp = splitOnly(raw);
+  check("F1 (characterization) split-only rule gives 1 polygon + 2 holes and interiorConnected detects it", sp.length === 1 && sp[0].holes.length === 2 && !G.interiorConnected(sp[0]));
+  check("D3 validate() reports GEO_MULTIPART for the split-only polygon", G.validate(sp).errors.some((e) => e.code === "GEO_MULTIPART" && e.ring.poly === 0));
+  const union0 = G.union; let msg = "";
+  try { G.union = (a) => a; G.components(sp); } catch (e) { msg = e.message; } finally { G.union = union0; }
+  check("D3 components() asserts interiorConnected (throws GEO_MULTIPART_POLYGON)", /GEO_MULTIPART_POLYGON/.test(msg));
+  const polys = pipe(cyc.m, cyc.w, cyc.h);
+  check("D3 cyclic saddle contact: 2 polygons, each interior-connected, components() = 2", polys.length === 2 && polys.every(G.interiorConnected) && G.components(polys).length === 2);
+  check("D3 cyclic saddle contact: pixel-exact bijection with raster 4-components, validates", O.checkPartsAgainstRaster(polys, cyc.m, cyc.w, cyc.h, 1000, 0).ok && G.validate(polys).ok);
+  const named = {
+    holeHoleSaddle: [["######", "#.####", "##.###", "######"], 1, 2], holeOuterSaddle: [["####.", "###.#", "#####"], 1, 1],
+    ringOfFourDiagonal: [[".###.", "#...#", "#...#", ".###."], 4, 0], checker8: [Array.from({ length: 8 }, (_, y) => Array.from({ length: 8 }, (_, x) => ((x + y) & 1 ? "." : "#")).join("")), 32, 0],
+    islandInHoleDiag: [["#####", "#...#", "#.#.#", "#...#", "#####"], 2, 1], islandTouchingHoleCorner: [["#####", "##..#", "#.#.#", "#...#", "#####"], 2, 1],
+  };
+  for (const [k, [rows, parts, holes]] of Object.entries(named)) {
+    const a = F.art(rows), p = pipe(a.m, a.w, a.h);
+    check(`D3 ${k}: ${parts} part(s), ${holes} hole ring(s), raster oracle + validate ok`, O.checkPartsAgainstRaster(p, a.m, a.w, a.h, 1000, 0).ok && p.length === parts &&
+      p.reduce((s, q) => s + q.holes.length, 0) === holes && G.validate(p).ok);
+  }
+  let ok = true, cycles = 0;
+  for (let s = 1; s <= 200 && ok; s++) { const r = F.lcg(s), w = 20, h = 16, mm = new Uint8Array(w * h); for (let i = 0; i < mm.length; i++) mm[i] = r() < 0.55 ? 1 : 0;
+    cycles += O.saddleStats(mm, w, h).multiPartSaddleCycles; ok = O.checkPartsAgainstRaster(pipe(mm, w, h), mm, w, h, 1000, 0).ok; }
+  check(`D3 property (200 noise masks 20×16, ${cycles} multi-part saddle cycles): pixel-exact bijection with raster 4-components`, ok && cycles > 100);
+});
+
+suite("spike S5 — D3 turn rule: shipped re-chaining == S5 material-separating turn", () => {
+  // js/geom.js re-chains with the "sharpest left turn" read in the math frame (Y up); S5 states the "right-most" turn in
+  // the Y-down frame. They are the same rule: for every directed edge of the raw Clipper2 ring set, the shipped successor
+  // must equal the right-most outgoing edge at its head (exact half-plane + cross-product comparator, ported from S5).
+  const G = SBGeom, { F, tracedRings, rawUnion, rightMostSuccessor, noise, blockChecker } = S5;
+  let edges = 0, shared = 0, bad = 0, masks = 0;
+  for (let seed = 1; seed <= 60; seed++) {
+    const r = F.lcg(seed * 31 + 7), w = 24, h = 20, m = seed % 3 ? noise(r, w, h, 0.35 + 0.3 * r()) : blockChecker(r, w, h, 1 + (seed % 2), 0.2, 0.03);
+    const raw = rawUnion(tracedRings(m, w, h)), succ = rightMostSuccessor(raw); masks++;
+    for (const wk of G.rechain(raw)) for (let i = 0, n = wk.length / 2; i < n; i++) {
+      const p = (i + n - 1) % n, q = (i + 1) % n, [cx, cy, deg] = succ(wk[2 * p], wk[2 * p + 1], wk[2 * i], wk[2 * i + 1]); edges++;
+      if (deg > 1) shared++; if (cx !== wk[2 * q] || cy !== wk[2 * q + 1]) bad++;
+    }
+  }
+  check(`D3 turn rule: ${masks} raw Clipper2 unions, ${edges} directed edges (${shared} at shared vertices): shipped successor == S5 right-most successor (${bad} differ)`, bad === 0 && shared > 1000);
+  // non-lattice: T-contacts and diagonal edges (difference of a square and diamonds), after the T-split
+  let tb = 0, ts = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const rnd = F.lcg(seed), dias = [];
+    for (let i = 0; i < 3; i++) { const rr = 2 + 2 * Math.floor(rnd() * 5), cx = 2 * Math.floor(rnd() * 21), cy = 2 * Math.floor(rnd() * 21); dias.push([cx, cy - rr, cx + rr, cy, cx, cy + rr, cx - rr, cy]); }
+    const C2 = globalThis.Clipper2, raw = C2.difference([S5.toP([0, 0, 40, 0, 40, 40, 0, 40])], dias.map(S5.toP), C2.FillRule.NonZero).map((p) => p.flatMap((q) => [q.x, q.y]));
+    const noded = G.splitTJunctions(raw), succ = rightMostSuccessor(noded);
+    for (const wk of G.rechain(noded)) for (let i = 0, n = wk.length / 2; i < n; i++) {
+      const p = (i + n - 1) % n, q = (i + 1) % n, [cx, cy, deg] = succ(wk[2 * p], wk[2 * p + 1], wk[2 * i], wk[2 * i + 1]);
+      if (deg > 1) ts++; if (cx !== wk[2 * q] || cy !== wk[2 * q + 1]) tb++;
+    }
+  }
+  check(`D3 turn rule on T-contacts and diagonal edges (40 square − diamonds, ${ts} shared-vertex continuations): identical (${tb} differ)`, tb === 0 && ts > 20);
+});
+
+suite("spike S5 — D3 property sweeps vs independent raster oracle (F1)" + (S5.FULL ? " [full]" : " [reduced; --s5-full for the spike sizes]"), () => {
+  const G = SBGeom, { F, O, FULL, tracedRings, rawUnion, pipe, splitOnly, noise, blockChecker, diamondRings, chainCycles } = S5;
+  const SWEEPS = [
+    ["noise 24×24 p=0.5", 24, 24, (r) => noise(r, 24, 24, 0.5), FULL ? 1000 : 100, 1000, 0],
+    ["noise 32×32 p=0.35", 32, 32, (r) => noise(r, 32, 32, 0.35), FULL ? 300 : 25, 250, 10000],
+    ["noise 32×32 p=0.65", 32, 32, (r) => noise(r, 32, 32, 0.65), FULL ? 300 : 25, 250, 10000],
+    ["noise 64×64 p=0.5", 64, 64, (r) => noise(r, 64, 64, 0.5), FULL ? 150 : 6, 1000, 0],
+    ["block checker b=1..3, dropout ≤0.3", 48, 40, (r) => blockChecker(r, 48, 40, 1 + Math.floor(r() * 3), r() * 0.3, r() * 0.04), FULL ? 300 : 25, 7, 3],
+    ["diamond rings of k×k blocks", 60, 60, (r) => diamondRings(r, 60, 60, 1 + Math.floor(r() * 3)), FULL ? 200 : 12, 1000, 0],
+    ["diagonal-step loops + specks", 48, 48, (r) => chainCycles(r, 48, 48), FULL ? 300 : 25, 250, 0],
+  ];
+  let multi = 0, splitFail = 0, splitCaught = 0;
+  for (const [name, w, h, gen, n, s, o] of SWEEPS) {
+    let fail = 0, vfail = 0, cfail = 0, ifail = 0, first = "";
+    for (let seed = 1; seed <= n; seed++) {
+      const r = F.lcg(seed * 7919 + name.length), m = gen(r);
+      const st = O.saddleStats(m, w, h); multi += st.multiPartSaddleCycles;
+      const polys = pipe(m, w, h, s, o), or = O.checkPartsAgainstRaster(polys, m, w, h, s, o);
+      if (!or.ok) { fail++; first = first || or.reasons.slice(0, 2).join("; "); }
+      if (!G.validate(polys).ok) vfail++;
+      let nc; try { nc = G.components(polys).length; } catch (e) { nc = -1; } if (nc !== or.parts) cfail++;
+      if (!polys.every(G.interiorConnected)) ifail++;
+      if (st.multiPartSaddleCycles) { const sp = splitOnly(rawUnion(tracedRings(m, w, h, s, o)));
+        if (!O.checkPartsAgainstRaster(sp, m, w, h, s, o).ok) { splitFail++; if (sp.some((p) => !G.interiorConnected(p))) splitCaught++; } }
+    }
+    check(`D3 ${name} (${n} masks, ${s} µm/px): pixel-exact bijection with raster 4-components${first ? " — " + first : ""}`, fail === 0);
+    check(`D3 ${name}: validate ok, components() == raster count, every polygon interiorConnected`, vfail === 0 && cfail === 0 && ifail === 0);
+  }
+  check(`D3 sweeps exercise multi-part saddle cycles (${multi})`, multi > (FULL ? 1000 : 300));
+  check(`F1 (characterization) split-only rule fails the oracle on some masks (${splitFail}); interiorConnected catches every one (${splitCaught})`, splitFail > 0 && splitCaught === splitFail);
+});
+
+suite("spike S5 — D3 non-raster contacts and interiorConnected (T-contacts need noding)", () => {
+  const G = SBGeom;
+  const A = { outer: [0, 0, 300, 0, 300, 100, 0, 100], holes: [] };
+  const B = { outer: [50, 100, 100, 200, 200, 200, 250, 100, 280, 300, 20, 300], holes: [] }; // touches A's bottom edge at x = 50, 250
+  const u = G.union([A], [B]);
+  check("D3 two parts touching at TWO T-contacts stay 2 polygons, interior-connected, validate ok", u.length === 2 && u.every(G.interiorConnected) && G.validate(u).ok);
+  const d = G.difference([{ outer: [0, 0, 200, 0, 200, 200, 0, 200], holes: [] }], [{ outer: [100, 0, 150, 100, 50, 100], holes: [] }]);
+  check("D3 difference(square, triangle with apex on its edge): 1 part, interior-connected, validates", d.length === 1 && G.interiorConnected(d[0]) && G.validate(d).ok);
+  const ui = G.union([{ outer: [0, 0, 300, 0, 300, 300, 0, 300], holes: [[100, 100, 100, 200, 200, 200, 200, 100]] }], [{ outer: [100, 150, 150, 100, 200, 150, 150, 200], holes: [] }]);
+  check("D3 island diamond touching all 4 hole edges at T-contacts: 2 parts, valid", ui.length === 2 && ui.every(G.interiorConnected) && G.validate(ui).ok);
+  // two triangular holes whose apexes touch the outer's top edge interior and which share a vertex enclose a triangle
+  const p = { outer: [0, 0, 300, 0, 300, 300, 0, 300], holes: [[100, 0, 50, 100, 150, 100], [200, 0, 150, 100, 250, 100]] };
+  check("D3 interiorConnected: cycle closed through T-contacts on the outer edge → disconnected (noding required)", !G.interiorConnected(p));
+  check("D3 validate: that polygon reports exactly GEO_MULTIPART (no GEO_SELF_INTERSECT)", G.validate([p]).errors.map((e) => e.code).join() === "GEO_MULTIPART");
+  const q = { outer: [0, 0, 300, 0, 300, 300, 0, 300], holes: [[100, 0, 50, 100, 150, 100], [200, 50, 150, 150, 250, 150]] };
+  check("D3 interiorConnected: a single T-contact hole (no cycle) stays connected and valid", G.interiorConnected(q) && G.validate([q]).ok);
+  const flip = (r) => S5.rev(r);
+  const x = { outer: [0, 0, 300, 0, 300, 300, 0, 300], holes: [flip([100, 50, 200, 50, 200, 150, 100, 150]), flip([150, 100, 250, 100, 250, 200, 150, 200])] };
+  check("D3 validate: overlapping holes are GEO_SELF_INTERSECT", G.validate([x]).errors.some((e) => e.code === "GEO_SELF_INTERSECT"));
+  check("D3 interiorConnected: a polygon without holes is connected", G.interiorConnected({ outer: [0, 0, 10, 0, 10, 10], holes: [] }));
+});
+
+suite("spike S5 — frame union (F2: GEO-02 / LYR-04 / AT-12)", () => {
+  const G = SBGeom, bt = S5.F.MASKS.borderTouch;
+  const frame = { outer: [0, 0, 100000, 0, 100000, 70000, 0, 70000], holes: [[10000, 10000, 10000, 60000, 90000, 60000, 90000, 10000]] };
+  const polys = G.union(G.union(G.fromPixelLoops(SBTrace.trace(bt.layers[1], 8, 5), 10000, 10000, 10000, 10000), []), [frame]);
+  check("LYR-04 frame ring ∪ edge-touching art is one material polygon", polys.length === 1);
+  let seg = false; for (const p of polys) for (const r of [p.outer, ...p.holes]) for (let i = 0, n = r.length / 2; i < n; i++) { const j = (i + 1) % n;
+    if (r[2 * i] === 10000 && r[2 * j] === 10000 && Math.min(r[2 * i + 1], r[2 * j + 1]) < 30000 && Math.max(r[2 * i + 1], r[2 * j + 1]) > 10000) seg = true; }
+  check("GEO-02 FIXED: no ring edge on x = 10000 µm between y 10000..30000", !seg);
+  check("AT-12 frame outer ring is the exact page rectangle", JSON.stringify(polys[0].outer) === "[0,0,100000,0,100000,70000,0,70000]");
+});
+
 suite("spike S4 — png.js raw decode and inspection, plan checks (IMG-01/02/05/07, AT-02/22)", () => {
   const F = require("./fixtures.js");
   const g = (opts) => F.pngEncode({ w: 5, h: 1, colorType: 0, bitDepth: 8, data: Uint8Array.from([0, 64, 128, 191, 255]), ...opts });

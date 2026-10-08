@@ -10,11 +10,16 @@
  *     opposite, so fromPixelLoops reverses traced rings.
  *   · Each ring starts at its lexicographically smallest (x, y) vertex.
  *   · Collinear (and duplicate / spike) vertices are removed.
- *   · A vertex lying inside another edge (T-contact) is inserted into that edge;
- *     then boundary edges meeting at a shared vertex are re-chained canonically
- *     (sharpest left turn), then rings touching themselves at a vertex (pixel
- *     saddles) are split into separate simple rings (D3); holes are assigned
- *     to the smallest outer that contains them.
+ *   · D3 normalize (spike S5, adopted 2026-10-07), applied globally to the ring
+ *     set of every boolean / offset result: (1) node — a vertex lying inside
+ *     another edge (T-contact) is inserted into that edge; (2) re-pair — Clipper2's
+ *     ring pairing is discarded and boundary edges meeting at a shared vertex are
+ *     re-chained with the material-separating turn (see rechain: "sharpest left
+ *     turn" in the math frame == S5's "right-most turn" in Y-down); (3) split —
+ *     a ring still repeating a vertex is split there (pixel saddles; never before
+ *     the re-pair); (4) drop collinear, orient, rotate, nest holes in the smallest
+ *     containing outer, sort. Postcondition: one polygon per part (interiorConnected;
+ *     components() asserts it, validate() reports GEO_MULTIPART).
  *   · Polygons sorted by (minY, minX) of the outer, then by the outer's
  *     coordinate list; holes the same way.
  *   · canonicalBytes / layerHash / materialHash (decision D4, spike S6) are
@@ -292,12 +297,16 @@
 
   // ------------------------------------------------------------- hierarchy
   /**
-   * Canonical re-chaining at shared vertices (D3). All rings are role-oriented (material on the LEFT
-   * in the math frame: outer CCW / positive). Wherever several boundary edges leave the same vertex,
-   * each arriving edge continues on the outgoing edge with the sharpest LEFT turn (the edge met first
-   * when sweeping clockwise from the reversed arrival direction). This hugs material, so parts that
-   * only touch at a point come out as separate rings, and the decomposition depends only on the edge
-   * set — not on how the backend happened to chain its output (exact integer comparisons only).
+   * Canonical re-chaining at shared vertices (D3 step 2, "re-pair"). All rings are role-oriented
+   * (outer positive shoelace, holes negative). Wherever several boundary edges leave the same vertex,
+   * each arriving edge continues on the outgoing edge that bounds the SAME material wedge: the edge
+   * met first when sweeping clockwise from the reversed arrival direction, i.e. the sharpest LEFT turn
+   * when the integer coordinates are read in the math frame (Y up, material on the left). Read in the
+   * Y-down screen frame of §3 and spike S5 the same edge is the RIGHT-MOST turn (material on the right
+   * of travel): one rule, two frames. Pinned by suite "spike S5 — D3 turn rule", which compares every
+   * successor with S5's exact half-plane comparator. Clipper2's own pairing is never trusted (it mixes
+   * separating and joining continuations, S5 F1), so parts that only touch at a point come out as
+   * separate rings and the decomposition depends only on the edge set (exact integer comparisons).
    */
   function rechain(rings) {
     let m = 0; for (const r of rings) m += r.length / 2;
@@ -408,6 +417,35 @@
   }
   function minXY(r) { let x = Infinity, y = Infinity; for (let i = 0; i < r.length; i += 2) { if (r[i + 1] < y) y = r[i + 1]; if (r[i] < x) x = r[i]; } return [x, y]; }
   C.assemble = assemble;
+
+  /**
+   * Exact one-part test (D3, spike S5 F1) for ONE polygon whose rings are simple and meet only at points.
+   * Nodes are rings and contact points (T-contacts included, found by the same noding as normalize); a ring
+   * passing through a point is an edge. The interior has 1 + (cycle rank) components (Alexander duality),
+   * so the polygon is one part iff that bipartite graph is a forest. Integer arithmetic only.
+   */
+  function interiorConnected(poly) {
+    const rings = [poly.outer].concat(poly.holes || []);
+    if (rings.length < 2) return true;
+    const nr = splitTJunctions(rings), parent = rings.map((_, i) => i), at = new Map();
+    const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+    for (let ri = 0; ri < nr.length; ri++) {
+      const r = nr[ri];
+      for (let i = 0; i < r.length; i += 2) {
+        const x = r[i], y = r[i + 1];
+        const k = Number.isInteger(x) && Number.isInteger(y) && x > -KLIM && x < KLIM && y > -KLIM && y < KLIM ? x * 67108864 + y : x + "," + y;
+        const s = at.get(k);
+        if (s === undefined) at.set(k, [ri]); else if (s.indexOf(ri) < 0) s.push(ri);
+      }
+    }
+    for (const s of at.values()) for (let t = 1; t < s.length; t++) {
+      const a = find(s[0]), b = find(s[t]);
+      if (a === b) return false; // second path between two rings: a cycle of contacts cuts the interior
+      parent[b] = a;
+    }
+    return true;
+  }
+  C.interiorConnected = interiorConnected;
 
   /** Rings with roles: outer forced positive, holes forced negative, then assemble. */
   C.normalize = (polys) => normalizeWith(polys, null);
@@ -529,6 +567,11 @@
       }
       active.push(s);
     }
+    // D3 postcondition: one polygon = one part. Only for polygons whose rings are otherwise valid.
+    const badPoly = new Set(errors.map((e) => e.ring.poly));
+    polys.forEach((p, pi) => {
+      if (!badPoly.has(pi) && (p.holes || []).length && !interiorConnected(p)) errors.push({ code: "GEO_MULTIPART", ring: { poly: pi, ring: null } });
+    });
     return { ok: errors.length === 0, errors };
   };
 
@@ -713,10 +756,15 @@
     if (delta === 0) return C.normalize(polys);
     return fromPaths(L().inflatePaths(toPaths(polys), delta, jt, L().EndType.Polygon, 2.0));
   };
-  /** One entry per connected part; point contact counts as separate (D3). */
-  G.components = (polys) => G.union(polys, []).map((p) => [p]);
+  /** One entry per connected part; point contact counts as separate (D3). Asserts the D3 postcondition. */
+  G.components = function (polys) {
+    const u = G.union(polys, []);
+    for (let i = 0; i < u.length; i++) if (!interiorConnected(u[i])) throw new Error("SBGeom.components: GEO_MULTIPART_POLYGON — normalized polygon " + i + " has a disconnected interior");
+    return u.map((p) => [p]);
+  };
+
   for (const k of ["fromPixelLoops", "normalize", "validate", "area", "isEmpty", "containsPoint", "bbox", "circle",
-    "canonicalBytes", "layerHashes", "layerHash", "materialHash", "COORD_LIMIT"]) G[k] = C[k];
+    "canonicalBytes", "layerHashes", "layerHash", "materialHash", "COORD_LIMIT", "interiorConnected", "rechain", "splitTJunctions"]) G[k] = C[k];
   G.backend = "clipper2-ts@2.0.1-18";
 
   global.SBGeom = G;
