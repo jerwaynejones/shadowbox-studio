@@ -3116,6 +3116,101 @@ suite("height.js/engine.js — G2.5 domain mask and orientation (IMG-04/05, AT-0
     return ms[1][Hh - 1] === 0 && ms[1][Hh - 2] === 1 && ms[0].every((v) => v === 1); })());
 });
 
+suite("height.js/engine.js — G2.5b explicit height filter/remap (IMG-03, AT-02)", () => {
+  const H = SBHeight, E = SBEngine, F = require("./fixtures.js");
+  check("G2.5b API present", typeof H.applyFilter === "function" && typeof E.interpretHeight === "function");
+  if (typeof H.applyFilter !== "function" || typeof E.interpretHeight !== "function") return;
+  const codeOf = (f) => { try { f(); return null; } catch (x) { return x.code || x.message; } };
+  const rnd = F.lcg(2505), W = 13, Hh = 9;
+  const img = Uint8Array.from({ length: W * Hh }, () => Math.floor(rnd() * 256));
+  const dom = Uint8Array.from({ length: W * Hh }, (_, i) => ((i * 7) % 5 === 0 ? 0 : 1));
+  // brute-force oracle over the in-bounds, in-domain window
+  const oracle = (s, w, h, op, r, d) => {
+    const out = Uint8Array.from(s);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      if (d && !d[y * w + x]) continue;
+      const v = [];
+      for (let yy = Math.max(0, y - r); yy <= Math.min(h - 1, y + r); yy++) for (let xx = Math.max(0, x - r); xx <= Math.min(w - 1, x + r); xx++)
+        if (!d || d[yy * w + xx]) v.push(s[yy * w + xx]);
+      if (op === "median") { v.sort((a, b) => a - b); out[y * w + x] = v[(v.length - 1) >> 1]; }
+      else { const n = v.length, sum = v.reduce((a, b) => a + b, 0); out[y * w + x] = Math.floor((2 * sum + n) / (2 * n)); }
+    }
+    return out;
+  };
+  // ---- remap
+  const lut = Array.from({ length: 256 }, (_, i) => (i * 97 + 13) & 255);
+  check("IMG-03 remap LUT applied exactly (out[i] = lut[s[i]])", (() => { const o = H.applyFilter(img, W, Hh, { op: "remap", lut });
+    return o instanceof Uint8Array && o.length === img.length && o.every((v, i) => v === lut[img[i]]); })());
+  check("IMG-03 identity LUT is the identity; input not mutated", (() => { const s = Uint8Array.from(img), o = H.applyFilter(s, W, Hh, { op: "remap", lut: Array.from({ length: 256 }, (_, i) => i) });
+    return o !== s && o.join() === img.join() && s.join() === img.join(); })());
+  // ---- median / box against the oracle
+  check("IMG-03 median (lower median, in-bounds window) matches the brute-force oracle, r = 1..4",
+    [1, 2, 3, 4].every((r) => H.applyFilter(img, W, Hh, { op: "median", radius: r }).join() === oracle(img, W, Hh, "median", r, null).join()));
+  check("IMG-03 box (integer mean, half up) matches the brute-force oracle, r = 1..4",
+    [1, 2, 3, 4].every((r) => H.applyFilter(img, W, Hh, { op: "box", radius: r }).join() === oracle(img, W, Hh, "box", r, null).join()));
+  check("IMG-03 radius larger than the image is clamped to the image (median, box)",
+    ["median", "box"].every((op) => H.applyFilter(img, W, Hh, { op, radius: 50 }).join() === oracle(img, W, Hh, op, 50, null).join()));
+  check("IMG-03 median of a flat image is the image; box of a flat image is the image",
+    ["median", "box"].every((op) => H.applyFilter(new Uint8Array(30).fill(77), 6, 5, { op, radius: 2 }).every((v) => v === 77)));
+  check("IMG-03 median removes a single-pixel spike; box spreads it", (() => { const s = new Uint8Array(25); s[12] = 255;
+    const m = H.applyFilter(s, 5, 5, { op: "median", radius: 1 }), b = H.applyFilter(s, 5, 5, { op: "box", radius: 1 });
+    return m.every((v) => v === 0) && b[12] === 28 && b[0] === 0 && b[6] === 28; })());
+  // ---- domain (IMG-04)
+  check("IMG-04 with a domain: in-domain output uses only in-domain neighbours (oracle), out-of-domain unchanged",
+    ["median", "box"].every((op) => [1, 2].every((r) => H.applyFilter(img, W, Hh, { op, radius: r }, dom).join() === oracle(img, W, Hh, op, r, dom).join())) &&
+    H.applyFilter(img, W, Hh, { op: "remap", lut }, dom).every((v, i) => v === (dom[i] ? lut[img[i]] : img[i])));
+  check("IMG-04 in-domain output unchanged when out-of-domain pixels are altered", (() => { const alt = Uint8Array.from(img, (v, i) => (dom[i] ? v : 255 - v));
+    return ["median", "box"].every((op) => { const a = H.applyFilter(img, W, Hh, { op, radius: 2 }, dom), b = H.applyFilter(alt, W, Hh, { op, radius: 2 }, dom);
+      return a.every((v, i) => !dom[i] || v === b[i]); }); })());
+  // ---- determinism and arguments
+  check("IMG-03 applyFilter is deterministic (two runs byte-identical)", ["median", "box"].every((op) =>
+    H.applyFilter(img, W, Hh, { op, radius: 3 }).join() === H.applyFilter(Uint8Array.from(img), W, Hh, { op, radius: 3 }).join()));
+  check("IMG-03 applyFilter refuses bad filters and planes (FILTER_ARG)",
+    codeOf(() => H.applyFilter(img, W, Hh, null)) === "FILTER_ARG" && codeOf(() => H.applyFilter(img, W, Hh, { op: "gauss", radius: 1 })) === "FILTER_ARG" &&
+    codeOf(() => H.applyFilter(img, W, Hh, { op: "median", radius: 0 })) === "FILTER_ARG" && codeOf(() => H.applyFilter(img, W, Hh, { op: "box", radius: 1.5 })) === "FILTER_ARG" &&
+    codeOf(() => H.applyFilter(img, W, Hh, { op: "box", radius: 51 })) === "FILTER_ARG" &&
+    codeOf(() => H.applyFilter(img, W, Hh, { op: "remap", lut: [1, 2] })) === "FILTER_ARG" &&
+    codeOf(() => H.applyFilter(img, W, Hh, { op: "remap", lut: Array(256).fill(256) })) === "FILTER_ARG" &&
+    codeOf(() => H.applyFilter(img, W + 1, Hh, { op: "median", radius: 1 })) === "FILTER_ARG" &&
+    codeOf(() => H.applyFilter(img, W, Hh, { op: "median", radius: 1 }, new Uint8Array(3))) === "FILTER_ARG");
+  check("IMG-03 every schema-valid heightFilter is accepted by applyFilter", (() => { const p = SBSchema.defaults("plywood");
+    return [{ op: "median", radius: 1 }, { op: "box", radius: 50 }, { op: "remap", lut }].every((f) => {
+      const q = { ...p, interpretation: { ...p.interpretation, heightFilter: f } };
+      return SBSchema.validate(q).ok && codeOf(() => H.applyFilter(img, W, Hh, f)) === null; }); })());
+
+  // ---- interpretHeight: the engine's height interpretation stage (G2.10a stage 4)
+  const p = SBSchema.defaults("plywood"), N = p.construction.sheets;
+  const withF = (f) => ({ ...p.interpretation, heightFilter: f });
+  const spy = (run) => {
+    const calls = { kuwahara: 0, thresholds: 0, applyFilter: 0 };
+    const ok = SBRaster.kuwahara, ot = SBRaster.thresholds, oa = H.applyFilter;
+    SBRaster.kuwahara = (...a) => (calls.kuwahara++, ok(...a)); SBRaster.thresholds = (...a) => (calls.thresholds++, ot(...a));
+    H.applyFilter = (...a) => (calls.applyFilter++, oa(...a));
+    try { return { r: run(), calls }; } finally { SBRaster.kuwahara = ok; SBRaster.thresholds = ot; H.applyFilter = oa; }
+  };
+  const raw = spy(() => E.interpretHeight(img, W, Hh, p.interpretation, N, null, {}));
+  check("IMG-03 height mode does not smooth unless heightFilter is set (spy: no kuwahara, thresholds or applyFilter call when null)",
+    raw.calls.kuwahara === 0 && raw.calls.thresholds === 0 && raw.calls.applyFilter === 0);
+  check("IMG-03 null heightFilter: added == addedFromSamples(raw samples), no HEIGHT_FILTERED",
+    raw.r.added.join() === H.addedFromSamples(img, N, "white-high").join() && !raw.r.diagnostics.some((d) => d.code === "HEIGHT_FILTERED"));
+  check("IMG-03 polarity is honoured (black-high)", E.interpretHeight(img, W, Hh, { ...p.interpretation, polarity: "black-high" }, N, null, {}).added.join() ===
+    H.addedFromSamples(img, N, "black-high").join());
+  const filt = spy(() => E.interpretHeight(img, W, Hh, withF({ op: "median", radius: 2 }), N, dom, { quality: "fabrication", revision: 3 }));
+  check("IMG-03 set heightFilter: applyFilter called once, still no kuwahara or thresholds",
+    filt.calls.applyFilter === 1 && filt.calls.kuwahara === 0 && filt.calls.thresholds === 0);
+  check("IMG-03 set heightFilter: added == addedFromSamples(applyFilter(samples, domain))",
+    filt.r.added.join() === H.addedFromSamples(H.applyFilter(img, W, Hh, { op: "median", radius: 2 }, dom), N, "white-high").join());
+  const hf = filt.r.diagnostics.find((d) => d.code === "HEIGHT_FILTERED");
+  check("AT-02 HEIGHT_FILTERED (info) carries the filter, quality and revision", !!hf && hf.severity === "info" && hf.quality === "fabrication" && hf.revision === 3 &&
+    /median/.test(hf.message) && /radius 2/.test(hf.message));
+  check("AT-02 smoothing enabled is recorded as an explicit change (geometryKey hash changes, HEIGHT_FILTERED present)", (() => {
+    const q = { ...p, interpretation: withF({ op: "box", radius: 1 }) }, Hk = (o) => SBHash.hashJSON(SBSchema.geometryKey(o));
+    const d = E.interpretHeight(img, W, Hh, q.interpretation, N, null, {}).diagnostics;
+    return Hk(q) !== Hk(p) && Hk({ ...p, interpretation: withF({ op: "box", radius: 2 }) }) !== Hk(q) && d.some((x) => x.code === "HEIGHT_FILTERED"); })());
+  check("IMG-03 interpretHeight refuses tonal interpretation (ENGINE_ARG)", codeOf(() => E.interpretHeight(img, W, Hh, { ...p.interpretation, mode: "tonal" }, N, null, {})) === "ENGINE_ARG");
+  check("IMG-03 interpretHeight does not mutate the samples", (() => { const s = Uint8Array.from(img); E.interpretHeight(s, W, Hh, withF({ op: "box", radius: 3 }), N, null, {}); return s.join() === img.join(); })());
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

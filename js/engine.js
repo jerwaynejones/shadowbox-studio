@@ -6,6 +6,7 @@
  * connectedLayers/connectedFiles (G1.7) carry the connected export on the
  * canonical path. rasterPlan/qualityPair (G2.1b) are the one draft/fabrication
  * raster rule (LYR-06, PO-LASER-4/5). orient (G2.5) is the one orientation rule (IMG-05).
+ * interpretHeight (G2.5b) is the height-mode interpretation stage: raw unless an explicit heightFilter is set (IMG-03).
  * The full SBEngine.generate lands in G2.10a/b.
  * ==========================================================================*/
 (function (global) {
@@ -198,6 +199,28 @@
       if (outA) outA[dst] = alpha[s];
     }
     return { samples: out, alpha: outA, w: W2, h: t.H, oriented: true };
+  };
+
+  /**
+   * interpretHeight(samples, w, h, interpretation, N, domain, {quality?, revision?}) → {added: Uint8Array, diagnostics}
+   * The height-mode interpretation stage (G2.10a stage 4; IMG-03, AT-02). samples are the oriented, resampled
+   * 8-bit height plane (one channel). With interpretation.heightFilter null the samples are sliced raw: no
+   * Kuwahara, no thresholds, no filter. A set heightFilter runs SBHeight.applyFilter (domain-aware) once and
+   * emits HEIGHT_FILTERED (info) naming the filter. Then SBHeight.addedFromSamples with the polarity. Pure.
+   */
+  E.interpretHeight = function (samples, w, h, interp, N, domain, ctx) {
+    if (!interp || interp.mode !== "height") throw efail("ENGINE_ARG", "interpretHeight needs interpretation.mode height (got " + (interp && interp.mode) + ")");
+    ctx = ctx || {};
+    const H = global.SBHeight, f = interp.heightFilter == null ? null : interp.heightFilter, diagnostics = [];
+    let s = samples;
+    if (f) {
+      s = H.applyFilter(samples, w, h, f, domain || null);
+      diagnostics.push(global.SBDiag.make("HEIGHT_FILTERED", {
+        quality: ctx.quality, revision: ctx.revision,
+        detail: f.op === "remap" ? "remap LUT applied to the height samples" : f.op + " filter, radius " + f.radius + " px, applied to the height samples",
+      }));
+    }
+    return { added: H.addedFromSamples(s, N, interp.polarity), diagnostics };
   };
 
   /**

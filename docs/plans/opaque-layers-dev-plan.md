@@ -2033,11 +2033,15 @@ The integer rule was verified against the float definition for every N in 1..16 
 - Produces `SBHeight.applyFilter(samples, w, h, filter: {op: "median"|"box"|"remap", radius?, lut?}) → Uint8Array`. It is integer-only and deterministic.
 - `interpretation.heightFilter` is `null` by default. Setting it is a geometry change: it is an undo-history entry (G3.6), it is in `geometryKey`, it is recorded in the manifest, and it emits `HEIGHT_FILTERED` (info).
 
-- [ ] **Tests:**
+- Implementation notes (as built):
+  - `applyFilter` takes an optional fifth argument `domain` (IMG-04, same rule as the domain-aware Kuwahara of G2.4): only in-domain neighbours are sampled and out-of-domain pixels are copied unchanged. Windows are clipped to the image (no edge replication). `median` is the lower median, `(n−1)>>1`-th order statistic; `box` is `floor((2·sum + n) / 2n)` (half up). Bad arguments throw `FILTER_ARG`.
+  - The height interpretation stage is `SBEngine.interpretHeight(samples, w, h, interpretation, N, domain, {quality, revision}) → {added, diagnostics}`: `applyFilter` only when `heightFilter` is set (then `HEIGHT_FILTERED`), then `addedFromSamples` with the polarity. G2.10a stage 4 (height) calls it. Undo history (G3.6) and the manifest record (G3.9) land with those tasks; `geometryKey` already carries `interpretation.heightFilter`.
+- [x] **Tests:**
   - `IMG-03 height mode does not smooth unless heightFilter is set` (spy: no kuwahara, thresholds or applyFilter call when null)
   - `AT-02 smoothing enabled is recorded as an explicit change` (`geometryKey` hash changes, and `HEIGHT_FILTERED` is present)
   - `IMG-03 remap LUT applied exactly`
-- **Commit.**
+  - plus oracle checks for median/box (r = 1..4 and clamped r = 50), the domain rule, determinism and `FILTER_ARG`.
+- [x] **Commit.**
 
 ### Task G2.6: Construction strategies (`SBConstruct`)
 
