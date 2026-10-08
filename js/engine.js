@@ -5,7 +5,8 @@
  * runPipeline() body after getImageData, moved verbatim (state -> cfg).
  * connectedLayers/connectedFiles (G1.7) carry the connected export on the
  * canonical path. rasterPlan/qualityPair (G2.1b) are the one draft/fabrication
- * raster rule (LYR-06, PO-LASER-4/5). The full SBEngine.generate lands in G2.10a/b.
+ * raster rule (LYR-06, PO-LASER-4/5). orient (G2.5) is the one orientation rule (IMG-05).
+ * The full SBEngine.generate lands in G2.10a/b.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -127,17 +128,77 @@
   const isPosInt = (v) => Number.isSafeInteger(v) && v > 0;
   const deepFreeze = (o) => { if (o && typeof o === "object" && !Object.isFrozen(o)) { Object.freeze(o); Object.values(o).forEach(deepFreeze); } return o; };
 
+  // ------------------------------------------------------------ orientation (G2.5, IMG-05)
+  /*
+   * A pixel-grid transform is an integer affine map (x, y) → (a·x + b·y + c, d·x + e·y + f) from a W × H grid to
+   * W' × H'. Primitives (clockwise rotation; mirror = left-right): */
+  const PRIM = {
+    rot90: (W, H) => ({ m: [0, -1, H - 1, 1, 0, 0], W: H, H: W }),
+    rot180: (W, H) => ({ m: [-1, 0, W - 1, 0, -1, H - 1], W, H }),
+    rot270: (W, H) => ({ m: [0, 1, 0, -1, 0, W - 1], W: H, H: W }),
+    mirror: (W, H) => ({ m: [-1, 0, W - 1, 0, 1, 0], W, H }),
+  };
+  /** EXIF orientation → primitive sequence (the standard meaning: 2 mirror, 3 rot180, 4 = flip vertical, 5 transpose, 6 rot90 cw, 7 transverse, 8 rot270 cw). */
+  const EXIF_SEQ = { 1: [], 2: ["mirror"], 3: ["rot180"], 4: ["rot180", "mirror"], 5: ["mirror", "rot270"], 6: ["rot90"], 7: ["mirror", "rot90"], 8: ["rot270"] };
+
+  function checkOrientation(o) {
+    if (!o || typeof o !== "object") throw efail("ENGINE_ARG", "orientation must be {exif, exifAppliedBy, rotate, mirror}");
+    if (!Number.isInteger(o.exif) || o.exif < 1 || o.exif > 8) throw efail("ENGINE_ARG", "exif must be 1..8 (got " + o.exif + ")");
+    if (!["browser", "engine", "none"].includes(o.exifAppliedBy)) throw efail("ENGINE_ARG", "exifAppliedBy must be browser|engine|none (got " + o.exifAppliedBy + ")");
+    if (![0, 90, 180, 270].includes(o.rotate)) throw efail("ENGINE_ARG", "rotate must be 0|90|180|270 (got " + o.rotate + ")");
+    if (typeof o.mirror !== "boolean") throw efail("ENGINE_ARG", "mirror must be boolean (got " + o.mirror + ")");
+  }
+
   /**
-   * Oriented source size (IMG-05): EXIF 5–8 transpose the axes, but only when the engine applies EXIF
-   * (exifAppliedBy "engine"; the browser path is already oriented); then rotate 90/270 swaps them.
+   * The one orientation rule (IMG-05): EXIF only when exifAppliedBy === "engine" (the raw PNG/engine path; the
+   * browser path is already oriented), then the user rotate (clockwise), then mirror (left-right).
+   * Returns the composed transform {m, W, H} for a w × h grid.
    */
+  function orientTransform(o, w, h) {
+    const seq = (o.exifAppliedBy === "engine" ? EXIF_SEQ[o.exif] : []).slice();
+    if (o.rotate) seq.push("rot" + o.rotate);
+    if (o.mirror) seq.push("mirror");
+    let t = { m: [1, 0, 0, 0, 1, 0], W: w, H: h };
+    for (const name of seq) {
+      const p = PRIM[name](t.W, t.H), [a, b, c, d, e, f] = t.m, [A, B, C, D, Ee, Fx] = p.m;
+      t = { m: [A * a + B * d, A * b + B * e, A * c + B * f + C, D * a + Ee * d, D * b + Ee * e, D * c + Ee * f + Fx], W: p.W, H: p.H };
+    }
+    return t;
+  }
+
+  /** Oriented source size (IMG-05), from the same transform orient applies. */
   function orientedSize(project, w, h) {
     const o = project.source && project.source.orientation;
     if (!o) return [w, h];
-    let swap = o.exifAppliedBy === "engine" && o.exif >= 5 && o.exif <= 8;
-    if (o.rotate === 90 || o.rotate === 270) swap = !swap;
-    return swap ? [h, w] : [w, h];
+    const t = orientTransform(o, w, h);
+    return [t.W, t.H];
   }
+
+  /**
+   * orient({samples, alpha, w, h}, {exif, exifAppliedBy, rotate, mirror}) → {samples, alpha, w, h, oriented: true}
+   * Applies orientTransform in one pass, before interpretation (G2.5, IMG-04/05). samples may carry several
+   * interleaved channels (length = w·h·c, kept in order per pixel) and keep their array type; alpha (one channel,
+   * or null) moves with them so the domain A stays registered. Pure. Runs exactly once: an input already marked
+   * oriented is refused with ORIENT_TWICE.
+   */
+  E.orient = function (raster, orientation) {
+    if (!raster || typeof raster !== "object") throw efail("ENGINE_ARG", "raster must be {samples, alpha, w, h}");
+    if (raster.oriented === true) throw efail("ORIENT_TWICE", "the raster is already oriented (orient runs exactly once)");
+    const { samples, w, h } = raster, alpha = raster.alpha == null ? null : raster.alpha;
+    if (!isPosInt(w) || !isPosInt(h)) throw efail("ENGINE_ARG", "size must be positive integers (got " + w + " × " + h + ")");
+    const n = w * h;
+    if (!samples || typeof samples.length !== "number" || samples.length === 0 || samples.length % n !== 0) throw efail("ENGINE_ARG", "samples length must be a multiple of w·h");
+    if (alpha && alpha.length !== n) throw efail("ENGINE_ARG", "alpha length " + alpha.length + " != w·h " + n);
+    checkOrientation(orientation);
+    const ch = samples.length / n, t = orientTransform(orientation, w, h), [a, b, c, d, e, f] = t.m, W2 = t.W;
+    const out = new samples.constructor(samples.length), outA = alpha ? new alpha.constructor(n) : null;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const s = y * w + x, dst = (d * x + e * y + f) * W2 + (a * x + b * y + c);
+      if (ch === 1) out[dst] = samples[s]; else for (let k = 0; k < ch; k++) out[dst * ch + k] = samples[s * ch + k];
+      if (outA) outA[dst] = alpha[s];
+    }
+    return { samples: out, alpha: outA, w: W2, h: t.H, oriented: true };
+  };
 
   /**
    * rasterPlan(project, {w, h}, "draft"|"fabrication", deviceClass) → {quality, geometry: GeometryConfig, diagnostics}

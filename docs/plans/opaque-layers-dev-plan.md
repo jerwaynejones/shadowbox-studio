@@ -2015,14 +2015,14 @@ The integer rule was verified against the float definition for every N in 1..16 
   - `SBHeight.domainMask(alpha: Uint8Array|null, mode, t=0.5) → Uint8Array|null`, where `alpha ≥ round(t*255)` means the pixel is inside A;
   - `SBEngine.orient({samples, alpha, w, h}, {exif, exifAppliedBy, rotate, mirror}) → {samples, alpha, w, h}`. It applies the EXIF orientation only when `exifAppliedBy === "engine"` (the raw PNG path), then the user rotate and mirror. It runs exactly once, before interpretation.
 
-- [ ] **Tests:**
+- [x] **Tests:**
   - `IMG-04 alpha 0.5 threshold defines A`
   - `AT-05 rotate 90 + mirror: orientationF corner lands at the expected corner in material, proof and parsed SVG`, run through the G1.4/G1.5 helpers
   - `IMG-05 EXIF 6 applied once on the engine path` (orientationF with `exif: 6` equals `rotate: 90`)
   - `IMG-05 browser-applied EXIF is not applied again` (`exifAppliedBy: "browser"` → identity)
   - `IMG-05 rotate applied once` (identity is idempotent)
-  - Browser harness (G4.8): an EXIF=6 JPEG decodes with swapped dimensions and is not rotated again.
-- **Commit.**
+  - Browser harness (G4.8): an EXIF=6 JPEG decodes with swapped dimensions and is not rotated again. *(Open; lands with G4.8.)*
+- [x] **Commit.**
 
 ### Task G2.5b: Explicit height filter/remap (IMG-03, AT-02)
 

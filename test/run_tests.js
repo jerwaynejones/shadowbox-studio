@@ -3023,6 +3023,99 @@ suite("G2.2b — large-image benchmark and per-device pixel budgets (PO-LASER-4/
     Buffer.compare(Buffer.from(busy), Buffer.from(F.busyHeightMap(3, 300, 200, 27))) === 0);
 });
 
+// ------------------------------------------------ G2.5 domain mask and orientation
+suite("height.js/engine.js — G2.5 domain mask and orientation (IMG-04/05, AT-05)", () => {
+  const H = SBHeight, E = SBEngine, F = require("./fixtures.js"), M = SBMaterial, S = SBSvg, G = SBGeom, R = SBSvgRead;
+  check("G2.5 API present", typeof H.domainMask === "function" && typeof E.orient === "function");
+  if (typeof H.domainMask !== "function" || typeof E.orient !== "function") return;
+  const codeOf = (f) => { try { f(); return null; } catch (x) { return x.code || x.message; } };
+  // ---- domainMask
+  const al = Uint8Array.of(0, 127, 128, 200, 255);
+  check("IMG-04 alpha 0.5 threshold defines A (alpha ≥ round(0.5·255) = 128 is inside)", H.domainMask(al, "threshold", 0.5).join() === "0,0,1,1,1" &&
+    H.domainMask(al, "threshold").join() === "0,0,1,1,1");
+  check("IMG-04 threshold t is honoured (t = 0.8 → alpha ≥ 204; t = 0 → all inside)", H.domainMask(al, "threshold", 0.8).join() === "0,0,0,0,1" &&
+    H.domainMask(al, "threshold", 0).join() === "1,1,1,1,1");
+  check("IMG-04 mode full → null (whole image); no alpha channel → null", H.domainMask(al, "full", 0.5) === null && H.domainMask(null, "threshold", 0.5) === null);
+  check("IMG-04 domainMask returns a fresh 0/1 Uint8Array and leaves alpha untouched", (() => { const a = Uint8Array.from(al), m = H.domainMask(a, "threshold", 0.5);
+    return m instanceof Uint8Array && m !== a && m.length === a.length && a.join() === al.join(); })());
+  check("IMG-04 domainMask refuses an unknown mode or t outside [0,1]", codeOf(() => H.domainMask(al, "luma", 0.5)) === "DOMAIN_ARG" &&
+    codeOf(() => H.domainMask(al, "threshold", 1.5)) === "DOMAIN_ARG" && codeOf(() => H.domainMask(al, "threshold", NaN)) === "DOMAIN_ARG");
+  check("IMG-04 domainMask → cumulativeMasks: outside A only the base", (() => { const d = H.domainMask(Uint8Array.of(255, 0, 128, 127), "threshold", 0.5);
+    const ms = H.cumulativeMasks(Uint8Array.of(3, 3, 3, 3), d, 4, 4, 1); return ms[0].join() === "1,1,1,1" && ms[3].join() === "1,0,1,0"; })());
+
+  // ---- orient
+  const fx = F.MASKS.orientationF, W = fx.w, Hh = fx.h;
+  const fS = Uint8Array.from(fx.layers[1], (v) => v * 255);            // the F as 8-bit samples
+  const fA = Uint8Array.from({ length: W * Hh }, (_, i) => (i * 37) & 255);   // an asymmetric alpha plane
+  const src = () => ({ samples: Uint8Array.from(fS), alpha: Uint8Array.from(fA), w: W, h: Hh });
+  const O = (o) => Object.assign({ exif: 1, exifAppliedBy: "none", rotate: 0, mirror: false }, o);
+  const same = (a, b) => a.w === b.w && a.h === b.h && a.samples.join() === b.samples.join() && (a.alpha === null ? b.alpha === null : a.alpha.join() === b.alpha.join());
+  const at = (r, x, y) => r.samples[y * r.w + x];
+  const raw = (r) => ({ samples: r.samples, alpha: r.alpha, w: r.w, h: r.h });   // drop the oriented mark to compose in tests
+  check("IMG-05 identity orientation returns the same pixels", same(E.orient(src(), O({})), src()));
+  const r90 = E.orient(src(), O({ rotate: 90 }));
+  // rotate 90 clockwise: source (x, y) → (h−1−y, x)
+  check("IMG-05 rotate 90 is clockwise: source top-left lands top-right", r90.w === Hh && r90.h === W && at(r90, Hh - 1, 0) === fS[0] &&
+    (() => { for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) if (at(r90, Hh - 1 - y, x) !== fS[y * W + x]) return false; return true; })());
+  check("IMG-05 mirror flips left-right", (() => { const m = E.orient(src(), O({ mirror: true }));
+    for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) if (at(m, W - 1 - x, y) !== fS[y * W + x]) return false; return true; })());
+  check("IMG-05 EXIF 6 applied once on the engine path (== rotate 90)", same(E.orient(src(), O({ exif: 6, exifAppliedBy: "engine" })), r90));
+  check("IMG-05 browser-applied EXIF is not applied again (exifAppliedBy browser → identity)",
+    same(E.orient(src(), O({ exif: 6, exifAppliedBy: "browser" })), src()) && same(E.orient(src(), O({ exif: 8, exifAppliedBy: "none" })), src()));
+  // the eight EXIF orientations as the standard composition of mirror and clockwise rotation
+  const EXIF_AS = { 1: [0, false], 2: [0, true, "pre"], 3: [180, false], 4: [180, true], 5: [270, true, "pre"], 6: [90, false], 7: [90, true, "pre"], 8: [270, false] };
+  check("IMG-05 EXIF 1..8 on the engine path match their standard rotate/mirror meaning", [1, 2, 3, 4, 5, 6, 7, 8].every((e) => {
+    const got = E.orient(src(), O({ exif: e, exifAppliedBy: "engine" })), [rot, mir, pre] = EXIF_AS[e];
+    // "pre": mirror first, then rotate (EXIF 2/5/7); otherwise rotate, then mirror
+    const want = pre ? E.orient(raw(E.orient(src(), O({ mirror: true }))), O({ rotate: rot })) : E.orient(src(), O({ rotate: rot, mirror: mir }));
+    return same(got, want); }));
+  check("IMG-05 rotate 90 four times is the identity; 90+270 is the identity", (() => { let r = src(); for (let i = 0; i < 4; i++) r = raw(E.orient(r, O({ rotate: 90 })));
+    return same(r, src()) && same(E.orient(raw(E.orient(src(), O({ rotate: 90 }))), O({ rotate: 270 })), src()); })());
+  check("IMG-05 rotate applied once: a re-orient of an oriented raster is refused (ORIENT_TWICE)", (() => { const o = E.orient(src(), O({ rotate: 90 }));
+    return o.oriented === true && codeOf(() => E.orient(o, O({ rotate: 90 }))) === "ORIENT_TWICE" && codeOf(() => E.orient(E.orient(src(), O({})), O({}))) === "ORIENT_TWICE"; })());
+  check("IMG-05 orient is pure: the input planes are not mutated", (() => { const s = src(); E.orient(s, O({ rotate: 270, mirror: true, exif: 7, exifAppliedBy: "engine" }));
+    return same(s, src()) && s.oriented === undefined; })());
+  check("IMG-04/05 alpha follows the samples; null alpha stays null", (() => { const o = E.orient(src(), O({ rotate: 90, mirror: true })), n = E.orient(Object.assign(src(), { alpha: null }), O({ rotate: 90, mirror: true }));
+    for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) if (o.alpha[x * o.w + y] !== fA[y * W + x]) return false;   // rotate 90 + mirror = transpose
+    return n.alpha === null && n.samples.join() === o.samples.join(); })());
+  check("IMG-05 multi-channel samples (RGB) keep their channel order per pixel", (() => {
+    const rgb = Uint8Array.from({ length: 2 * 3 * 3 }, (_, i) => i), o = E.orient({ samples: rgb, alpha: null, w: 2, h: 3 }, O({ rotate: 90 }));
+    // 2×3 → 3×2; source pixel (x, y) → (2−y, x)
+    for (let y = 0; y < 3; y++) for (let x = 0; x < 2; x++) for (let c = 0; c < 3; c++) if (o.samples[((x) * 3 + (2 - y)) * 3 + c] !== rgb[(y * 2 + x) * 3 + c]) return false;
+    return o.w === 3 && o.h === 2; })());
+  check("IMG-05 orient keeps the sample array type (Float32Array in, Float32Array out)", E.orient({ samples: new Float32Array(6), alpha: null, w: 3, h: 2 }, O({ rotate: 90 })).samples instanceof Float32Array);
+  check("IMG-05 orient refuses bad orientation fields and inconsistent planes (ENGINE_ARG)",
+    codeOf(() => E.orient(src(), O({ rotate: 45 }))) === "ENGINE_ARG" && codeOf(() => E.orient(src(), O({ exif: 9, exifAppliedBy: "engine" }))) === "ENGINE_ARG" &&
+    codeOf(() => E.orient(src(), O({ exifAppliedBy: "canvas" }))) === "ENGINE_ARG" && codeOf(() => E.orient(src(), O({ mirror: 1 }))) === "ENGINE_ARG" &&
+    codeOf(() => E.orient({ samples: new Uint8Array(5), alpha: null, w: 2, h: 3 }, O({}))) === "ENGINE_ARG" &&
+    codeOf(() => E.orient({ samples: new Uint8Array(6), alpha: new Uint8Array(5), w: 2, h: 3 }, O({}))) === "ENGINE_ARG");
+  check("IMG-05 orient dims == rasterPlan oriented size for every exif × applier × rotate × mirror", (() => {
+    const p = SBSchema.defaults("plywood");
+    for (let e = 1; e <= 8; e++) for (const by of ["browser", "engine", "none"]) for (const rot of [0, 90, 180, 270]) for (const mir of [false, true]) {
+      const q = { ...p, source: { ...SBSchema.sourceTemplate(), orientation: { exif: e, exifAppliedBy: by, rotate: rot, mirror: mir } } };
+      const g = E.rasterPlan(q, { w: 400, h: 300 }, "draft", "desktop").geometry, o = E.orient({ samples: new Uint8Array(12), alpha: null, w: 4, h: 3 }, q.source.orientation);
+      if ((g.srcW > g.srcH) !== (o.w > o.h)) return false; }
+    return true; })());
+
+  // ---- AT-05 through the G1.4/G1.5 helpers: rotate 90 + mirror (= transpose) of the F
+  const o = E.orient(src(), O({ rotate: 90, mirror: true }));
+  const masks = H.cumulativeMasks(H.addedFromSamples(o.samples, 2, "white-high"), H.domainMask(o.alpha, "full"), 2, o.w, o.h);
+  const pg = M.page({ artWMM: 70, artHMM: 70, frameMM: 0 }), L = M.fromMasks(masks, o.w, o.h, pg, {});
+  const probe = (mat) => (px, py) => G.containsPoint(mat, [px * 10000 + 5000, py * 10000 + 5000]);
+  // transposed F: stem along row 0 (x 0..5), top bar down column 0 (y 0..4), middle bar down column 2 (y 0..3)
+  const expectF = (inside) => inside(0, 0) && inside(5, 0) && !inside(6, 0) && inside(0, 4) && !inside(0, 5) && inside(2, 3) && !inside(2, 4) && !inside(1, 1) && !inside(6, 6);
+  const subRings = (d) => d.split(/(?=M )/).map((sp) => sp.replace(/[MLZ]/g, " ").trim().split(/\s+/).map((t) => Math.round(Number(t) * 1000)));
+  const proofD = [...S.assemblySVG(L, pg, ["#ffffff", "#000000"]).matchAll(/<path d="([^"]*)"/g)].map((m) => m[1]);
+  check("AT-05 rotate 90 + mirror: orientationF lands as expected in material", expectF(probe(L[1].material)));
+  check("AT-05 rotate 90 + mirror: same in the parsed cut SVG (SBSvgRead round trip)", expectF(probe(R.toMaterial(R.parse(S.layerSVG(L[1], pg, {})).cut))));
+  check("AT-05 rotate 90 + mirror: same in the opaque proof (assemblySVG layer path)", proofD.length === 2 && expectF(probe(R.toMaterial(subRings(proofD[1])))));
+  check("AT-05 alpha domain oriented with the samples: transparent pixels stay base-only after rotate + mirror", (() => {
+    const a = new Uint8Array(W * Hh).fill(255); a[0] = 0;                          // source (0,0) transparent
+    const oo = E.orient({ samples: Uint8Array.from(fS), alpha: a, w: W, h: Hh }, O({ rotate: 90 }));   // (0,0) → (h−1, 0)
+    const ms = H.cumulativeMasks(H.addedFromSamples(oo.samples, 2, "white-high"), H.domainMask(oo.alpha, "threshold", 0.5), 2, oo.w, oo.h);
+    return ms[1][Hh - 1] === 0 && ms[1][Hh - 2] === 1 && ms[0].every((v) => v === 1); })());
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

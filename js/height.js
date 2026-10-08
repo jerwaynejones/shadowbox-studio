@@ -20,6 +20,9 @@
  *                             N-1-b' for the tonal path, so that
  *                             cumulativeMasks(tonalAdded(...)) equals
  *                             SBRaster.sheetMasks byte for byte (G2.4).
+ *   SBHeight.domainMask(alpha, mode, t=0.5) -> Uint8Array|null   (G2.5, IMG-04)
+ *                             the alpha domain A: 1 where alpha ≥ round(t·255);
+ *                             null (whole image) for mode "full" or no alpha.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -55,6 +58,16 @@
       ms.push(m);
     }
     return ms;
+  };
+
+  Hh.domainMask = function (alpha, mode, t = 0.5) {
+    const fail = (msg) => { const e = new Error("DOMAIN_ARG: " + msg); e.code = "DOMAIN_ARG"; return e; };
+    if (mode !== "threshold" && mode !== "full") throw fail("mode must be threshold|full (got " + mode + ")");
+    if (typeof t !== "number" || !(t >= 0 && t <= 1)) throw fail("t must be in [0, 1] (got " + t + ")");
+    if (mode === "full" || alpha == null) return null;
+    const cut = Math.round(t * 255), out = new Uint8Array(alpha.length);
+    for (let i = 0; i < alpha.length; i++) out[i] = alpha[i] >= cut ? 1 : 0;
+    return out;
   };
 
   Hh.boundaries = (N, tMM) =>

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **G2.5, domain mask and orientation (engine only; not yet wired into the app):**
+  `SBHeight.domainMask(alpha, mode, t = 0.5)` returns the alpha domain A (1 where alpha ≥
+  round(t·255), so 128 at t = 0.5), or `null` (whole image) for mode `full` or a source without
+  alpha; a bad mode or t is `DOMAIN_ARG` (IMG-04). `SBEngine.orient({samples, alpha, w, h},
+  {exif, exifAppliedBy, rotate, mirror})` is the one orientation rule (IMG-05): EXIF only when
+  `exifAppliedBy === "engine"` (standard meaning of 1–8), then the user rotation (clockwise),
+  then mirror (left-right), as one integer pixel map in a single pass. Alpha moves with the
+  samples, interleaved channels keep their order, the array type is kept and the input is not
+  mutated. The result is marked `oriented: true` and a second `orient` on it is refused with
+  `ORIENT_TWICE`, so orientation runs exactly once. `rasterPlan`'s oriented size now comes from
+  the same transform.
+
 - **G2.4b, legacy settings adapter (engine only; import UI lands in G3.8):**
   `SBSchema.fromLegacySettings(json)` maps a v1.1.0 `settings.json` onto the project model as
   tonal + connected-sheet (acrylic preset base): sheets, threshold rule, polarity, smoothing,
