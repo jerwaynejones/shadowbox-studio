@@ -2640,6 +2640,28 @@ suite("engine.js — G2.1b draft/fabrication raster snapshot: rasterPlan, qualit
     pair.fabrication.diagnostics.length > 0 && pair.fabrication.diagnostics.every((x) => x.quality === "fabrication") && pair.draft.diagnostics.length === 0);
 });
 
+suite("G2.2b — large-image benchmark and per-device pixel budgets (PO-LASER-4/9, NFR-03/04, AT-24)", () => {
+  // Pending the product-owner decision (G2.2b stop rule: no mobile candidate ≥ 2 Mpx qualifies; see `node test/bench.js
+  // large`): "PO-LASER-4 SBSchema.limits budgets equal docs/perf/large-image.json" and "PO-LASER-9 large-image targets
+  // recorded for desktop and mobile" are added with the recorded decision.
+  const { LARGE_WORKLOADS } = require("./bench.js");
+  const W = LARGE_WORKLOADS || [];
+  const has = (w, h, fam) => W.some((r) => r.w === w && r.h === h && r.family === fam && r.layers === 8);
+  const sizes = [[2309, 1732], [3464, 2598], [4000, 3000], [4618, 3464], [5164, 3873], [5774, 4330]];
+  check("PO-LASER-9 bench workload list covers 4–25 Mpx and the 470 mm-high page",
+    sizes.every(([w, h]) => has(w, h, "realistic") && has(w, h, "busy")) && has(3525, 4700, "realistic") && has(3525, 4700, "busy") &&
+    W.some((r) => r.w === 1536 && r.h === 1536 && r.layers === 8 && r.calibration) && W.some((r) => r.w === 768 && r.h === 768 && r.layers === 6 && r.calibration));
+  const F = require("./fixtures.js");
+  const a = F.heightMap(7, 400, 300), b = F.heightMap(7, 400, 300), c = F.heightMap(8, 400, 300);
+  check("PO-LASER-9 realistic height fixture is seeded and deterministic",
+    a.length === 120000 && Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0 && Buffer.compare(Buffer.from(a), Buffer.from(c)) !== 0);
+  const lo = Math.min(...a), hi = Math.max(...a);
+  check("PO-LASER-9 realistic height fixture spans the range", lo < 40 && hi > 215);
+  const busy = F.busyHeightMap(3, 300, 200, 27);
+  check("PO-LASER-9 busy height fixture is seeded 8-bit samples", busy.length === 60000 && busy instanceof Uint8Array &&
+    Buffer.compare(Buffer.from(busy), Buffer.from(F.busyHeightMap(3, 300, 200, 27))) === 0);
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

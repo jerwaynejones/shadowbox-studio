@@ -63,4 +63,48 @@ function jpegHeader({ w, h, exif = 0, truncate = 0, sofLen = 17 }) {
   parts.push(seg(0xc0, sof), Buffer.from([0xff, 0xd9]));
   const out = Buffer.concat(parts); return new Uint8Array(truncate ? out.subarray(0, out.length - truncate) : out);
 }
-module.exports = { art, lcg, ramp, flat, MASKS, randomNestedStack, pngEncode, jpegHeader, crc32 };
+/**
+ * G2.2b scalable height fixtures (seeded; content is defined in normalized page coordinates, so the same seed gives the
+ * same picture at every size and only the pixel detail scales). Both return 8-bit height samples (Uint8Array w·h).
+ * heightMap: the "realistic" family — a gentle diagonal ramp plus `blobs` polynomial bumps (1 − d²/r²)² of mixed sign
+ * and radius (0.6–7 % of the short side), giving tens to hundreds of parts per layer at 8 layers. No transcendentals.
+ */
+function heightMap(seed, w, h, blobs = 420) {
+  const rng = lcg(seed), f = new Float32Array(w * h), S = Math.min(w, h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) f[y * w + x] = 0.18 + 0.32 * (x / w) + 0.22 * (y / h);
+  for (let b = 0; b < blobs; b++) {
+    const cx = rng() * w, cy = rng() * h, r = S * (0.006 + 0.064 * rng() * rng()), amp = (rng() < 0.6 ? 1 : -1) * (0.12 + 0.38 * rng());
+    const x0 = Math.max(0, Math.floor(cx - r)), x1 = Math.min(w - 1, Math.ceil(cx + r)), y0 = Math.max(0, Math.floor(cy - r)), y1 = Math.min(h - 1, Math.ceil(cy + r)), r2 = r * r;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const d2 = (x - cx) ** 2 + (y - cy) ** 2; if (d2 >= r2) continue;
+      const t = 1 - d2 / r2; f[y * w + x] += amp * t * t;
+    }
+  }
+  const out = new Uint8Array(w * h);
+  for (let i = 0; i < out.length; i++) { const v = f[i]; out[i] = v <= 0 ? 0 : v >= 1 ? 255 : Math.round(v * 255); }
+  return out;
+}
+/**
+ * busyHeightMap: the "busy" worst case — seeded 3-octave value noise with a FIXED cell size in pixels (so feature
+ * count grows with the pixel count, like randomNestedStack-style noise), min–max scaled to 0..255.
+ */
+function busyHeightMap(seed, w, h, cell = 27) {
+  const rng = lcg(seed), f = new Float32Array(w * h);
+  for (const [sp, amp] of [[cell, 1], [cell / 2.5, 0.45], [cell / 6, 0.2]]) {
+    const gw = Math.ceil(w / sp) + 2, gh = Math.ceil(h / sp) + 2, g = new Float32Array(gw * gh);
+    for (let i = 0; i < g.length; i++) g[i] = rng();
+    for (let y = 0; y < h; y++) {
+      const gy = y / sp, iy = Math.floor(gy), ty = gy - iy;
+      for (let x = 0; x < w; x++) {
+        const gx = x / sp, ix = Math.floor(gx), tx = gx - ix, o = iy * gw + ix;
+        f[y * w + x] += amp * ((g[o] * (1 - tx) + g[o + 1] * tx) * (1 - ty) + (g[o + gw] * (1 - tx) + g[o + gw + 1] * tx) * ty);
+      }
+    }
+  }
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < f.length; i++) { if (f[i] < lo) lo = f[i]; if (f[i] > hi) hi = f[i]; }
+  const out = new Uint8Array(w * h), k = hi > lo ? 255 / (hi - lo) : 0;
+  for (let i = 0; i < out.length; i++) out[i] = Math.round((f[i] - lo) * k);
+  return out;
+}
+module.exports = { art, lcg, ramp, flat, MASKS, randomNestedStack, pngEncode, jpegHeader, crc32, heightMap, busyHeightMap };
