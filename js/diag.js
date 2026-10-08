@@ -3,7 +3,7 @@
  * ----------------------------------------------------------------------------
  * SBDiag: the single diagnostic-code registry (SRS §9.5, UI-04) and the
  * Diagnostic factory (SRS §9.1, plan §3). Codes are defined here and nowhere
- * else (plan G1.0; acknowledgements and the export gate follow in G2.2).
+ * else (plan G1.0); acknowledgements and the export gate (G2.2) below.
  *
  *   SBDiag.CODES                 frozen {code: {severity, title, fix, kind}}
  *                                severity "blocking"|"warning"|"info";
@@ -15,6 +15,12 @@
  *   SBDiag.aggregate(diags)      merges PART_SMALL, PART_THIN and NECK_NARROW
  *                                per (code, layer) into one diagnostic with
  *                                count, parts[] and a region list.
+ *   SBDiag.ackKey(diag, geometryHash)  "code|layer|part-or-*|geometryHash"
+ *   SBDiag.exportGate(diags, acks, snapshot, expectedQuality="fabrication")
+ *                                → {allowed, reason, blocking, unacked};
+ *                                reason NO_SNAPSHOT|QUALITY_MISMATCH|
+ *                                BLOCKING|UNACKED|null (G2.2, EXP-07, LYR-06)
+ *   SBDiag.withAckState(diags, acks, geometryHash) → copies with ackState
  *
  * Besides the plan's list the registry carries every import error code:
  * SBPng.CODES (12), SBJpeg.CODES (4) and the preflight JPEG_UNSUPPORTED
@@ -238,5 +244,66 @@
     return out;
   }
 
-  global.SBDiag = { CODES, make, aggregate };
+  // ---- G2.2: acknowledgements and the export gate (§9.5, EXP-07, LYR-06) ----
+
+  const isAggregate = (d) => Array.isArray(d.parts);
+  const slot = (v) => (v === null || v === undefined ? "-" : String(v));
+
+  /**
+   * Acknowledgement key `code|layer|part-or-aggregate|geometryHash`. An
+   * aggregated diagnostic (parts[]) uses "*", so one ack covers it.
+   * geometryHash includes quality and raster size (plan §3), so a draft ack
+   * never matches a fabrication snapshot, and any geometry change (e.g. N
+   * 8 → 3 → 8) invalidates every ack taken before it.
+   */
+  function ackKey(diag, geometryHash) {
+    if (typeof geometryHash !== "string" || geometryHash.length === 0)
+      throw new Error("SBDiag.ackKey: geometryHash must be a non-empty string");
+    if (!diag || typeof diag.code !== "string") throw new Error("SBDiag.ackKey: diagnostic required");
+    return diag.code + "|" + slot(diag.layer) + "|" + (isAggregate(diag) ? "*" : slot(diag.part)) + "|" + geometryHash;
+  }
+
+  const toSet = (acks) => (acks instanceof Set ? acks : new Set(acks || []));
+  // Severity always from the registry (§9.5: never downgraded by a stored field).
+  const severityOf = (d) => (Object.prototype.hasOwnProperty.call(CODES, d.code) ? CODES[d.code].severity : B);
+
+  /**
+   * Gate an export on one snapshot. Order of reasons: NO_SNAPSHOT,
+   * QUALITY_MISMATCH (snapshot or any diagnostic not at expectedQuality),
+   * BLOCKING (never acknowledgeable), UNACKED (a warning whose ackKey for
+   * snapshot.geometryHash is not in acks); otherwise allowed, reason null.
+   * A stored diag.ackState is ignored: only `acks` counts. Unknown codes are
+   * treated as blocking.
+   */
+  function exportGate(diags, acks, snapshot, expectedQuality) {
+    if (expectedQuality === undefined) expectedQuality = "fabrication";
+    if (!QUALITIES.includes(expectedQuality)) throw new Error("SBDiag.exportGate: expectedQuality must be draft|fabrication");
+    diags = diags || [];
+    const set = toSet(acks);
+    const hasHash = !!snapshot && typeof snapshot.geometryHash === "string" && snapshot.geometryHash.length > 0;
+    const blocking = [], unacked = [];
+    for (const d of diags) {
+      const sev = severityOf(d);
+      if (sev === B) blocking.push(d);
+      else if (sev === W && !(hasHash && set.has(ackKey(d, snapshot.geometryHash)))) unacked.push(d);
+    }
+    let reason = null;
+    if (!hasHash) reason = "NO_SNAPSHOT";
+    else if (snapshot.quality !== expectedQuality || diags.some((d) => d.quality !== expectedQuality)) reason = "QUALITY_MISMATCH";
+    else if (blocking.length) reason = "BLOCKING";
+    else if (unacked.length) reason = "UNACKED";
+    return { allowed: reason === null, reason, blocking, unacked };
+  }
+
+  /** Copies of diags with ackState filled for display and validation.json. */
+  function withAckState(diags, acks, geometryHash) {
+    const set = toSet(acks);
+    return (diags || []).map((d) => {
+      const sev = severityOf(d);
+      const ackState = sev !== W ? "n/a" : set.has(ackKey(d, geometryHash)) ? "acked" : "unacked";
+      return Object.assign({}, d, { ackState });
+    });
+  }
+
+  global.SBDiag = { CODES, make, aggregate, ackKey, exportGate, withAckState };
 })(typeof window !== "undefined" ? window : globalThis);

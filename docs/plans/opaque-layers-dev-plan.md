@@ -1861,14 +1861,14 @@ Runs: 5 warm-ups and 30 runs at the candidate budget points (16 Mpx desktop; the
   - `SBDiag.exportGate(diags, acks: Set<string>, snapshot, expectedQuality = "fabrication") → {allowed, reason, blocking: Diagnostic[], unacked: Diagnostic[]}`. A snapshot whose `quality` is not `expectedQuality` is denied with reason `QUALITY_MISMATCH`.
   - `SBDiag.withAckState(diags, acks, geometryHash) → Diagnostic[]` fills `ackState` for display and for `validation.json`.
 
-- [ ] **Step 1: Tests**
+- [x] **Step 1: Tests**
   - `§9.5 blocking cannot be acknowledged` (`exportGate` still denies)
   - `EXP-07 unacked warning → not allowed`
   - `§9.5 ack invalid after geometryHash change`
   - `EXP-07/LYR-06 draft acks do not satisfy fab gate`
   - `LYR-06 draft snapshot rejected by fabrication gate`
   - `§9.5 one ack covers an aggregated PART_SMALL diagnostic`
-- [ ] **Step 2–5:** fail, implement, pass, commit.
+- [x] **Step 2–5:** fail, implement, pass, commit.
 
 ### Task G2.3: `SBHeight`, nearest-layer quantization and cumulative masks
 

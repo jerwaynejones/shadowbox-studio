@@ -1484,6 +1484,88 @@ suite("diag.js — SBDiag registry, make() and aggregate() (§9.1, §9.5, UI-04;
   check("§9.5 aggregate does not mutate its input", mixed.length === 7 && mixed[1].count === undefined && mixed[1].part === "L01-P001");
 });
 
+suite("diag.js — acknowledgements and the export gate: ackKey, exportGate, withAckState (§9.5, EXP-07, LYR-06; G2.2)", () => {
+  const D = globalThis.SBDiag;
+  check("G2.2 SBDiag exposes ackKey, exportGate and withAckState",
+    typeof D.ackKey === "function" && typeof D.exportGate === "function" && typeof D.withAckState === "function");
+  if (typeof D.ackKey !== "function" || typeof D.exportGate !== "function" || typeof D.withAckState !== "function") return;
+  const throws = (f) => { try { f(); return false; } catch { return true; } };
+  const H_FAB = "f".repeat(64), H_FAB2 = "e".repeat(64), H_DRAFT = "d".repeat(64);
+  const fabSnap = { revision: 4, quality: "fabrication", geometryHash: H_FAB };
+  const draftSnap = { revision: 4, quality: "draft", geometryHash: H_DRAFT };
+  const mk = (code, q, extra) => D.make(code, Object.assign({ revision: 4, quality: q }, extra || {}));
+  const warnF = mk("PART_THIN", "fabrication", { layer: 2, part: "L02-P007" });
+  const warnD = mk("PART_THIN", "draft", { layer: 2, part: "L02-P007" });
+  const blockF = mk("BOND_UNSUPPORTED", "fabrication", { layer: 3, part: "L03-P001" });
+  const infoF = mk("KERF_EXTERNAL", "fabrication");
+
+  // ackKey
+  check("§9.5 ackKey is code|layer|part|geometryHash", D.ackKey(warnF, H_FAB) === "PART_THIN|2|L02-P007|" + H_FAB);
+  check("§9.5 ackKey of a layer-less, part-less diagnostic uses '-' placeholders",
+    D.ackKey(mk("MAT_UNCALIBRATED", "fabrication"), H_FAB) === "MAT_UNCALIBRATED|-|-|" + H_FAB);
+  check("§9.5 ackKey changes with the geometryHash", D.ackKey(warnF, H_FAB) !== D.ackKey(warnF, H_FAB2));
+  check("§9.5 ackKey rejects a missing or empty geometryHash", throws(() => D.ackKey(warnF)) && throws(() => D.ackKey(warnF, "")));
+
+  // gate: clean / info only
+  check("EXP-07 no diagnostics → allowed", (() => { const g = D.exportGate([], new Set(), fabSnap); return g.allowed === true && g.reason === null && g.blocking.length === 0 && g.unacked.length === 0; })());
+  check("EXP-07 info diagnostics never block and need no ack", D.exportGate([infoF], new Set(), fabSnap).allowed === true);
+
+  // blocking cannot be acknowledged
+  const blockAcks = new Set([D.ackKey(blockF, H_FAB)]);
+  const gb = D.exportGate([blockF], blockAcks, fabSnap);
+  check("§9.5 blocking cannot be acknowledged", gb.allowed === false && gb.reason === "BLOCKING" && gb.blocking.length === 1 && gb.blocking[0] === blockF);
+  check("§9.5 withAckState never marks a blocking diagnostic acked", D.withAckState([blockF], blockAcks, H_FAB)[0].ackState === "n/a");
+
+  // unacked warning
+  const gu = D.exportGate([warnF, infoF], new Set(), fabSnap);
+  check("EXP-07 unacked warning → not allowed", gu.allowed === false && gu.reason === "UNACKED" && gu.unacked.length === 1 && gu.unacked[0] === warnF);
+  check("EXP-07 fab warning acked on the fab snapshot → allowed", D.exportGate([warnF, infoF], new Set([D.ackKey(warnF, H_FAB)]), fabSnap).allowed === true);
+  check("EXP-07 acks accept any iterable of keys (array)", D.exportGate([warnF], [D.ackKey(warnF, H_FAB)], fabSnap).allowed === true);
+  const gbu = D.exportGate([warnF, blockF], new Set(), fabSnap);
+  check("EXP-07 blocking takes precedence over unacked and both lists are reported",
+    gbu.reason === "BLOCKING" && gbu.blocking.length === 1 && gbu.unacked.length === 1);
+
+  // ack invalidated by a geometryHash change (Review Focus #2: N 8 → 3 → 8)
+  const oldAcks = new Set([D.ackKey(warnF, H_FAB)]);
+  const fabSnap2 = { revision: 5, quality: "fabrication", geometryHash: H_FAB2 };
+  const warnF2 = Object.assign({}, warnF, { revision: 5 });
+  check("§9.5 ack invalid after geometryHash change",
+    D.exportGate([warnF2], oldAcks, fabSnap2).allowed === false && D.withAckState([warnF2], oldAcks, H_FAB2)[0].ackState === "unacked");
+
+  // draft vs fabrication (LYR-06)
+  const draftAcks = new Set([D.ackKey(warnD, H_DRAFT)]);
+  const gdf = D.exportGate([warnF], draftAcks, fabSnap);
+  check("EXP-07/LYR-06 draft acks do not satisfy fab gate", gdf.allowed === false && gdf.reason === "UNACKED" && gdf.unacked.length === 1);
+  const gds = D.exportGate([warnD], draftAcks, draftSnap);
+  check("LYR-06 draft snapshot rejected by fabrication gate", gds.allowed === false && gds.reason === "QUALITY_MISMATCH");
+  check("LYR-06 draft snapshot rejected even with no diagnostics", D.exportGate([], new Set(), draftSnap).reason === "QUALITY_MISMATCH");
+  check("LYR-06 expectedQuality 'draft' accepts a draft snapshot", D.exportGate([warnD], draftAcks, draftSnap, "draft").allowed === true);
+  const gmix = D.exportGate([warnD], new Set([D.ackKey(warnD, H_FAB)]), fabSnap);
+  check("LYR-06 a draft-quality diagnostic presented to the fab gate is QUALITY_MISMATCH", gmix.allowed === false && gmix.reason === "QUALITY_MISMATCH");
+  check("EXP-07 missing snapshot or geometryHash → NO_SNAPSHOT",
+    D.exportGate([], new Set(), null).reason === "NO_SNAPSHOT" && D.exportGate([], new Set(), { quality: "fabrication" }).reason === "NO_SNAPSHOT");
+  check("EXP-07 exportGate rejects an invalid expectedQuality", throws(() => D.exportGate([], new Set(), fabSnap, "final")));
+
+  // aggregated PART_SMALL: one ack covers it
+  const smalls = [];
+  for (let i = 0; i < 40; i++) smalls.push(mk("PART_SMALL", "fabrication", { layer: 1, part: "L01-P" + String(i + 1).padStart(3, "0") }));
+  const agg = D.aggregate(smalls);
+  const aggKey = D.ackKey(agg[0], H_FAB);
+  check("§9.5 aggregated diagnostic ackKey uses the aggregate marker", aggKey === "PART_SMALL|1|*|" + H_FAB);
+  check("§9.5 one ack covers an aggregated PART_SMALL diagnostic",
+    agg.length === 1 && D.exportGate(agg, new Set([aggKey]), fabSnap).allowed === true && D.exportGate(agg, new Set(), fabSnap).unacked.length === 1);
+
+  // withAckState
+  const before = JSON.stringify([warnF, blockF, infoF]);
+  const ws = D.withAckState([warnF, blockF, infoF], new Set([D.ackKey(warnF, H_FAB)]), H_FAB);
+  check("§9.5 withAckState fills acked/unacked for warnings and n/a otherwise",
+    ws.map((d) => d.ackState).join(",") === "acked,n/a,n/a" &&
+    D.withAckState([warnF], new Set(), H_FAB)[0].ackState === "unacked");
+  check("§9.5 withAckState does not mutate its input", JSON.stringify([warnF, blockF, infoF]) === before && ws[0] !== warnF);
+  check("§9.5 exportGate ignores a stale ackState already on the diagnostic",
+    D.exportGate([Object.assign({}, warnF, { ackState: "acked" })], new Set(), fabSnap).allowed === false);
+});
+
 suite("material.js — canonical polygons (GEO-01/03, D-4.2, SUP-05; G1.1)", () => {
   const F = require("./fixtures.js"), O = require("./oracle_raster.js"), G = SBGeom, M = globalThis.SBMaterial;
   check("G1.1 SBMaterial is loaded", !!M && typeof M.fromMasks === "function" && typeof M.assignParts === "function" && typeof M.scale === "function");
