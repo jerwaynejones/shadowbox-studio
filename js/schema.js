@@ -46,6 +46,13 @@
  *                                    clamped and on the 0.001 mm grid; revision
  *                                    + 1 iff it changed; non-numeric → unchanged.
  *   SBSchema.canGenerate(p, source)  → {ok, reason}; "Choose a source" (PRJ-01).
+ *   SBSchema.applyControl(p, id, v, ctx?) → new project for one G2.11c control
+ *                                    (size, pitch-free geometry, machine, modes,
+ *                                    appearance, units, view); lengths in
+ *                                    p.units; invalid → unchanged; revision + 1
+ *                                    iff geometryKey changes.
+ *   SBSchema.controlValues(p)        → {inputId: displayed string} (G2.11c).
+ *   SBSchema.polaritiesFor(mode)     → the polarity options of a mode.
  *   SBSchema.fromLegacySettings(json) → {project, diagnostics}: v1.1.0
  *                                    settings.json → tonal + connected-sheet
  *                                    (DEP-04, G2.4b); heightMM null raises
@@ -517,7 +524,7 @@
       case "procRes": g.draftPx = value; break;
       case "smoothRadius": it.smoothing.radius = value; break;
       case "smoothPasses": it.smoothing.passes = value; break;
-      case "nSheets": c.sheets = value; break;
+      case "nSheets": c.sheets = value; if (it.thresholdRule === "manual" && it.manual.length !== Math.max(0, value - 1)) it.manual = evenManual(value); break;
       case "thresholdMode": it.thresholdRule = value === "linear" ? "linear" : "balanced"; break;
       case "darkFront": it.polarity = it.mode === "height" ? (value ? "black-high" : "white-high") : (value ? "dark-front" : "light-front"); break;
       case "palette": p.appearance.palette = String(value); break;
@@ -580,6 +587,119 @@
     const v = S.validate(project);
     if (!v.ok) return { ok: false, reason: "Fix the project settings: " + v.errors.map((e) => (e.path || "project") + " (" + e.code + ")").join(", ") };
     return { ok: true, reason: null };
+  };
+
+  // ------------------------------------------------------------ control groups (G2.11c)
+  /** N − 1 evenly spaced manual thresholds k/N (1e-6 grid), the seed for thresholdRule "manual". */
+  function evenManual(N) { return Array.from({ length: Math.max(0, N - 1) }, (_, i) => r6((i + 1) / N)); }
+  /** The polarity values that apply to an interpretation mode (tonal: light-front/dark-front; height: white-high/black-high). */
+  S.polaritiesFor = (mode) => (POLARITY_FOR[mode] || []).slice();
+
+  /** Set a value at a dotted path (objects only). */
+  function setPath(o, path, v) {
+    const k = path.split("."), last = k.pop();
+    let cur = o;
+    for (const x of k) cur = cur[x];
+    cur[last] = clone(v);
+  }
+  const numIn = (v) => typeof v === "number" ? v : (typeof v === "string" && v.trim() !== "" ? Number(v) : NaN);
+  const clampTo = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const MACHINE_FIELDS = { "m-height": ["maxProcessingHeightMM", 0.001, 1e5], "m-length": ["maxLengthMM", 0.001, 1e5],
+    "m-matwidth": ["maxMaterialWidthMM", 0.001, 1e5], "m-thick": ["maxThicknessMM", 0.1, 25], "m-kerf": ["kerfMM", 0, 2] };
+
+  /**
+   * The one write path for the G2.11c controls → a new project (input never mutated). `id` is the control id without
+   * the "in-" prefix; length values are entered in project.units (SBSchema.toMM, 0.001 mm grid) and clamped to the
+   * schema ranges. ctx = {srcW, srcH} (optional) lets a sizeBy switch keep the finished page size (PO-LASER-3).
+   *   interp, construction   apply SBSchema.modeChangeDiff's target values (G2.11e puts its review dialog in front)
+   *   polarity, thmode, manual-th ("0.2, 0.5, …": N − 1 increasing values in (0, 1)), thickness, thickstate, gap,
+   *   sizeby, target, machine (profile id | "none"), m-height, m-length, m-matwidth, m-thick, m-kerf  — geometry
+   *   units, appearance, color (#rrggbb), explode (view.explodeMM)                                     — not geometry
+   * A non-numeric entry, an unknown option or a result that fails SBSchema.validate leaves the project unchanged
+   * (same revision). revision + 1 exactly when geometryKey changes (PRJ-02).
+   */
+  S.applyControl = function (project, id, value, ctx) {
+    const p = clone(project), it = p.interpretation, c = p.construction, g = p.geometry, m = p.material, unit = p.units;
+    const unchanged = () => clone(project);
+    const length = (lo, hi) => { const v = numIn(value); return Number.isFinite(v) ? grid(clampTo(S.toMM(v, unit), lo, hi)) : null; };
+    switch (id) {
+      case "interp": case "construction": {
+        const patch = id === "interp" ? { interpretation: { mode: value } } : { construction: { mode: value } };
+        if (!(id === "interp" ? E.interp : E.construction).includes(value)) return unchanged();
+        for (const d of S.modeChangeDiff(project, patch)) setPath(p, d.path, d.to);
+        break;
+      }
+      case "polarity": if (!POLARITY_FOR[it.mode].includes(value)) return unchanged(); it.polarity = value; break;
+      case "thmode":
+        if (!E.thresholdRule.includes(value)) return unchanged();
+        it.thresholdRule = value;
+        if (value === "manual" && it.manual.length !== Math.max(0, c.sheets - 1)) it.manual = evenManual(c.sheets);
+        break;
+      case "manual-th": {
+        const xs = String(value).split(/[\s,;]+/).filter((x) => x !== "").map(Number);
+        if (xs.length !== Math.max(0, c.sheets - 1) || !xs.every((x, i) => Number.isFinite(x) && x > 0 && x < 1 && (i === 0 || x > xs[i - 1]))) return unchanged();
+        it.thresholdRule = "manual"; it.manual = xs.map(r6);
+        break;
+      }
+      case "thickness": { const v = length(0.1, 25); if (v === null) return unchanged(); m.thicknessMM = v; break; }
+      case "thickstate": if (!E.thicknessState.includes(value)) return unchanged(); m.thicknessState = value; break;
+      case "gap": {
+        const v = length(0, 25);
+        if (v === null || c.mode === "bonded-relief") return unchanged();   // D1: the bonded gap is 0
+        c.gapMM = v; break;
+      }
+      case "sizeby": {
+        if (!E.sizeBy.includes(value)) return unchanged();
+        if (value !== g.sizeBy && ctx && Number.isInteger(ctx.srcW) && Number.isInteger(ctx.srcH)) {
+          try { const sz = S.resolveSize(project, ctx.srcW, ctx.srcH); g.targetMM = value === "height" ? sz.pageHMM : sz.pageWMM; } catch (e) { /* keep the number */ }
+        }
+        g.sizeBy = value; g.lockAspect = true;
+        break;
+      }
+      case "target": { const v = length(1, 2000); if (v === null) return unchanged(); g.targetMM = v; break; }
+      case "machine":
+        if (value === "none") p.machine = null;
+        else if (Object.prototype.hasOwnProperty.call(S.MACHINES, value)) p.machine = clone(S.MACHINES[value]);
+        else return unchanged();
+        break;
+      case "m-height": case "m-length": case "m-matwidth": case "m-thick": case "m-kerf": {
+        if (p.machine === null) return unchanged();
+        const [key, lo, hi] = MACHINE_FIELDS[id], v = length(lo, hi);
+        if (v === null) return unchanged();
+        p.machine[key] = v;
+        const base = Object.prototype.hasOwnProperty.call(S.MACHINES, p.machine.id) ? S.MACHINES[p.machine.id] : null;
+        if (base) {
+          const edited = Object.keys(MACHINE_FIELDS).some((f) => p.machine[MACHINE_FIELDS[f][0]] !== base[MACHINE_FIELDS[f][0]]);
+          p.machine.name = edited ? base.name + " (edited)" : base.name;
+        }
+        break;
+      }
+      case "units": if (!E.units.includes(value)) return unchanged(); p.units = value; break;
+      case "appearance": if (!E.appearance.includes(value)) return unchanged(); p.appearance.mode = value; break;
+      case "color": if (typeof value !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(value)) return unchanged(); p.appearance.color = value.toUpperCase(); break;
+      case "explode": { const v = numIn(value); if (!Number.isFinite(v)) return unchanged(); p.view.explodeMM = grid(clampTo(v, 0, 1000)); break; }
+      default: throw fail("SCHEMA_CONTROL", "applyControl: unknown control " + id);
+    }
+    if (!S.validate(p).ok) return unchanged();
+    if (JSON.stringify(S.geometryKey(p)) !== JSON.stringify(S.geometryKey(project))) p.revision = project.revision + 1;
+    return p;
+  };
+
+  /** The displayed value of every G2.11c input (strings; lengths in project.units). Pure. */
+  S.controlValues = function (project) {
+    const p = project, unit = p.units, mach = p.machine;
+    const L = (mm) => String(S.fromMM(mm, unit));
+    const machineId = mach === null ? "none" : (Object.prototype.hasOwnProperty.call(S.MACHINES, mach.id) ? mach.id : "none");
+    return {
+      "in-interp": p.interpretation.mode, "in-polarity": p.interpretation.polarity, "in-construction": p.construction.mode,
+      "in-thmode": p.interpretation.thresholdRule, "in-manual-th": p.interpretation.manual.join(", "),
+      "in-thickness": L(p.material.thicknessMM), "in-thickstate": p.material.thicknessState, "in-gap": L(p.construction.gapMM),
+      "in-units": unit, "in-appearance": p.appearance.mode, "in-color": p.appearance.color.toLowerCase(), "in-explode": String(p.view.explodeMM),
+      "in-sizeby": p.geometry.sizeBy, "in-target": L(p.geometry.targetMM), "in-machine": machineId,
+      "in-m-height": mach ? L(mach.maxProcessingHeightMM) : "", "in-m-length": mach ? L(mach.maxLengthMM) : "",
+      "in-m-matwidth": mach ? L(mach.maxMaterialWidthMM) : "", "in-m-thick": mach ? L(mach.maxThicknessMM) : "",
+      "in-m-kerf": mach ? L(mach.kerfMM) : "",
+    };
   };
 
   // ------------------------------------------------------------ geometry key (PRJ-02, D4)

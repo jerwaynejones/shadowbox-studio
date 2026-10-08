@@ -1,0 +1,141 @@
+/* ============================================================================
+ * Shadowbox Studio — js/docs.js
+ * ----------------------------------------------------------------------------
+ * SBDocs: pure user-facing copy and the dimension-bar model. DOM-free.
+ * Created early by G2.11c for the disclaimers and the dimbar; G3.5 adds
+ * SBDocs.assembly (ASSEMBLY.md) to the same module.
+ *
+ *   SBDocs.COPY                      frozen strings: MAT01 (stock height excludes adhesive and finishes),
+ *                                    MAT04 (palette is a proof aid), THICKNESS_HINT (PO-LASER-8).
+ *   SBDocs.pageFit(wMM, hMM, machine) → {fits, overMM}: the shared page against the machine processing area,
+ *                                    either orientation, in integer µm; the same rule as SBSupport.checkEnvelope
+ *                                    (PO-LASER-2). overMM is the smallest excess over both orientations (0 when it fits).
+ *                                    machine null → {fits: null, overMM: null}.
+ *   SBDocs.dimbarModel({project, plan, stats}) → deep-frozen model of the persistent dimension bar (G2.11c):
+ *     project  the schema v1 project (units, sheets, thickness, gap, machine).
+ *     plan     SBEngine.rasterPlan(project, source, "fabrication", deviceClass) or null (no source yet). It is
+ *              computed before generation, so the pitch, the raster and the cap reason are never silent (NFR-04).
+ *     stats    the snapshot's stats ({requested, exported, omitted[], stockMM, reliefMM, maxZMM}) or null before
+ *              generation. A stats record without maxZMM (the legacy connected path) derives it from `exported`.
+ *   → {units,
+ *      layers:     {requested, exported|null, omitted[], text}                                    (LYR-01)
+ *      z:          {maxZMM, baseMM, reliefMM = maxZMM − t, stockMM = N·t, estimated, text}         (LYR-01, AT-03)
+ *      pitch:      {targetMM, actualMM, rasterW, rasterH, mpx, capped, deviceClass, budgetPx, shortPx, reason, text}
+ *                                                                                                   (PO-LASER-4/5)
+ *      page:       {wMM, hMM, machine, fits, overMM, text}                                         (PO-LASER-2)
+ *      stock:      {ok, text}  thickness against machine.maxThicknessMM                            (PO-LASER-1)
+ *      thresholds: SBHeight.boundaries(N, t) with text "k  norm → mm"; thresholdsNote             (LYR-02)
+ *      disclaimers: [COPY.MAT01]}
+ *   Lengths are shown in project.units (SBSchema.fromMM); pitch is always mm/px.
+ *
+ * Looks up SBSchema and SBHeight at call time.
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+  const D = {};
+
+  function deepFreeze(o) {
+    if (o && typeof o === "object" && !Object.isFrozen(o)) { Object.freeze(o); for (const k of Object.keys(o)) deepFreeze(o[k]); }
+    return o;
+  }
+  function dfail(msg) { const e = new Error("DOCS_ARG: " + msg); e.code = "DOCS_ARG"; return e; }
+  const um = (mm) => Math.round(mm * 1000);
+  const r3 = (v) => Math.round(v * 1000) / 1000;
+
+  D.COPY = deepFreeze({
+    MAT01: "Stock height excludes adhesive films and surface finishes.",
+    MAT04: "Palette shading is a proof aid; it is not necessarily the appearance of unpainted stock.",
+    THICKNESS_HINT: "1/4\" ply often measures 5.5–6 mm: measure and enter it.",
+  });
+
+  /** A length in mm → text in the project's unit (mm to 0.001 mm, inches to 0.0001 in), trailing zeros trimmed. */
+  function len(mm, unit) {
+    const v = global.SBSchema.fromMM(mm, unit);
+    return String(Number(v.toFixed(unit === "in" ? 4 : 3))) + " " + unit;
+  }
+  const mpxText = (px) => String(Number((px / 1e6).toFixed(1))) + " Mpx";
+
+  D.pageFit = function (wMM, hMM, machine) {
+    if (machine === null || machine === undefined) return { fits: null, overMM: null };
+    const W = um(wMM), H = um(hMM), P = um(machine.maxProcessingHeightMM), L = um(machine.maxLengthMM);
+    const over = (a, b) => Math.max(0, a - L, b - P);   // a along the length, b under the processing height
+    const o = Math.min(over(W, H), over(H, W));
+    return { fits: o === 0, overMM: o / 1000 };
+  };
+
+  D.dimbarModel = function (input) {
+    if (!input || typeof input !== "object" || !input.project) throw dfail("dimbarModel needs {project, plan, stats}");
+    const p = input.project, plan = input.plan || null, stats = input.stats || null;
+    const unit = p.units === "in" ? "in" : "mm";
+    const N = p.construction.sheets, bonded = p.construction.mode === "bonded-relief";
+    const tUm = um(p.material.thicknessMM), gUm = bonded ? 0 : um(p.construction.gapMM), t = tUm / 1000;
+
+    // layers (LYR-01)
+    const exported = stats && Number.isInteger(stats.exported) ? stats.exported : null;
+    const omitted = stats && Array.isArray(stats.omitted) ? stats.omitted.slice() : [];
+    const layers = {
+      requested: N, exported, omitted,
+      text: exported === null ? N + " requested · exported count after generation"
+        : N + " requested · " + exported + " exported" + (omitted.length ? " (omitted " + omitted.map((k) => k + 1).join(", ") + ")" : ""),
+    };
+
+    // Z (LYR-01, AT-03; MAT-01: no adhesive or finish term)
+    const nE = exported === null ? N : exported;
+    const maxZUm = stats && Number.isFinite(stats.maxZMM) ? um(stats.maxZMM) : (nE > 0 ? nE * tUm + (nE - 1) * gUm : 0);
+    const estimated = exported === null && !(stats && Number.isFinite(stats.maxZMM));   // exact once the exported count is known
+    const z = {
+      maxZMM: maxZUm / 1000, baseMM: t, reliefMM: Math.max(0, maxZUm - tUm) / 1000, stockMM: (N * tUm) / 1000, estimated,
+      text: "Max Z " + len(maxZUm / 1000, unit) + (estimated ? " (if every layer is occupied)" : "") + " · base " + len(t, unit) +
+        " · relief " + len(Math.max(0, maxZUm - tUm) / 1000, unit) + " · " + p.material.thicknessState + " thickness",
+    };
+
+    // pitch (PO-LASER-4/5): before generation, from the fabrication plan
+    let pitch;
+    if (!plan) {
+      pitch = { targetMM: p.geometry.fabPitchMM, actualMM: null, rasterW: null, rasterH: null, mpx: null, capped: null, deviceClass: null,
+        budgetPx: null, shortPx: null, reason: null,
+        text: "target " + p.geometry.fabPitchMM + " mm/px · choose a source to plan the fabrication raster" };
+    } else {
+      const g = plan.geometry, targetMM = g.targetPitchUm / 1000, actualMM = r3(g.mmPerPxMax);
+      const parts = [];
+      if (g.capped === "budget" || g.capped === "budget+source")
+        parts.push("capped by the " + g.deviceClass + " pixel budget (" + mpxText(g.pxBudget) + ")");
+      if (g.shortPx) parts.push("limited by the source: " + g.shortPx[0] + " × " + g.shortPx[1] + " px short; detail cannot be recovered");
+      const reason = parts.length ? parts.join("; ") : "at target";
+      pitch = {
+        targetMM, actualMM, rasterW: g.rasterW, rasterH: g.rasterH, mpx: Number(((g.rasterW * g.rasterH) / 1e6).toFixed(1)),
+        capped: g.capped, deviceClass: g.deviceClass, budgetPx: g.pxBudget, shortPx: g.shortPx ? g.shortPx.slice() : null, reason,
+        text: actualMM + " mm/px (target " + targetMM + " mm/px) · " + g.rasterW + " × " + g.rasterH + " px, " +
+          mpxText(g.rasterW * g.rasterH) + " · " + reason,
+      };
+    }
+
+    // page vs machine (PO-LASER-2)
+    const m = p.machine;
+    let page;
+    if (!plan) {
+      page = { wMM: null, hMM: null, machine: m ? m.name : null, fits: null, overMM: null,
+        text: m ? "page size follows the source · " + m.name : "page size follows the source · no machine profile" };
+    } else {
+      const wMM = plan.geometry.pageWMM, hMM = plan.geometry.pageHMM, f = D.pageFit(wMM, hMM, m);
+      page = { wMM, hMM, machine: m ? m.name : null, fits: f.fits, overMM: f.overMM,
+        text: "page " + len(wMM, unit) + " × " + len(hMM, unit) + " · " + (m === null ? "no machine profile (not checked)"
+          : (f.fits ? "fits " : "too large by " + len(f.overMM, unit) + " for ") + m.name + " (" + len(m.maxProcessingHeightMM, unit) + " × " +
+            len(m.maxLengthMM, unit) + ")") };
+    }
+    const stockOk = m === null || tUm <= um(m.maxThicknessMM);
+    const stock = { ok: stockOk, text: m === null ? "" : (stockOk ? "" : "stock " + len(t, unit) + " is thicker than the " + len(m.maxThicknessMM, unit) + " " + m.name + " accepts") };
+
+    // thresholds (LYR-02): every boundary normalized and in mm
+    const thresholds = global.SBHeight.boundaries(N, t).map((b) => ({
+      k: b.k, norm: b.norm, mm: b.mm, text: "layer " + b.k + ": " + b.norm.toFixed(3) + " → " + len(r3(b.mm), "mm") + (unit === "in" ? " (" + len(r3(b.mm), "in") + ")" : ""),
+    }));
+    const thresholdsNote = p.interpretation.mode === "height"
+      ? "Nearest-layer rule: each sample goes to the nearest layer level; boundaries lie halfway between levels."
+      : "Nearest-layer reference heights; tonal bands follow the tone split (" + p.interpretation.thresholdRule + ").";
+
+    return deepFreeze({ units: unit, layers, z, pitch, page, stock, thresholds, thresholdsNote, disclaimers: [D.COPY.MAT01] });
+  };
+
+  global.SBDocs = D;
+})(typeof window !== "undefined" ? window : globalThis);

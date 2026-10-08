@@ -407,6 +407,22 @@ select {
   .rail { transition: none; }
 }
 
+/* G2.11c — control groups and the persistent dimension bar. */
+.group { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px 0; margin: 0 0 12px; }
+.group legend { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; padding: 0 4px; color: var(--ink-soft); }
+.group input[type="number"], .row input[type="text"] { width: 100%; }
+.dimbar {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px;
+  padding: 6px 12px; font-size: 12px; line-height: 1.4;
+  border-top: 1px solid var(--line); background: var(--panel); color: var(--ink);
+}
+.dimbar .dim[hidden] { display: none; }
+.dimbar .warn { color: var(--cut); font-weight: 600; }
+.dimbar .disc { color: var(--ink-soft); font-style: italic; }
+.dimbar details summary { cursor: pointer; text-decoration: underline dotted; }
+.dimbar details[open] { flex-basis: 100%; }
+.dimbar details ol { margin: 4px 0 6px 18px; padding: 0; columns: 2; }
+
 </style>
 </head>
 <body>
@@ -458,15 +474,23 @@ select {
 
     <section class="step" id="stage-interpretation" tabindex="-1" aria-labelledby="h-interpretation">
       <h2 id="h-interpretation"><span class="stepnum">2</span> Interpretation</h2>
+      <div class="row"><label for="in-interp">Read the image as</label>
+        <select id="in-interp">
+          <option value="tonal">Tonal bands (photo)</option>
+          <option value="height">Height map</option>
+        </select></div>
+      <div class="row"><label for="in-polarity">Polarity</label>
+        <select id="in-polarity"></select></div>
       <div class="row"><label for="in-sheets">Sheets <output id="out-sheets"></output></label>
         <input id="in-sheets" type="range" min="1" max="16" step="1"></div>
       <div class="row"><label for="in-thmode">Tone split</label>
         <select id="in-thmode">
           <option value="balanced">Balanced areas</option>
           <option value="linear">Even brightness steps</option>
+          <option value="manual">Manual thresholds</option>
         </select></div>
-      <div class="row check"><input id="in-darkfront" type="checkbox">
-        <label for="in-darkfront">Dark tones in front</label></div>
+      <div class="row"><label for="in-manual-th">Manual thresholds (0–1, one fewer than sheets)</label>
+        <input id="in-manual-th" type="text" spellcheck="false" autocomplete="off" inputmode="decimal"></div>
       <div class="row"><label for="in-smooth">Cartoon smoothing <output id="out-smooth"></output></label>
         <input id="in-smooth" type="range" min="1" max="10" step="1"></div>
       <div class="row"><label for="in-passes">Smoothing passes <output id="out-passes"></output></label>
@@ -475,10 +499,44 @@ select {
 
     <section class="step" id="stage-construction" tabindex="-1" aria-labelledby="h-construction">
       <h2 id="h-construction"><span class="stepnum">3</span> Construction</h2>
-      <div class="row"><label for="in-width">Artwork width <output id="out-width"></output></label>
-        <input id="in-width" type="range" min="100" max="600" step="10"></div>
-      <div class="row"><label for="in-margin">Frame ring <output id="out-margin"></output></label>
-        <input id="in-margin" type="range" min="0" max="30" step="1"></div>
+      <div class="row"><label for="in-construction">Construction</label>
+        <select id="in-construction">
+          <option value="connected-sheet">Connected sheets (spacers)</option>
+          <option value="bonded-relief">Bonded relief (glued)</option>
+        </select></div>
+
+      <!-- G2.11c control groups. Lengths are entered in the chosen unit (MAT-02). -->
+      <fieldset class="group"><legend>Size</legend>
+        <div class="row"><label for="in-units">Units</label>
+          <select id="in-units">
+            <option value="mm">Millimetres</option>
+            <option value="in">Inches</option>
+          </select></div>
+        <div class="row"><label for="in-sizeby">Size by</label>
+          <select id="in-sizeby">
+            <option value="height" selected>Height</option>
+            <option value="width">Width</option>
+          </select></div>
+        <div class="row"><label for="in-target">Finished size, art + frame (<span class="u">mm</span>)</label>
+          <input id="in-target" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div class="row"><label for="in-margin">Frame ring <output id="out-margin"></output></label>
+          <input id="in-margin" type="range" min="0" max="30" step="1"></div>
+      </fieldset>
+
+      <fieldset class="group"><legend>Material</legend>
+        <div class="row"><label for="in-thickness">Layer thickness (<span class="u">mm</span>)</label>
+          <input id="in-thickness" type="number" min="0" step="any" inputmode="decimal" aria-describedby="hint-thickness">
+          <p id="hint-thickness" class="hint"></p></div>
+        <div class="row"><label for="in-thickstate">Thickness is</label>
+          <select id="in-thickstate">
+            <option value="nominal">Nominal</option>
+            <option value="measured">Measured</option>
+          </select></div>
+        <div class="row"><label for="in-gap">Gap between sheets (<span class="u">mm</span>)</label>
+          <input id="in-gap" type="number" min="0" step="any" inputmode="decimal"></div>
+      </fieldset>
+
+      <fieldset class="group"><legend>Fabrication</legend>
       <!-- PO-LASER-4: physical fabrication pitch; the 720 px draft is not a control. -->
       <div class="row"><label for="in-res">Fabrication pitch (mm/px) <output id="out-res"></output></label>
         <input id="in-res" type="number" min="0.05" max="2" step="0.01" value="0.1" inputmode="decimal"></div>
@@ -499,15 +557,42 @@ select {
           <option value="smooth">Smooth (paper-cut)</option>
           <option value="faceted">Faceted (crisp)</option>
         </select></div>
+      </fieldset>
+
+      <fieldset class="group"><legend>Machine</legend>
+        <div class="row"><label for="in-machine">Laser profile</label>
+          <select id="in-machine">
+            <option value="xtool-s1-feeder" selected>xTool S1 + feeder</option>
+            <option value="none">None</option>
+          </select></div>
+        <div class="row"><label for="in-m-height">Max processing height (<span class="u">mm</span>)</label>
+          <input id="in-m-height" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div class="row"><label for="in-m-length">Max length (<span class="u">mm</span>)</label>
+          <input id="in-m-length" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div class="row"><label for="in-m-matwidth">Max material width (<span class="u">mm</span>)</label>
+          <input id="in-m-matwidth" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div class="row"><label for="in-m-thick">Max thickness (<span class="u">mm</span>)</label>
+          <input id="in-m-thick" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div class="row"><label for="in-m-kerf">Kerf, information only (<span class="u">mm</span>)</label>
+          <input id="in-m-kerf" type="number" min="0" step="any" inputmode="decimal"></div>
+      </fieldset>
     </section>
 
     <section class="step" id="stage-review" tabindex="-1" aria-labelledby="h-review">
       <h2 id="h-review"><span class="stepnum">4</span> Review</h2>
       <button id="btn-generate" class="btn wide" disabled aria-describedby="why-generate">Generate</button>
       <p id="why-generate" class="why" role="status">Choose a source</p>
-      <div class="row"><label for="in-palette">Acrylic palette</label>
+      <div class="row"><label for="in-appearance">Appearance</label>
+        <select id="in-appearance">
+          <option value="uniform">Uniform stock colour</option>
+          <option value="palette">Palette proof</option>
+        </select></div>
+      <div class="row"><label for="in-color">Stock colour</label>
+        <input id="in-color" type="color"></div>
+      <div class="row"><label for="in-palette">Palette</label>
         <select id="in-palette"></select>
         <div id="chips" class="chips"></div></div>
+      <p id="disc-palette" class="hint" role="note"></p>
     </section>
 
     <section class="step" id="stage-export" tabindex="-1" aria-labelledby="h-export">
@@ -532,8 +617,8 @@ select {
       <!-- G1.7 → G2.12: the raster preview is a draft; exported files are built from polygons. -->
       <span class="draftbadge" role="note">Draft preview: cut files come from polygons</span>
       <div class="stacktools">
-        <label class="tool">Explode
-          <input id="in-explode" type="range" min="0" max="1" step="0.01" value="0"></label>
+        <label class="tool" for="in-explode">Explode
+          <input id="in-explode" type="range" min="0" max="60" step="1" value="0"></label>
         <label class="tool check"><input id="in-bridgesvis" type="checkbox" checked>
           Show bridges</label>
         <span class="tool hint">drag the artwork to tilt</span>
@@ -542,6 +627,21 @@ select {
 
     <div id="pane-sheets" class="pane">
       <div id="sheetgrid" class="sheetgrid"></div>
+    </div>
+
+    <!-- G2.11c: the persistent dimension bar (LYR-01/02, PO-LASER-2/4/5, MAT-01). -->
+    <div class="dimbar" id="dimbar" role="group" aria-label="Dimensions">
+      <span id="dim-layers" class="dim"></span>
+      <span id="dim-z" class="dim"></span>
+      <span id="dim-pitch" class="dim" role="status"></span>
+      <span id="dim-page" class="dim" role="status"></span>
+      <span id="dim-stock" class="dim warn" role="status" hidden></span>
+      <details id="dim-thresholds" class="dim">
+        <summary>Thresholds</summary>
+        <p id="dim-thnote" class="hint"></p>
+        <ol id="dim-thlist"></ol>
+      </details>
+      <span id="disc-stock" class="dim disc" role="note"></span>
     </div>
 
     <footer class="statusbar"><span id="statusline">loading…</span></footer>
@@ -2277,6 +2377,13 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *                                    clamped and on the 0.001 mm grid; revision
  *                                    + 1 iff it changed; non-numeric → unchanged.
  *   SBSchema.canGenerate(p, source)  → {ok, reason}; "Choose a source" (PRJ-01).
+ *   SBSchema.applyControl(p, id, v, ctx?) → new project for one G2.11c control
+ *                                    (size, pitch-free geometry, machine, modes,
+ *                                    appearance, units, view); lengths in
+ *                                    p.units; invalid → unchanged; revision + 1
+ *                                    iff geometryKey changes.
+ *   SBSchema.controlValues(p)        → {inputId: displayed string} (G2.11c).
+ *   SBSchema.polaritiesFor(mode)     → the polarity options of a mode.
  *   SBSchema.fromLegacySettings(json) → {project, diagnostics}: v1.1.0
  *                                    settings.json → tonal + connected-sheet
  *                                    (DEP-04, G2.4b); heightMM null raises
@@ -2748,7 +2855,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       case "procRes": g.draftPx = value; break;
       case "smoothRadius": it.smoothing.radius = value; break;
       case "smoothPasses": it.smoothing.passes = value; break;
-      case "nSheets": c.sheets = value; break;
+      case "nSheets": c.sheets = value; if (it.thresholdRule === "manual" && it.manual.length !== Math.max(0, value - 1)) it.manual = evenManual(value); break;
       case "thresholdMode": it.thresholdRule = value === "linear" ? "linear" : "balanced"; break;
       case "darkFront": it.polarity = it.mode === "height" ? (value ? "black-high" : "white-high") : (value ? "dark-front" : "light-front"); break;
       case "palette": p.appearance.palette = String(value); break;
@@ -2811,6 +2918,119 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const v = S.validate(project);
     if (!v.ok) return { ok: false, reason: "Fix the project settings: " + v.errors.map((e) => (e.path || "project") + " (" + e.code + ")").join(", ") };
     return { ok: true, reason: null };
+  };
+
+  // ------------------------------------------------------------ control groups (G2.11c)
+  /** N − 1 evenly spaced manual thresholds k/N (1e-6 grid), the seed for thresholdRule "manual". */
+  function evenManual(N) { return Array.from({ length: Math.max(0, N - 1) }, (_, i) => r6((i + 1) / N)); }
+  /** The polarity values that apply to an interpretation mode (tonal: light-front/dark-front; height: white-high/black-high). */
+  S.polaritiesFor = (mode) => (POLARITY_FOR[mode] || []).slice();
+
+  /** Set a value at a dotted path (objects only). */
+  function setPath(o, path, v) {
+    const k = path.split("."), last = k.pop();
+    let cur = o;
+    for (const x of k) cur = cur[x];
+    cur[last] = clone(v);
+  }
+  const numIn = (v) => typeof v === "number" ? v : (typeof v === "string" && v.trim() !== "" ? Number(v) : NaN);
+  const clampTo = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const MACHINE_FIELDS = { "m-height": ["maxProcessingHeightMM", 0.001, 1e5], "m-length": ["maxLengthMM", 0.001, 1e5],
+    "m-matwidth": ["maxMaterialWidthMM", 0.001, 1e5], "m-thick": ["maxThicknessMM", 0.1, 25], "m-kerf": ["kerfMM", 0, 2] };
+
+  /**
+   * The one write path for the G2.11c controls → a new project (input never mutated). `id` is the control id without
+   * the "in-" prefix; length values are entered in project.units (SBSchema.toMM, 0.001 mm grid) and clamped to the
+   * schema ranges. ctx = {srcW, srcH} (optional) lets a sizeBy switch keep the finished page size (PO-LASER-3).
+   *   interp, construction   apply SBSchema.modeChangeDiff's target values (G2.11e puts its review dialog in front)
+   *   polarity, thmode, manual-th ("0.2, 0.5, …": N − 1 increasing values in (0, 1)), thickness, thickstate, gap,
+   *   sizeby, target, machine (profile id | "none"), m-height, m-length, m-matwidth, m-thick, m-kerf  — geometry
+   *   units, appearance, color (#rrggbb), explode (view.explodeMM)                                     — not geometry
+   * A non-numeric entry, an unknown option or a result that fails SBSchema.validate leaves the project unchanged
+   * (same revision). revision + 1 exactly when geometryKey changes (PRJ-02).
+   */
+  S.applyControl = function (project, id, value, ctx) {
+    const p = clone(project), it = p.interpretation, c = p.construction, g = p.geometry, m = p.material, unit = p.units;
+    const unchanged = () => clone(project);
+    const length = (lo, hi) => { const v = numIn(value); return Number.isFinite(v) ? grid(clampTo(S.toMM(v, unit), lo, hi)) : null; };
+    switch (id) {
+      case "interp": case "construction": {
+        const patch = id === "interp" ? { interpretation: { mode: value } } : { construction: { mode: value } };
+        if (!(id === "interp" ? E.interp : E.construction).includes(value)) return unchanged();
+        for (const d of S.modeChangeDiff(project, patch)) setPath(p, d.path, d.to);
+        break;
+      }
+      case "polarity": if (!POLARITY_FOR[it.mode].includes(value)) return unchanged(); it.polarity = value; break;
+      case "thmode":
+        if (!E.thresholdRule.includes(value)) return unchanged();
+        it.thresholdRule = value;
+        if (value === "manual" && it.manual.length !== Math.max(0, c.sheets - 1)) it.manual = evenManual(c.sheets);
+        break;
+      case "manual-th": {
+        const xs = String(value).split(/[\s,;]+/).filter((x) => x !== "").map(Number);
+        if (xs.length !== Math.max(0, c.sheets - 1) || !xs.every((x, i) => Number.isFinite(x) && x > 0 && x < 1 && (i === 0 || x > xs[i - 1]))) return unchanged();
+        it.thresholdRule = "manual"; it.manual = xs.map(r6);
+        break;
+      }
+      case "thickness": { const v = length(0.1, 25); if (v === null) return unchanged(); m.thicknessMM = v; break; }
+      case "thickstate": if (!E.thicknessState.includes(value)) return unchanged(); m.thicknessState = value; break;
+      case "gap": {
+        const v = length(0, 25);
+        if (v === null || c.mode === "bonded-relief") return unchanged();   // D1: the bonded gap is 0
+        c.gapMM = v; break;
+      }
+      case "sizeby": {
+        if (!E.sizeBy.includes(value)) return unchanged();
+        if (value !== g.sizeBy && ctx && Number.isInteger(ctx.srcW) && Number.isInteger(ctx.srcH)) {
+          try { const sz = S.resolveSize(project, ctx.srcW, ctx.srcH); g.targetMM = value === "height" ? sz.pageHMM : sz.pageWMM; } catch (e) { /* keep the number */ }
+        }
+        g.sizeBy = value; g.lockAspect = true;
+        break;
+      }
+      case "target": { const v = length(1, 2000); if (v === null) return unchanged(); g.targetMM = v; break; }
+      case "machine":
+        if (value === "none") p.machine = null;
+        else if (Object.prototype.hasOwnProperty.call(S.MACHINES, value)) p.machine = clone(S.MACHINES[value]);
+        else return unchanged();
+        break;
+      case "m-height": case "m-length": case "m-matwidth": case "m-thick": case "m-kerf": {
+        if (p.machine === null) return unchanged();
+        const [key, lo, hi] = MACHINE_FIELDS[id], v = length(lo, hi);
+        if (v === null) return unchanged();
+        p.machine[key] = v;
+        const base = Object.prototype.hasOwnProperty.call(S.MACHINES, p.machine.id) ? S.MACHINES[p.machine.id] : null;
+        if (base) {
+          const edited = Object.keys(MACHINE_FIELDS).some((f) => p.machine[MACHINE_FIELDS[f][0]] !== base[MACHINE_FIELDS[f][0]]);
+          p.machine.name = edited ? base.name + " (edited)" : base.name;
+        }
+        break;
+      }
+      case "units": if (!E.units.includes(value)) return unchanged(); p.units = value; break;
+      case "appearance": if (!E.appearance.includes(value)) return unchanged(); p.appearance.mode = value; break;
+      case "color": if (typeof value !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(value)) return unchanged(); p.appearance.color = value.toUpperCase(); break;
+      case "explode": { const v = numIn(value); if (!Number.isFinite(v)) return unchanged(); p.view.explodeMM = grid(clampTo(v, 0, 1000)); break; }
+      default: throw fail("SCHEMA_CONTROL", "applyControl: unknown control " + id);
+    }
+    if (!S.validate(p).ok) return unchanged();
+    if (JSON.stringify(S.geometryKey(p)) !== JSON.stringify(S.geometryKey(project))) p.revision = project.revision + 1;
+    return p;
+  };
+
+  /** The displayed value of every G2.11c input (strings; lengths in project.units). Pure. */
+  S.controlValues = function (project) {
+    const p = project, unit = p.units, mach = p.machine;
+    const L = (mm) => String(S.fromMM(mm, unit));
+    const machineId = mach === null ? "none" : (Object.prototype.hasOwnProperty.call(S.MACHINES, mach.id) ? mach.id : "none");
+    return {
+      "in-interp": p.interpretation.mode, "in-polarity": p.interpretation.polarity, "in-construction": p.construction.mode,
+      "in-thmode": p.interpretation.thresholdRule, "in-manual-th": p.interpretation.manual.join(", "),
+      "in-thickness": L(p.material.thicknessMM), "in-thickstate": p.material.thicknessState, "in-gap": L(p.construction.gapMM),
+      "in-units": unit, "in-appearance": p.appearance.mode, "in-color": p.appearance.color.toLowerCase(), "in-explode": String(p.view.explodeMM),
+      "in-sizeby": p.geometry.sizeBy, "in-target": L(p.geometry.targetMM), "in-machine": machineId,
+      "in-m-height": mach ? L(mach.maxProcessingHeightMM) : "", "in-m-length": mach ? L(mach.maxLengthMM) : "",
+      "in-m-matwidth": mach ? L(mach.maxMaterialWidthMM) : "", "in-m-thick": mach ? L(mach.maxThicknessMM) : "",
+      "in-m-kerf": mach ? L(mach.kerfMM) : "",
+    };
   };
 
   // ------------------------------------------------------------ geometry key (PRJ-02, D4)
@@ -6493,6 +6713,150 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
 </script>
 <script>
 /* ============================================================================
+ * Shadowbox Studio — js/docs.js
+ * ----------------------------------------------------------------------------
+ * SBDocs: pure user-facing copy and the dimension-bar model. DOM-free.
+ * Created early by G2.11c for the disclaimers and the dimbar; G3.5 adds
+ * SBDocs.assembly (ASSEMBLY.md) to the same module.
+ *
+ *   SBDocs.COPY                      frozen strings: MAT01 (stock height excludes adhesive and finishes),
+ *                                    MAT04 (palette is a proof aid), THICKNESS_HINT (PO-LASER-8).
+ *   SBDocs.pageFit(wMM, hMM, machine) → {fits, overMM}: the shared page against the machine processing area,
+ *                                    either orientation, in integer µm; the same rule as SBSupport.checkEnvelope
+ *                                    (PO-LASER-2). overMM is the smallest excess over both orientations (0 when it fits).
+ *                                    machine null → {fits: null, overMM: null}.
+ *   SBDocs.dimbarModel({project, plan, stats}) → deep-frozen model of the persistent dimension bar (G2.11c):
+ *     project  the schema v1 project (units, sheets, thickness, gap, machine).
+ *     plan     SBEngine.rasterPlan(project, source, "fabrication", deviceClass) or null (no source yet). It is
+ *              computed before generation, so the pitch, the raster and the cap reason are never silent (NFR-04).
+ *     stats    the snapshot's stats ({requested, exported, omitted[], stockMM, reliefMM, maxZMM}) or null before
+ *              generation. A stats record without maxZMM (the legacy connected path) derives it from `exported`.
+ *   → {units,
+ *      layers:     {requested, exported|null, omitted[], text}                                    (LYR-01)
+ *      z:          {maxZMM, baseMM, reliefMM = maxZMM − t, stockMM = N·t, estimated, text}         (LYR-01, AT-03)
+ *      pitch:      {targetMM, actualMM, rasterW, rasterH, mpx, capped, deviceClass, budgetPx, shortPx, reason, text}
+ *                                                                                                   (PO-LASER-4/5)
+ *      page:       {wMM, hMM, machine, fits, overMM, text}                                         (PO-LASER-2)
+ *      stock:      {ok, text}  thickness against machine.maxThicknessMM                            (PO-LASER-1)
+ *      thresholds: SBHeight.boundaries(N, t) with text "k  norm → mm"; thresholdsNote             (LYR-02)
+ *      disclaimers: [COPY.MAT01]}
+ *   Lengths are shown in project.units (SBSchema.fromMM); pitch is always mm/px.
+ *
+ * Looks up SBSchema and SBHeight at call time.
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+  const D = {};
+
+  function deepFreeze(o) {
+    if (o && typeof o === "object" && !Object.isFrozen(o)) { Object.freeze(o); for (const k of Object.keys(o)) deepFreeze(o[k]); }
+    return o;
+  }
+  function dfail(msg) { const e = new Error("DOCS_ARG: " + msg); e.code = "DOCS_ARG"; return e; }
+  const um = (mm) => Math.round(mm * 1000);
+  const r3 = (v) => Math.round(v * 1000) / 1000;
+
+  D.COPY = deepFreeze({
+    MAT01: "Stock height excludes adhesive films and surface finishes.",
+    MAT04: "Palette shading is a proof aid; it is not necessarily the appearance of unpainted stock.",
+    THICKNESS_HINT: "1/4\" ply often measures 5.5–6 mm: measure and enter it.",
+  });
+
+  /** A length in mm → text in the project's unit (mm to 0.001 mm, inches to 0.0001 in), trailing zeros trimmed. */
+  function len(mm, unit) {
+    const v = global.SBSchema.fromMM(mm, unit);
+    return String(Number(v.toFixed(unit === "in" ? 4 : 3))) + " " + unit;
+  }
+  const mpxText = (px) => String(Number((px / 1e6).toFixed(1))) + " Mpx";
+
+  D.pageFit = function (wMM, hMM, machine) {
+    if (machine === null || machine === undefined) return { fits: null, overMM: null };
+    const W = um(wMM), H = um(hMM), P = um(machine.maxProcessingHeightMM), L = um(machine.maxLengthMM);
+    const over = (a, b) => Math.max(0, a - L, b - P);   // a along the length, b under the processing height
+    const o = Math.min(over(W, H), over(H, W));
+    return { fits: o === 0, overMM: o / 1000 };
+  };
+
+  D.dimbarModel = function (input) {
+    if (!input || typeof input !== "object" || !input.project) throw dfail("dimbarModel needs {project, plan, stats}");
+    const p = input.project, plan = input.plan || null, stats = input.stats || null;
+    const unit = p.units === "in" ? "in" : "mm";
+    const N = p.construction.sheets, bonded = p.construction.mode === "bonded-relief";
+    const tUm = um(p.material.thicknessMM), gUm = bonded ? 0 : um(p.construction.gapMM), t = tUm / 1000;
+
+    // layers (LYR-01)
+    const exported = stats && Number.isInteger(stats.exported) ? stats.exported : null;
+    const omitted = stats && Array.isArray(stats.omitted) ? stats.omitted.slice() : [];
+    const layers = {
+      requested: N, exported, omitted,
+      text: exported === null ? N + " requested · exported count after generation"
+        : N + " requested · " + exported + " exported" + (omitted.length ? " (omitted " + omitted.map((k) => k + 1).join(", ") + ")" : ""),
+    };
+
+    // Z (LYR-01, AT-03; MAT-01: no adhesive or finish term)
+    const nE = exported === null ? N : exported;
+    const maxZUm = stats && Number.isFinite(stats.maxZMM) ? um(stats.maxZMM) : (nE > 0 ? nE * tUm + (nE - 1) * gUm : 0);
+    const estimated = exported === null && !(stats && Number.isFinite(stats.maxZMM));   // exact once the exported count is known
+    const z = {
+      maxZMM: maxZUm / 1000, baseMM: t, reliefMM: Math.max(0, maxZUm - tUm) / 1000, stockMM: (N * tUm) / 1000, estimated,
+      text: "Max Z " + len(maxZUm / 1000, unit) + (estimated ? " (if every layer is occupied)" : "") + " · base " + len(t, unit) +
+        " · relief " + len(Math.max(0, maxZUm - tUm) / 1000, unit) + " · " + p.material.thicknessState + " thickness",
+    };
+
+    // pitch (PO-LASER-4/5): before generation, from the fabrication plan
+    let pitch;
+    if (!plan) {
+      pitch = { targetMM: p.geometry.fabPitchMM, actualMM: null, rasterW: null, rasterH: null, mpx: null, capped: null, deviceClass: null,
+        budgetPx: null, shortPx: null, reason: null,
+        text: "target " + p.geometry.fabPitchMM + " mm/px · choose a source to plan the fabrication raster" };
+    } else {
+      const g = plan.geometry, targetMM = g.targetPitchUm / 1000, actualMM = r3(g.mmPerPxMax);
+      const parts = [];
+      if (g.capped === "budget" || g.capped === "budget+source")
+        parts.push("capped by the " + g.deviceClass + " pixel budget (" + mpxText(g.pxBudget) + ")");
+      if (g.shortPx) parts.push("limited by the source: " + g.shortPx[0] + " × " + g.shortPx[1] + " px short; detail cannot be recovered");
+      const reason = parts.length ? parts.join("; ") : "at target";
+      pitch = {
+        targetMM, actualMM, rasterW: g.rasterW, rasterH: g.rasterH, mpx: Number(((g.rasterW * g.rasterH) / 1e6).toFixed(1)),
+        capped: g.capped, deviceClass: g.deviceClass, budgetPx: g.pxBudget, shortPx: g.shortPx ? g.shortPx.slice() : null, reason,
+        text: actualMM + " mm/px (target " + targetMM + " mm/px) · " + g.rasterW + " × " + g.rasterH + " px, " +
+          mpxText(g.rasterW * g.rasterH) + " · " + reason,
+      };
+    }
+
+    // page vs machine (PO-LASER-2)
+    const m = p.machine;
+    let page;
+    if (!plan) {
+      page = { wMM: null, hMM: null, machine: m ? m.name : null, fits: null, overMM: null,
+        text: m ? "page size follows the source · " + m.name : "page size follows the source · no machine profile" };
+    } else {
+      const wMM = plan.geometry.pageWMM, hMM = plan.geometry.pageHMM, f = D.pageFit(wMM, hMM, m);
+      page = { wMM, hMM, machine: m ? m.name : null, fits: f.fits, overMM: f.overMM,
+        text: "page " + len(wMM, unit) + " × " + len(hMM, unit) + " · " + (m === null ? "no machine profile (not checked)"
+          : (f.fits ? "fits " : "too large by " + len(f.overMM, unit) + " for ") + m.name + " (" + len(m.maxProcessingHeightMM, unit) + " × " +
+            len(m.maxLengthMM, unit) + ")") };
+    }
+    const stockOk = m === null || tUm <= um(m.maxThicknessMM);
+    const stock = { ok: stockOk, text: m === null ? "" : (stockOk ? "" : "stock " + len(t, unit) + " is thicker than the " + len(m.maxThicknessMM, unit) + " " + m.name + " accepts") };
+
+    // thresholds (LYR-02): every boundary normalized and in mm
+    const thresholds = global.SBHeight.boundaries(N, t).map((b) => ({
+      k: b.k, norm: b.norm, mm: b.mm, text: "layer " + b.k + ": " + b.norm.toFixed(3) + " → " + len(r3(b.mm), "mm") + (unit === "in" ? " (" + len(r3(b.mm), "in") + ")" : ""),
+    }));
+    const thresholdsNote = p.interpretation.mode === "height"
+      ? "Nearest-layer rule: each sample goes to the nearest layer level; boundaries lie halfway between levels."
+      : "Nearest-layer reference heights; tonal bands follow the tone split (" + p.interpretation.thresholdRule + ").";
+
+    return deepFreeze({ units: unit, layers, z, pitch, page, stock, thresholds, thresholdsNote, disclaimers: [D.COPY.MAT01] });
+  };
+
+  global.SBDocs = D;
+})(typeof window !== "undefined" ? window : globalThis);
+
+</script>
+<script>
+/* ============================================================================
  * Shadowbox Studio — js/engine.js
  * ----------------------------------------------------------------------------
  * SBEngine: the DOM-free engine. T0.5 seam: legacyRun is the v1.1.0
@@ -7252,6 +7616,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   const run = {
     sourceName: null,
     sourceImage: null,   // HTMLImageElement or canvas; null until the user chooses a source (no auto-demo)
+    sourceW: 0, sourceH: 0,   // the source's own pixel size (before downscaleIfHuge), for the fabrication raster plan
+    revision: -1,        // project revision of the last pipeline run (the dimbar uses its counts only while current)
     sheets: [],          // [{mask, bridges, loops, stats}]
     procW: 0, procH: 0,
     report: "",
@@ -7292,6 +7658,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   }
 
   function regenerate() {
+    syncControls();
+    updateDimbar();
     const gate = SBSchema.canGenerate(project, run.sourceImage);
     if (!gate.ok) {
       updateGate(gate);
@@ -7316,7 +7684,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const { sheets, totals } = SBEngine.legacyRun(rgba, w, h, state);
     run.sheets = sheets;
     let totalBridged = totals.bridged, totalCulled = totals.culled, totalCutMM = totals.cutMM;
-    run.procW = w; run.procH = h;
+    run.procW = w; run.procH = h; run.revision = project.revision;
 
     const ms = performance.now() - t0;
     run.report =
@@ -7325,6 +7693,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       `${SBUtil.fmt(totalCutMM / 1000, 2)} m of cuts · ${ms.toFixed(0)} ms`;
     setStatus(run.report);
     updateGate(gate);
+    updateDimbar();
 
     renderAll();
   }
@@ -7349,6 +7718,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
 
   // ------------------------------------------------------------- rendering
   function sheetColors() {
+    if (project.appearance.mode === "uniform")   // MAT-04: one opaque stock colour for every layer
+      return Array.from({ length: project.construction.sheets }, () => project.appearance.color);
     const stops = PALETTES[project.appearance.palette] || PALETTES["Midnight (Starry Night)"];
     const n = project.construction.sheets;
     // Back sheet = lightest, front = darkest (matches dark-front stacking).
@@ -7690,6 +8061,91 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     el.addEventListener("change", () => { el.value = project.geometry.fabPitchMM; show(); });
   }
 
+  // ------------------------------------------------------- G2.11c control groups
+  // Every G2.11c control writes through SBSchema.applyControl (lengths in project.units; invalid → unchanged). A geometry
+  // change (revision + 1) regenerates; an appearance, units or view change calls renderAll() only (PRJ-02).
+  const CONTROLS = ["interp", "polarity", "construction", "thmode", "manual-th", "thickness", "thickstate", "gap", "units",
+    "sizeby", "target", "machine", "m-height", "m-length", "m-matwidth", "m-thick", "m-kerf", "appearance", "color", "explode"];
+  const EXPLODE_MAX_MM = 60;   // the #in-explode range; the preview takes a 0–1 fraction
+
+  function onControl(id, value) {
+    const before = project;
+    const ctx = run.sourceImage ? { srcW: run.sourceW, srcH: run.sourceH } : undefined;
+    project = SBSchema.applyControl(project, id, value, ctx);
+    syncControls();
+    if (id === "explode") preview.setExplode(Math.min(1, project.view.explodeMM / EXPLODE_MAX_MM));
+    if (project.revision !== before.revision) { updateDimbar(); recompute(); }
+    else { updateDimbar(); renderAll(); }
+  }
+
+  /** Show the project's values in every G2.11c control (SBSchema.controlValues), with the mode's polarity options. */
+  function syncControls() {
+    const pol = $("in-polarity"), opts = SBSchema.polaritiesFor(project.interpretation.mode);
+    if (pol.dataset.mode !== project.interpretation.mode) {
+      pol.innerHTML = "";
+      const LABEL = { "light-front": "Light tones in front", "dark-front": "Dark tones in front", "white-high": "White is high", "black-high": "Black is high" };
+      for (const v of opts) { const o = document.createElement("option"); o.value = v; o.textContent = LABEL[v] || v; pol.appendChild(o); }
+      pol.dataset.mode = project.interpretation.mode;
+    }
+    const vals = SBSchema.controlValues(project);
+    for (const id of CONTROLS) {
+      const el = $("in-" + id);
+      if (el && document.activeElement !== el) el.value = vals["in-" + id];
+    }
+    const mf = $("in-manual-th");
+    if (mf) mf.disabled = project.interpretation.thresholdRule !== "manual";
+    for (const id of ["m-height", "m-length", "m-matwidth", "m-thick", "m-kerf"]) $("in-" + id).disabled = project.machine === null;
+    document.querySelectorAll(".u").forEach((u) => { u.textContent = project.units; });
+  }
+
+  function bindControls() {
+    for (const id of CONTROLS) {
+      const el = $("in-" + id);
+      // text and number entries apply on change (a half-typed value is not a geometry change); selects, colour and the
+      // explode slider apply as they move
+      const live = el.tagName === "SELECT" || el.type === "range" || el.type === "color";
+      el.addEventListener(live ? "input" : "change", () => onControl(id, el.value));
+      if (!live) el.addEventListener("blur", syncControls);
+    }
+    syncControls();
+  }
+
+  /** "mobile" on a coarse-pointer small screen, else "desktop" (SBSchema.limits budgets, PO-LASER-4). */
+  function deviceClass() {
+    try {
+      const coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+      return coarse && Math.min(screen.width, screen.height) < 820 ? "mobile" : "desktop";
+    } catch (e) { return "desktop"; }
+  }
+
+  /**
+   * The persistent dimension bar (G2.11c): SBDocs.dimbarModel over the project, the fabrication raster plan (computed
+   * before generation from the source size, so a pitch cap or a source shortfall is never silent: PO-LASER-4/5, NFR-04)
+   * and the counts of the current pipeline run.
+   */
+  function updateDimbar() {
+    let plan = null, sizeErr = null;
+    if (run.sourceImage) {
+      try { plan = SBEngine.rasterPlan(project, { w: run.sourceW, h: run.sourceH }, "fabrication", deviceClass()); }
+      catch (e) { sizeErr = e.message; }
+    }
+    const stats = run.sheets.length && run.revision === project.revision
+      ? { requested: project.construction.sheets, exported: run.sheets.length, omitted: [] } : null;   // the legacy path exports every sheet
+    const m = SBDocs.dimbarModel({ project, plan, stats });
+    $("dim-layers").textContent = "Layers: " + m.layers.text;
+    $("dim-z").textContent = m.z.text;
+    $("dim-pitch").textContent = "Pitch: " + (sizeErr ? sizeErr : m.pitch.text);
+    $("dim-page").textContent = sizeErr ? "" : m.page.text;
+    $("dim-page").classList.toggle("warn", m.page.fits === false);
+    const st = $("dim-stock");
+    st.textContent = m.stock.text; st.hidden = m.stock.ok;
+    $("dim-thnote").textContent = m.thresholdsNote;
+    const list = $("dim-thlist");
+    list.innerHTML = "";
+    for (const t of m.thresholds) { const li = document.createElement("li"); li.textContent = t.text; list.appendChild(li); }
+    if (!m.thresholds.length) { const li = document.createElement("li"); li.textContent = "One sheet: no boundaries"; list.appendChild(li); }
+  }
+
   function bindSelect(id, key) {
     const el = $(id);
     el.value = String(cfg()[key]);
@@ -7724,6 +8180,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
         setStatus("couldn’t read that image", true);
         return;
       }
+      run.sourceW = img.naturalWidth; run.sourceH = img.naturalHeight;
       run.sourceImage = downscaleIfHuge(img);
       run.sourceName = file.name;
       if (project.title === "untitled")
@@ -7783,6 +8240,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     // PRJ-01: the demo is an explicit source button; nothing loads it automatically.
     $("btn-demo").addEventListener("click", () => {
       run.sourceImage = demoScene();
+      run.sourceW = run.sourceImage.width; run.sourceH = run.sourceImage.height;
       run.sourceName = "demo scene";
       if (project.title === "untitled") setProjectName("night-over-the-valley");
       regenerate();
@@ -7794,8 +8252,6 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
 
     // layers
     bindRange("in-sheets", "nSheets", "out-sheets");
-    bindSelect("in-thmode", "thresholdMode");
-    bindCheck("in-darkfront", "darkFront");
     const pal = $("in-palette");
     Object.keys(PALETTES).forEach((k) => {
       const o = document.createElement("option");
@@ -7806,8 +8262,13 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     // Appearance only: no revision change, no regeneration (PRJ-02).
     pal.addEventListener("change", () => { setLegacy("palette", pal.value); renderAll(); });
 
+    // G2.11c: control groups, disclaimers (SBDocs.COPY) and the dimension bar
+    $("disc-stock").textContent = SBDocs.COPY.MAT01;
+    $("disc-palette").textContent = SBDocs.COPY.MAT04;
+    $("hint-thickness").textContent = SBDocs.COPY.THICKNESS_HINT;
+    bindControls();
+
     // fabrication
-    bindRange("in-width", "widthMM", "out-width", (v) => v + " mm");
     bindRange("in-margin", "marginMM", "out-margin", (v) => v + " mm");
     bindRange("in-feature", "minFeatureMM", "out-feature", (v) => v + " mm");
     bindRange("in-bridge", "bridgeMM", "out-bridge", (v) => v + " mm");
@@ -7817,9 +8278,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     bindRange("in-holedia", "holeDiaMM", "out-holedia", (v) => v + " mm");
     bindSelect("in-corner", "cornerStyle");
 
-    // preview controls
-    $("in-explode").addEventListener("input", (e) =>
-      preview.setExplode(parseFloat(e.target.value)));
+    // preview controls (#in-explode is a G2.11c view control: project.view.explodeMM, renderAll only)
     $("in-bridgesvis").addEventListener("change", (e) =>
       preview.setShowBridges(e.target.checked));
 

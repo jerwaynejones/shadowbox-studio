@@ -183,7 +183,7 @@ util → hash → vendor/<geomlib> → geom → diag → schema → png → jpeg
 | `js/guides.js` | SBGuides | new | G3.3 |
 | `js/project.js` | SBProject | new | G3.6 |
 | `js/package.js` | SBPackage | new | G3.9 |
-| `js/docs.js` | SBDocs | new | G3.5 |
+| `js/docs.js` | SBDocs | new | G2.11c (`COPY`, `dimbarModel`, `pageFit`); G3.5 (`assembly`) |
 | `js/worker.js` | — | new | G4.1 |
 | `js/raster.js`, `trace.js`, `svgout.js`, `zip.js`, `util.js`, `islands.js`, `preview.js`, `app.js` | existing | changed | various (`islands.js:33` changed to a call-time lookup in T0.2) |
 | `js/morph.js` | existing | unchanged API | — |

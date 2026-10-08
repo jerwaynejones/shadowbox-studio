@@ -41,6 +41,8 @@
   const run = {
     sourceName: null,
     sourceImage: null,   // HTMLImageElement or canvas; null until the user chooses a source (no auto-demo)
+    sourceW: 0, sourceH: 0,   // the source's own pixel size (before downscaleIfHuge), for the fabrication raster plan
+    revision: -1,        // project revision of the last pipeline run (the dimbar uses its counts only while current)
     sheets: [],          // [{mask, bridges, loops, stats}]
     procW: 0, procH: 0,
     report: "",
@@ -81,6 +83,8 @@
   }
 
   function regenerate() {
+    syncControls();
+    updateDimbar();
     const gate = SBSchema.canGenerate(project, run.sourceImage);
     if (!gate.ok) {
       updateGate(gate);
@@ -105,7 +109,7 @@
     const { sheets, totals } = SBEngine.legacyRun(rgba, w, h, state);
     run.sheets = sheets;
     let totalBridged = totals.bridged, totalCulled = totals.culled, totalCutMM = totals.cutMM;
-    run.procW = w; run.procH = h;
+    run.procW = w; run.procH = h; run.revision = project.revision;
 
     const ms = performance.now() - t0;
     run.report =
@@ -114,6 +118,7 @@
       `${SBUtil.fmt(totalCutMM / 1000, 2)} m of cuts · ${ms.toFixed(0)} ms`;
     setStatus(run.report);
     updateGate(gate);
+    updateDimbar();
 
     renderAll();
   }
@@ -138,6 +143,8 @@
 
   // ------------------------------------------------------------- rendering
   function sheetColors() {
+    if (project.appearance.mode === "uniform")   // MAT-04: one opaque stock colour for every layer
+      return Array.from({ length: project.construction.sheets }, () => project.appearance.color);
     const stops = PALETTES[project.appearance.palette] || PALETTES["Midnight (Starry Night)"];
     const n = project.construction.sheets;
     // Back sheet = lightest, front = darkest (matches dark-front stacking).
@@ -479,6 +486,91 @@
     el.addEventListener("change", () => { el.value = project.geometry.fabPitchMM; show(); });
   }
 
+  // ------------------------------------------------------- G2.11c control groups
+  // Every G2.11c control writes through SBSchema.applyControl (lengths in project.units; invalid → unchanged). A geometry
+  // change (revision + 1) regenerates; an appearance, units or view change calls renderAll() only (PRJ-02).
+  const CONTROLS = ["interp", "polarity", "construction", "thmode", "manual-th", "thickness", "thickstate", "gap", "units",
+    "sizeby", "target", "machine", "m-height", "m-length", "m-matwidth", "m-thick", "m-kerf", "appearance", "color", "explode"];
+  const EXPLODE_MAX_MM = 60;   // the #in-explode range; the preview takes a 0–1 fraction
+
+  function onControl(id, value) {
+    const before = project;
+    const ctx = run.sourceImage ? { srcW: run.sourceW, srcH: run.sourceH } : undefined;
+    project = SBSchema.applyControl(project, id, value, ctx);
+    syncControls();
+    if (id === "explode") preview.setExplode(Math.min(1, project.view.explodeMM / EXPLODE_MAX_MM));
+    if (project.revision !== before.revision) { updateDimbar(); recompute(); }
+    else { updateDimbar(); renderAll(); }
+  }
+
+  /** Show the project's values in every G2.11c control (SBSchema.controlValues), with the mode's polarity options. */
+  function syncControls() {
+    const pol = $("in-polarity"), opts = SBSchema.polaritiesFor(project.interpretation.mode);
+    if (pol.dataset.mode !== project.interpretation.mode) {
+      pol.innerHTML = "";
+      const LABEL = { "light-front": "Light tones in front", "dark-front": "Dark tones in front", "white-high": "White is high", "black-high": "Black is high" };
+      for (const v of opts) { const o = document.createElement("option"); o.value = v; o.textContent = LABEL[v] || v; pol.appendChild(o); }
+      pol.dataset.mode = project.interpretation.mode;
+    }
+    const vals = SBSchema.controlValues(project);
+    for (const id of CONTROLS) {
+      const el = $("in-" + id);
+      if (el && document.activeElement !== el) el.value = vals["in-" + id];
+    }
+    const mf = $("in-manual-th");
+    if (mf) mf.disabled = project.interpretation.thresholdRule !== "manual";
+    for (const id of ["m-height", "m-length", "m-matwidth", "m-thick", "m-kerf"]) $("in-" + id).disabled = project.machine === null;
+    document.querySelectorAll(".u").forEach((u) => { u.textContent = project.units; });
+  }
+
+  function bindControls() {
+    for (const id of CONTROLS) {
+      const el = $("in-" + id);
+      // text and number entries apply on change (a half-typed value is not a geometry change); selects, colour and the
+      // explode slider apply as they move
+      const live = el.tagName === "SELECT" || el.type === "range" || el.type === "color";
+      el.addEventListener(live ? "input" : "change", () => onControl(id, el.value));
+      if (!live) el.addEventListener("blur", syncControls);
+    }
+    syncControls();
+  }
+
+  /** "mobile" on a coarse-pointer small screen, else "desktop" (SBSchema.limits budgets, PO-LASER-4). */
+  function deviceClass() {
+    try {
+      const coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+      return coarse && Math.min(screen.width, screen.height) < 820 ? "mobile" : "desktop";
+    } catch (e) { return "desktop"; }
+  }
+
+  /**
+   * The persistent dimension bar (G2.11c): SBDocs.dimbarModel over the project, the fabrication raster plan (computed
+   * before generation from the source size, so a pitch cap or a source shortfall is never silent: PO-LASER-4/5, NFR-04)
+   * and the counts of the current pipeline run.
+   */
+  function updateDimbar() {
+    let plan = null, sizeErr = null;
+    if (run.sourceImage) {
+      try { plan = SBEngine.rasterPlan(project, { w: run.sourceW, h: run.sourceH }, "fabrication", deviceClass()); }
+      catch (e) { sizeErr = e.message; }
+    }
+    const stats = run.sheets.length && run.revision === project.revision
+      ? { requested: project.construction.sheets, exported: run.sheets.length, omitted: [] } : null;   // the legacy path exports every sheet
+    const m = SBDocs.dimbarModel({ project, plan, stats });
+    $("dim-layers").textContent = "Layers: " + m.layers.text;
+    $("dim-z").textContent = m.z.text;
+    $("dim-pitch").textContent = "Pitch: " + (sizeErr ? sizeErr : m.pitch.text);
+    $("dim-page").textContent = sizeErr ? "" : m.page.text;
+    $("dim-page").classList.toggle("warn", m.page.fits === false);
+    const st = $("dim-stock");
+    st.textContent = m.stock.text; st.hidden = m.stock.ok;
+    $("dim-thnote").textContent = m.thresholdsNote;
+    const list = $("dim-thlist");
+    list.innerHTML = "";
+    for (const t of m.thresholds) { const li = document.createElement("li"); li.textContent = t.text; list.appendChild(li); }
+    if (!m.thresholds.length) { const li = document.createElement("li"); li.textContent = "One sheet: no boundaries"; list.appendChild(li); }
+  }
+
   function bindSelect(id, key) {
     const el = $(id);
     el.value = String(cfg()[key]);
@@ -513,6 +605,7 @@
         setStatus("couldn’t read that image", true);
         return;
       }
+      run.sourceW = img.naturalWidth; run.sourceH = img.naturalHeight;
       run.sourceImage = downscaleIfHuge(img);
       run.sourceName = file.name;
       if (project.title === "untitled")
@@ -572,6 +665,7 @@
     // PRJ-01: the demo is an explicit source button; nothing loads it automatically.
     $("btn-demo").addEventListener("click", () => {
       run.sourceImage = demoScene();
+      run.sourceW = run.sourceImage.width; run.sourceH = run.sourceImage.height;
       run.sourceName = "demo scene";
       if (project.title === "untitled") setProjectName("night-over-the-valley");
       regenerate();
@@ -583,8 +677,6 @@
 
     // layers
     bindRange("in-sheets", "nSheets", "out-sheets");
-    bindSelect("in-thmode", "thresholdMode");
-    bindCheck("in-darkfront", "darkFront");
     const pal = $("in-palette");
     Object.keys(PALETTES).forEach((k) => {
       const o = document.createElement("option");
@@ -595,8 +687,13 @@
     // Appearance only: no revision change, no regeneration (PRJ-02).
     pal.addEventListener("change", () => { setLegacy("palette", pal.value); renderAll(); });
 
+    // G2.11c: control groups, disclaimers (SBDocs.COPY) and the dimension bar
+    $("disc-stock").textContent = SBDocs.COPY.MAT01;
+    $("disc-palette").textContent = SBDocs.COPY.MAT04;
+    $("hint-thickness").textContent = SBDocs.COPY.THICKNESS_HINT;
+    bindControls();
+
     // fabrication
-    bindRange("in-width", "widthMM", "out-width", (v) => v + " mm");
     bindRange("in-margin", "marginMM", "out-margin", (v) => v + " mm");
     bindRange("in-feature", "minFeatureMM", "out-feature", (v) => v + " mm");
     bindRange("in-bridge", "bridgeMM", "out-bridge", (v) => v + " mm");
@@ -606,9 +703,7 @@
     bindRange("in-holedia", "holeDiaMM", "out-holedia", (v) => v + " mm");
     bindSelect("in-corner", "cornerStyle");
 
-    // preview controls
-    $("in-explode").addEventListener("input", (e) =>
-      preview.setExplode(parseFloat(e.target.value)));
+    // preview controls (#in-explode is a G2.11c view control: project.view.explodeMM, renderAll only)
     $("in-bridgesvis").addEventListener("change", (e) =>
       preview.setShowBridges(e.target.checked));
 

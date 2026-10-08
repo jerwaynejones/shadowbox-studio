@@ -33,3 +33,22 @@ that added it.
 - [ ] The Sheets slider goes from 1 to 16; the preview and the "Layer sheets" grid follow at 1 and 16.
 - [ ] After a source is loaded, Generate is enabled and its reason text is hidden; clicking it
       regenerates.
+
+## Control groups, dimension bar and disclaimers (LYR-01/02, MAT-01/02/04, PO-LASER-1/2/3/4/5/8, G2.11c)
+
+- [ ] Construction shows four labelled groups: Size (units, size by Height/Width, finished size, frame
+      ring), Material (thickness with the "1/4\" ply often measures 5.5–6 mm" hint, nominal/measured,
+      gap), Fabrication (pitch and the cleanup controls) and Machine ("xTool S1 + feeder" preselected,
+      None, and the five editable limits). Choosing None disables the limit fields.
+- [ ] Switching Units to Inches re-displays every length field and the dimension bar in inches; the
+      pitch stays in mm/px.
+- [ ] Before a source, the dimension bar reads "5 requested · exported count after generation", an
+      estimated max Z / base / relief, "choose a source to plan the fabrication raster", and the
+      MAT-01 stock disclaimer. After the Demo scene it shows "5 exported", the real mm/px next to the
+      0.1 mm/px target, the raster W × H and Mpx, and the source shortfall in px.
+- [ ] A finished size whose page exceeds the machine reads "too large by … mm for xTool S1 + feeder";
+      Thresholds opens with the keyboard (Enter on the summary) and lists every boundary as a
+      normalized value and in mm.
+- [ ] Review shows Appearance (uniform colour / palette proof), the stock colour and the MAT-04
+      palette disclaimer; changing them or the Explode slider recolours or moves the preview without
+      regenerating.

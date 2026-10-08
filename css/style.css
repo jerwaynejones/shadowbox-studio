@@ -342,3 +342,19 @@ select {
 @media (prefers-reduced-motion: reduce) {
   .rail { transition: none; }
 }
+
+/* G2.11c — control groups and the persistent dimension bar. */
+.group { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px 0; margin: 0 0 12px; }
+.group legend { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; padding: 0 4px; color: var(--ink-soft); }
+.group input[type="number"], .row input[type="text"] { width: 100%; }
+.dimbar {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px;
+  padding: 6px 12px; font-size: 12px; line-height: 1.4;
+  border-top: 1px solid var(--line); background: var(--panel); color: var(--ink);
+}
+.dimbar .dim[hidden] { display: none; }
+.dimbar .warn { color: var(--cut); font-weight: 600; }
+.dimbar .disc { color: var(--ink-soft); font-style: italic; }
+.dimbar details summary { cursor: pointer; text-decoration: underline dotted; }
+.dimbar details[open] { flex-basis: 100%; }
+.dimbar details ol { margin: 4px 0 6px 18px; padding: 0; columns: 2; }

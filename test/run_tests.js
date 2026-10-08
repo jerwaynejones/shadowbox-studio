@@ -4136,6 +4136,159 @@ suite("index.html/app.js/schema.js — G2.11b stages, the fabrication pitch inpu
     /function updateGate\(gate\)\s*\{[\s\S]{0,800}btn-generate/.test(appSrc));
 });
 
+suite("docs.js/schema.js/index.html/app.js — G2.11c control groups, dimension bar and disclaimers (LYR-01/02, MAT-01/02/04, PO-LASER-1/2/3/4/5/8)", () => {
+  const S = SBSchema, Dc = SBDocs;
+  const root = path.join(__dirname, "..");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const appSrc = fs.readFileSync(path.join(root, "js", "app.js"), "utf8");
+  const tagOf = (id) => { const m = new RegExp("<[a-z]+\\b[^>]*\\bid=\"" + id + "\"[^>]*>").exec(html); return m ? m[0] : ""; };
+  const attr = (tag, a) => { const m = new RegExp("\\b" + a + "=\"([^\"]*)\"").exec(tag); return m ? m[1] : null; };
+  const P = S.defaults("plywood"), A = S.defaults("acrylic"), P0 = JSON.stringify(P);
+  const plan = (p, w, h, dev) => SBEngine.rasterPlan(p, { w, h }, "fabrication", dev || "desktop");
+
+  // ---- disclaimer copy (pure strings)
+  check("MAT-01 adhesive/finish exclusion text present",
+    Dc.COPY.MAT01 === "Stock height excludes adhesive films and surface finishes." && Object.isFrozen(Dc.COPY));
+  check("MAT-04 palette disclaimer text present",
+    Dc.COPY.MAT04 === "Palette shading is a proof aid; it is not necessarily the appearance of unpainted stock.");
+  check("PO-LASER-8 thickness hint text present", /1\/4" ply often measures 5\.5–6 mm: measure and enter it/.test(Dc.COPY.THICKNESS_HINT));
+  check("MAT-01/MAT-04/PO-LASER-8 app.js renders the disclaimers from SBDocs.COPY into the page",
+    /SBDocs\.COPY\.MAT01/.test(appSrc) && /SBDocs\.COPY\.MAT04/.test(appSrc) && /SBDocs\.COPY\.THICKNESS_HINT/.test(appSrc) &&
+    tagOf("disc-stock") !== "" && tagOf("disc-palette") !== "" && tagOf("hint-thickness") !== "" &&
+    attr(tagOf("in-thickness"), "aria-describedby") === "hint-thickness");
+
+  // ---- dimbarModel
+  const pl = plan(P, 3000, 3000);   // 300 × 300 mm art at 0.1 mm/px → 3000 × 3000, no cap
+  const m0 = Dc.dimbarModel({ project: P, plan: pl, stats: null });
+  check("LYR-02 dimbar thresholds in normalized and mm", (() => {
+    const B = SBHeight.boundaries(8, 6.35);
+    return m0.thresholds.length === 7 && m0.thresholds.every((t, i) => t.k === B[i].k && t.norm === B[i].norm && t.mm === B[i].mm &&
+      t.text.includes(B[i].norm.toFixed(3)) && t.text.includes(String(Math.round(B[i].mm * 1000) / 1000) + " mm")); })());
+  check("LYR-02 one sheet has no boundaries; the note names the nearest-layer rule",
+    Dc.dimbarModel({ project: S.applyLegacy(P, "nSheets", 1), plan: null, stats: null }).thresholds.length === 0 && /nearest-layer/i.test(m0.thresholdsNote));
+  const mS = Dc.dimbarModel({ project: P, plan: pl, stats: { requested: 8, exported: 6, omitted: [6, 7], stockMM: 50.8, reliefMM: 44.45, maxZMM: 38.1 } });
+  check("LYR-01 dimbar shows requested vs exported",
+    mS.layers.requested === 8 && mS.layers.exported === 6 && /8 requested/.test(mS.layers.text) && /6 exported/.test(mS.layers.text) &&
+    /omitted 7, 8|omitted 6, 7/.test(mS.layers.text) &&
+    m0.layers.requested === 8 && m0.layers.exported === null && /8 requested/.test(m0.layers.text) && /after generation/.test(m0.layers.text));
+  check("LYR-01/AT-03 dimbar max Z, base t and relief (relief = maxZ − t); estimated before generation",
+    mS.z.maxZMM === 38.1 && mS.z.baseMM === 6.35 && mS.z.reliefMM === 31.75 && mS.z.estimated === false &&
+    m0.z.maxZMM === 50.8 && m0.z.reliefMM === 44.45 && m0.z.stockMM === 50.8 && m0.z.estimated === true &&
+    /50\.8 mm/.test(m0.z.text) && /44\.45 mm/.test(m0.z.text) && /6\.35 mm/.test(m0.z.text));
+  check("UI-03 connected estimate includes the gaps (N·t + (N−1)·g)",
+    Dc.dimbarModel({ project: A, plan: null, stats: null }).z.maxZMM === 5 * 3 + 4 * 3);
+  check("MAT-01 the dimbar carries the stock disclaimer", m0.disclaimers.includes(Dc.COPY.MAT01));
+
+  check("PO-LASER-4 dimbar shows target and actual mm/px, the raster and Mpx (no cap)",
+    m0.pitch.targetMM === 0.1 && m0.pitch.actualMM === 0.1 && m0.pitch.rasterW === 3000 && m0.pitch.rasterH === 3000 &&
+    m0.pitch.mpx === 9 && m0.pitch.capped === "none" && /0\.1 mm\/px/.test(m0.pitch.text) && /3000 × 3000 px/.test(m0.pitch.text) && /9(\.0)? Mpx/.test(m0.pitch.text));
+  const pb = plan(P, 20000, 20000, "mobile"), mB = Dc.dimbarModel({ project: P, plan: pb, stats: null });
+  check("PO-LASER-4 dimbar shows target and actual mm/px and the cap reason", (() => {
+    return mB.pitch.capped === "budget" && mB.pitch.targetMM === 0.1 && mB.pitch.actualMM === Math.round(pb.geometry.mmPerPxMax * 1000) / 1000 &&
+      mB.pitch.actualMM > 0.1 && mB.pitch.rasterW * mB.pitch.rasterH <= 1000000 && /budget/.test(mB.pitch.reason) && /mobile/.test(mB.pitch.reason) &&
+      /1(\.0)? Mpx/.test(mB.pitch.reason) && mB.pitch.text.includes(mB.pitch.reason) && mB.pitch.text.includes("target 0.1 mm/px"); })());
+  const ps = plan(P, 1000, 800), mSrc = Dc.dimbarModel({ project: P, plan: ps, stats: null });
+  check("PO-LASER-5 dimbar shows the source shortfall in px",
+    mSrc.pitch.capped === "source" && JSON.stringify(mSrc.pitch.shortPx) === JSON.stringify(ps.geometry.shortPx) &&
+    /source/.test(mSrc.pitch.reason) && mSrc.pitch.reason.includes(ps.geometry.shortPx[0] + " × " + ps.geometry.shortPx[1] + " px short") &&
+    mSrc.pitch.rasterW === 1000 && mSrc.pitch.rasterH === 800);
+  const pbs = plan(P, 800, 800, "mobile"), mBS = Dc.dimbarModel({ project: P, plan: pbs, stats: null });
+  check("PO-LASER-4/5 budget+source names both causes",
+    pbs.geometry.capped === "budget+source" && mBS.pitch.capped === "budget+source" && /budget/.test(mBS.pitch.reason) &&
+    mBS.pitch.reason.includes("200 × 200 px short") && mBS.pitch.rasterW === 800);
+  check("PO-LASER-4 before a source the pitch text asks for one (never blank)",
+    /source/i.test(Dc.dimbarModel({ project: P, plan: null, stats: null }).pitch.text) && m0.pitch.text !== "");
+
+  check("PO-LASER-2 dimbar shows page vs machine area", (() => {
+    const fit = m0.page, big = Dc.dimbarModel({ project: S.applyControl(P, "target", 480), plan: plan(S.applyControl(P, "target", 480), 3000, 3000), stats: null }).page;
+    const none = Dc.dimbarModel({ project: S.applyControl(P, "machine", "none"), plan: pl, stats: null }).page;
+    return fit.fits === true && fit.wMM === 300 && fit.hMM === 300 && /fits/.test(fit.text) && fit.text.includes("xTool S1 + feeder") &&
+      big.fits === false && big.overMM === 10 && /too large by 10 mm/.test(big.text) && none.fits === null && /no machine/i.test(none.text); })());
+  check("PO-LASER-2 the dimbar fit agrees with SBSupport.checkEnvelope (PAGE_OVERFLOW) over a grid of pages", (() => {
+    const mach = S.MACHINES["xtool-s1-feeder"];
+    for (const w of [100, 469.999, 470, 470.001, 545, 2999, 3000, 3000.5]) for (const h of [50, 470, 471, 3000, 3001]) {
+      const env = SBSupport.checkEnvelope({ wMM: w, hMM: h }, mach, null).some((d) => d.code === "PAGE_OVERFLOW");
+      const f = Dc.pageFit(w, h, mach);
+      if (f.fits === env) return false;
+      if (f.fits !== (f.overMM === 0)) return false;
+    }
+    return true; })());
+  check("PO-LASER-1 dimbar flags stock thicker than the machine accepts",
+    Dc.dimbarModel({ project: S.applyControl(P, "thickness", 20), plan: pl, stats: null }).stock.ok === false &&
+    m0.stock.ok === true && /14 mm/.test(Dc.dimbarModel({ project: S.applyControl(P, "thickness", 20), plan: pl, stats: null }).stock.text));
+  check("MAT-02 dimbar lengths follow project.units (inches)", (() => {
+    const q = S.applyControl(P, "units", "in"), m = Dc.dimbarModel({ project: q, plan: plan(q, 3000, 3000), stats: null });
+    return /2 in/.test(m.z.text) && /1\.75 in/.test(m.z.text) && /0\.25 in/.test(m.z.text) && m.z.maxZMM === 50.8; })());
+  check("dimbarModel is pure and frozen", JSON.stringify(P) === P0 && Object.isFrozen(m0) && Object.isFrozen(m0.pitch));
+
+  // ---- SBSchema.applyControl: the one write path for the G2.11c controls
+  const geo = (k, v, p) => { const q = S.applyControl(p || P, k, v); return q.revision === (p || P).revision + 1 && S.validate(q).ok; };
+  const app_ = (k, v, p) => { const q = S.applyControl(p || P, k, v); return q.revision === (p || P).revision && S.validate(q).ok; };
+  check("PRJ-02 applyControl: units, appearance, color and explode never bump the revision",
+    app_("units", "in") && app_("appearance", "palette") && app_("color", "#112233") && app_("explode", 20) &&
+    S.applyControl(P, "explode", 20).view.explodeMM === 20 && S.applyControl(P, "color", "#112233").appearance.color === "#112233" &&
+    S.applyControl(P, "color", "red").appearance.color === P.appearance.color);
+  check("PRJ-02 applyControl: geometry controls bump the revision by one",
+    geo("thickness", 5.8) && geo("thickstate", "measured") && geo("polarity", "black-high") && geo("sizeby", "width") && geo("target", 400) &&
+    geo("machine", "none") && geo("m-height", 400) && geo("m-length", 2000) && geo("m-matwidth", 600) && geo("m-thick", 10) && geo("m-kerf", 0.2) &&
+    geo("gap", 4, A) && geo("thmode", "manual") && geo("manual-th", "0.1, 0.3, 0.4, 0.5, 0.6, 0.7, 0.9") &&
+    S.applyControl(P, "thickness", 6.35).revision === P.revision && JSON.stringify(P) === P0);
+  check("MAT-02 applyControl lengths are entered in project.units (lossless)", (() => {
+    const q = S.applyControl(S.applyControl(P, "units", "in"), "thickness", 0.25);
+    const t = S.applyControl(S.applyControl(P, "units", "in"), "target", 12);
+    return q.material.thicknessMM === 6.35 && t.geometry.targetMM === 304.8 && S.controlValues(q)["in-thickness"] === "0.25" &&
+      S.controlValues(P)["in-thickness"] === "6.35"; })());
+  check("PO-LASER-3 sizeby switch keeps the finished size when the source is known", (() => {
+    const q = S.applyControl(P, "sizeby", "width", { srcW: 600, srcH: 400 });
+    return q.geometry.sizeBy === "width" && q.geometry.targetMM === 450 && S.resolveSize(q, 600, 400).pageHMM === 300 &&
+      S.applyControl(P, "sizeby", "width").geometry.targetMM === 300; })());
+  check("PO-LASER-1 machine select: none → null; reselect restores the profile; edits mark it (edited)", (() => {
+    const n = S.applyControl(P, "machine", "none"), e = S.applyControl(P, "m-height", 400), r = S.applyControl(e, "machine", "xtool-s1-feeder");
+    return n.machine === null && e.machine.maxProcessingHeightMM === 400 && /\(edited\)$/.test(e.machine.name) && e.machine.id === "xtool-s1-feeder" &&
+      JSON.stringify(r.machine) === JSON.stringify(S.MACHINES["xtool-s1-feeder"]) && S.applyControl(n, "m-height", 400).machine === null; })());
+  check("applyControl leaves the project unchanged for an invalid or non-numeric entry", (() => {
+    const same = (q) => JSON.stringify(q) === P0;
+    return same(S.applyControl(P, "m-height", 600)) /* > material width 545 */ && same(S.applyControl(P, "thickness", "abc")) &&
+      same(S.applyControl(P, "manual-th", "0.5, 0.2")) && same(S.applyControl(P, "manual-th", "0.2")) && same(S.applyControl(P, "polarity", "dark-front")) &&
+      same(S.applyControl(P, "gap", 3)) /* bonded gap is 0 */ && S.applyControl(P, "thickness", 99).material.thicknessMM === 25; })());
+  check("D1/UI-01 construction and interpretation selects apply the modeChangeDiff targets (valid project, revision + 1)", (() => {
+    const b = S.applyControl(A, "construction", "bonded-relief"), h = S.applyControl(A, "interp", "height"), c = S.applyControl(P, "construction", "connected-sheet");
+    return b.construction.mode === "bonded-relief" && b.construction.gapMM === 0 && b.revision === 1 && S.validate(b).ok &&
+      h.interpretation.mode === "height" && h.interpretation.polarity === "black-high" && S.validate(h).ok &&
+      c.construction.gapMM === 3 && S.validate(c).ok; })());
+  check("LYR-02 manual thresholds: thmode manual seeds N−1 even values; a sheet change re-seeds a mismatched list", (() => {
+    const m = S.applyControl(P, "thmode", "manual"), s = S.applyLegacy(m, "nSheets", 4);
+    return m.interpretation.thresholdRule === "manual" && m.interpretation.manual.length === 7 && s.interpretation.manual.length === 3 &&
+      S.validate(s).ok && S.controlValues(m)["in-manual-th"].split(",").length === 7; })());
+  check("controlValues covers every G2.11c input id", (() => {
+    const v = S.controlValues(P);
+    return ["in-interp", "in-polarity", "in-construction", "in-thickness", "in-thickstate", "in-gap", "in-manual-th", "in-units", "in-appearance",
+      "in-color", "in-explode", "in-sizeby", "in-target", "in-machine", "in-m-height", "in-m-length", "in-m-matwidth", "in-m-thick", "in-m-kerf"]
+      .every((id) => typeof v[id] === "string") && v["in-machine"] === "xtool-s1-feeder" && v["in-sizeby"] === "height" &&
+      S.controlValues(S.applyControl(P, "machine", "none"))["in-machine"] === "none"; })());
+
+  // ---- markup and bindings
+  const IDS = ["in-interp", "in-polarity", "in-construction", "in-thickness", "in-thickstate", "in-gap", "in-manual-th", "in-units", "in-appearance",
+    "in-color", "in-explode", "in-sizeby", "in-target", "in-machine", "in-m-height", "in-m-length", "in-m-matwidth", "in-m-thick", "in-m-kerf"];
+  check("UI-01 every G2.11c control exists in index.html with a label", IDS.every((id) => tagOf(id) !== "" && new RegExp("<label[^>]*for=\"" + id + "\"").test(html)));
+  check("PO-LASER-3 #in-sizeby offers Height (first, the default) and Width",
+    /<select id="in-sizeby">\s*<option value="height"[^>]*>Height<\/option>\s*<option value="width"[^>]*>Width<\/option>/.test(html));
+  check("PO-LASER-1 #in-machine preselects \"xTool S1 + feeder\" and offers None",
+    /<option value="xtool-s1-feeder" selected>xTool S1 \+ feeder<\/option>/.test(html) && /<option value="none">None<\/option>/.test(html));
+  check("UI-01 the Machine group is a fieldset in Construction", (() => {
+    const i = html.indexOf('id="in-machine"'), f = html.lastIndexOf("<fieldset", i);
+    return f > html.indexOf('id="stage-construction"') && i < html.indexOf('id="stage-review"') && /<legend>Machine<\/legend>/.test(html.slice(f, i)); })());
+  check("UI-01 app.js binds every G2.11c control through SBSchema.applyControl",
+    /SBSchema\.applyControl\(/.test(appSrc) && IDS.every((id) => appSrc.includes('"' + id.replace(/^in-/, "") + '"') || appSrc.includes('"' + id + '"')));
+  check("PRJ-02 app.js: an appearance/view change calls renderAll() only; a geometry change regenerates",
+    /function onControl\([\s\S]{0,900}revision !== [\s\S]{0,200}recompute\(\)[\s\S]{0,200}renderAll\(\)/.test(appSrc));
+  check("PO-LASER-4/NFR-04 the dimbar is drawn from SBDocs.dimbarModel with the fabrication rasterPlan before generation",
+    tagOf("dimbar") !== "" && /class="dimbar"/.test(tagOf("dimbar")) && /SBDocs\.dimbarModel\(/.test(appSrc) &&
+    /SBEngine\.rasterPlan\([^)]*"fabrication"/.test(appSrc) && /\.dimbar\b/.test(fs.readFileSync(path.join(root, "css", "style.css"), "utf8")));
+  check("LYR-02 the thresholds popover is a keyboard-operable <details> in the dimbar",
+    /<details[^>]*id="dim-thresholds"/.test(html) && html.indexOf('id="dim-thresholds"') > html.indexOf('id="dimbar"'));
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

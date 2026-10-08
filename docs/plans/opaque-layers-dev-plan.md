@@ -496,7 +496,7 @@ util → hash → vendor/<geomlib> → geom → diag → schema → png → jpeg
 | `js/guides.js` | SBGuides | new | G3.3 |
 | `js/project.js` | SBProject | new | G3.6 |
 | `js/package.js` | SBPackage | new | G3.9 |
-| `js/docs.js` | SBDocs | new | G3.5 |
+| `js/docs.js` | SBDocs | new | G2.11c (`COPY`, `dimbarModel`, `pageFit`); G3.5 (`assembly`) |
 | `js/worker.js` | — | new | G4.1 |
 | `js/raster.js`, `trace.js`, `svgout.js`, `zip.js`, `util.js`, `islands.js`, `preview.js`, `app.js` | existing | changed | various (`islands.js:33` changed to a call-time lookup in T0.2) |
 | `js/morph.js` | existing | unchanged API | — |
@@ -2411,7 +2411,7 @@ Runs right after G2.7 (Appendix D.4, D.9). **Why:** G2.2b showed that the pixel 
   - MAT-01: "Stock height excludes adhesive films and surface finishes."
   - MAT-04: "Palette shading is a proof aid; it is not necessarily the appearance of unpainted stock."
 
-- [ ] **Tests (Node, on `SBDocs.COPY` and a pure `dimbarModel(snapshot)`):**
+- [x] **Tests (Node, on `SBDocs.COPY` and a pure `dimbarModel(snapshot)`):**
   - `LYR-02 dimbar thresholds in normalized and mm`
   - `LYR-01 dimbar shows requested vs exported`
   - `MAT-01 adhesive/finish exclusion text present`
@@ -2419,7 +2419,13 @@ Runs right after G2.7 (Appendix D.4, D.9). **Why:** G2.2b showed that the pixel 
   - `PO-LASER-4 dimbar shows target and actual mm/px and the cap reason`
   - `PO-LASER-5 dimbar shows the source shortfall in px`
   - `PO-LASER-2 dimbar shows page vs machine area`
-- **Commit.**
+- [x] **Commit.**
+
+**Result (2026-10-08):**
+- **Pure parts.** `js/docs.js` (SBDocs) is created now rather than in G3.5: `SBDocs.COPY` (MAT01, MAT04, THICKNESS_HINT), `SBDocs.pageFit(w, h, machine)` (the `checkEnvelope` rule in µm, plus the smallest excess over both orientations; a grid test keeps it in step with `PAGE_OVERFLOW`) and `SBDocs.dimbarModel({project, plan, stats})`. It is loaded between `zip.js` and `engine.js` (§4 order) in all four lists. The model takes the fabrication `SBEngine.rasterPlan` (computed from the source size before generation) and the run's stats, so the pitch, the raster W × H and Mpx, and the cap reason (device-class budget and/or the source shortfall in px) show before any generation (NFR-04). Z: `maxZMM` from the stats, else `N_e·t + (N_e − 1)·g` (estimated, "if every layer is occupied", until the exported count is known); relief = `maxZMM − t`. Thresholds: `SBHeight.boundaries(N, t)`, each "normalized → mm". Lengths follow `project.units`; the pitch is always mm/px.
+- **Write path.** `SBSchema.applyControl(project, id, value, ctx?)` is the one write path for the new controls (`interp`, `polarity`, `construction`, `thmode`, `manual-th`, `thickness`, `thickstate`, `gap`, `units`, `sizeby`, `target`, `machine`, `m-*`, `appearance`, `color`, `explode`). Lengths are entered in `project.units` and clamped to the schema ranges; an invalid entry or a result that fails `validate` leaves the project unchanged; revision + 1 exactly when `geometryKey` changes. A `sizeby` switch with a known source keeps the finished page size. Machine edits keep the profile id and mark the name "(edited)"; reselecting the profile restores it. `SBSchema.controlValues(project)` and `SBSchema.polaritiesFor(mode)` feed the controls. `applyLegacy("nSheets")` re-seeds a mismatched manual threshold list (N − 1 even values).
+- **App.** Construction has Size / Material / Fabrication / Machine fieldsets; `#in-width` (art width slider) is replaced by `#in-sizeby` + `#in-target`, and `#in-darkfront` by `#in-polarity`. `#in-explode` is now 0–60 mm (`view.explodeMM`). Geometry controls regenerate; units, appearance, colour and explode call `renderAll()` only. The `.dimbar` sits above the status bar with a `<details>` thresholds popover; uniform appearance colours every layer with the stock colour. Headless Chromium smoke check on `dist`: empty → estimated bar and "choose a source"; Demo → 5 exported, 0.333 mm/px vs 0.1 target, 900 × 680 px, "2100 × 1587 px short"; inches, a 600 mm budget-capped page, machine None (limit fields disabled), height mode polarities, no page errors.
+- **Deviations.** (1) `dimbarModel` takes `{project, plan, stats}` instead of a bare snapshot, because the dimbar must show the plan before generation. (2) The mode selects apply `modeChangeDiff`'s targets directly; G2.11e puts the review dialog in front of them. (3) The app preview still runs the legacy connected tonal pipeline (as recorded in G2.11b), so height/bonded, thickness, gap and manual thresholds are recorded on the project and shown in the dimbar but do not change the draft preview until the engine path is wired (G2.14). The legacy path exports every sheet, so its stats are `exported = N`, no omissions.
 
 ### Task G2.11d: Applicability and disabled-with-reason controls
 

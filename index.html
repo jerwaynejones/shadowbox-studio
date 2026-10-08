@@ -74,15 +74,23 @@
 
     <section class="step" id="stage-interpretation" tabindex="-1" aria-labelledby="h-interpretation">
       <h2 id="h-interpretation"><span class="stepnum">2</span> Interpretation</h2>
+      <div class="row"><label for="in-interp">Read the image as</label>
+        <select id="in-interp">
+          <option value="tonal">Tonal bands (photo)</option>
+          <option value="height">Height map</option>
+        </select></div>
+      <div class="row"><label for="in-polarity">Polarity</label>
+        <select id="in-polarity"></select></div>
       <div class="row"><label for="in-sheets">Sheets <output id="out-sheets"></output></label>
         <input id="in-sheets" type="range" min="1" max="16" step="1"></div>
       <div class="row"><label for="in-thmode">Tone split</label>
         <select id="in-thmode">
           <option value="balanced">Balanced areas</option>
           <option value="linear">Even brightness steps</option>
+          <option value="manual">Manual thresholds</option>
         </select></div>
-      <div class="row check"><input id="in-darkfront" type="checkbox">
-        <label for="in-darkfront">Dark tones in front</label></div>
+      <div class="row"><label for="in-manual-th">Manual thresholds (0–1, one fewer than sheets)</label>
+        <input id="in-manual-th" type="text" spellcheck="false" autocomplete="off" inputmode="decimal"></div>
       <div class="row"><label for="in-smooth">Cartoon smoothing <output id="out-smooth"></output></label>
         <input id="in-smooth" type="range" min="1" max="10" step="1"></div>
       <div class="row"><label for="in-passes">Smoothing passes <output id="out-passes"></output></label>
@@ -91,10 +99,44 @@
 
     <section class="step" id="stage-construction" tabindex="-1" aria-labelledby="h-construction">
       <h2 id="h-construction"><span class="stepnum">3</span> Construction</h2>
-      <div class="row"><label for="in-width">Artwork width <output id="out-width"></output></label>
-        <input id="in-width" type="range" min="100" max="600" step="10"></div>
-      <div class="row"><label for="in-margin">Frame ring <output id="out-margin"></output></label>
-        <input id="in-margin" type="range" min="0" max="30" step="1"></div>
+      <div class="row"><label for="in-construction">Construction</label>
+        <select id="in-construction">
+          <option value="connected-sheet">Connected sheets (spacers)</option>
+          <option value="bonded-relief">Bonded relief (glued)</option>
+        </select></div>
+
+      <!-- G2.11c control groups. Lengths are entered in the chosen unit (MAT-02). -->
+      <fieldset class="group"><legend>Size</legend>
+        <div class="row"><label for="in-units">Units</label>
+          <select id="in-units">
+            <option value="mm">Millimetres</option>
+            <option value="in">Inches</option>
+          </select></div>
+        <div class="row"><label for="in-sizeby">Size by</label>
+          <select id="in-sizeby">
+            <option value="height" selected>Height</option>
+            <option value="width">Width</option>
+          </select></div>
+        <div class="row"><label for="in-target">Finished size, art + frame (<span class="u">mm</span>)</label>
+          <input id="in-target" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div class="row"><label for="in-margin">Frame ring <output id="out-margin"></output></label>
+          <input id="in-margin" type="range" min="0" max="30" step="1"></div>
+      </fieldset>
+
+      <fieldset class="group"><legend>Material</legend>
+        <div class="row"><label for="in-thickness">Layer thickness (<span class="u">mm</span>)</label>
+          <input id="in-thickness" type="number" min="0" step="any" inputmode="decimal" aria-describedby="hint-thickness">
+          <p id="hint-thickness" class="hint"></p></div>
+        <div class="row"><label for="in-thickstate">Thickness is</label>
+          <select id="in-thickstate">
+            <option value="nominal">Nominal</option>
+            <option value="measured">Measured</option>
+          </select></div>
+        <div class="row"><label for="in-gap">Gap between sheets (<span class="u">mm</span>)</label>
+          <input id="in-gap" type="number" min="0" step="any" inputmode="decimal"></div>
+      </fieldset>
+
+      <fieldset class="group"><legend>Fabrication</legend>
       <!-- PO-LASER-4: physical fabrication pitch; the 720 px draft is not a control. -->
       <div class="row"><label for="in-res">Fabrication pitch (mm/px) <output id="out-res"></output></label>
         <input id="in-res" type="number" min="0.05" max="2" step="0.01" value="0.1" inputmode="decimal"></div>
@@ -115,15 +157,42 @@
           <option value="smooth">Smooth (paper-cut)</option>
           <option value="faceted">Faceted (crisp)</option>
         </select></div>
+      </fieldset>
+
+      <fieldset class="group"><legend>Machine</legend>
+        <div class="row"><label for="in-machine">Laser profile</label>
+          <select id="in-machine">
+            <option value="xtool-s1-feeder" selected>xTool S1 + feeder</option>
+            <option value="none">None</option>
+          </select></div>
+        <div class="row"><label for="in-m-height">Max processing height (<span class="u">mm</span>)</label>
+          <input id="in-m-height" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div class="row"><label for="in-m-length">Max length (<span class="u">mm</span>)</label>
+          <input id="in-m-length" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div class="row"><label for="in-m-matwidth">Max material width (<span class="u">mm</span>)</label>
+          <input id="in-m-matwidth" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div class="row"><label for="in-m-thick">Max thickness (<span class="u">mm</span>)</label>
+          <input id="in-m-thick" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div class="row"><label for="in-m-kerf">Kerf, information only (<span class="u">mm</span>)</label>
+          <input id="in-m-kerf" type="number" min="0" step="any" inputmode="decimal"></div>
+      </fieldset>
     </section>
 
     <section class="step" id="stage-review" tabindex="-1" aria-labelledby="h-review">
       <h2 id="h-review"><span class="stepnum">4</span> Review</h2>
       <button id="btn-generate" class="btn wide" disabled aria-describedby="why-generate">Generate</button>
       <p id="why-generate" class="why" role="status">Choose a source</p>
-      <div class="row"><label for="in-palette">Acrylic palette</label>
+      <div class="row"><label for="in-appearance">Appearance</label>
+        <select id="in-appearance">
+          <option value="uniform">Uniform stock colour</option>
+          <option value="palette">Palette proof</option>
+        </select></div>
+      <div class="row"><label for="in-color">Stock colour</label>
+        <input id="in-color" type="color"></div>
+      <div class="row"><label for="in-palette">Palette</label>
         <select id="in-palette"></select>
         <div id="chips" class="chips"></div></div>
+      <p id="disc-palette" class="hint" role="note"></p>
     </section>
 
     <section class="step" id="stage-export" tabindex="-1" aria-labelledby="h-export">
@@ -148,8 +217,8 @@
       <!-- G1.7 → G2.12: the raster preview is a draft; exported files are built from polygons. -->
       <span class="draftbadge" role="note">Draft preview: cut files come from polygons</span>
       <div class="stacktools">
-        <label class="tool">Explode
-          <input id="in-explode" type="range" min="0" max="1" step="0.01" value="0"></label>
+        <label class="tool" for="in-explode">Explode
+          <input id="in-explode" type="range" min="0" max="60" step="1" value="0"></label>
         <label class="tool check"><input id="in-bridgesvis" type="checkbox" checked>
           Show bridges</label>
         <span class="tool hint">drag the artwork to tilt</span>
@@ -158,6 +227,21 @@
 
     <div id="pane-sheets" class="pane">
       <div id="sheetgrid" class="sheetgrid"></div>
+    </div>
+
+    <!-- G2.11c: the persistent dimension bar (LYR-01/02, PO-LASER-2/4/5, MAT-01). -->
+    <div class="dimbar" id="dimbar" role="group" aria-label="Dimensions">
+      <span id="dim-layers" class="dim"></span>
+      <span id="dim-z" class="dim"></span>
+      <span id="dim-pitch" class="dim" role="status"></span>
+      <span id="dim-page" class="dim" role="status"></span>
+      <span id="dim-stock" class="dim warn" role="status" hidden></span>
+      <details id="dim-thresholds" class="dim">
+        <summary>Thresholds</summary>
+        <p id="dim-thnote" class="hint"></p>
+        <ol id="dim-thlist"></ol>
+      </details>
+      <span id="disc-stock" class="dim disc" role="note"></span>
     </div>
 
     <footer class="statusbar"><span id="statusline">loading…</span></footer>
@@ -183,6 +267,7 @@
 <script src="js/svgout.js"></script>
 <script src="js/svgread.js"></script>
 <script src="js/zip.js"></script>
+<script src="js/docs.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/preview.js"></script>
 <script src="js/app.js"></script>
