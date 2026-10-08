@@ -4929,7 +4929,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  * SBEngine: the DOM-free engine. T0.5 seam: legacyRun is the v1.1.0
  * runPipeline() body after getImageData, moved verbatim (state -> cfg).
  * connectedLayers/connectedFiles (G1.7) carry the connected export on the
- * canonical path. The full SBEngine.generate lands in G2.10a/b.
+ * canonical path. rasterPlan/qualityPair (G2.1b) are the one draft/fabrication
+ * raster rule (LYR-06, PO-LASER-4/5). The full SBEngine.generate lands in G2.10a/b.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -5044,6 +5045,74 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     }));
     files.push({ name: "proof.svg", data: S.assemblySVG(C.layers, C.page, colors) });
     return files;
+  };
+
+  // ------------------------------------------------------------ raster plan (G2.1b)
+  function efail(code, msg) { const e = new Error(code + (msg ? ": " + msg : "")); e.code = code; return e; }
+  const isPosInt = (v) => Number.isSafeInteger(v) && v > 0;
+  const deepFreeze = (o) => { if (o && typeof o === "object" && !Object.isFrozen(o)) { Object.freeze(o); Object.values(o).forEach(deepFreeze); } return o; };
+
+  /**
+   * Oriented source size (IMG-05): EXIF 5–8 transpose the axes, but only when the engine applies EXIF
+   * (exifAppliedBy "engine"; the browser path is already oriented); then rotate 90/270 swaps them.
+   */
+  function orientedSize(project, w, h) {
+    const o = project.source && project.source.orientation;
+    if (!o) return [w, h];
+    let swap = o.exifAppliedBy === "engine" && o.exif >= 5 && o.exif <= 8;
+    if (o.rotate === 90 || o.rotate === 270) swap = !swap;
+    return swap ? [h, w] : [w, h];
+  }
+
+  /**
+   * rasterPlan(project, {w, h}, "draft"|"fabrication", deviceClass) → {quality, geometry: GeometryConfig, diagnostics}
+   * deep-frozen (LYR-06, GEO-06, NFR-04, PO-LASER-4/5). Reads only source.w and source.h, so it runs before any
+   * decode. Sizes come from SBSchema.resolveSize on the oriented source.
+   *   draft:        SBRaster.rasterSize (geometry.draftPx long side); no pitch, no budget, no pitch diagnostics.
+   *   fabrication:  SBRaster.fabRaster at round(fabPitchMM·1000) µm under limits(deviceClass).fabPxBudget, with
+   *                 FAB_PITCH_CAPPED / FAB_EXCEEDS_SOURCE (quality "fabrication", the project revision).
+   * resample follows the G2.0 policy for interpretation.mode (height "area" only when geometry.resample.height
+   * selects it explicitly). generate (G2.10a) takes its raster only from here; export recomputes the fabrication
+   * plan for the current revision and device class (a draft plan never stands in for it).
+   */
+  E.rasterPlan = function (project, source, quality, deviceClass) {
+    if (quality !== "draft" && quality !== "fabrication") throw efail("ENGINE_ARG", "quality must be draft|fabrication (got " + quality + ")");
+    if (!source || typeof source !== "object") throw efail("ENGINE_ARG", "source must be {w, h}");
+    const w0 = source.w, h0 = source.h;
+    if (!isPosInt(w0) || !isPosInt(h0)) throw efail("ENGINE_ARG", "source size must be positive integers (got " + w0 + " × " + h0 + ")");
+    const R = global.SBRaster, Sch = global.SBSchema;
+    const lim = Sch.limits(deviceClass);
+    const [srcW, srcH] = orientedSize(project, w0, h0);
+    const sz = Sch.resolveSize(project, srcW, srcH);
+    const g = project.geometry, diagnostics = [];
+    let W, H, targetPitchUm = null, pitchUm = null, pxBudget = null, capped = "none", shortPx = null;
+    if (quality === "draft") {
+      const r = R.rasterSize(srcW, srcH, g.draftPx);
+      W = r.W; H = r.H;
+    } else {
+      targetPitchUm = Math.round(g.fabPitchMM * 1000);
+      pxBudget = lim.fabPxBudget;
+      const ctx = { artWUm: sz.artWUm, artHUm: sz.artHUm, srcW, srcH, targetPitchUm, pxBudget, deviceClass, quality, revision: project.revision };
+      const fab = R.fabRaster(ctx);
+      W = fab.W; H = fab.H; pitchUm = fab.pitchUm; capped = fab.capped; shortPx = fab.shortPx;
+      diagnostics.push(...R.fabDiagnostics(fab, ctx));
+    }
+    const sc = R.scaleUm(sz.artWUm, sz.artHUm, W, H);
+    const resample = R.resamplePolicy(project.interpretation.mode, srcW, srcH, W, H, { heightArea: g.resample.height === "area" });
+    return deepFreeze({
+      quality,
+      geometry: {
+        artWMM: sz.artWMM, artHMM: sz.artHMM, pageWMM: sz.pageWMM, pageHMM: sz.pageHMM, srcW, srcH,
+        rasterW: W, rasterH: H, sxUm: sc.sxUm, syUm: sc.syUm, mmPerPxMax: sc.mmPerPxMax, resample, grid: "1um",
+        targetPitchUm, pitchUm, pxBudget, deviceClass, capped, shortPx,
+      },
+      diagnostics,
+    });
+  };
+
+  /** qualityPair(project, {w, h}, deviceClass) → {draft, fabrication}: both plans, for display before generation. */
+  E.qualityPair = function (project, source, deviceClass) {
+    return Object.freeze({ draft: E.rasterPlan(project, source, "draft", deviceClass), fabrication: E.rasterPlan(project, source, "fabrication", deviceClass) });
   };
 
   global.SBEngine = E;

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **G2.1b, draft/fabrication raster plan (engine only; not yet wired into the app):**
+  `SBEngine.rasterPlan(project, {w, h}, quality, deviceClass)` sizes the raster from the
+  dimensions alone, before any decode: draft quality keeps the 720 px long side, fabrication
+  uses the 0.1 mm/px physical pitch under the device pixel budget, never upsamples, and
+  reports `FAB_PITCH_CAPPED` / `FAB_EXCEEDS_SOURCE`. The page size follows the oriented
+  source (rotate 90/270, and EXIF 5–8 when the engine applies it). `SBEngine.qualityPair`
+  returns both plans for display before generation.
+
 - **G2.1, project schema v1 (engine only; not yet wired into the app):** new `js/schema.js`
   (`SBSchema`) with the Plywood relief (bonded, height, white-high, 8 sheets, gap 0,
   6.35 mm nominal, min feature 1.5 mm with a 2.0 mm advisory tier, 25 mm² parts,

@@ -2542,6 +2542,104 @@ suite("schema.js — G2.1 extended (strict keys, presets, sizing, units, geometr
   check("PRJ-02 modeChangeDiff rejects an unknown mode", codeOf(() => S.modeChangeDiff(p, { construction: { mode: "glued" } })) === "SCHEMA_MODE");
 });
 
+suite("engine.js — G2.1b draft/fabrication raster snapshot: rasterPlan, qualityPair (LYR-06, GEO-06, NFR-04, PO-LASER-4/5)", () => {
+  const S = SBSchema, E = SBEngine, p = S.defaults("plywood");
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  const codeOf = (fn) => { try { fn(); return null; } catch (e) { return e.code || "UNCODED:" + e.message; } };
+  const deepFrozen = (o) => o === null || typeof o !== "object" || (Object.isFrozen(o) && Object.values(o).every(deepFrozen));
+  const codes = (pl) => pl.diagnostics.map((d) => d.code).sort().join(",");
+  const withRotate = (proj, rotate, extra) => ({ ...proj, source: { ...S.sourceTemplate(), orientation: { ...S.sourceTemplate().orientation, rotate, ...(extra || {}) } } });
+  const GEOMETRY_KEYS = ["artHMM", "artWMM", "capped", "deviceClass", "grid", "mmPerPxMax", "pageHMM", "pageWMM", "pitchUm", "pxBudget",
+    "rasterH", "rasterW", "resample", "shortPx", "srcH", "srcW", "sxUm", "syUm", "targetPitchUm"];
+
+  const src = { w: 6000, h: 4000 };
+  const d = E.rasterPlan(p, src, "draft", "desktop"), f = E.rasterPlan(p, src, "fabrication", "desktop");
+  check("LYR-06 6000×4000 source, sizeBy height 300 mm, no frame → draft 720×480, fabrication 4500×3000 at 100 µm",
+    d.geometry.rasterW === 720 && d.geometry.rasterH === 480 && f.geometry.rasterW === 4500 && f.geometry.rasterH === 3000 &&
+    f.geometry.pitchUm === 100 && f.geometry.targetPitchUm === 100 && f.geometry.capped === "none" && f.geometry.shortPx === null &&
+    f.geometry.artHMM === 300 && f.geometry.artWMM === 450 && f.geometry.pageHMM === 300 && f.geometry.pageWMM === 450 && f.diagnostics.length === 0);
+  check("LYR-06 draft and fabrication plans differ in quality and raster; both deep-frozen",
+    d.quality === "draft" && f.quality === "fabrication" && d.geometry.rasterW !== f.geometry.rasterW && deepFrozen(d) && deepFrozen(f));
+  check("§3 GeometryConfig carries exactly the §3 fields in both qualities",
+    [d, f].every((pl) => JSON.stringify(Object.keys(pl.geometry).sort()) === JSON.stringify(GEOMETRY_KEYS)) && f.geometry.grid === "1um");
+  check("§3 draft geometry: same physical size, real scales, no pitch or budget",
+    d.geometry.artWMM === 450 && d.geometry.artHMM === 300 && d.geometry.sxUm === 625 && d.geometry.syUm === 625 && d.geometry.mmPerPxMax === 0.625 &&
+    d.geometry.pitchUm === null && d.geometry.targetPitchUm === null && d.geometry.pxBudget === null && d.geometry.deviceClass === "desktop" &&
+    d.geometry.capped === "none" && d.geometry.shortPx === null);
+  check("GEO-06 fabrication mm/px from the real raster", f.geometry.sxUm === 100 && f.geometry.syUm === 100 && f.geometry.mmPerPxMax === 0.1 && f.geometry.pxBudget === 16e6);
+  check("IMG-03 height mode resample: nearest when downsampled, none when the source fits; tonal → area",
+    d.geometry.resample === "nearest" && f.geometry.resample === "nearest" &&
+    E.rasterPlan(p, { w: 800, h: 600 }, "fabrication", "desktop").geometry.resample === "none" &&
+    E.rasterPlan(S.defaults("acrylic"), src, "fabrication", "desktop").geometry.resample === "area");
+  check("IMG-03 height area only as the explicit geometry.resample.height choice",
+    E.rasterPlan({ ...p, geometry: { ...p.geometry, resample: { height: "area", tonal: "area" } } }, src, "fabrication", "desktop").geometry.resample === "area");
+
+  const m = E.rasterPlan(p, src, "fabrication", "mobile"), cap = m.diagnostics.find((x) => x.code === "FAB_PITCH_CAPPED");
+  check("PO-LASER-4 same project on mobile (budget 4e6) → 2446×1631 at 184 µm, FAB_PITCH_CAPPED info with measured 0.184 / limit 0.1 mm/px",
+    m.geometry.rasterW === 2446 && m.geometry.rasterH === 1631 && m.geometry.pitchUm === 184 && m.geometry.capped === "budget" && m.geometry.pxBudget === 4e6 &&
+    m.geometry.deviceClass === "mobile" && codes(m) === "FAB_PITCH_CAPPED" && cap.severity === "info" && cap.quality === "fabrication" &&
+    cap.measured.value === 0.184 && cap.measured.unit === "mm/px" && cap.limit.value === 0.1 && /mobile/.test(cap.message));
+  check("PO-LASER-4 the mobile draft plan is unchanged (720×480) and has no diagnostics",
+    (() => { const md = E.rasterPlan(p, src, "draft", "mobile"); return md.geometry.rasterW === 720 && md.geometry.rasterH === 480 && md.diagnostics.length === 0; })());
+
+  const small = { w: 800, h: 600 }, sf = E.rasterPlan(p, small, "fabrication", "desktop"), sd = E.rasterPlan(p, small, "draft", "desktop");
+  const ex = sf.diagnostics.find((x) => x.code === "FAB_EXCEEDS_SOURCE");
+  check("PO-LASER-5 800×600 source, 300 mm high → raster 800×600, FAB_EXCEEDS_SOURCE shortPx [3200, 2400]; the draft plan carries no pitch diagnostics",
+    sf.geometry.rasterW === 800 && sf.geometry.rasterH === 600 && sf.geometry.capped === "source" && JSON.stringify(sf.geometry.shortPx) === "[3200,2400]" &&
+    codes(sf) === "FAB_EXCEEDS_SOURCE" && ex.severity === "warning" && JSON.stringify(ex.shortPx) === "[3200,2400]" && ex.quality === "fabrication" &&
+    sd.diagnostics.length === 0 && sd.geometry.rasterW === 720 && sd.geometry.rasterH === 540);
+  check("GEO-06 the source-capped plan reports the real 0.5 mm/px", sf.geometry.sxUm === 500 && sf.geometry.syUm === 500 && sf.geometry.mmPerPxMax === 0.5);
+  check("PO-LASER-4/5 budget and source caps combine on mobile",
+    (() => { const b = E.rasterPlan(p, { w: 2000, h: 1600 }, "fabrication", "mobile");   // art 375×300 mm → 168 µm budget pitch → 2233×1786 > source
+      return b.geometry.capped === "budget+source" && codes(b) === "FAB_EXCEEDS_SOURCE,FAB_PITCH_CAPPED" && b.geometry.rasterW <= 2000 && b.geometry.rasterH <= 1600; })());
+  check("LYR-06 diagnostics carry the project revision", E.rasterPlan({ ...p, revision: 9 }, small, "fabrication", "desktop").diagnostics.every((x) => x.revision === 9));
+
+  { const r0 = E.rasterPlan(p, { w: 4000, h: 3000 }, "fabrication", "desktop"), r90 = E.rasterPlan(withRotate(p, 90), { w: 4000, h: 3000 }, "fabrication", "desktop");
+    const r270 = E.rasterPlan(withRotate(p, 270), { w: 4000, h: 3000 }, "draft", "desktop"), r180 = E.rasterPlan(withRotate(p, 180), { w: 4000, h: 3000 }, "fabrication", "desktop");
+    check("IMG-05 rotate 90 swaps the sizing axes",
+      r0.geometry.artWMM === 400 && r0.geometry.artHMM === 300 && r90.geometry.srcW === 3000 && r90.geometry.srcH === 4000 &&
+      r90.geometry.artHMM === 300 && r90.geometry.artWMM === 225 && r90.geometry.rasterW === 2250 && r90.geometry.rasterH === 3000 &&
+      r270.geometry.rasterW === 540 && r270.geometry.rasterH === 720 && r180.geometry.artWMM === 400); }
+  check("IMG-05 engine-applied EXIF 6 swaps the axes like rotate 90; browser-applied EXIF is not applied again",
+    E.rasterPlan(withRotate(p, 0, { exif: 6, exifAppliedBy: "engine" }), { w: 4000, h: 3000 }, "fabrication", "desktop").geometry.srcW === 3000 &&
+    E.rasterPlan(withRotate(p, 0, { exif: 6, exifAppliedBy: "browser" }), { w: 4000, h: 3000 }, "fabrication", "desktop").geometry.srcW === 4000 &&
+    E.rasterPlan(withRotate(p, 90, { exif: 6, exifAppliedBy: "engine" }), { w: 4000, h: 3000 }, "fabrication", "desktop").geometry.srcW === 4000);
+  check("PO-LASER-3 the frame is part of the page, not the raster",
+    (() => { const r = E.rasterPlan({ ...p, construction: { ...p.construction, frame: { enabled: true, widthMM: 10 } } }, { w: 4000, h: 3000 }, "fabrication", "desktop");
+      return r.geometry.pageHMM === 300 && r.geometry.artHMM === 280 && r.geometry.artWMM === 373.333 && r.geometry.pageWMM === 393.333 &&
+        r.geometry.rasterW === 3734 && r.geometry.rasterH === 2800; })());
+
+  check("NFR-04 rasterPlan needs only {w, h}", (() => {
+    let touched = false;
+    const probe = { w: 6000, h: 4000 };
+    for (const k of ["pixels", "samples", "alpha", "data", "channels"]) Object.defineProperty(probe, k, { get() { touched = true; return new Uint8Array(1); }, enumerable: true });
+    const r = E.rasterPlan(p, probe, "fabrication", "desktop");
+    return !touched && r.geometry.rasterW === 4500 && E.rasterPlan(p, { w: 6000, h: 4000 }, "draft", "desktop").geometry.rasterW === 720;
+  })());
+  check("NFR-05 rasterPlan repeatable ×3 and every size field an integer", (() => {
+    const hs = [0, 1, 2].map(() => SBHash.hashJSON(E.rasterPlan(p, { w: 5003, h: 3001 }, "fabrication", "mobile")));
+    const ints = ["srcW", "srcH", "rasterW", "rasterH", "targetPitchUm", "pitchUm", "pxBudget"];
+    return hs[0] === hs[1] && hs[1] === hs[2] &&
+      [["fabrication", "desktop"], ["fabrication", "mobile"], ["draft", "desktop"]].every(([q, dc]) => {
+        const g = E.rasterPlan(p, { w: 5003, h: 3001 }, q, dc).geometry;
+        return ints.every((k) => g[k] === null || Number.isInteger(g[k])) && (g.shortPx === null || g.shortPx.every(Number.isInteger));
+      });
+  })());
+  check("NFR-04/AT-22 bad arguments throw coded errors",
+    codeOf(() => E.rasterPlan(p, { w: 0, h: 10 }, "draft", "desktop")) === "ENGINE_ARG" && codeOf(() => E.rasterPlan(p, { w: 10.5, h: 10 }, "draft", "desktop")) === "ENGINE_ARG" &&
+    codeOf(() => E.rasterPlan(p, null, "draft", "desktop")) === "ENGINE_ARG" && codeOf(() => E.rasterPlan(p, src, "preview", "desktop")) === "ENGINE_ARG" &&
+    codeOf(() => E.rasterPlan(p, src, "fabrication", "tablet")) === "SCHEMA_DEVICE" && codeOf(() => E.rasterPlan(p, src, "draft", "tablet")) === "SCHEMA_DEVICE");
+  check("NFR-04 rasterPlan does not mutate the project", (() => { const q = clone(p), before = JSON.stringify(q); E.rasterPlan(q, src, "fabrication", "mobile"); return JSON.stringify(q) === before; })());
+
+  const pair = E.qualityPair(p, src, "mobile");
+  check("LYR-06 qualityPair returns both plans for display, equal to the single calls, deep-frozen",
+    SBHash.hashJSON(pair.draft) === SBHash.hashJSON(E.rasterPlan(p, src, "draft", "mobile")) &&
+    SBHash.hashJSON(pair.fabrication) === SBHash.hashJSON(E.rasterPlan(p, src, "fabrication", "mobile")) &&
+    JSON.stringify(Object.keys(pair).sort()) === '["draft","fabrication"]' && deepFrozen(pair));
+  check("LYR-06 draft diagnostics never stand in for fabrication: every fabrication diagnostic is quality fabrication",
+    pair.fabrication.diagnostics.length > 0 && pair.fabrication.diagnostics.every((x) => x.quality === "fabrication") && pair.draft.diagnostics.length === 0);
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {
