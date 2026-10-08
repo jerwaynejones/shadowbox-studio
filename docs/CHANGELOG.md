@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **G2.1, project schema v1 (engine only; not yet wired into the app):** new `js/schema.js`
+  (`SBSchema`) with the Plywood relief (bonded, height, white-high, 8 sheets, gap 0,
+  6.35 mm nominal, min feature 1.5 mm with a 2.0 mm advisory tier, 25 mm² parts,
+  uncalibrated, unsmoothed) and Acrylic shadowbox (the v1.1.0 connected tonal defaults)
+  presets; strict per-section validation with `{path, code}` errors; the editable machine
+  profile (default "xTool S1 + feeder", part of the geometry key); size by height (default
+  300 mm page) or width on the 1 µm grid; 0.1 mm/px fabrication pitch; provisional pixel
+  budgets (desktop 16 Mpx, mobile 4 Mpx) until G2.2b; lossless mm/inch conversion;
+  `geometryKey`; and the mode-change diff that G2.11e will show for review.
+
 - **G2.0, raster contract (engine only; not yet wired into the app):** `SBRaster.resample`
   (pure integer `none` / `nearest` / exact `area` box average, never upsamples and throws
   `RESAMPLE_UPSAMPLE`), `SBRaster.rasterSize` (draft 720 px long side) and

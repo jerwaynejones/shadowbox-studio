@@ -2345,6 +2345,203 @@ suite("raster.js — G2.0 deterministic resampling and the raster contract, fabR
     codeOf(() => SBDiag.make("FAB_EXCEEDS_SOURCE", { shortPx: [1] })) !== null);
 });
 
+suite("schema.js — project v1 (PRJ-01/02, MAT-02/03, §9.1)", () => {
+  const p = SBSchema.defaults("plywood");
+  check("PRJ-01 plywood preset fields", p.construction.mode === "bonded-relief" && p.interpretation.polarity === "white-high" &&
+    p.construction.sheets === 8 && p.construction.gapMM === 0 && p.material.thicknessMM === 6.35 && p.material.calibrated === false);
+  check("MAT-03/PO-LASER-6 provisional feature/part", p.material.minFeatureMM === 1.5 && p.material.advisoryFeatureMM === 2 && p.material.minPartMM2 === 25);
+  check("PO-LASER-1 default machine xTool S1 + feeder", p.machine.id === "xtool-s1-feeder" && p.machine.maxProcessingHeightMM === 470 &&
+    p.machine.maxLengthMM === 3000 && p.machine.maxMaterialWidthMM === 545 && p.machine.maxThicknessMM === 14 && p.machine.kerfMM === 0.15);
+  check("PO-LASER-1 machine profile is editable and survives validate", SBSchema.validate({ ...p, machine: { ...p.machine, maxLengthMM: 1000 } }).ok);
+  check("PO-LASER-1 unknown machine key rejected", !SBSchema.validate({ ...p, machine: { ...p.machine, power: 40 } }).ok);
+  check("PO-LASER-3 default sizes by height", p.geometry.sizeBy === "height" && p.geometry.targetMM === 300);
+  const sz = SBSchema.resolveSize({ ...p, construction: { ...p.construction, frame: { enabled: true, widthMM: 10 } } }, 4000, 3000);
+  check("PO-LASER-3 height mode: page 300 high, art 280 × 373.333", sz.pageHMM === 300 && sz.artHMM === 280 && sz.artWMM === 373.333 && sz.pageWMM === 393.333);
+  check("PO-LASER-4 fab pitch 0.1 mm, draft 720", p.geometry.fabPitchMM === 0.1 && p.geometry.draftPx === 720 && !("fabPx" in p.geometry));
+  check("PO-LASER-4 provisional pixel budgets", SBSchema.limits("desktop").fabPxBudget === 16e6 && SBSchema.limits("mobile").fabPxBudget === 4e6);
+  check("PO-LASER-6 advisory below minFeature rejected", !SBSchema.validate({ ...p, material: { ...p.material, advisoryFeatureMM: 1 } }).ok);
+  check("PO-LASER-8 thickness 6.35 nominal, editable", p.material.thicknessMM === 6.35 && p.material.thicknessState === "nominal" &&
+    SBSchema.validate({ ...p, material: { ...p.material, thicknessMM: 5.7, thicknessState: "measured" } }).ok);
+  check("AT-01 12 in → 304.8 mm exactly (quantized)", SBSchema.toMM(12, "in") === 304.8);
+  check("AT-01 304.8 mm → 12 in → 304.8 mm", SBSchema.toMM(SBSchema.fromMM(304.8, "in"), "in") === 304.8);
+  const q = JSON.parse(JSON.stringify(p)); q.appearance.color = "#000000"; q.view.explodeMM = 40; q.app.version = "9.9.9"; q.id = "other";
+  check("PRJ-02/AT-01 appearance/view/app/id change → same geometryKey hash", SBHash.hashJSON(SBSchema.geometryKey(p)) === SBHash.hashJSON(SBSchema.geometryKey(q)));
+  check("MAT-02 width 2001 rejected", !SBSchema.validate({ ...p, geometry: { ...p.geometry, widthMM: 2001 } }).ok);
+  check("LYR-03 unordered manual thresholds rejected", !SBSchema.validate({ ...p, interpretation: { ...p.interpretation, mode: "tonal", thresholdRule: "manual", manual: [0.6, 0.3] } }).ok);
+  check("AT-22 NaN thickness rejected", !SBSchema.validate({ ...p, material: { ...p.material, thicknessMM: NaN } }).ok);
+  check("AT-22 unknown enum rejected", !SBSchema.validate({ ...p, construction: { ...p.construction, mode: "glued" } }).ok);
+  check("§9.1/AT-22 unknown key in construction rejected", !SBSchema.validate({ ...p, construction: { ...p.construction, autoPillars: true } }).ok);
+  check("§9.1 unknown top-level metadata moved to extras", SBSchema.importLoose({ ...p, colorNotes: "x" }).project.extras.colorNotes === "x");
+  check("GEO-10 machine null is allowed (no envelope check)", SBSchema.validate({ ...p, machine: null }).ok);
+  check("GEO-10 machine with processing height above material width rejected", !SBSchema.validate({ ...p, machine: { ...p.machine, maxProcessingHeightMM: 600 } }).ok);
+  check("PRJ-02 mode change lists affected settings",
+    SBSchema.modeChangeDiff(p, { construction: { mode: "connected-sheet" } }).some((d) => d.path === "construction.gapMM"));
+});
+
+suite("schema.js — G2.1 extended (strict keys, presets, sizing, units, geometryKey, mode diff)", () => {
+  const S = SBSchema, p = S.defaults("plywood"), a = S.defaults("acrylic");
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  const errs = (o) => S.validate(o).errors;
+  const has = (o, path, code) => errs(o).some((e) => e.path === path && e.code === code);
+  const codeOf = (fn) => { try { fn(); return null; } catch (e) { return e.code || "UNCODED:" + e.message; } };
+  const withAt = (o, path, v) => { const c = clone(o); const ks = path.split("."); let t = c; for (const k of ks.slice(0, -1)) t = t[k]; t[ks[ks.length - 1]] = v; return c; };
+
+  // ---- presets
+  check("PRJ-01 plywood defaults validate", S.validate(p).ok && S.validate(p).errors.length === 0);
+  check("PRJ-01 acrylic defaults validate", S.validate(a).ok);
+  check("PRJ-01 plywood: height interpretation, no frame, no registration holes, schema v1.0, source required (null)",
+    p.interpretation.mode === "height" && p.construction.frame.enabled === false && p.construction.registration.enabled === false &&
+    p.schema.major === 1 && p.schema.minor === 0 && p.source === null && p.material.kerfMode === "external");
+  check("D1 plywood is unsmoothed (sharp corners), tolerance 0.05 mm", p.construction.cleanup.cornerStyle === "sharp" && p.construction.cleanup.toleranceMM === 0.05);
+  check("PRJ-01 acrylic preset is today's connected tonal defaults (5 sheets, dark front, 12 mm frame, holes, gap 3)",
+    a.construction.mode === "connected-sheet" && a.interpretation.mode === "tonal" && a.interpretation.polarity === "dark-front" &&
+    a.construction.sheets === 5 && a.construction.frame.enabled && a.construction.frame.widthMM === 12 && a.construction.registration.enabled &&
+    a.construction.registration.diaMM === 4 && a.construction.gapMM === 3 && a.interpretation.smoothing.radius === 4 && a.interpretation.smoothing.passes === 2 &&
+    a.geometry.sizeBy === "width" && a.geometry.widthMM === 300 && a.geometry.targetMM === 324);
+  check("PO-LASER-1 both presets carry the default machine profile", JSON.stringify(a.machine) === JSON.stringify(S.MACHINES["xtool-s1-feeder"]));
+  check("PO-LASER-1 MACHINES is deep-frozen and defaults() returns independent copies",
+    Object.isFrozen(S.MACHINES) && Object.isFrozen(S.MACHINES["xtool-s1-feeder"]) &&
+    (() => { const x = S.defaults("plywood"); x.machine.kerfMM = 1; x.construction.repairs.push(1); const y = S.defaults("plywood");
+      return S.MACHINES["xtool-s1-feeder"].kerfMM === 0.15 && y.machine.kerfMM === 0.15 && y.construction.repairs.length === 0; })());
+  check("PO-LASER-1 MACHINES entry has exactly the MachineProfile keys",
+    JSON.stringify(Object.keys(S.MACHINES["xtool-s1-feeder"]).sort()) ===
+    JSON.stringify(["id", "kerfMM", "maxLengthMM", "maxMaterialWidthMM", "maxProcessingHeightMM", "maxThicknessMM", "name"]));
+  check("PRJ-01 unknown preset throws SCHEMA_PRESET", codeOf(() => S.defaults("glass")) === "SCHEMA_PRESET");
+  check("PRJ-01 defaults are deterministic and hashable", SBHash.hashJSON(S.defaults("plywood")) === SBHash.hashJSON(S.defaults("plywood")));
+
+  // ---- strict keys and error shape
+  check("§9.1 errors carry {path, code}: unknown construction key", has({ ...p, construction: { ...p.construction, autoPillars: true } }, "construction.autoPillars", "UNKNOWN_KEY"));
+  check("§9.1 unknown key in each geometry section rejected (source, interpretation, material, geometry)",
+    ["interpretation", "material", "geometry"].every((s) => has(withAt(p, s + ".zz", 1), s + ".zz", "UNKNOWN_KEY")) &&
+    has({ ...p, source: { ...S.sourceTemplate(), zz: 1 } }, "source.zz", "UNKNOWN_KEY"));
+  check("§9.1 unknown nested key rejected (construction.frame, geometry.resample)",
+    has(withAt(p, "construction.frame.colour", 1), "construction.frame.colour", "UNKNOWN_KEY") &&
+    has(withAt(p, "geometry.resample.cubic", "x"), "geometry.resample.cubic", "UNKNOWN_KEY"));
+  check("§9.1 missing key reported", has((() => { const c = clone(p); delete c.material.minPartMM2; return c; })(), "material.minPartMM2", "MISSING_KEY"));
+  check("§9.1 unknown top-level key rejected by validate (importLoose moves it)", has({ ...p, colorNotes: "x" }, "colorNotes", "UNKNOWN_KEY"));
+  { const r = S.importLoose({ ...p, colorNotes: "x", tags: [1] });
+    check("§9.1 importLoose reports moved keys and the result validates", JSON.stringify(r.movedToExtras) === '["colorNotes","tags"]' && S.validate(r.project).ok && !("colorNotes" in r.project)); }
+  check("§9.1 importLoose keeps unknown keys inside geometry sections (still rejected)",
+    has(S.importLoose(withAt(p, "construction.autoPillars", true)).project, "construction.autoPillars", "UNKNOWN_KEY"));
+  check("§9.1 importLoose does not mutate its input", (() => { const o = { ...clone(p), colorNotes: "x" }; S.importLoose(o); return o.colorNotes === "x" && !("colorNotes" in o.extras); })());
+  check("§9.1 a source record validates with every D5/S4 decode value",
+    ["raw-gray8", "raw-rgb-equal", "canvas-tonal", "raw-gray1-scaled8", "raw-gray2-scaled8", "raw-gray4-scaled8", "raw-palette-gray8"]
+      .every((d) => S.validate({ ...p, source: { ...S.sourceTemplate(), decode: d } }).ok) &&
+    has({ ...p, source: { ...S.sourceTemplate(), decode: "canvas-height" } }, "source.decode", "ENUM"));
+  check("§9.1 source orientation and alpha are strict", has({ ...p, source: { ...S.sourceTemplate(), orientation: { ...S.sourceTemplate().orientation, rotate: 45 } } }, "source.orientation.rotate", "ENUM") &&
+    has({ ...p, source: { ...S.sourceTemplate(), alpha: { mode: "threshold", t: 2 } } }, "source.alpha.t", "RANGE"));
+
+  // ---- ranges, enums, finite numbers
+  check("LYR-01 sheets 1..16 integer", S.validate(withAt(p, "construction.sheets", 1)).ok && S.validate(withAt(p, "construction.sheets", 16)).ok &&
+    has(withAt(p, "construction.sheets", 17), "construction.sheets", "RANGE") && has(withAt(p, "construction.sheets", 0), "construction.sheets", "RANGE") &&
+    has(withAt(p, "construction.sheets", 2.5), "construction.sheets", "INTEGER"));
+  check("MAT-02 thickness 0.1..25", S.validate(withAt(p, "material.thicknessMM", 0.1)).ok && S.validate(withAt(p, "material.thicknessMM", 25)).ok &&
+    has(withAt(p, "material.thicknessMM", 0.09), "material.thicknessMM", "RANGE") && has(withAt(p, "material.thicknessMM", 25.001), "material.thicknessMM", "RANGE"));
+  check("D-4.2 gap 0..25", has(withAt(p, "construction.gapMM", -1), "construction.gapMM", "RANGE") && has(withAt(p, "construction.gapMM", 26), "construction.gapMM", "RANGE"));
+  check("MAT-02 width/height 1..2000 or null", S.validate(withAt(p, "geometry.widthMM", 2000)).ok && has(withAt(p, "geometry.heightMM", 0.5), "geometry.heightMM", "RANGE"));
+  check("PO-LASER-3 targetMM 1..2000 and sizeBy enum", has(withAt(p, "geometry.targetMM", 2001), "geometry.targetMM", "RANGE") &&
+    has(withAt(p, "geometry.sizeBy", "diagonal"), "geometry.sizeBy", "ENUM") && S.validate(withAt(p, "geometry.sizeBy", "width")).ok);
+  check("PO-LASER-3 targetMM must leave artwork inside the frame", has(withAt(withAt(p, "construction.frame", { enabled: true, widthMM: 150 }), "geometry.targetMM", 300), "geometry.targetMM", "CONSTRAINT"));
+  check("PO-LASER-4 fabPitchMM 0.01..2 on the 0.001 mm grid", S.validate(withAt(p, "geometry.fabPitchMM", 0.01)).ok && S.validate(withAt(p, "geometry.fabPitchMM", 2)).ok &&
+    has(withAt(p, "geometry.fabPitchMM", 0.005), "geometry.fabPitchMM", "RANGE") && has(withAt(p, "geometry.fabPitchMM", 0.1005), "geometry.fabPitchMM", "GRID"));
+  check("GEO-09 lengths off the 0.001 mm grid rejected (lossless units)", has(withAt(p, "material.thicknessMM", 6.3505), "material.thicknessMM", "GRID"));
+  check("PO-LASER-4 draftPx 64..2000 integer", has(withAt(p, "geometry.draftPx", 63), "geometry.draftPx", "RANGE") && has(withAt(p, "geometry.draftPx", 720.5), "geometry.draftPx", "INTEGER"));
+  check("AT-22 Infinity / string numbers rejected as NONFINITE / TYPE", has(withAt(p, "construction.gapMM", Infinity), "construction.gapMM", "NONFINITE") &&
+    has(withAt(p, "material.thicknessMM", "6.35"), "material.thicknessMM", "TYPE"));
+  check("LYR-03 manual thresholds strictly ascending inside (0, 1)", S.validate(withAt(p, "interpretation.manual", [0.2, 0.5, 0.9])).ok &&
+    has(withAt(p, "interpretation.manual", [0.2, 0.2]), "interpretation.manual", "ORDER") && has(withAt(p, "interpretation.manual", [0, 0.5]), "interpretation.manual.0", "RANGE") &&
+    has(withAt(p, "interpretation.manual", [0.5, 1]), "interpretation.manual.1", "RANGE"));
+  check("ASM-04 registration.layers 'all' or sorted unique indices below sheets", S.validate(withAt(p, "construction.registration.layers", [0, 2, 5])).ok &&
+    has(withAt(p, "construction.registration.layers", [2, 0]), "construction.registration.layers", "ORDER") &&
+    has(withAt(p, "construction.registration.layers", [1, 1]), "construction.registration.layers", "ORDER") &&
+    has(withAt(p, "construction.registration.layers", [0, 8]), "construction.registration.layers.1", "RANGE") &&
+    has(withAt(p, "construction.registration.layers", "some"), "construction.registration.layers", "TYPE"));
+  check("IMG-03 heightFilter null or a strict explicit filter", S.validate(withAt(p, "interpretation.heightFilter", { op: "median", radius: 1 })).ok &&
+    S.validate(withAt(p, "interpretation.heightFilter", { op: "remap", lut: Array.from({ length: 256 }, (_, i) => 255 - i) })).ok &&
+    has(withAt(p, "interpretation.heightFilter", { op: "remap", lut: [1, 2] }), "interpretation.heightFilter.lut", "RANGE") &&
+    has(withAt(p, "interpretation.heightFilter", { op: "gauss", radius: 1 }), "interpretation.heightFilter.op", "ENUM"));
+  check("IMG-03/§3 polarity must suit the interpretation mode", has(withAt(p, "interpretation.polarity", "dark-front"), "interpretation.polarity", "CONSTRAINT") &&
+    has(withAt(a, "interpretation.polarity", "white-high"), "interpretation.polarity", "CONSTRAINT"));
+  check("MAT-05 kerfMode is external only", has(withAt(p, "material.kerfMode", "internal"), "material.kerfMode", "ENUM"));
+  check("PRJ-06 schema major other than 1 rejected", has(withAt(p, "schema.major", 2), "schema.major", "SCHEMA_MAJOR"));
+  check("§9.1 appearance color must be #RRGGBB", has(withAt(p, "appearance.color", "brown"), "appearance.color", "TYPE"));
+  check("SUP-04 a well-formed repair validates; a malformed one is rejected",
+    S.validate(withAt(p, "construction.repairs", [{ op: "clip-to-lower", layer: 3, sourceRevision: 4, resultRevision: 5, keyHash: "ab".repeat(32),
+      reviewed: { quality: "draft", beforeHash: "cd".repeat(32), afterHash: "ef".repeat(32), removedAreaMM2: 1.5, partCountBefore: 2, partCountAfter: 1 } }])).ok &&
+    has(withAt(p, "construction.repairs", [{ op: "bridge", layer: 3 }]), "construction.repairs.0.op", "ENUM"));
+  check("NFR-05 validate never throws on garbage input", [null, 1, "x", [], {}, { construction: null }].every((o) => { try { return S.validate(o).ok === false; } catch (e) { return false; } }));
+
+  // ---- machine profile
+  check("PO-LASER-1 machine limits finite and positive; thickness 0.1..25; kerf 0..2",
+    has(withAt(p, "machine.maxLengthMM", 0), "machine.maxLengthMM", "RANGE") && has(withAt(p, "machine.maxLengthMM", NaN), "machine.maxLengthMM", "NONFINITE") &&
+    has(withAt(p, "machine.maxThicknessMM", 30), "machine.maxThicknessMM", "RANGE") && has(withAt(p, "machine.kerfMM", 2.5), "machine.kerfMM", "RANGE") &&
+    S.validate(withAt(p, "machine.kerfMM", 0)).ok);
+  check("PO-LASER-1 missing machine key rejected", has((() => { const c = clone(p); delete c.machine.kerfMM; return c; })(), "machine.kerfMM", "MISSING_KEY"));
+  check("PO-LASER-1 machine processing height > material width → CONSTRAINT", has(withAt(p, "machine.maxProcessingHeightMM", 600), "machine.maxProcessingHeightMM", "CONSTRAINT"));
+
+  // ---- sizing (PO-LASER-3)
+  { const r = S.resolveSize(p, 4000, 3000);
+    check("PO-LASER-3 height mode, no frame: art = page = 300 high, width 400", r.pageHMM === 300 && r.artHMM === 300 && r.artWMM === 400 && r.pageWMM === 400 && r.artWUm === 400000); }
+  { const r = S.resolveSize(withAt(withAt(p, "geometry.sizeBy", "width"), "construction.frame", { enabled: true, widthMM: 12 }), 3000, 4000);
+    check("PO-LASER-3 width mode: page 300 wide, art 276 × 368", r.pageWMM === 300 && r.artWMM === 276 && r.artHMM === 368 && r.pageHMM === 392); }
+  { const r = S.resolveSize(withAt(p, "geometry.targetMM", 100), 3, 7);
+    check("PO-LASER-3 free axis rounded half up on the 1 µm grid (100·3/7 = 42.857142… → 42.857)", r.artWMM === 42.857 && Number.isInteger(r.artWUm)); }
+  { const r = S.resolveSize(withAt(p, "geometry.targetMM", 100), 2, 8);       // exact: 25000 µm
+    const t = S.resolveSize(withAt(p, "geometry.targetMM", 1), 1, 2000);      // 1000 µm · 1/2000 = 0.5 µm → 1 µm (half up)
+    check("PO-LASER-3 free-axis ties go up (0.5 µm → 1 µm)", r.artWUm === 25000 && t.artWUm === 1); }
+  { const c = withAt(withAt(withAt(p, "geometry.lockAspect", false), "geometry.widthMM", 250), "geometry.heightMM", 120);
+    const r = S.resolveSize(withAt(c, "construction.frame", { enabled: true, widthMM: 5 }), 4000, 3000);
+    check("MAT-02 lockAspect false: both art axes as entered, page adds the frame", r.artWMM === 250 && r.artHMM === 120 && r.pageWMM === 260 && r.pageHMM === 130); }
+  check("PO-LASER-3 frame disabled ignores widthMM", S.resolveSize(withAt(p, "construction.frame", { enabled: false, widthMM: 20 }), 4000, 3000).artHMM === 300);
+  check("PO-LASER-3 resolveSize rejects a bad source size", codeOf(() => S.resolveSize(p, 0, 10)) === "SCHEMA_SIZE" && codeOf(() => S.resolveSize(p, 1.5, 10)) === "SCHEMA_SIZE");
+  check("PO-LASER-3 resolveSize rejects a free axis that rounds to zero", codeOf(() => S.resolveSize(withAt(p, "geometry.targetMM", 1), 1, 1e7)) === "SCHEMA_SIZE");
+
+  // ---- limits (PO-LASER-4)
+  check("PO-LASER-4 limits frozen, carry the device class, unknown class throws",
+    Object.isFrozen(S.limits("desktop")) && S.limits("mobile").deviceClass === "mobile" && codeOf(() => S.limits("tablet")) === "SCHEMA_DEVICE");
+
+  // ---- units (AT-01, GEO-09)
+  check("AT-01 toMM / fromMM in mm quantize to 0.001 mm", S.toMM(12.34567, "mm") === 12.346 && S.fromMM(12.3456, "mm") === 12.346);
+  check("AT-01 inch round trip lossless on the µm grid (sweep)", (() => { for (let um = 1; um <= 2000000; um += 997) { const mm = um / 1000; if (S.toMM(S.fromMM(mm, "in"), "in") !== mm) return false; } return true; })());
+  check("AT-01 1 in = 25.4 mm; 0.5 in = 12.7 mm", S.toMM(1, "in") === 25.4 && S.toMM(0.5, "in") === 12.7 && S.fromMM(25.4, "in") === 1);
+  check("AT-01 unknown unit / non-finite value throw", codeOf(() => S.toMM(1, "cm")) === "SCHEMA_UNIT" && codeOf(() => S.fromMM(NaN, "mm")) === "SCHEMA_UNIT");
+
+  // ---- geometryKey (PRJ-02, D4)
+  const H = (o) => SBHash.hashJSON(S.geometryKey(o));
+  { const q = clone(p); q.title = "t"; q.units = "in"; q.acks = [{ key: "k", revision: 1 }]; q.extras = { a: 1 }; q.revision = 7; q.createdAt = "2026-01-01"; q.modifiedAt = "2026-01-02";
+    check("PRJ-02 title/units/acks/extras/revision/timestamps leave geometryKey unchanged", H(q) === H(p)); }
+  { const s1 = { ...p, source: S.sourceTemplate() }, s2 = { ...p, source: { ...S.sourceTemplate(), byteHash: "ff".repeat(32) } };
+    check("D4 source.byteHash is not in geometryKey; sampleHash is", H(s1) === H(s2) && H(s1) !== H({ ...s1, source: { ...s1.source, sampleHash: "ee".repeat(32) } }) &&
+      !("byteHash" in S.geometryKey(s1).source)); }
+  check("PO-LASER-1 machine edits change the geometryKey (re-validate, invalidate acks)", H(withAt(p, "machine.maxLengthMM", 1000)) !== H(p) && H({ ...p, machine: null }) !== H(p));
+  check("PRJ-02 geometry edits change the key (thickness, pitch, sizeBy)", [["material.thicknessMM", 5.7], ["geometry.fabPitchMM", 0.2], ["geometry.sizeBy", "width"]].every(([k, v]) => H(withAt(p, k, v)) !== H(p)));
+  check("PRJ-02 geometryKey excludes appearance, view, acks, extras, title, units, id, app, timestamps, revision",
+    ["appearance", "view", "acks", "extras", "title", "units", "id", "app", "createdAt", "modifiedAt", "revision"].every((k) => !(k in S.geometryKey(p))) &&
+    ["schema", "engine", "source", "interpretation", "construction", "material", "geometry", "machine"].every((k) => k in S.geometryKey(p)));
+  check("PRJ-02 geometryKey does not alias the project", (() => { const k = S.geometryKey(p); k.material.thicknessMM = 1; return p.material.thicknessMM === 6.35; })());
+
+  // ---- mode change review (PRJ-02, G2.11e)
+  { const d = S.modeChangeDiff(p, { construction: { mode: "connected-sheet" } }), by = (k) => d.find((x) => x.path === k);
+    check("PRJ-02 bonded → connected: gap 0 → 3, bridge controls become applicable, entries have {path, from, to, reason}",
+      by("construction.mode").to === "connected-sheet" && by("construction.gapMM").from === 0 && by("construction.gapMM").to === 3 &&
+      d.some((x) => x.path.startsWith("construction.bridge.")) && d.every((x) => typeof x.reason === "string" && x.reason.length > 0 && "from" in x && "to" in x)); }
+  { const d = S.modeChangeDiff(a, { construction: { mode: "bonded-relief" } }), by = (k) => d.find((x) => x.path === k);
+    check("PRJ-02 connected → bonded: gap → 0, registration holes off (ASM-04), smoothing not applied (D1)",
+      by("construction.gapMM").to === 0 && by("construction.registration.enabled").to === false && by("construction.cleanup.cornerStyle") !== undefined); }
+  { const d = S.modeChangeDiff(p, { interpretation: { mode: "tonal" } }), by = (k) => d.find((x) => x.path === k);
+    check("PRJ-02 height → tonal: polarity mapped white-high → light-front; threshold rule and smoothing become applicable; resample area",
+      by("interpretation.polarity").to === "light-front" && by("interpretation.thresholdRule") !== undefined && by("interpretation.smoothing") !== undefined &&
+      by("geometry.resample") !== undefined); }
+  { const d = S.modeChangeDiff(a, { interpretation: { mode: "height" } }), by = (k) => d.find((x) => x.path === k);
+    check("PRJ-02 tonal → height: dark-front → black-high; heightFilter applicable", by("interpretation.polarity").to === "black-high" && by("interpretation.heightFilter") !== undefined); }
+  check("PRJ-02 a patch that keeps the mode lists nothing", S.modeChangeDiff(p, { construction: { mode: "bonded-relief" } }).length === 0 && S.modeChangeDiff(p, {}).length === 0);
+  check("PRJ-02 applying every 'to' of the diff yields a valid project", (() => {
+    for (const [src, patch] of [[p, { construction: { mode: "connected-sheet" } }], [a, { construction: { mode: "bonded-relief" } }], [p, { interpretation: { mode: "tonal" } }], [a, { interpretation: { mode: "height" } }]]) {
+      const c = clone(src); for (const d of S.modeChangeDiff(src, patch)) { const ks = d.path.split("."); let t = c; for (const k of ks.slice(0, -1)) t = t[k]; t[ks[ks.length - 1]] = clone(d.to); }
+      if (!S.validate(c).ok) return false; } return true; })());
+  check("PRJ-02 modeChangeDiff rejects an unknown mode", codeOf(() => S.modeChangeDiff(p, { construction: { mode: "glued" } })) === "SCHEMA_MODE");
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {
