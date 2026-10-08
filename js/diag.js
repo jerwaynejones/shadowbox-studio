@@ -22,6 +22,9 @@
  *                                reason NO_SNAPSHOT|QUALITY_MISMATCH|
  *                                BLOCKING|UNACKED|null (G2.2, EXP-07, LYR-06)
  *   SBDiag.withAckState(diags, acks, geometryHash) → copies with ackState
+ *   SBDiag.STATES / nextState(state, event) / stateBadge(state)
+ *                                result states draft|stale|processing|validated|failed
+ *                                and their text badges (G2.13b, UI-05)
  *
  * Besides the plan's list the registry carries every import error code:
  * SBPng.CODES (12), SBJpeg.CODES (4) and the preflight JPEG_UNSUPPORTED
@@ -344,5 +347,47 @@
     });
   }
 
-  global.SBDiag = { CODES, make, aggregate, ackKey, exportGate, withAckState };
+  // ---- G2.13b: result states and their badges (UI-05) ----
+
+  const STATES = Object.freeze(["draft", "stale", "processing", "validated", "failed"]);
+  const BADGES = {
+    draft: ["Draft", "Draft-quality result: review only; fabrication export regenerates and validates at fabrication quality."],
+    stale: ["Stale", "Settings changed since this result was produced; it no longer matches the project."],
+    processing: ["Processing…", "Generating and validating the current settings."],
+    validated: ["Validated", "Fabrication-quality result with no blocking diagnostics for the current settings."],
+    failed: ["Failed", "The last run failed or has blocking diagnostics; see the diagnostics for the fix."],
+  };
+  const stateErr = (who, what) => new Error("SBDiag." + who + ": STATE — " + what);
+
+  /**
+   * Result-state machine (UI-05). event.type:
+   *   "edit"  → "stale" from any state (an edit during processing supersedes that run);
+   *   "start" → "processing";
+   *   "done"  {quality, diagnostics} → only from "processing": a draft-quality result is "draft"; a
+   *           fabrication result is "validated" when it has no blocking diagnostic, otherwise "failed";
+   *   "fail"  → only from "processing": "failed".
+   * A "done"/"fail" arriving in any other state (a run superseded by an edit) leaves the state unchanged.
+   */
+  function nextState(state, event) {
+    if (!STATES.includes(state)) throw stateErr("nextState", "unknown state " + JSON.stringify(state));
+    const type = event && event.type;
+    if (type === "edit") return "stale";
+    if (type === "start") return "processing";
+    if (type === "done") {
+      if (state !== "processing") return state;
+      if (!QUALITIES.includes(event.quality)) throw stateErr("nextState", "done needs quality draft|fabrication");
+      if (event.quality === "draft") return "draft";
+      return (event.diagnostics || []).some((d) => severityOf(d) === B) ? "failed" : "validated";
+    }
+    if (type === "fail") return state === "processing" ? "failed" : state;
+    throw stateErr("nextState", "unknown event " + JSON.stringify(type));
+  }
+
+  /** Badge for a state: {state, label, text}; the label is text, never colour alone (NFR-07). */
+  function stateBadge(state) {
+    if (!STATES.includes(state)) throw stateErr("stateBadge", "unknown state " + JSON.stringify(state));
+    return { state, label: BADGES[state][0], text: BADGES[state][1] };
+  }
+
+  global.SBDiag = { CODES, make, aggregate, ackKey, exportGate, withAckState, STATES, nextState, stateBadge };
 })(typeof window !== "undefined" ? window : globalThis);

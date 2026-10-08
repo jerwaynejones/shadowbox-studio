@@ -125,7 +125,8 @@ GeometryConfig (Snapshot.geometry) = { artWMM, artHMM, pageWMM, pageHMM, srcW, s
                targetPitchUm, pitchUm, pxBudget, deviceClass: "desktop"|"mobile",
                capped: "none"|"budget"|"source"|"budget+source", shortPx: [shortW, shortH] | null }
 Snapshot = { revision, engineVersion, geometryHash, quality: "draft"|"fabrication", layers, diagnostics,
-             cleanupReport: [{layer, addedMM2, removedMM2, holesFilled, partsRemoved, bridges?: PolygonWithHoles[]}],
+             cleanupReport: [{layer, addedMM2, removedMM2, holesFilled, partsRemoved, bridges?: PolygonWithHoles[],
+                              added?: PolygonWithHoles[], removed?: PolygonWithHoles[]}],   // added/removed: draft quality only (G2.13b overlays)
              supportGraph, guides, geometry: GeometryConfig, page: { wMM, hMM },
              stats: { requested, exported, omitted: number[], stockMM, reliefMM, maxZMM } }
 

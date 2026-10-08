@@ -15,6 +15,11 @@
  *            by pointer position (drag to tilt), a soft drop shadow per layer and the
  *            explode spread. Nothing here is a measurement.
  *
+ * G2.13b: setOverlays() takes the SBProof.overlays model. With the Changes overlay on (setShowOverlays), the
+ * proof view adds cleanup-added material in green, removed material as a dashed outline, unsupported regions in red
+ * with a "!" icon and bridges in amber (connected mode, #in-bridgesvis), plus a per-layer mm² legend. Off by
+ * default, so the proof stays the material alone. Overlay bridges also replace the mask bridges in the tilt view.
+ *
  * setSnapshot() rasterizes each layer's Path2D (from the µm rings) once per snapshot into
  * an offscreen canvas; frames only composite. The explode slider is display-only: it moves
  * layers in the tilt view and never touches geometry. setSheets() keeps the v1.1.0 raster
@@ -27,6 +32,11 @@
   const RASTER_MAX_PX = 1600;           // long side of each per-layer offscreen canvas
   const BED = "#171D24";                // waste / laser bed
   const AMBER = "#F0A227";
+  // G2.13b change overlays (proof view): added material, removed outline, unsupported region (GEO-08, UI-05)
+  const OV_ADDED = "rgba(46,204,113,0.55)";
+  const OV_REMOVED = "#F4F7FA";
+  const OV_UNSUPPORTED = "#E5484D";
+  const OV_DASH = [5, 4];
   const HATCH = "rgba(255,255,255,0.16)";   // waste hatch strokes on the bed colour
   const HATCH_PX = 7;                       // hatch pitch in card pixels
   const CARD_MAX_PX = 480;                  // long side of a layer card canvas
@@ -62,6 +72,9 @@
       targetX: 0.35, targetY: -0.25,
       explode: 0,        // 0..1
       showBridges: true,
+      overlays: null,      // G2.13b: SBProof.overlays model, plus per-layer page-sized bridge canvases (tilt)
+      overlayBridges: [],
+      showOverlays: false,
       dragging: false,
       running: false,
       dirty: true,
@@ -104,6 +117,7 @@
           ? maskToCanvas(sheet.bridges, w, h, AMBER, false)
           : null,
       }));
+      state.overlays = null; state.overlayBridges = [];
       state.snap = null;   // the raster replaces any polygon snapshot (interim view while the polygons build)
       state.dirty = true;
     }
@@ -130,6 +144,7 @@
       }
       const prevY = state.snap && state.snap.page.hMM === page.hMM ? state.snap.sectionY : page.hMM / 2;
       state.snap = { page, tMM: snap.tMM, gMM: snap.gMM, layers: snap.layers, model, fills, images, bridges, sectionY: prevY, section: null };
+      state.overlays = null; state.overlayBridges = [];   // G2.13b: overlays belong to one snapshot; setOverlays after this
       setSectionY(prevY);
       state.dirty = true;
     }
@@ -155,6 +170,74 @@
         c.drawImage(im.canvas, 0, 0, w, h);
       }
       return true;
+    }
+
+    /**
+     * G2.13b: the change overlays (SBProof.overlays). Bridge polygons are rasterized once here into page-sized
+     * canvases for the tilt view; the proof draws the overlay vectors per frame. null clears them.
+     */
+    function setOverlays(ov) {
+      state.overlays = ov || null;
+      state.overlayBridges = [];
+      const s = state.snap;
+      if (ov && s) {
+        const page = s.page;
+        const k = Math.min(RASTER_MAX_PX / page.wMM, RASTER_MAX_PX / page.hMM) / 1000;
+        const W = Math.max(1, Math.round(page.wMM * 1000 * k)), H = Math.max(1, Math.round(page.hMM * 1000 * k));
+        for (const e of ov) if (e.bridges && e.bridges.length) {
+          const rings = [];
+          for (const p of e.bridges) { rings.push(p.outer); for (const h of p.holes || []) rings.push(h); }
+          state.overlayBridges[e.layerIndex] = pathToCanvas({ rings, fill: AMBER, stroke: null }, W, H, k);
+        }
+      }
+      state.dirty = true;
+    }
+
+    /** Trace PolygonWithHoles[] (µm) onto ctx as one path, mapped by (ox, oy, s px per µm). */
+    function polyPath(polys, ox, oy, sc) {
+      ctx.beginPath();
+      for (const p of polys) for (const r of [p.outer].concat(p.holes || [])) {
+        ctx.moveTo(ox + r[0] * sc, oy + r[1] * sc);
+        for (let i = 2; i + 1 < r.length; i += 2) ctx.lineTo(ox + r[i] * sc, oy + r[i + 1] * sc);
+        ctx.closePath();
+      }
+    }
+
+    /** Proof-view change overlays over the page drawn at (ox, oy) with dw px for page.wMM. */
+    function drawOverlays(ox, oy, dw) {
+      const s = state.snap, ov = state.overlays;
+      if (!s || !ov || !state.showOverlays) return;
+      const sc = dw / (s.page.wMM * 1000);   // px per µm
+      ctx.save();
+      for (const e of ov) {
+        if (e.added) { polyPath(e.added, ox, oy, sc); ctx.fillStyle = OV_ADDED; ctx.fill("evenodd"); }
+        if (e.bridges && state.showBridges) { polyPath(e.bridges, ox, oy, sc); ctx.fillStyle = AMBER; ctx.fill("evenodd"); }
+        if (e.removed) {
+          polyPath(e.removed, ox, oy, sc);
+          ctx.setLineDash(OV_DASH); ctx.strokeStyle = OV_REMOVED; ctx.lineWidth = 1.25; ctx.stroke(); ctx.setLineDash([]);
+        }
+        for (const u of e.unsupported) {
+          if (!u.region) continue;
+          const [x0, y0, x1, y1] = u.region.map((v) => v * 1000 * sc);
+          ctx.strokeStyle = OV_UNSUPPORTED; ctx.lineWidth = 2;
+          ctx.strokeRect(ox + x0, oy + y0, Math.max(2, x1 - x0), Math.max(2, y1 - y0));
+          const cx = ox + (x0 + x1) / 2, cy = oy + (y0 + y1) / 2;
+          ctx.beginPath(); ctx.arc(cx, cy, 8, 0, 2 * Math.PI); ctx.fillStyle = OV_UNSUPPORTED; ctx.fill();
+          ctx.fillStyle = "#FFFFFF"; ctx.font = "bold 12px system-ui, sans-serif"; ctx.fillText("!", cx - 2, cy + 4);
+        }
+      }
+      // Legend: per-layer changed area in mm² (text, so the overlay never relies on colour alone).
+      ctx.font = "11px ui-monospace, monospace";
+      let ly = oy + 14;
+      for (const e of ov) {
+        const t = e.label + (e.unsupported.length ? (e.label ? " / " : "") + e.unsupported.length + " unsupported" : "");
+        if (!t) continue;
+        const line = "Layer " + (e.layerIndex + 1) + ": " + t;
+        ctx.fillStyle = "rgba(10,16,24,0.75)"; ctx.fillRect(ox + 4, ly - 11, ctx.measureText(line).width + 8, 15);
+        ctx.fillStyle = "#F4F7FA"; ctx.fillText(line, ox + 8, ly);
+        ly += 16;
+      }
+      ctx.restore();
     }
 
     function setSectionY(yMM) {
@@ -233,7 +316,8 @@
       if (state.snap) {
         if (state.mode === "section") drawSection(cw, ch);
         else drawLayers(cw, ch, state.snap.page.wMM, state.snap.page.hMM,
-          state.snap.images.map((im) => ({ canvas: im.canvas, bridge: state.snap.bridges[im.layerIndex] || null })),
+          state.snap.images.map((im) => ({ canvas: im.canvas, bridge: state.overlayBridges[im.layerIndex] || state.snap.bridges[im.layerIndex] || null,
+            pageBridge: !!state.overlayBridges[im.layerIndex] })),
           state.snap.page.frameMM || 0);
       } else if (state.layers.length) {
         drawLayers(cw, ch, state.w, state.h, state.layers.map((l) => ({ canvas: l.canvas, bridge: l.bridgeCanvas })), null);
@@ -277,10 +361,11 @@
         ctx.restore();
         // Bridge highlight: illustrative views only, so the proof stays the material alone.
         if (dp.illustrative && state.showBridges && items[s].bridge) {
-          const f = frameMM === null ? 0 : frameMM * scale;
+          const f = frameMM === null || items[s].pageBridge ? 0 : frameMM * scale;   // overlay bridges are page-sized
           ctx.drawImage(items[s].bridge, ox + dx + f, oy + dy + f, dw - 2 * f, dh - 2 * f);
         }
       }
+      if (state.mode === "proof") drawOverlays(ox, oy, dw);
     }
 
     /**
@@ -353,6 +438,9 @@
       stop() { state.running = false; },
       setExplode(v) { state.explode = v; state.dirty = true; },
       setShowBridges(v) { state.showBridges = v; state.dirty = true; },
+      setOverlays,
+      /** G2.13b: the Changes overlay on the proof (off by default). */
+      setShowOverlays(v) { state.showOverlays = !!v; state.dirty = true; },
       redraw() { state.dirty = true; },
       /**
        * Snapshot a composite for the export bundle. mode ("proof" | "section" | "tilt") draws that view for the

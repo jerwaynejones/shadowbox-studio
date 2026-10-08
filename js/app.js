@@ -48,6 +48,8 @@
     view: null,          // G2.12: {page, layers} canonical polygons of the last run for the review views
     viewToken: 0,        // bumps on every run or re-render; a deferred view build runs only while still current
     viewError: null,     // message when connectedLayers failed for this run (the views fall back to the raster)
+    overlays: null,      // G2.13b: SBProof.overlays model of the last run (cleanup changes, bridges) for the proof
+    state: null,         // G2.13b (UI-05): SBDiag.STATES value of the shown result; null before the first run
     report: "",
   };
 
@@ -68,7 +70,26 @@
   const $ = (id) => document.getElementById(id);
 
   // ------------------------------------------------------------- pipeline
-  const recompute = SBUtil.debounce(regenerate, 160);
+  const regenerateSoon = SBUtil.debounce(regenerate, 160);
+  /** A geometry edit: the shown result is stale at once (UI-05), then the pipeline reruns debounced. */
+  function recompute() { setRunState({ type: "edit" }); regenerateSoon(); }
+
+  /**
+   * G2.13b (UI-05): advance the result state with SBDiag.nextState and show its text badge. Before the first run
+   * there is no result, so only "start" moves the state off null (an edit before any result shows nothing).
+   */
+  function setRunState(event) {
+    if (run.state === null && event.type !== "start") return;
+    run.state = SBDiag.nextState(run.state || "draft", event);
+    const el = $("state-badge");
+    if (!el) return;
+    const b = SBDiag.stateBadge(run.state);
+    el.textContent = b.label;
+    el.title = b.text;
+    el.setAttribute("aria-label", "Result: " + b.label + ". " + b.text);
+    el.dataset.state = b.state;
+    el.hidden = false;
+  }
 
   /**
    * Enable Generate when SBSchema.canGenerate allows it and Export only once sheets exist; say why not otherwise
@@ -108,10 +129,16 @@
     cx.drawImage(run.sourceImage, 0, 0, w, h);
     const rgba = cx.getImageData(0, 0, w, h).data;
 
-    // 2-5. DOM-free engine (T0.5 seam).
-    const { sheets, totals } = SBEngine.legacyRun(rgba, w, h, state);
+    // 2-5. DOM-free engine (T0.5 seam). UI-05: processing → draft (the legacy run is draft quality), or failed.
+    setRunState({ type: "start" });
+    let out;
+    try { out = SBEngine.legacyRun(rgba, w, h, state); }
+    catch (err) { setRunState({ type: "fail" }); setStatus(`Generation failed: ${err && err.message || err}`); return; }
+    const { sheets, totals } = out;
+    setRunState({ type: "done", quality: "draft", diagnostics: [] });
     run.sheets = sheets;
     run.view = null;   // G2.12: canonical polygons for Proof/Section/Tilt, rebuilt lazily per run (renderAll)
+    run.overlays = null;   // G2.13b: rebuilt with the view
     run.viewError = null;
     run.viewToken++;   // a view build still pending for the previous run is dropped
     let totalBridged = totals.bridged, totalCulled = totals.culled, totalCutMM = totals.cutMM;
@@ -189,7 +216,11 @@
     if (token !== run.viewToken || run.view || !run.sheets.length) return;   // superseded, or already built
     const t0 = performance.now();
     try {
-      run.view = SBEngine.connectedLayers(run.sheets, run.procW, run.procH, cfg());
+      const c = cfg();
+      run.view = SBEngine.connectedLayers(run.sheets, run.procW, run.procH, c);
+      // G2.13b (GEO-08, UI-05): cleanup changes and bridges as cleanupReport-shaped polygons (the generate shape).
+      run.overlays = SBProof.overlays({ cleanupReport: SBEngine.legacyCleanupReport(run.sheets, run.procW, run.procH, c),
+        diagnostics: [], mode: project.construction.mode });
     } catch (err) {
       run.viewError = String(err && err.message || err);
       setStatus(`${run.report} · proof unavailable: ${run.viewError}`);
@@ -205,7 +236,8 @@
     const bonded = project.construction.mode === "bonded-relief";
     try {
       preview.setSnapshot({ page: run.view.page, layers: run.view.layers, tMM: project.material.thicknessMM, gMM: bonded ? 0 : project.construction.gapMM },
-        colors, { bridges: { masks: run.sheets.map((sh) => sh.bridges || null), w: run.procW, h: run.procH } });
+        colors);
+      preview.setOverlays(run.overlays);   // bridges (tilt and the proof overlay) come from cleanupReport[].bridges
       setStatus(run.report);
       try { renderSheetGrid(colors); }   // G2.13a: the cards now come from the polygon snapshot
       catch (err) { setStatus(`${run.report} · layer cards unavailable: ${err.message || err}`); }
@@ -833,7 +865,9 @@
     preview.setMode(name);
     $("tiltnote").hidden = name !== "tilt";
     $("tool-explode").hidden = name !== "tilt";
-    $("tool-bridges").hidden = name !== "tilt";
+    $("tool-overlays").hidden = name !== "proof";
+    const connected = project.construction.mode === "connected-sheet";
+    $("tool-bridges").hidden = !connected || !(name === "tilt" || (name === "proof" && $("in-overlays").checked));
     $("view-hint").textContent = VIEW_HINTS[name];
     preview.redraw();
   }
@@ -894,6 +928,11 @@
     // preview controls (#in-explode is a G2.11c view control: project.view.explodeMM, renderAll only)
     $("in-bridgesvis").addEventListener("change", (e) =>
       preview.setShowBridges(e.target.checked));
+    // G2.13b: the Changes overlay on the proof (view only: no revision change, no regeneration)
+    $("in-overlays").addEventListener("change", (e) => {
+      preview.setShowOverlays(e.target.checked);
+      switchTab(preview.getMode());
+    });
 
     // tabs
     document.querySelectorAll(".tab").forEach((t) =>

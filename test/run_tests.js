@@ -4635,6 +4635,147 @@ suite("proof.js/preview.js/app.js/style.css — G2.13a retained/waste layer card
     /\.sheetcard[^{]*\.sw-waste\s*\{[^}]*repeating-linear-gradient/.test(css));
 });
 
+suite("diag.js/proof.js/engine.js/preview.js/app.js — G2.13b overlays and state badges (GEO-08, UI-05)", async () => {
+  const D = SBDiag, P = globalThis.SBProof, E = SBEngine, G = SBGeom, M = SBMaterial, F = require("./fixtures.js");
+  const throws = (f, re) => { try { f(); return false; } catch (x) { return !re || re.test(x.message); } };
+  check("G2.13b API present", typeof D.nextState === "function" && typeof D.stateBadge === "function" &&
+    typeof P.overlays === "function" && typeof E.legacyCleanupReport === "function");
+  if (typeof D.nextState !== "function" || typeof P.overlays !== "function" || typeof E.legacyCleanupReport !== "function") return;
+
+  // ---- nextState (UI-05)
+  const N = D.nextState, blk = [D.make("BOND_UNSUPPORTED", { quality: "fabrication", layer: 1 })];
+  check("UI-05 nextState transitions draft→processing→validated|failed and any edit → stale", (() => {
+    const p = N("draft", { type: "start" });
+    return p === "processing" && N(p, { type: "done", quality: "fabrication", diagnostics: [] }) === "validated" &&
+      N(p, { type: "fail" }) === "failed" && N(p, { type: "done", quality: "fabrication", diagnostics: blk }) === "failed" &&
+      D.STATES.every((s) => N(s, { type: "edit" }) === "stale"); })());
+  check("UI-05 a draft-quality result is a draft (never validated); stale → processing on start",
+    N("processing", { type: "done", quality: "draft", diagnostics: [] }) === "draft" && N("stale", { type: "start" }) === "processing" &&
+    N("validated", { type: "start" }) === "processing");
+  check("UI-05 a result arriving when not processing (superseded by an edit) leaves the state unchanged",
+    N("stale", { type: "done", quality: "fabrication", diagnostics: [] }) === "stale" && N("stale", { type: "fail" }) === "stale" &&
+    N("draft", { type: "done", quality: "fabrication", diagnostics: [] }) === "draft");
+  check("UI-05 warnings do not fail a fabrication result; blocking does",
+    N("processing", { type: "done", quality: "fabrication", diagnostics: [D.make("PART_SMALL", { quality: "fabrication", layer: 1 })] }) === "validated");
+  check("UI-05 nextState refuses an unknown state or event (STATE)",
+    throws(() => N("ready", { type: "edit" }), /STATE/) && throws(() => N("draft", { type: "poke" }), /STATE/) && throws(() => N("draft", null), /STATE/));
+  check("UI-05 STATES are draft, stale, processing, validated, failed (frozen)",
+    JSON.stringify(D.STATES) === JSON.stringify(["draft", "stale", "processing", "validated", "failed"]) && Object.isFrozen(D.STATES));
+  check("UI-05/NFR-07 stateBadge: a distinct text label and description per state (not colour alone)", (() => {
+    const b = D.STATES.map((s) => D.stateBadge(s));
+    return b.every((x, i) => x.state === D.STATES[i] && typeof x.label === "string" && x.label.length > 2 && typeof x.text === "string" && x.text.length > 10) &&
+      new Set(b.map((x) => x.label)).size === 5 && throws(() => D.stateBadge("ready"), /STATE/); })());
+
+  // ---- engine: draft cleanupReport carries overlay polygons (GEO-08); fabrication keeps mm² only
+  E.TEST_HOOKS = true;
+  const w = 120, h = 80, hm = F.heightMap(4, w, h, 30);
+  const dec = await SBPng.decode(F.pngEncode({ w, h, colorType: 0, bitDepth: 8, data: hm }), { mode: "height" });
+  const p = SBSchema.defaults("plywood"); p.source = SBSchema.sourceTemplate(); p.source.w = w; p.source.h = h;
+  p.source.sampleHash = dec.sampleHash; p.source.decode = dec.policy;
+  const req = (o) => Object.assign({ requestId: "r1", revision: p.revision, engineVersion: E.VERSION, quality: "draft",
+    normalizedSource: { pixels: dec.samples, channels: dec.channels, w: dec.w, h: dec.h, alpha: dec.alpha }, sourceHash: null, config: p, deviceClass: "desktop" }, o || {});
+  const s = E.generate(req()).snapshot;
+  const near = (a, b) => Math.abs(a - b) <= Math.max(1e-6, 0.002 * Math.max(a, b));
+  check("GEO-08 draft cleanupReport: added/removed polygons (µm, page frame) whose area equals addedMM2/removedMM2",
+    s.cleanupReport.some((c) => c.addedMM2 > 0 || c.removedMM2 > 0) && s.cleanupReport.every((c) =>
+      (c.addedMM2 > 0 ? Array.isArray(c.added) && near(G.area(c.added) / 1e6, c.addedMM2) : c.added === undefined) &&
+      (c.removedMM2 > 0 ? Array.isArray(c.removed) && near(G.area(c.removed) / 1e6, c.removedMM2) : c.removed === undefined)));
+  const fab = E.generate(req({ quality: "fabrication" })).snapshot;
+  check("GEO-08 fabrication cleanupReport keeps mm² only (no overlay tracing in the fabrication budget)",
+    fab.cleanupReport.every((c) => c.added === undefined && c.removed === undefined && Number.isFinite(c.addedMM2)));
+  check("NFR-05/D4 draft overlays are deterministic (rerun: same cleanupReport polygons and geometryHash); draft and fabrication hashes stay quality-scoped",
+    (() => { const r2 = E.generate(req()); return r2.geometryHash === s.geometryHash && JSON.stringify(r2.snapshot.cleanupReport) === JSON.stringify(s.cleanupReport) &&
+      fab.geometryHash !== s.geometryHash; })());
+
+  // ---- legacy pipeline: cleanupReport-shaped overlays from legacyRun (the app's interim source)
+  const GC = require("./golden/oldrun.json").cfg, lw = 40, lh = 30, rgba = new Uint8ClampedArray(lw * lh * 4);
+  for (let i = 0; i < lw * lh; i++) { const v = ((i % lw) * 6 + Math.floor(i / lw) * 3) % 256; rgba.set([v, v, v, 255], i * 4); }
+  const cfg = Object.assign({}, GC, { holes: false });
+  const lr = E.legacyRun(rgba, lw, lh, cfg);
+  check("GEO-08 legacyRun keeps each sheet's cleanup counts (addedPx/removedPx) and pre-cleanup mask",
+    lr.sheets.slice(1).every((sh) => sh.cleanup && Number.isInteger(sh.cleanup.addedPx) && sh.pre instanceof Uint8Array && sh.pre.length === lw * lh) &&
+    lr.sheets.slice(1).every((sh) => { let a = 0, r = 0; for (let i = 0; i < sh.mask.length; i++) { if (sh.mask[i] && !sh.pre[i]) a++; if (!sh.mask[i] && sh.pre[i]) r++; }
+      return a === sh.cleanup.addedPx && r === sh.cleanup.removedPx; }));
+  const view = E.connectedLayers(lr.sheets, lw, lh, cfg), rep = E.legacyCleanupReport(lr.sheets, lw, lh, cfg);
+  const pxMM2 = (M.scale({ w: lw, h: lh, artWMM: view.page.artWMM, artHMM: view.page.artHMM }).sxUm * M.scale({ w: lw, h: lh, artWMM: view.page.artWMM, artHMM: view.page.artHMM }).syUm) / 1e6;
+  check("GEO-08 legacyCleanupReport: one entry per sheet in mm²; polygons match the pixel counts",
+    rep.length === lr.sheets.length && rep.every((c, k) => c.layer === k && (k === 0 ? c.addedMM2 === 0 && c.removedMM2 === 0 :
+      near(c.addedMM2, lr.sheets[k].cleanup.addedPx * pxMM2) && near(c.removedMM2, lr.sheets[k].cleanup.removedPx * pxMM2) &&
+      (c.addedMM2 > 0 ? near(G.area(c.added) / 1e6, c.addedMM2) : !c.added) && (c.removedMM2 > 0 ? near(G.area(c.removed) / 1e6, c.removedMM2) : !c.removed))) &&
+    rep.some((c) => c.addedMM2 > 0 || c.removedMM2 > 0));
+  check("UI-05 legacyCleanupReport bridges are polygons inside the page (µm), one per bridged sheet",
+    rep.every((c, k) => { const b = lr.sheets[k].bridges, any = b && b.some((x) => x);
+      if (!any) return c.bridges === undefined;
+      const WU = Math.round(view.page.wMM * 1000), HU = Math.round(view.page.hMM * 1000);
+      return c.bridges.length > 0 && c.bridges.every((q) => q.outer.every((v, i) => v >= 0 && v <= (i % 2 ? HU : WU))); }));
+
+  // ---- SBProof.overlays model
+  const cr = [{ layer: 0, addedMM2: 0, removedMM2: 0, holesFilled: 0, partsRemoved: 0 },
+    { layer: 1, addedMM2: 2.5, removedMM2: 1.25, holesFilled: 1, partsRemoved: 2, added: [{ outer: [0, 0, 1000, 0, 1000, 1000, 0, 1000], holes: [] }],
+      removed: [{ outer: [2000, 0, 3000, 0, 3000, 1000, 2000, 1000], holes: [] }], bridges: [{ outer: [0, 2000, 1000, 2000, 1000, 3000, 0, 3000], holes: [] }] }];
+  const ub = D.make("BOND_UNSUPPORTED", { layer: 1, areaMM2: 3.5, region: [1, 2, 3, 4] });
+  const oc = P.overlays({ cleanupReport: cr, diagnostics: [ub, D.make("PART_SMALL", { layer: 1 })], mode: "connected-sheet" });
+  check("GEO-08 overlays: one entry per layer with added/removed polygons and mm² labels",
+    oc.length === 2 && oc[1].layerIndex === 1 && oc[1].added === cr[1].added && oc[1].removed === cr[1].removed &&
+    /\+2\.5 mm²/.test(oc[1].label) && /−1\.25 mm²/.test(oc[1].label) && oc[0].label === "" && oc[0].added === null);
+  check("UI-05 overlays: unsupported regions from BOND_UNSUPPORTED (layer, mm², region), other codes ignored",
+    oc[1].unsupported.length === 1 && oc[1].unsupported[0].areaMM2 === 3.5 && JSON.stringify(oc[1].unsupported[0].region) === "[1,2,3,4]" && oc[0].unsupported.length === 0);
+  check("UI-05 overlays: bridges in connected mode only",
+    oc[1].bridges === cr[1].bridges && P.overlays({ cleanupReport: cr, diagnostics: [], mode: "bonded-relief" })[1].bridges === null);
+  check("UI-05 overlays refuse a bad mode (MODE) and do not mutate the report", (() => {
+    const before = JSON.stringify(cr); return throws(() => P.overlays({ cleanupReport: cr, diagnostics: [], mode: "glued" }), /MODE/) && JSON.stringify(cr) === before; })());
+
+  // ---- preview.js overlays (recording 2D context, no DOM)
+  const log = { fills: [], strokes: [], texts: [], dashes: [], draws: 0 };
+  const mkCtx = () => { const st = { imageSmoothingEnabled: true, fillStyle: "#000", strokeStyle: "#000", lineWidth: 1, globalAlpha: 1 }; const stack = []; let dash = [];
+    return Object.assign(st, { setTransform() {}, clearRect() {}, save() { stack.push(Object.assign({}, st, { _d: dash })); }, restore() { const o = stack.pop() || {}; dash = o._d || []; delete o._d; Object.assign(st, o); },
+      fillRect() {}, strokeRect() { log.strokes.push({ style: st.strokeStyle, dash: dash.slice(), rect: true }); }, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, rect() {}, arc() {},
+      setLineDash(d) { dash = d.slice(); }, getLineDash() { return dash.slice(); },
+      stroke() { log.strokes.push({ style: st.strokeStyle, dash: dash.slice() }); }, fillText(t) { log.texts.push(t); }, fill() { log.fills.push(st.fillStyle); },
+      createImageData: (w2, h2) => ({ data: new Uint8ClampedArray(w2 * h2 * 4) }), putImageData() {}, measureText: (t) => ({ width: t.length * 6 }),
+      drawImage() { log.draws++; } }); };
+  const mkCanvas = () => ({ width: 0, height: 0, clientWidth: 400, clientHeight: 300, _ctx: null,
+    getContext() { return this._ctx || (this._ctx = mkCtx()); }, addEventListener() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 300 }), toBlob(cb) { cb(null); } });
+  const ctx = vm.createContext({ console, Math, Uint8Array, Uint8ClampedArray, Promise, SBUtil, SBProof: P, devicePixelRatio: 1,
+    document: { createElement: () => mkCanvas() }, addEventListener() {}, requestAnimationFrame() {},
+    Path2D: function () { this.moveTo = () => {}; this.lineTo = () => {}; this.closePath = () => {}; } });
+  ctx.globalThis = ctx; ctx.window = ctx;
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "js", "preview.js"), "utf8"), ctx, { filename: "preview.js" });
+  const pv = ctx.SBPreview.create(mkCanvas());
+  check("UI-05 preview exposes setOverlays and setShowOverlays", typeof pv.setOverlays === "function" && typeof pv.setShowOverlays === "function");
+  if (typeof pv.setOverlays !== "function") return;
+  const pg = M.page({ artWMM: 80, artHMM: 50, frameMM: 10 });
+  const LC = M.fromMasks(F.MASKS.borderTouch.layers, 8, 5, pg, { frame: true });
+  pv.setSnapshot({ page: pg, layers: LC, tMM: 3, gMM: 2 }, "#808080");
+  pv.setOverlays(oc);
+  const frame = (mode) => { log.fills = []; log.strokes = []; log.texts = []; pv.setMode(mode); pv.snapshot(); return { fills: log.fills.slice(), strokes: log.strokes.slice(), texts: log.texts.slice() }; };
+  const off = frame("proof");
+  check("UI-02 overlays are off by default: the proof stays the material alone", !off.texts.some((t) => /mm²|!/.test(t)) && off.strokes.every((x) => x.dash.length === 0));
+  pv.setShowOverlays(true);
+  const on = frame("proof");
+  const GREEN = "rgba(46,204,113,0.55)", RED = "#E5484D", AMBERC = "#F0A227";
+  check("GEO-08 proof overlay: added in green, removed as a dashed outline, mm² labels",
+    on.fills.includes(GREEN) && on.strokes.some((x) => x.dash.length > 0) && on.texts.some((t) => /\+2\.5 mm²/.test(t)));
+  check("UI-05 proof overlay: unsupported in red with a \"!\" icon; bridges in amber (connected)",
+    on.strokes.some((x) => x.style === RED) && on.texts.includes("!") && on.fills.includes(AMBERC));
+  pv.setOverlays(P.overlays({ cleanupReport: cr, diagnostics: [], mode: "bonded-relief" }));
+  check("UI-05 bonded overlay draws no bridges", !frame("proof").fills.includes(AMBERC));
+  pv.setShowBridges(false); pv.setOverlays(oc);
+  check("UI-05 #in-bridgesvis off hides the amber bridges, keeps the rest", (() => { const f = frame("proof"); return !f.fills.includes(AMBERC) && f.fills.includes(GREEN); })());
+  check("UI-03 section view draws no overlay", !frame("section").texts.some((t) => /mm²$|^!$/.test(t)));
+
+  // ---- wiring
+  const root = path.join(__dirname, ".."), appSrc = fs.readFileSync(path.join(root, "js", "app.js"), "utf8"), html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  check("UI-05 index.html: a state badge (role=status) and a Changes overlay toggle; #in-bridgesvis kept",
+    /id="state-badge"[^>]*role="status"|role="status"[^>]*id="state-badge"/.test(html) && /id="in-overlays"/.test(html) && /id="in-bridgesvis"/.test(html));
+  check("UI-05 app.js: state via SBDiag.nextState (edit → stale, start → processing, done/fail), badge from SBDiag.stateBadge",
+    /SBDiag\.nextState\(/.test(appSrc) && /SBDiag\.stateBadge\(/.test(appSrc) && /type: "edit"/.test(appSrc) && /type: "start"/.test(appSrc) &&
+    /type: "done"/.test(appSrc) && /type: "fail"/.test(appSrc));
+  check("UI-05 app.js: overlays from SBEngine.legacyCleanupReport through SBProof.overlays; bridges no longer from masks",
+    /SBEngine\.legacyCleanupReport\(/.test(appSrc) && /SBProof\.overlays\(/.test(appSrc) && /preview\.setOverlays\(/.test(appSrc) &&
+    /in-overlays/.test(appSrc) && !/bridges: \{ masks:/.test(appSrc));
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

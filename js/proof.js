@@ -8,6 +8,7 @@
  *   drawParams(mode)                     → {smoothing, shadows, parallax, illustrative}
  *   modelHash(model)                     → sha256 hex of the model
  *   cards(layers, page)                  → [{layerIndex, role, empty, retainedMM2, wasteMM2, retainedPct}]  (G2.13a)
+ *   overlays({cleanupReport, diagnostics, mode}) → [{layerIndex, label, added, removed, bridges, unsupported}]  (G2.13b)
  *
  * Everything is read from layer.material (the canonical polygons that also feed layerSVG and assemblySVG),
  * so the on-screen proof, the section and the cut files share one source. Fill and edge-stroke rules come from
@@ -110,6 +111,33 @@
         retainedMM2,
         wasteMM2: pageMM2 - retainedMM2,
         retainedPct: (100 * retainedMM2) / pageMM2,
+      };
+    });
+  };
+
+  const fmtMM2 = (v) => String(Math.round(v * 100) / 100);
+  const OVERLAY_MODES = ["connected-sheet", "bonded-relief"];
+
+  /**
+   * G2.13b (GEO-08, UI-05): the change-overlay model, one entry per cleanupReport layer:
+   *   {layerIndex, addedMM2, removedMM2, label, added, removed, bridges, unsupported: [{areaMM2, region}]}
+   * added/removed are the report's change polygons (µm; null when absent — a fabrication report carries mm²
+   * only), label "+a mm² / −r mm²" ("" when nothing changed), bridges only in connected-sheet mode, unsupported
+   * from BOND_UNSUPPORTED diagnostics (region = bbox in mm). The report is not copied or mutated.
+   */
+  P.overlays = function (input) {
+    const mode = input && input.mode;
+    if (!OVERLAY_MODES.includes(mode)) throw new Error("SBProof.overlays: MODE — construction mode must be connected-sheet|bonded-relief (got " + JSON.stringify(mode) + ")");
+    const diags = input.diagnostics || [];
+    return (input.cleanupReport || []).map((c) => {
+      const parts = [];
+      if (c.addedMM2 > 0) parts.push("+" + fmtMM2(c.addedMM2) + " mm²");
+      if (c.removedMM2 > 0) parts.push("−" + fmtMM2(c.removedMM2) + " mm²");
+      return {
+        layerIndex: c.layer, addedMM2: c.addedMM2, removedMM2: c.removedMM2, label: parts.join(" / "),
+        added: c.added || null, removed: c.removed || null,
+        bridges: mode === "connected-sheet" && c.bridges ? c.bridges : null,
+        unsupported: diags.filter((d) => d.code === "BOND_UNSUPPORTED" && d.layer === c.layer).map((d) => ({ areaMM2: d.areaMM2, region: d.region })),
       };
     });
   };

@@ -17,7 +17,9 @@
   const E = {};
 
   /**
-   * legacyRun(rgba, w, h, cfg) -> { sheets: [{mask, bridges, loops, stats}], totals: {bridged, culled, cutMM} }
+   * legacyRun(rgba, w, h, cfg) -> { sheets: [{mask, bridges, loops, stats, pre?, cleanup?}], totals: {bridged, culled, cutMM} }
+   * Sheets 1.. also carry pre (the mask before cleanup) and cleanup {addedPx, removedPx, filledHoles, removedParts}
+   * (G2.13b, GEO-08 overlays); sheet 0 is the solid backing and has neither.
    * cfg keys read: smoothRadius, smoothPasses, nSheets, thresholdMode, darkFront, widthMM,
    * minFeatureMM, bridgeMM, cullBelowMM2, maxBridgeMM, marginMM, cornerStyle, detailEps.
    */
@@ -63,6 +65,8 @@
         bridges: C.bridges[s],
         loops,
         stats: { cutMM, bridged: isl.bridged, culled: isl.culled, loops: loops.length },
+        pre: mask,   // G2.13b: the mask before cleanup, for the change overlays (GEO-08)
+        cleanup: { addedPx: isl.addedPx, removedPx: isl.removedPx, filledHoles: isl.filledHoles, removedParts: isl.removedParts },
       };
     });
     return { sheets, totals };
@@ -99,6 +103,45 @@
     const opts = { frame: fU > 0, holes, holeLayers: "all" };
     if (cfg.cornerStyle === "smooth") opts.smooth = { mode: "connected", tolUm: CONNECTED_SMOOTH_TOL_UM };
     return { page, layers: M.fromMasks(masks, w, h, page, opts) };
+  };
+
+  /**
+   * G2.13b (GEO-08): polygons (µm, page frame: art offset by the frame) of the pixels where pred(i) holds,
+   * or null when none does. One trace per call; used for the change overlays and bridges.
+   */
+  E.maskPolygons = function (w, h, sxUm, syUm, fUm, pred) {
+    const m = new Uint8Array(w * h);
+    let any = 0;
+    for (let i = 0; i < m.length; i++) if (pred(i)) { m[i] = 1; any = 1; }
+    if (!any) return null;
+    const G = global.SBGeom;
+    return G.normalize(G.union(G.fromPixelLoops(global.SBTrace.trace(m, w, h), sxUm, syUm, fUm, fUm), []));
+  };
+
+  /**
+   * legacyCleanupReport(sheets, w, h, cfg) → cleanupReport-shaped [{layer, addedMM2, removedMM2, holesFilled,
+   * partsRemoved, added?, removed?, bridges?}] for a legacyRun result, in the connectedLayers page frame (G2.13b).
+   * added = final ∧ ¬pre, removed = pre ∧ ¬final, bridges = the islands' bridge pixels; polygons in µm, present
+   * only when non-empty. Sheet 0 (the solid backing) reports no change. The app's interim overlay source until
+   * it adopts SBEngine.generate (whose draft cleanupReport has the same shape).
+   */
+  E.legacyCleanupReport = function (sheets, w, h, cfg) {
+    const M = global.SBMaterial;
+    const page = M.page({ artWMM: cfg.widthMM, artHMM: (h * cfg.widthMM) / w, frameMM: cfg.marginMM > 0 ? cfg.marginMM : 0 });
+    const { sxUm, syUm } = M.scale({ w, h, artWMM: page.artWMM, artHMM: page.artHMM });
+    const fUm = Math.round(page.frameMM * 1000), pxMM2 = (sxUm * syUm) / 1e6;
+    return sheets.map((sh, k) => {
+      const c = k > 0 && sh.cleanup ? sh.cleanup : { addedPx: 0, removedPx: 0, filledHoles: 0, removedParts: 0 };
+      const e = { layer: k, addedMM2: c.addedPx * pxMM2, removedMM2: c.removedPx * pxMM2, holesFilled: c.filledHoles, partsRemoved: c.removedParts };
+      if (k > 0 && sh.pre) {
+        const pre = sh.pre, fin = sh.mask;
+        if (c.addedPx) e.added = E.maskPolygons(w, h, sxUm, syUm, fUm, (i) => fin[i] && !pre[i]);
+        if (c.removedPx) e.removed = E.maskPolygons(w, h, sxUm, syUm, fUm, (i) => pre[i] && !fin[i]);
+      }
+      const b = sh.bridges;
+      if (b) { const poly = E.maskPolygons(w, h, sxUm, syUm, fUm, (i) => b[i]); if (poly) e.bridges = poly; }
+      return e;
+    });
   };
 
   /**
@@ -340,7 +383,8 @@
    *   4  interpret: height = interpretHeight (heightFilter only when set); tonal = luminance → Kuwahara → thresholds
    *      (domain-aware) → bands → tonalAdded (EMPTY_BAND info per empty band)
    *   5  cumulativeMasks
-   *   6  construct (SBConstruct.bonded | connected; cleanupReport in mm², connected bridges as µm polygons)
+   *   6  construct (SBConstruct.bonded | connected; cleanupReport in mm², connected bridges as µm polygons; at draft
+   *      quality also the added/removed change polygons for the overlays, G2.13b)
    *  11a complexity: SBConstruct.complexityGate on the final masks (simplify "busy" if set, then the parts cap) BEFORE trace
    *   7  trace → bounded smoothing on pixel loops (connected + cornerStyle smooth only; bonded raw, D1) → fromPixelLoops →
    *      normalize   (SBMaterial.fromMasks)
@@ -463,7 +507,13 @@
       step("construct", 0.25 + (0.05 * k) / N);
       const e = { layer: k, addedMM2: r.addedPx * pxMM2, removedMM2: r.removedPx * pxMM2, holesFilled: r.filledHoles, partsRemoved: r.removedParts };
       const b = built.bridges[k];
-      if (b && b.some((x) => x)) e.bridges = G.normalize(G.union(G.fromPixelLoops(global.SBTrace.trace(b, W, H), geo.sxUm, geo.syUm, fUm, fUm), []));
+      if (b) { const poly = E.maskPolygons(W, H, geo.sxUm, geo.syUm, fUm, (i) => b[i]); if (poly) e.bridges = poly; }
+      // G2.13b (GEO-08, UI-05): change overlays at draft quality only, so the fabrication budget is unchanged.
+      if (quality === "draft") {
+        const pre = masks[k], fin = built.final[k];
+        if (r.addedPx) e.added = E.maskPolygons(W, H, geo.sxUm, geo.syUm, fUm, (i) => fin[i] && !pre[i]);
+        if (r.removedPx) e.removed = E.maskPolygons(W, H, geo.sxUm, geo.syUm, fUm, (i) => pre[i] && !fin[i]);
+      }
       return e;
     });
 

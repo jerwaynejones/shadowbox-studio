@@ -365,7 +365,24 @@ select {
 }
 .tool input[type="range"] { width: 140px; }
 .tool.hint { margin-left: auto; color: rgba(255,255,255,0.4); text-transform: none; }
-.tool[hidden], .draftbadge[hidden] { display: none; }
+.tool[hidden], .draftbadge[hidden], .statebadge[hidden] { display: none; }
+/* G2.13b (UI-05): result state badge; the label text carries the state, the border only reinforces it. */
+.statebadge {
+  position: absolute; top: 10px; right: 12px;
+  padding: 3px 8px;
+  font: 11px var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #F4F7FA;
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.35);
+  border-radius: 3px;
+  pointer-events: none;
+}
+.statebadge[data-state="stale"] { border-style: dashed; border-color: var(--amber); }
+.statebadge[data-state="processing"] { border-color: #8FC3E4; }
+.statebadge[data-state="validated"] { border-color: #2ECC71; }
+.statebadge[data-state="failed"] { border-color: #E5484D; border-width: 2px; }
 
 .sheetgrid {
   flex: 1;
@@ -644,10 +661,14 @@ select {
     <div id="pane-stack" class="pane active">
       <canvas id="stackcanvas"></canvas>
       <!-- G2.12: Proof and Section are drawn from the canonical polygons (SBProof); Tilt is illustrative only. -->
+      <!-- G2.13b (UI-05): result state badge, text label (draft / stale / processing / validated / failed). -->
+      <span id="state-badge" class="statebadge" role="status" aria-live="polite" hidden></span>
       <span id="tiltnote" class="draftbadge" role="note" hidden>Illustrative: not to scale. Check fit with Proof and Section</span>
       <div class="stacktools">
         <label class="tool" for="in-explode" id="tool-explode" hidden>Explode
           <input id="in-explode" type="range" min="0" max="60" step="1" value="0"></label>
+        <label class="tool check" id="tool-overlays"><input id="in-overlays" type="checkbox">
+          Show changes</label>
         <label class="tool check" id="tool-bridges" hidden><input id="in-bridgesvis" type="checkbox" checked>
           Show bridges</label>
         <span class="tool hint" id="view-hint">opaque proof: every layer's material, back to front, as in proof.svg</span>
@@ -2044,6 +2065,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *                                reason NO_SNAPSHOT|QUALITY_MISMATCH|
  *                                BLOCKING|UNACKED|null (G2.2, EXP-07, LYR-06)
  *   SBDiag.withAckState(diags, acks, geometryHash) → copies with ackState
+ *   SBDiag.STATES / nextState(state, event) / stateBadge(state)
+ *                                result states draft|stale|processing|validated|failed
+ *                                and their text badges (G2.13b, UI-05)
  *
  * Besides the plan's list the registry carries every import error code:
  * SBPng.CODES (12), SBJpeg.CODES (4) and the preflight JPEG_UNSUPPORTED
@@ -2366,7 +2390,49 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     });
   }
 
-  global.SBDiag = { CODES, make, aggregate, ackKey, exportGate, withAckState };
+  // ---- G2.13b: result states and their badges (UI-05) ----
+
+  const STATES = Object.freeze(["draft", "stale", "processing", "validated", "failed"]);
+  const BADGES = {
+    draft: ["Draft", "Draft-quality result: review only; fabrication export regenerates and validates at fabrication quality."],
+    stale: ["Stale", "Settings changed since this result was produced; it no longer matches the project."],
+    processing: ["Processing…", "Generating and validating the current settings."],
+    validated: ["Validated", "Fabrication-quality result with no blocking diagnostics for the current settings."],
+    failed: ["Failed", "The last run failed or has blocking diagnostics; see the diagnostics for the fix."],
+  };
+  const stateErr = (who, what) => new Error("SBDiag." + who + ": STATE — " + what);
+
+  /**
+   * Result-state machine (UI-05). event.type:
+   *   "edit"  → "stale" from any state (an edit during processing supersedes that run);
+   *   "start" → "processing";
+   *   "done"  {quality, diagnostics} → only from "processing": a draft-quality result is "draft"; a
+   *           fabrication result is "validated" when it has no blocking diagnostic, otherwise "failed";
+   *   "fail"  → only from "processing": "failed".
+   * A "done"/"fail" arriving in any other state (a run superseded by an edit) leaves the state unchanged.
+   */
+  function nextState(state, event) {
+    if (!STATES.includes(state)) throw stateErr("nextState", "unknown state " + JSON.stringify(state));
+    const type = event && event.type;
+    if (type === "edit") return "stale";
+    if (type === "start") return "processing";
+    if (type === "done") {
+      if (state !== "processing") return state;
+      if (!QUALITIES.includes(event.quality)) throw stateErr("nextState", "done needs quality draft|fabrication");
+      if (event.quality === "draft") return "draft";
+      return (event.diagnostics || []).some((d) => severityOf(d) === B) ? "failed" : "validated";
+    }
+    if (type === "fail") return state === "processing" ? "failed" : state;
+    throw stateErr("nextState", "unknown event " + JSON.stringify(type));
+  }
+
+  /** Badge for a state: {state, label, text}; the label is text, never colour alone (NFR-07). */
+  function stateBadge(state) {
+    if (!STATES.includes(state)) throw stateErr("stateBadge", "unknown state " + JSON.stringify(state));
+    return { state, label: BADGES[state][0], text: BADGES[state][1] };
+  }
+
+  global.SBDiag = { CODES, make, aggregate, ackKey, exportGate, withAckState, STATES, nextState, stateBadge };
 })(typeof window !== "undefined" ? window : globalThis);
 
 </script>
@@ -6757,6 +6823,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *   drawParams(mode)                     → {smoothing, shadows, parallax, illustrative}
  *   modelHash(model)                     → sha256 hex of the model
  *   cards(layers, page)                  → [{layerIndex, role, empty, retainedMM2, wasteMM2, retainedPct}]  (G2.13a)
+ *   overlays({cleanupReport, diagnostics, mode}) → [{layerIndex, label, added, removed, bridges, unsupported}]  (G2.13b)
  *
  * Everything is read from layer.material (the canonical polygons that also feed layerSVG and assemblySVG),
  * so the on-screen proof, the section and the cut files share one source. Fill and edge-stroke rules come from
@@ -6859,6 +6926,33 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
         retainedMM2,
         wasteMM2: pageMM2 - retainedMM2,
         retainedPct: (100 * retainedMM2) / pageMM2,
+      };
+    });
+  };
+
+  const fmtMM2 = (v) => String(Math.round(v * 100) / 100);
+  const OVERLAY_MODES = ["connected-sheet", "bonded-relief"];
+
+  /**
+   * G2.13b (GEO-08, UI-05): the change-overlay model, one entry per cleanupReport layer:
+   *   {layerIndex, addedMM2, removedMM2, label, added, removed, bridges, unsupported: [{areaMM2, region}]}
+   * added/removed are the report's change polygons (µm; null when absent — a fabrication report carries mm²
+   * only), label "+a mm² / −r mm²" ("" when nothing changed), bridges only in connected-sheet mode, unsupported
+   * from BOND_UNSUPPORTED diagnostics (region = bbox in mm). The report is not copied or mutated.
+   */
+  P.overlays = function (input) {
+    const mode = input && input.mode;
+    if (!OVERLAY_MODES.includes(mode)) throw new Error("SBProof.overlays: MODE — construction mode must be connected-sheet|bonded-relief (got " + JSON.stringify(mode) + ")");
+    const diags = input.diagnostics || [];
+    return (input.cleanupReport || []).map((c) => {
+      const parts = [];
+      if (c.addedMM2 > 0) parts.push("+" + fmtMM2(c.addedMM2) + " mm²");
+      if (c.removedMM2 > 0) parts.push("−" + fmtMM2(c.removedMM2) + " mm²");
+      return {
+        layerIndex: c.layer, addedMM2: c.addedMM2, removedMM2: c.removedMM2, label: parts.join(" / "),
+        added: c.added || null, removed: c.removed || null,
+        bridges: mode === "connected-sheet" && c.bridges ? c.bridges : null,
+        unsupported: diags.filter((d) => d.code === "BOND_UNSUPPORTED" && d.layer === c.layer).map((d) => ({ areaMM2: d.areaMM2, region: d.region })),
       };
     });
   };
@@ -7143,7 +7237,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   const E = {};
 
   /**
-   * legacyRun(rgba, w, h, cfg) -> { sheets: [{mask, bridges, loops, stats}], totals: {bridged, culled, cutMM} }
+   * legacyRun(rgba, w, h, cfg) -> { sheets: [{mask, bridges, loops, stats, pre?, cleanup?}], totals: {bridged, culled, cutMM} }
+   * Sheets 1.. also carry pre (the mask before cleanup) and cleanup {addedPx, removedPx, filledHoles, removedParts}
+   * (G2.13b, GEO-08 overlays); sheet 0 is the solid backing and has neither.
    * cfg keys read: smoothRadius, smoothPasses, nSheets, thresholdMode, darkFront, widthMM,
    * minFeatureMM, bridgeMM, cullBelowMM2, maxBridgeMM, marginMM, cornerStyle, detailEps.
    */
@@ -7189,6 +7285,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
         bridges: C.bridges[s],
         loops,
         stats: { cutMM, bridged: isl.bridged, culled: isl.culled, loops: loops.length },
+        pre: mask,   // G2.13b: the mask before cleanup, for the change overlays (GEO-08)
+        cleanup: { addedPx: isl.addedPx, removedPx: isl.removedPx, filledHoles: isl.filledHoles, removedParts: isl.removedParts },
       };
     });
     return { sheets, totals };
@@ -7225,6 +7323,45 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const opts = { frame: fU > 0, holes, holeLayers: "all" };
     if (cfg.cornerStyle === "smooth") opts.smooth = { mode: "connected", tolUm: CONNECTED_SMOOTH_TOL_UM };
     return { page, layers: M.fromMasks(masks, w, h, page, opts) };
+  };
+
+  /**
+   * G2.13b (GEO-08): polygons (µm, page frame: art offset by the frame) of the pixels where pred(i) holds,
+   * or null when none does. One trace per call; used for the change overlays and bridges.
+   */
+  E.maskPolygons = function (w, h, sxUm, syUm, fUm, pred) {
+    const m = new Uint8Array(w * h);
+    let any = 0;
+    for (let i = 0; i < m.length; i++) if (pred(i)) { m[i] = 1; any = 1; }
+    if (!any) return null;
+    const G = global.SBGeom;
+    return G.normalize(G.union(G.fromPixelLoops(global.SBTrace.trace(m, w, h), sxUm, syUm, fUm, fUm), []));
+  };
+
+  /**
+   * legacyCleanupReport(sheets, w, h, cfg) → cleanupReport-shaped [{layer, addedMM2, removedMM2, holesFilled,
+   * partsRemoved, added?, removed?, bridges?}] for a legacyRun result, in the connectedLayers page frame (G2.13b).
+   * added = final ∧ ¬pre, removed = pre ∧ ¬final, bridges = the islands' bridge pixels; polygons in µm, present
+   * only when non-empty. Sheet 0 (the solid backing) reports no change. The app's interim overlay source until
+   * it adopts SBEngine.generate (whose draft cleanupReport has the same shape).
+   */
+  E.legacyCleanupReport = function (sheets, w, h, cfg) {
+    const M = global.SBMaterial;
+    const page = M.page({ artWMM: cfg.widthMM, artHMM: (h * cfg.widthMM) / w, frameMM: cfg.marginMM > 0 ? cfg.marginMM : 0 });
+    const { sxUm, syUm } = M.scale({ w, h, artWMM: page.artWMM, artHMM: page.artHMM });
+    const fUm = Math.round(page.frameMM * 1000), pxMM2 = (sxUm * syUm) / 1e6;
+    return sheets.map((sh, k) => {
+      const c = k > 0 && sh.cleanup ? sh.cleanup : { addedPx: 0, removedPx: 0, filledHoles: 0, removedParts: 0 };
+      const e = { layer: k, addedMM2: c.addedPx * pxMM2, removedMM2: c.removedPx * pxMM2, holesFilled: c.filledHoles, partsRemoved: c.removedParts };
+      if (k > 0 && sh.pre) {
+        const pre = sh.pre, fin = sh.mask;
+        if (c.addedPx) e.added = E.maskPolygons(w, h, sxUm, syUm, fUm, (i) => fin[i] && !pre[i]);
+        if (c.removedPx) e.removed = E.maskPolygons(w, h, sxUm, syUm, fUm, (i) => pre[i] && !fin[i]);
+      }
+      const b = sh.bridges;
+      if (b) { const poly = E.maskPolygons(w, h, sxUm, syUm, fUm, (i) => b[i]); if (poly) e.bridges = poly; }
+      return e;
+    });
   };
 
   /**
@@ -7466,7 +7603,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    *   4  interpret: height = interpretHeight (heightFilter only when set); tonal = luminance → Kuwahara → thresholds
    *      (domain-aware) → bands → tonalAdded (EMPTY_BAND info per empty band)
    *   5  cumulativeMasks
-   *   6  construct (SBConstruct.bonded | connected; cleanupReport in mm², connected bridges as µm polygons)
+   *   6  construct (SBConstruct.bonded | connected; cleanupReport in mm², connected bridges as µm polygons; at draft
+   *      quality also the added/removed change polygons for the overlays, G2.13b)
    *  11a complexity: SBConstruct.complexityGate on the final masks (simplify "busy" if set, then the parts cap) BEFORE trace
    *   7  trace → bounded smoothing on pixel loops (connected + cornerStyle smooth only; bonded raw, D1) → fromPixelLoops →
    *      normalize   (SBMaterial.fromMasks)
@@ -7589,7 +7727,13 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       step("construct", 0.25 + (0.05 * k) / N);
       const e = { layer: k, addedMM2: r.addedPx * pxMM2, removedMM2: r.removedPx * pxMM2, holesFilled: r.filledHoles, partsRemoved: r.removedParts };
       const b = built.bridges[k];
-      if (b && b.some((x) => x)) e.bridges = G.normalize(G.union(G.fromPixelLoops(global.SBTrace.trace(b, W, H), geo.sxUm, geo.syUm, fUm, fUm), []));
+      if (b) { const poly = E.maskPolygons(W, H, geo.sxUm, geo.syUm, fUm, (i) => b[i]); if (poly) e.bridges = poly; }
+      // G2.13b (GEO-08, UI-05): change overlays at draft quality only, so the fabrication budget is unchanged.
+      if (quality === "draft") {
+        const pre = masks[k], fin = built.final[k];
+        if (r.addedPx) e.added = E.maskPolygons(W, H, geo.sxUm, geo.syUm, fUm, (i) => fin[i] && !pre[i]);
+        if (r.removedPx) e.removed = E.maskPolygons(W, H, geo.sxUm, geo.syUm, fUm, (i) => pre[i] && !fin[i]);
+      }
       return e;
     });
 
@@ -7697,6 +7841,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *            by pointer position (drag to tilt), a soft drop shadow per layer and the
  *            explode spread. Nothing here is a measurement.
  *
+ * G2.13b: setOverlays() takes the SBProof.overlays model. With the Changes overlay on (setShowOverlays), the
+ * proof view adds cleanup-added material in green, removed material as a dashed outline, unsupported regions in red
+ * with a "!" icon and bridges in amber (connected mode, #in-bridgesvis), plus a per-layer mm² legend. Off by
+ * default, so the proof stays the material alone. Overlay bridges also replace the mask bridges in the tilt view.
+ *
  * setSnapshot() rasterizes each layer's Path2D (from the µm rings) once per snapshot into
  * an offscreen canvas; frames only composite. The explode slider is display-only: it moves
  * layers in the tilt view and never touches geometry. setSheets() keeps the v1.1.0 raster
@@ -7709,6 +7858,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   const RASTER_MAX_PX = 1600;           // long side of each per-layer offscreen canvas
   const BED = "#171D24";                // waste / laser bed
   const AMBER = "#F0A227";
+  // G2.13b change overlays (proof view): added material, removed outline, unsupported region (GEO-08, UI-05)
+  const OV_ADDED = "rgba(46,204,113,0.55)";
+  const OV_REMOVED = "#F4F7FA";
+  const OV_UNSUPPORTED = "#E5484D";
+  const OV_DASH = [5, 4];
   const HATCH = "rgba(255,255,255,0.16)";   // waste hatch strokes on the bed colour
   const HATCH_PX = 7;                       // hatch pitch in card pixels
   const CARD_MAX_PX = 480;                  // long side of a layer card canvas
@@ -7744,6 +7898,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       targetX: 0.35, targetY: -0.25,
       explode: 0,        // 0..1
       showBridges: true,
+      overlays: null,      // G2.13b: SBProof.overlays model, plus per-layer page-sized bridge canvases (tilt)
+      overlayBridges: [],
+      showOverlays: false,
       dragging: false,
       running: false,
       dirty: true,
@@ -7786,6 +7943,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
           ? maskToCanvas(sheet.bridges, w, h, AMBER, false)
           : null,
       }));
+      state.overlays = null; state.overlayBridges = [];
       state.snap = null;   // the raster replaces any polygon snapshot (interim view while the polygons build)
       state.dirty = true;
     }
@@ -7812,6 +7970,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       }
       const prevY = state.snap && state.snap.page.hMM === page.hMM ? state.snap.sectionY : page.hMM / 2;
       state.snap = { page, tMM: snap.tMM, gMM: snap.gMM, layers: snap.layers, model, fills, images, bridges, sectionY: prevY, section: null };
+      state.overlays = null; state.overlayBridges = [];   // G2.13b: overlays belong to one snapshot; setOverlays after this
       setSectionY(prevY);
       state.dirty = true;
     }
@@ -7837,6 +7996,74 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
         c.drawImage(im.canvas, 0, 0, w, h);
       }
       return true;
+    }
+
+    /**
+     * G2.13b: the change overlays (SBProof.overlays). Bridge polygons are rasterized once here into page-sized
+     * canvases for the tilt view; the proof draws the overlay vectors per frame. null clears them.
+     */
+    function setOverlays(ov) {
+      state.overlays = ov || null;
+      state.overlayBridges = [];
+      const s = state.snap;
+      if (ov && s) {
+        const page = s.page;
+        const k = Math.min(RASTER_MAX_PX / page.wMM, RASTER_MAX_PX / page.hMM) / 1000;
+        const W = Math.max(1, Math.round(page.wMM * 1000 * k)), H = Math.max(1, Math.round(page.hMM * 1000 * k));
+        for (const e of ov) if (e.bridges && e.bridges.length) {
+          const rings = [];
+          for (const p of e.bridges) { rings.push(p.outer); for (const h of p.holes || []) rings.push(h); }
+          state.overlayBridges[e.layerIndex] = pathToCanvas({ rings, fill: AMBER, stroke: null }, W, H, k);
+        }
+      }
+      state.dirty = true;
+    }
+
+    /** Trace PolygonWithHoles[] (µm) onto ctx as one path, mapped by (ox, oy, s px per µm). */
+    function polyPath(polys, ox, oy, sc) {
+      ctx.beginPath();
+      for (const p of polys) for (const r of [p.outer].concat(p.holes || [])) {
+        ctx.moveTo(ox + r[0] * sc, oy + r[1] * sc);
+        for (let i = 2; i + 1 < r.length; i += 2) ctx.lineTo(ox + r[i] * sc, oy + r[i + 1] * sc);
+        ctx.closePath();
+      }
+    }
+
+    /** Proof-view change overlays over the page drawn at (ox, oy) with dw px for page.wMM. */
+    function drawOverlays(ox, oy, dw) {
+      const s = state.snap, ov = state.overlays;
+      if (!s || !ov || !state.showOverlays) return;
+      const sc = dw / (s.page.wMM * 1000);   // px per µm
+      ctx.save();
+      for (const e of ov) {
+        if (e.added) { polyPath(e.added, ox, oy, sc); ctx.fillStyle = OV_ADDED; ctx.fill("evenodd"); }
+        if (e.bridges && state.showBridges) { polyPath(e.bridges, ox, oy, sc); ctx.fillStyle = AMBER; ctx.fill("evenodd"); }
+        if (e.removed) {
+          polyPath(e.removed, ox, oy, sc);
+          ctx.setLineDash(OV_DASH); ctx.strokeStyle = OV_REMOVED; ctx.lineWidth = 1.25; ctx.stroke(); ctx.setLineDash([]);
+        }
+        for (const u of e.unsupported) {
+          if (!u.region) continue;
+          const [x0, y0, x1, y1] = u.region.map((v) => v * 1000 * sc);
+          ctx.strokeStyle = OV_UNSUPPORTED; ctx.lineWidth = 2;
+          ctx.strokeRect(ox + x0, oy + y0, Math.max(2, x1 - x0), Math.max(2, y1 - y0));
+          const cx = ox + (x0 + x1) / 2, cy = oy + (y0 + y1) / 2;
+          ctx.beginPath(); ctx.arc(cx, cy, 8, 0, 2 * Math.PI); ctx.fillStyle = OV_UNSUPPORTED; ctx.fill();
+          ctx.fillStyle = "#FFFFFF"; ctx.font = "bold 12px system-ui, sans-serif"; ctx.fillText("!", cx - 2, cy + 4);
+        }
+      }
+      // Legend: per-layer changed area in mm² (text, so the overlay never relies on colour alone).
+      ctx.font = "11px ui-monospace, monospace";
+      let ly = oy + 14;
+      for (const e of ov) {
+        const t = e.label + (e.unsupported.length ? (e.label ? " / " : "") + e.unsupported.length + " unsupported" : "");
+        if (!t) continue;
+        const line = "Layer " + (e.layerIndex + 1) + ": " + t;
+        ctx.fillStyle = "rgba(10,16,24,0.75)"; ctx.fillRect(ox + 4, ly - 11, ctx.measureText(line).width + 8, 15);
+        ctx.fillStyle = "#F4F7FA"; ctx.fillText(line, ox + 8, ly);
+        ly += 16;
+      }
+      ctx.restore();
     }
 
     function setSectionY(yMM) {
@@ -7915,7 +8142,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       if (state.snap) {
         if (state.mode === "section") drawSection(cw, ch);
         else drawLayers(cw, ch, state.snap.page.wMM, state.snap.page.hMM,
-          state.snap.images.map((im) => ({ canvas: im.canvas, bridge: state.snap.bridges[im.layerIndex] || null })),
+          state.snap.images.map((im) => ({ canvas: im.canvas, bridge: state.overlayBridges[im.layerIndex] || state.snap.bridges[im.layerIndex] || null,
+            pageBridge: !!state.overlayBridges[im.layerIndex] })),
           state.snap.page.frameMM || 0);
       } else if (state.layers.length) {
         drawLayers(cw, ch, state.w, state.h, state.layers.map((l) => ({ canvas: l.canvas, bridge: l.bridgeCanvas })), null);
@@ -7959,10 +8187,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
         ctx.restore();
         // Bridge highlight: illustrative views only, so the proof stays the material alone.
         if (dp.illustrative && state.showBridges && items[s].bridge) {
-          const f = frameMM === null ? 0 : frameMM * scale;
+          const f = frameMM === null || items[s].pageBridge ? 0 : frameMM * scale;   // overlay bridges are page-sized
           ctx.drawImage(items[s].bridge, ox + dx + f, oy + dy + f, dw - 2 * f, dh - 2 * f);
         }
       }
+      if (state.mode === "proof") drawOverlays(ox, oy, dw);
     }
 
     /**
@@ -8035,6 +8264,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       stop() { state.running = false; },
       setExplode(v) { state.explode = v; state.dirty = true; },
       setShowBridges(v) { state.showBridges = v; state.dirty = true; },
+      setOverlays,
+      /** G2.13b: the Changes overlay on the proof (off by default). */
+      setShowOverlays(v) { state.showOverlays = !!v; state.dirty = true; },
       redraw() { state.dirty = true; },
       /**
        * Snapshot a composite for the export bundle. mode ("proof" | "section" | "tilt") draws that view for the
@@ -8108,6 +8340,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     view: null,          // G2.12: {page, layers} canonical polygons of the last run for the review views
     viewToken: 0,        // bumps on every run or re-render; a deferred view build runs only while still current
     viewError: null,     // message when connectedLayers failed for this run (the views fall back to the raster)
+    overlays: null,      // G2.13b: SBProof.overlays model of the last run (cleanup changes, bridges) for the proof
+    state: null,         // G2.13b (UI-05): SBDiag.STATES value of the shown result; null before the first run
     report: "",
   };
 
@@ -8128,7 +8362,26 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   const $ = (id) => document.getElementById(id);
 
   // ------------------------------------------------------------- pipeline
-  const recompute = SBUtil.debounce(regenerate, 160);
+  const regenerateSoon = SBUtil.debounce(regenerate, 160);
+  /** A geometry edit: the shown result is stale at once (UI-05), then the pipeline reruns debounced. */
+  function recompute() { setRunState({ type: "edit" }); regenerateSoon(); }
+
+  /**
+   * G2.13b (UI-05): advance the result state with SBDiag.nextState and show its text badge. Before the first run
+   * there is no result, so only "start" moves the state off null (an edit before any result shows nothing).
+   */
+  function setRunState(event) {
+    if (run.state === null && event.type !== "start") return;
+    run.state = SBDiag.nextState(run.state || "draft", event);
+    const el = $("state-badge");
+    if (!el) return;
+    const b = SBDiag.stateBadge(run.state);
+    el.textContent = b.label;
+    el.title = b.text;
+    el.setAttribute("aria-label", "Result: " + b.label + ". " + b.text);
+    el.dataset.state = b.state;
+    el.hidden = false;
+  }
 
   /**
    * Enable Generate when SBSchema.canGenerate allows it and Export only once sheets exist; say why not otherwise
@@ -8168,10 +8421,16 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     cx.drawImage(run.sourceImage, 0, 0, w, h);
     const rgba = cx.getImageData(0, 0, w, h).data;
 
-    // 2-5. DOM-free engine (T0.5 seam).
-    const { sheets, totals } = SBEngine.legacyRun(rgba, w, h, state);
+    // 2-5. DOM-free engine (T0.5 seam). UI-05: processing → draft (the legacy run is draft quality), or failed.
+    setRunState({ type: "start" });
+    let out;
+    try { out = SBEngine.legacyRun(rgba, w, h, state); }
+    catch (err) { setRunState({ type: "fail" }); setStatus(`Generation failed: ${err && err.message || err}`); return; }
+    const { sheets, totals } = out;
+    setRunState({ type: "done", quality: "draft", diagnostics: [] });
     run.sheets = sheets;
     run.view = null;   // G2.12: canonical polygons for Proof/Section/Tilt, rebuilt lazily per run (renderAll)
+    run.overlays = null;   // G2.13b: rebuilt with the view
     run.viewError = null;
     run.viewToken++;   // a view build still pending for the previous run is dropped
     let totalBridged = totals.bridged, totalCulled = totals.culled, totalCutMM = totals.cutMM;
@@ -8249,7 +8508,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     if (token !== run.viewToken || run.view || !run.sheets.length) return;   // superseded, or already built
     const t0 = performance.now();
     try {
-      run.view = SBEngine.connectedLayers(run.sheets, run.procW, run.procH, cfg());
+      const c = cfg();
+      run.view = SBEngine.connectedLayers(run.sheets, run.procW, run.procH, c);
+      // G2.13b (GEO-08, UI-05): cleanup changes and bridges as cleanupReport-shaped polygons (the generate shape).
+      run.overlays = SBProof.overlays({ cleanupReport: SBEngine.legacyCleanupReport(run.sheets, run.procW, run.procH, c),
+        diagnostics: [], mode: project.construction.mode });
     } catch (err) {
       run.viewError = String(err && err.message || err);
       setStatus(`${run.report} · proof unavailable: ${run.viewError}`);
@@ -8265,7 +8528,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const bonded = project.construction.mode === "bonded-relief";
     try {
       preview.setSnapshot({ page: run.view.page, layers: run.view.layers, tMM: project.material.thicknessMM, gMM: bonded ? 0 : project.construction.gapMM },
-        colors, { bridges: { masks: run.sheets.map((sh) => sh.bridges || null), w: run.procW, h: run.procH } });
+        colors);
+      preview.setOverlays(run.overlays);   // bridges (tilt and the proof overlay) come from cleanupReport[].bridges
       setStatus(run.report);
       try { renderSheetGrid(colors); }   // G2.13a: the cards now come from the polygon snapshot
       catch (err) { setStatus(`${run.report} · layer cards unavailable: ${err.message || err}`); }
@@ -8893,7 +9157,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     preview.setMode(name);
     $("tiltnote").hidden = name !== "tilt";
     $("tool-explode").hidden = name !== "tilt";
-    $("tool-bridges").hidden = name !== "tilt";
+    $("tool-overlays").hidden = name !== "proof";
+    const connected = project.construction.mode === "connected-sheet";
+    $("tool-bridges").hidden = !connected || !(name === "tilt" || (name === "proof" && $("in-overlays").checked));
     $("view-hint").textContent = VIEW_HINTS[name];
     preview.redraw();
   }
@@ -8954,6 +9220,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     // preview controls (#in-explode is a G2.11c view control: project.view.explodeMM, renderAll only)
     $("in-bridgesvis").addEventListener("change", (e) =>
       preview.setShowBridges(e.target.checked));
+    // G2.13b: the Changes overlay on the proof (view only: no revision change, no regeneration)
+    $("in-overlays").addEventListener("change", (e) => {
+      preview.setShowOverlays(e.target.checked);
+      switchTab(preview.getMode());
+    });
 
     // tabs
     document.querySelectorAll(".tab").forEach((t) =>

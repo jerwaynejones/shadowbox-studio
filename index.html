@@ -219,10 +219,14 @@
     <div id="pane-stack" class="pane active">
       <canvas id="stackcanvas"></canvas>
       <!-- G2.12: Proof and Section are drawn from the canonical polygons (SBProof); Tilt is illustrative only. -->
+      <!-- G2.13b (UI-05): result state badge, text label (draft / stale / processing / validated / failed). -->
+      <span id="state-badge" class="statebadge" role="status" aria-live="polite" hidden></span>
       <span id="tiltnote" class="draftbadge" role="note" hidden>Illustrative: not to scale. Check fit with Proof and Section</span>
       <div class="stacktools">
         <label class="tool" for="in-explode" id="tool-explode" hidden>Explode
           <input id="in-explode" type="range" min="0" max="60" step="1" value="0"></label>
+        <label class="tool check" id="tool-overlays"><input id="in-overlays" type="checkbox">
+          Show changes</label>
         <label class="tool check" id="tool-bridges" hidden><input id="in-bridgesvis" type="checkbox" checked>
           Show bridges</label>
         <span class="tool hint" id="view-hint">opaque proof: every layer's material, back to front, as in proof.svg</span>
