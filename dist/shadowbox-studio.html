@@ -2008,10 +2008,12 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *   SBSchema.resolveSize(p, w, h)    → art and page size on the 1 µm grid from
  *                                    the ORIENTED source size (PO-LASER-3);
  *                                    both art axes range-checked (MAT-02).
- *   SBSchema.limits(deviceClass)     → {deviceClass, fabPxBudget}. PROVISIONAL
- *                                    budgets (desktop 16 Mpx, mobile 4 Mpx)
- *                                    until G2.2b measures them; G2.14/G4.3 add
- *                                    the remaining limits.
+ *   SBSchema.limits(deviceClass)     → {deviceClass, fabPxBudget}. Budgets
+ *                                    measured by G2.2b (docs/perf/large-image
+ *                                    .json, decision.*.fabPxBudget): desktop
+ *                                    25 Mpx, mobile 1 Mpx (bonded mode, k = 4
+ *                                    provisional); G2.7b/G2.14/G4.3 add the
+ *                                    remaining limits.
  *   SBSchema.toMM / fromMM           lossless units, quantized to 0.001 mm.
  *   SBSchema.modeChangeDiff(p, patch) → [{path, from, to, reason}] (G2.11e).
  *   SBSchema.sourceTemplate()        a valid placeholder `source` record.
@@ -2057,10 +2059,13 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   S.DEFAULT_MACHINE = "xtool-s1-feeder";
 
   // ------------------------------------------------------------ limits (PO-LASER-4)
-  // PROVISIONAL until G2.2b replaces them with the benchmarked budgets.
+  // Measured by G2.2b (docs/perf/large-image.json, decision.desktop/mobile.fabPxBudget; the test
+  // "PO-LASER-4 SBSchema.limits budgets equal docs/perf/large-image.json" keeps them in step). Desktop: r25 bonded
+  // p95 9.75 s ≤ 10 s, 404 MiB ≤ 512 MiB. Mobile: r1 bonded p95 1.82 s × k 4 = 7.3 s ≤ 8 s (k provisional, G4.4).
+  // IMG-07 still caps sources at 16 MP (desktop) / 8 MP (mobile), and the engine never upsamples.
   const LIMITS = deepFreeze({
-    desktop: { deviceClass: "desktop", fabPxBudget: 16000000 },
-    mobile: { deviceClass: "mobile", fabPxBudget: 4000000 },
+    desktop: { deviceClass: "desktop", fabPxBudget: 25000000 },
+    mobile: { deviceClass: "mobile", fabPxBudget: 1000000 },
   });
   S.limits = function (deviceClass) {
     if (!Object.prototype.hasOwnProperty.call(LIMITS, deviceClass)) throw fail("SCHEMA_DEVICE", "deviceClass must be desktop|mobile (got " + deviceClass + ")");

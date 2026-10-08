@@ -1,0 +1,1088 @@
+{
+ "stage": "large",
+ "method": "shortened",
+ "quick": false,
+ "node": "v26.7.0",
+ "v8": "14.6.202.34-node.28",
+ "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+ "threads": 16,
+ "memGiB": 62.5,
+ "backend": "clipper2-ts@2.0.1-18",
+ "shortened": {
+  "decided": "2026-10-08 (product owner)",
+  "reason": "the full G2.2b run (5 warm-up + 30 runs at the gated points, 1 + 5 elsewhere) was stopped after about 6.5 h as overly thorough",
+  "liveRows": "only the rows still needed were run live: realistic 25 Mpx (r25) and the realistic 470 mm page (laser470, 3525×4700), 1 warm-up + 5 runs each",
+  "skippedRule": "remaining busy rows (b20, b25, laser470-busy) are not measured; the busy family is reported, never gated, and the measured busy rows already show that cost follows part count, not pixels",
+  "loadBaseline": "background 1-minute load ≈ 3–4 from desktop processes (DisplayLinkManager ≈ 50 % CPU, Firefox, Hyprland, short-lived fuser /dev/video* probes) during both runs, plus ≈ 1 from the single-threaded benchmark itself (shortened.load has the sampled ranges); every p95 includes that contention",
+  "sources": [
+   {
+    "file": "docs/perf/raw/large-full-partial.log",
+    "provenance": "log",
+    "rows": [
+     "srs-desktop",
+     "srs-mobile",
+     "r1",
+     "r1.25",
+     "r1.5",
+     "r2",
+     "r6",
+     "r8",
+     "r4",
+     "b4",
+     "r9",
+     "b9",
+     "r12",
+     "b12",
+     "r16",
+     "b16",
+     "r20"
+    ]
+   },
+   {
+    "file": "docs/perf/raw/large-short.log",
+    "provenance": "live",
+    "rows": [
+     "r25",
+     "laser470"
+    ]
+   }
+  ],
+  "skipped": [
+   "b20",
+   "b25",
+   "laser470-busy"
+  ],
+  "runCounts": "each row at its LARGE_WORKLOADS default: warm-up + runs = 5 + 30 for the calibration rows, r1/r1.25/r1.5/r2/r4/r6/r8 and r16; 1 + 5 for the rest (rows[].warm, rows[].runs); wall times match",
+  "liveRun": {
+   "loadAvgStart": [
+    5.7,
+    4.87,
+    4.35
+   ],
+   "loadAvgEnd": [
+    5.54,
+    5.21,
+    4.72
+   ]
+  },
+  "load": [
+   {
+    "label": "full-partial",
+    "samples": 200,
+    "from": "2026-10-08T02:06:02-05:00",
+    "to": "2026-10-08T08:44:22-05:00",
+    "first": [
+     4.86,
+     5.11,
+     8.73
+    ],
+    "last": [
+     5.45,
+     4.45,
+     4.16
+    ],
+    "oneMin": {
+     "min": 3.12,
+     "median": 4.77,
+     "max": 8.81
+    }
+   },
+   {
+    "label": "shortened",
+    "samples": 25,
+    "from": "08:46:28",
+    "to": "08:58:29",
+    "first": [
+     5.7,
+     4.87,
+     4.35
+    ],
+    "last": [
+     5.42,
+     5.18,
+     4.7
+    ],
+    "oneMin": {
+     "min": 3.53,
+     "median": 5.32,
+     "max": 6.05
+    }
+   }
+  ],
+  "missingFields": "summary lines carry no per-stage p50/max, vertex counts (shape.maxVerticesPerLayer, verticesBonded), per-row load or contact counts; those are null"
+ },
+ "rows": [
+  {
+   "id": "srs-desktop",
+   "w": 1536,
+   "h": 1536,
+   "mpx": 2.36,
+   "family": "realistic",
+   "role": "calibration",
+   "layers": 8,
+   "warm": 5,
+   "runs": 30,
+   "calibration": "SRS §12.3 desktop reference (NFR-03 10 s)",
+   "source": "log",
+   "detail": "summary-line",
+   "stages": {
+    "final": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 2728.4,
+     "maxMs": null
+    },
+    "finalBonded": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 2728.4,
+     "maxMs": null
+    },
+    "finalConnected": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 16525.4,
+     "maxMs": null
+    }
+   },
+   "shape": {
+    "maxPartsPerLayer": 103,
+    "partsPerLayer": null,
+    "verticesBonded": null,
+    "verticesConnected": null,
+    "maxVerticesPerLayer": null,
+    "supportPieces": null,
+    "contacts": null,
+    "svgBytes": null
+   },
+   "workingSetMiB": 107.5,
+   "wallS": 705.3,
+   "loadAvg": null,
+   "xRef": 1
+  },
+  {
+   "id": "srs-mobile",
+   "w": 768,
+   "h": 768,
+   "mpx": 0.59,
+   "family": "realistic",
+   "role": "calibration",
+   "layers": 6,
+   "warm": 5,
+   "runs": 30,
+   "calibration": "SRS §12.3 mobile reference (8 s on device)",
+   "source": "log",
+   "detail": "summary-line",
+   "stages": {
+    "final": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 1258.8,
+     "maxMs": null
+    },
+    "finalBonded": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 1258.8,
+     "maxMs": null
+    },
+    "finalConnected": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 6681.2,
+     "maxMs": null
+    }
+   },
+   "shape": {
+    "maxPartsPerLayer": 95,
+    "partsPerLayer": null,
+    "verticesBonded": null,
+    "verticesConnected": null,
+    "maxVerticesPerLayer": null,
+    "supportPieces": null,
+    "contacts": null,
+    "svgBytes": null
+   },
+   "workingSetMiB": 38.2,
+   "wallS": 297.6,
+   "loadAvg": null,
+   "xRef": 0.46
+  },
+  {
+   "id": "r1",
+   "w": 1155,
+   "h": 866,
+   "mpx": 1,
+   "family": "realistic",
+   "role": "mobile",
+   "layers": 8,
+   "warm": 5,
+   "runs": 30,
+   "source": "log",
+   "detail": "summary-line",
+   "stages": {
+    "final": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 1820.3,
+     "maxMs": null
+    },
+    "finalBonded": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 1820.3,
+     "maxMs": null
+    },
+    "finalConnected": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 11468.5,
+     "maxMs": null
+    }
+   },
+   "shape": {
+    "maxPartsPerLayer": 120,
+    "partsPerLayer": null,
+    "verticesBonded": null,
+    "verticesConnected": null,
+    "maxVerticesPerLayer": null,
+    "supportPieces": null,
+    "contacts": null,
+    "svgBytes": null
+   },
+   "workingSetMiB": 62.6,
+   "wallS": 494.1,
+   "loadAvg": null,
+   "xRef": 0.67
+  },
+  {
+   "id": "r1.25",
+   "w": 1291,
+   "h": 968,
+   "mpx": 1.25,
+   "family": "realistic",
+   "role": "mobile",
+   "layers": 8,
+   "warm": 5,
+   "runs": 30,
+   "source": "log",
+   "detail": "summary-line",
+   "stages": {
+    "final": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 2492.2,
+     "maxMs": null
+    },
+    "finalBonded": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 2492.2,
+     "maxMs": null
+    },
+    "finalConnected": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 12105.1,
+     "maxMs": null
+    }
+   },
+   "shape": {
+    "maxPartsPerLayer": 120,
+    "partsPerLayer": null,
+    "verticesBonded": null,
+    "verticesConnected": null,
+    "maxVerticesPerLayer": null,
+    "supportPieces": null,
+    "contacts": null,
+    "svgBytes": null
+   },
+   "workingSetMiB": 64.6,
+   "wallS": 534.7,
+   "loadAvg": null,
+   "xRef": 0.91
+  },
+  {
+   "id": "r1.5",
+   "w": 1414,
+   "h": 1061,
+   "mpx": 1.5,
+   "family": "realistic",
+   "role": "mobile",
+   "layers": 8,
+   "warm": 5,
+   "runs": 30,
+   "source": "log",
+   "detail": "summary-line",
+   "stages": {
+    "final": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 2191.3,
+     "maxMs": null
+    },
+    "finalBonded": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 2191.3,
+     "maxMs": null
+    },
+    "finalConnected": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 13026.1,
+     "maxMs": null
+    }
+   },
+   "shape": {
+    "maxPartsPerLayer": 120,
+    "partsPerLayer": null,
+    "verticesBonded": null,
+    "verticesConnected": null,
+    "maxVerticesPerLayer": null,
+    "supportPieces": null,
+    "contacts": null,
+    "svgBytes": null
+   },
+   "workingSetMiB": 74.9,
+   "wallS": 568.3,
+   "loadAvg": null,
+   "xRef": 0.8
+  },
+  {
+   "id": "r2",
+   "w": 1633,
+   "h": 1225,
+   "mpx": 2,
+   "family": "realistic",
+   "role": "mobile",
+   "layers": 8,
+   "warm": 5,
+   "runs": 30,
+   "source": "log",
+   "detail": "summary-line",
+   "stages": {
+    "final": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 2430.4,
+     "maxMs": null
+    },
+    "finalBonded": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 2430.4,
+     "maxMs": null
+    },
+    "finalConnected": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 15671.5,
+     "maxMs": null
+    }
+   },
+   "shape": {
+    "maxPartsPerLayer": 120,
+    "partsPerLayer": null,
+    "verticesBonded": null,
+    "verticesConnected": null,
+    "maxVerticesPerLayer": null,
+    "supportPieces": null,
+    "contacts": null,
+    "svgBytes": null
+   },
+   "workingSetMiB": 78.9,
+   "wallS": 675.2,
+   "loadAvg": null,
+   "xRef": 0.89
+  },
+  {
+   "id": "r6",
+   "w": 2828,
+   "h": 2121,
+   "mpx": 6,
+   "family": "realistic",
+   "role": "mobile",
+   "layers": 8,
+   "warm": 5,
+   "runs": 30,
+   "source": "log",
+   "detail": "summary-line",
+   "stages": {
+    "final": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 4252.9,
+     "maxMs": null
+    },
+    "finalBonded": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 4252.9,
+     "maxMs": null
+    },
+    "finalConnected": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 23528.8,
+     "maxMs": null
+    }
+   },
+   "shape": {
+    "maxPartsPerLayer": 120,
+    "partsPerLayer": null,
+    "verticesBonded": null,
+    "verticesConnected": null,
+    "maxVerticesPerLayer": null,
+    "supportPieces": null,
+    "contacts": null,
+    "svgBytes": null
+   },
+   "workingSetMiB": 212.5,
+   "wallS": 1045.9,
+   "loadAvg": null,
+   "xRef": 1.56
+  },
+  {
+   "id": "r8",
+   "w": 3266,
+   "h": 2449,
+   "mpx": 8,
+   "family": "realistic",
+   "role": "mobile",
+   "layers": 8,
+   "warm": 5,
+   "runs": 30,
+   "source": "log",
+   "detail": "summary-line",
+   "stages": {
+    "final": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 4670.7,
+     "maxMs": null
+    },
+    "finalBonded": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 4670.7,
+     "maxMs": null
+    },
+    "finalConnected": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 27404.9,
+     "maxMs": null
+    }
+   },
+   "shape": {
+    "maxPartsPerLayer": 120,
+    "partsPerLayer": null,
+    "verticesBonded": null,
+    "verticesConnected": null,
+    "maxVerticesPerLayer": null,
+    "supportPieces": null,
+    "contacts": null,
+    "svgBytes": null
+   },
+   "workingSetMiB": 164.1,
+   "wallS": 1223.9,
+   "loadAvg": null,
+   "xRef": 1.71
+  },
+  {
+   "id": "r4",
+   "w": 2309,
+   "h": 1732,
+   "mpx": 4,
+   "family": "realistic",
+   "role": "mobile",
+   "layers": 8,
+   "warm": 5,
+   "runs": 30,
+   "source": "log",
+   "detail": "summary-line",
+   "stages": {
+    "final": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 3304.9,
+     "maxMs": null
+    },
+    "finalBonded": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 3304.9,
+     "maxMs": null
+    },
+    "finalConnected": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 20014.5,
+     "maxMs": null
+    }
+   },
+   "shape": {
+    "maxPartsPerLayer": 120,
+    "partsPerLayer": null,
+    "verticesBonded": null,
+    "verticesConnected": null,
+    "maxVerticesPerLayer": null,
+    "supportPieces": null,
+    "contacts": null,
+    "svgBytes": null
+   },
+   "workingSetMiB": 144.3,
+   "wallS": 871.5,
+   "loadAvg": null,
+   "xRef": 1.21
+  },
+  {
+   "id": "b4",
+   "w": 2309,
+   "h": 1732,
+   "mpx": 4,
+   "family": "busy",
+   "role": "exploration",
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "source": "log",
+   "detail": "summary-line",
+   "stages": {
+    "final": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 35393.9,
+     "maxMs": null
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 35393.9,
+     "maxMs": null
+    },
+    "finalConnected": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 98384.4,
+     "maxMs": null
+    }
+   },
+   "shape": {
+    "maxPartsPerLayer": 1991,
+    "partsPerLayer": null,
+    "verticesBonded": null,
+    "verticesConnected": null,
+    "maxVerticesPerLayer": null,
+    "supportPieces": null,
+    "contacts": null,
+    "svgBytes": null
+   },
+   "workingSetMiB": 204.9,
+   "wallS": 945.4,
+   "loadAvg": null,
+   "xRef": 12.97
+  },
+  {
+   "id": "r9",
+   "w": 3464,
+   "h": 2598,
+   "mpx": 9,
+   "family": "realistic",
+   "role": "exploration",
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "source": "log",
+   "detail": "summary-line",
+   "stages": {
+    "final": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 4733.4,
+     "maxMs": null
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 4733.4,
+     "maxMs": null
+    },
+    "finalConnected": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 27441.8,
+     "maxMs": null
+    }
+   },
+   "shape": {
+    "maxPartsPerLayer": 120,
+    "partsPerLayer": null,
+    "verticesBonded": null,
+    "verticesConnected": null,
+    "maxVerticesPerLayer": null,
+    "supportPieces": null,
+    "contacts": null,
+    "svgBytes": null
+   },
+   "workingSetMiB": 188.8,
+   "wallS": 240.5,
+   "loadAvg": null,
+   "xRef": 1.73
+  },
+  {
+   "id": "b9",
+   "w": 3464,
+   "h": 2598,
+   "mpx": 9,
+   "family": "busy",
+   "role": "exploration",
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "source": "log",
+   "detail": "summary-line",
+   "stages": {
+    "final": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 87898.5,
+     "maxMs": null
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 87898.5,
+     "maxMs": null
+    },
+    "finalConnected": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 241957.3,
+     "maxMs": null
+    }
+   },
+   "shape": {
+    "maxPartsPerLayer": 4603,
+    "partsPerLayer": null,
+    "verticesBonded": null,
+    "verticesConnected": null,
+    "maxVerticesPerLayer": null,
+    "supportPieces": null,
+    "contacts": null,
+    "svgBytes": null
+   },
+   "workingSetMiB": 706.2,
+   "wallS": 2326.7,
+   "loadAvg": null,
+   "xRef": 32.22
+  },
+  {
+   "id": "r12",
+   "w": 4000,
+   "h": 3000,
+   "mpx": 12,
+   "family": "realistic",
+   "role": "exploration",
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "source": "log",
+   "detail": "summary-line",
+   "stages": {
+    "final": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 5958.4,
+     "maxMs": null
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 5958.4,
+     "maxMs": null
+    },
+    "finalConnected": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 31197,
+     "maxMs": null
+    }
+   },
+   "shape": {
+    "maxPartsPerLayer": 120,
+    "partsPerLayer": null,
+    "verticesBonded": null,
+    "verticesConnected": null,
+    "maxVerticesPerLayer": null,
+    "supportPieces": null,
+    "contacts": null,
+    "svgBytes": null
+   },
+   "workingSetMiB": 216.5,
+   "wallS": 280.6,
+   "loadAvg": null,
+   "xRef": 2.18
+  },
+  {
+   "id": "b12",
+   "w": 4000,
+   "h": 3000,
+   "mpx": 12,
+   "family": "busy",
+   "role": "exploration",
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "source": "log",
+   "detail": "summary-line",
+   "stages": {
+    "final": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 123829.4,
+     "maxMs": null
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 123829.4,
+     "maxMs": null
+    },
+    "finalConnected": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 332890.1,
+     "maxMs": null
+    }
+   },
+   "shape": {
+    "maxPartsPerLayer": 6097,
+    "partsPerLayer": null,
+    "verticesBonded": null,
+    "verticesConnected": null,
+    "maxVerticesPerLayer": null,
+    "supportPieces": null,
+    "contacts": null,
+    "svgBytes": null
+   },
+   "workingSetMiB": 516.7,
+   "wallS": 3232.1,
+   "loadAvg": null,
+   "xRef": 45.39
+  },
+  {
+   "id": "r16",
+   "w": 4618,
+   "h": 3464,
+   "mpx": 16,
+   "family": "realistic",
+   "role": "desktop",
+   "layers": 8,
+   "warm": 5,
+   "runs": 30,
+   "source": "log",
+   "detail": "summary-line",
+   "stages": {
+    "final": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 7198.8,
+     "maxMs": null
+    },
+    "finalBonded": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 7198.8,
+     "maxMs": null
+    },
+    "finalConnected": {
+     "n": 30,
+     "p50Ms": null,
+     "p95Ms": 35137.7,
+     "maxMs": null
+    }
+   },
+   "shape": {
+    "maxPartsPerLayer": 120,
+    "partsPerLayer": null,
+    "verticesBonded": null,
+    "verticesConnected": null,
+    "maxVerticesPerLayer": null,
+    "supportPieces": null,
+    "contacts": null,
+    "svgBytes": null
+   },
+   "workingSetMiB": 232.3,
+   "wallS": 1567,
+   "loadAvg": null,
+   "xRef": 2.64
+  },
+  {
+   "id": "b16",
+   "w": 4618,
+   "h": 3464,
+   "mpx": 16,
+   "family": "busy",
+   "role": "exploration",
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "source": "log",
+   "detail": "summary-line",
+   "stages": {
+    "final": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 163236,
+     "maxMs": null
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 163236,
+     "maxMs": null
+    },
+    "finalConnected": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 462258.4,
+     "maxMs": null
+    }
+   },
+   "shape": {
+    "maxPartsPerLayer": 8092,
+    "partsPerLayer": null,
+    "verticesBonded": null,
+    "verticesConnected": null,
+    "maxVerticesPerLayer": null,
+    "supportPieces": null,
+    "contacts": null,
+    "svgBytes": null
+   },
+   "workingSetMiB": 446.8,
+   "wallS": 4421.3,
+   "loadAvg": null,
+   "xRef": 59.83
+  },
+  {
+   "id": "r20",
+   "w": 5164,
+   "h": 3873,
+   "mpx": 20,
+   "family": "realistic",
+   "role": "desktop",
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "source": "log",
+   "detail": "summary-line",
+   "stages": {
+    "final": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 8526.3,
+     "maxMs": null
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 8526.3,
+     "maxMs": null
+    },
+    "finalConnected": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 37674.7,
+     "maxMs": null
+    }
+   },
+   "shape": {
+    "maxPartsPerLayer": 120,
+    "partsPerLayer": null,
+    "verticesBonded": null,
+    "verticesConnected": null,
+    "maxVerticesPerLayer": null,
+    "supportPieces": null,
+    "contacts": null,
+    "svgBytes": null
+   },
+   "workingSetMiB": 304.9,
+   "wallS": 333,
+   "loadAvg": null,
+   "xRef": 3.13
+  },
+  {
+   "id": "r25",
+   "w": 5774,
+   "h": 4330,
+   "mpx": 25,
+   "family": "realistic",
+   "role": "desktop",
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "source": "live",
+   "detail": "summary-line",
+   "stages": {
+    "final": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 9749.1,
+     "maxMs": null
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 9749.1,
+     "maxMs": null
+    },
+    "finalConnected": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 47273.1,
+     "maxMs": null
+    }
+   },
+   "shape": {
+    "maxPartsPerLayer": 120,
+    "partsPerLayer": null,
+    "verticesBonded": null,
+    "verticesConnected": null,
+    "maxVerticesPerLayer": null,
+    "supportPieces": null,
+    "contacts": null,
+    "svgBytes": null
+   },
+   "workingSetMiB": 404.4,
+   "wallS": 420.3,
+   "loadAvg": null,
+   "xRef": 3.57
+  },
+  {
+   "id": "laser470",
+   "w": 3525,
+   "h": 4700,
+   "mpx": 16.57,
+   "family": "realistic",
+   "role": "exploration",
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "page": "470 mm high, 3:4 portrait (352.5 × 470 mm) at 0.1 mm/px, no frame",
+   "artWMM": 352.5,
+   "artHMM": 470,
+   "source": "live",
+   "detail": "summary-line",
+   "stages": {
+    "final": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 6813,
+     "maxMs": null
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 6813,
+     "maxMs": null
+    },
+    "finalConnected": {
+     "n": 5,
+     "p50Ms": null,
+     "p95Ms": 36602.3,
+     "maxMs": null
+    }
+   },
+   "shape": {
+    "maxPartsPerLayer": 116,
+    "partsPerLayer": null,
+    "verticesBonded": null,
+    "verticesConnected": null,
+    "maxVerticesPerLayer": null,
+    "supportPieces": null,
+    "contacts": null,
+    "svgBytes": null
+   },
+   "workingSetMiB": 269.2,
+   "wallS": 318.2,
+   "loadAvg": null,
+   "xRef": 2.5
+  }
+ ],
+ "decision": {
+  "gatingMode": "bonded",
+  "knownItems": [
+   {
+    "mode": "connected",
+    "gating": false,
+    "id": "KI-CONN-PERF",
+    "decided": "2026-10-08 (product owner, G2.2b stop condition option (a))",
+    "cause": "connected-mode smoothing (G1.2): maxDeviationUm segDist/distToGrid and the T-junction split dominate (≈18 s on the SRS desktop reference)",
+    "resolution": "G4.1 worker pool (per-layer / per-adjacent-pair stages in parallel, deterministic merge) and/or smoothing optimisation in G4; connected mode stays functional with its measured times documented",
+    "ref": "docs/plans/opaque-layers-dev-plan.md Appendix D.8 and G4.1; docs/ARCHITECTURE.md D6 (KI-CONN-PERF)"
+   }
+  ],
+  "desktop": {
+   "fabPxBudget": 25000000,
+   "row": "r25",
+   "targetMs": 10000,
+   "relaxed": false,
+   "relaxedAppliesTo": null,
+   "p95Ms": 9749.1,
+   "workingSetMiB": 404.4,
+   "r16P95Ms": 7198.8,
+   "connectedP95Ms": 47273.1
+  },
+  "mobile": {
+   "fabrication": "enabled",
+   "fabPxBudget": 1000000,
+   "row": "r1",
+   "targetMs": 8000,
+   "k": 4,
+   "kProvisional": true,
+   "desktopP95Ms": 1820.3,
+   "p95Ms": 7281.2,
+   "workingSetMiB": 62.6,
+   "connectedDesktopP95Ms": 11468.5
+  },
+  "srsDesktop": {
+   "targetMs": 10000,
+   "p95Ms": 2728.4,
+   "connectedP95Ms": 16525.4
+  },
+  "complexityStart": {
+   "desktop": {
+    "maxPartsPerLayer": 120,
+    "maxVerticesPerLayer": null,
+    "vertices": null
+   },
+   "desktopBusy": null,
+   "mobile": {
+    "maxPartsPerLayer": 120,
+    "maxVerticesPerLayer": null,
+    "vertices": null
+   },
+   "mobileBusy": null
+  },
+  "escalate": []
+ },
+ "methodDetail": {
+  "final": "final + validation = stage 3 (trace + SBMaterial.fromMasks, fabrication quality) + stage 4 (adjacent-pair difference ×2 directions, support pass: one layer-level intersection per adjacent pair, classifyContact(piece, minFeature) then survivesInset(advisory/2) per piece), timed per run for bonded (D1 unsmoothed) and connected (G1.2 smoothing); the gated value (stages.final) is BONDED mode (PO decision 2026-10-08); connected (stages.finalConnected) is reported as KI-CONN-PERF, not gating",
+  "workingSet": "one instrumented pass per row after gc(): peak of process.memoryUsage() arrayBuffers + heapUsed minus the pre-pipeline baseline, sampled after every stage (algorithm-owned, SRS §12.3); the input samples are outside it",
+  "desktopRule": "largest of 16/20/25 Mpx (realistic) with working set ≤ 512 MiB and bonded final p95 ≤ target; target 10 s if 16 Mpx meets it, else 16 Mpx p95 rounded up to 5 s (≤ 60 s, else escalate)",
+  "mobileRule": "largest of 1/1.25/1.5/2/4/6/8 Mpx (realistic) with working set ≤ 192 MiB and desktop bonded final p95 × k ≤ 8 s; k = 4 provisional until the ≥ 4 GB reference device (G4.4); if none qualifies, mobile fabrication is draft-only (FAB_DEVICE_DRAFT_ONLY), recorded, not escalated",
+  "machine": "budgets are measured on the Linux i7-11800H (16 threads) development machine and are conservative for the owner's MacBook Air M5; Safari/JavaScriptCore coverage is G4.8",
+  "stages": "1 resample area/nearest from a 16 MP source (realistic rows smaller than it); 2 masks tonal (R.thresholds/bands/sheetMasks) and height (inline nearest-layer rule); 3 material bonded/connected; 4 difference + support; 5 layerSVG + layerHashes"
+ },
+ "tracked": {
+  "connected": {
+   "id": "KI-CONN-PERF",
+   "decided": "2026-10-08 (product owner, G2.2b stop condition option (a))",
+   "cause": "connected-mode smoothing (G1.2): maxDeviationUm segDist/distToGrid and the T-junction split dominate (≈18 s on the SRS desktop reference)",
+   "resolution": "G4.1 worker pool (per-layer / per-adjacent-pair stages in parallel, deterministic merge) and/or smoothing optimisation in G4; connected mode stays functional with its measured times documented",
+   "ref": "docs/plans/opaque-layers-dev-plan.md Appendix D.8 and G4.1; docs/ARCHITECTURE.md D6 (KI-CONN-PERF)"
+  }
+ }
+}

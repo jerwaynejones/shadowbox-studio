@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **G2.2b, measured pixel budgets (engine only; not yet wired into the app):** the large-image
+  benchmark sets `SBSchema.limits` to **25 Mpx on desktop** (was a provisional 16 Mpx) and
+  **1 Mpx on mobile** (was 4 Mpx), in bonded mode. Desktop keeps the 10 s target: 25 Mpx
+  measured 9.75 s. Mobile fabrication stays available, so there is no draft-only mode. A
+  470 mm-high page now plans at the full 0.1 mm/px on desktop (the source still has to provide
+  the pixels). On mobile, fabrication is coarser: about 0.35 mm/px for a 300 mm page. By
+  product-owner decision this was a shortened run: rows completed by the stopped full run were
+  kept, and only 25 Mpx and the 470 mm page were measured afresh. Results and method are in
+  [docs/perf/LARGE_IMAGE.md](perf/LARGE_IMAGE.md); `node test/bench.js large-assemble` rebuilds
+  `docs/perf/large-image.json` from the preserved logs. Very busy artwork costs far more than
+  its pixel count suggests (thousands of parts per layer: 35–163 s), so per-device complexity
+  caps and an explicit "simplify busy art" option move forward into G2 as task G2.7b.
+
 - **G2.2b decision (product owner, 2026-10-08), option (a):** pixel budgets and the NFR-03
   performance gate are measured in bonded mode (the plywood/laser default). Connected mode
   stays functional and is still measured and reported, but its cost (about 18 s on the SRS

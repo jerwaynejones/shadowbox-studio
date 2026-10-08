@@ -1,0 +1,52 @@
+{
+ "stage": "large",
+ "quick": false,
+ "node": "v26.7.0",
+ "v8": "14.6.202.34-node.28",
+ "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+ "threads": 16,
+ "memGiB": 62.5,
+ "backend": "clipper2-ts@2.0.1-18",
+ "loadAvgStart": [
+  5.7,
+  4.87,
+  4.35
+ ],
+ "rows": [
+  {
+   "id": "r25",
+   "finalP95Ms": 9749.1,
+   "connectedP95Ms": 47273.1,
+   "workingSetMiB": 404.4,
+   "xRef": null
+  },
+  {
+   "id": "laser470",
+   "finalP95Ms": 6813,
+   "connectedP95Ms": 36602.3,
+   "workingSetMiB": 269.2,
+   "xRef": null
+  }
+ ],
+ "loadAvgEnd": [
+  5.54,
+  5.21,
+  4.72
+ ],
+ "decision": null,
+ "overBudget": [
+  "no recorded decision (run with --record)"
+ ],
+ "tracked": {
+  "connected": {
+   "id": "KI-CONN-PERF",
+   "decided": "2026-10-08 (product owner, G2.2b stop condition option (a))",
+   "cause": "connected-mode smoothing (G1.2): maxDeviationUm segDist/distToGrid and the T-junction split dominate (≈18 s on the SRS desktop reference)",
+   "resolution": "G4.1 worker pool (per-layer / per-adjacent-pair stages in parallel, deterministic merge) and/or smoothing optimisation in G4; connected mode stays functional with its measured times documented",
+   "ref": "docs/plans/opaque-layers-dev-plan.md Appendix D.8 and G4.1; docs/ARCHITECTURE.md D6 (KI-CONN-PERF)"
+  }
+ },
+ "knownOver": [],
+ "heapUsedMB": 32,
+ "rssMB": 717
+}

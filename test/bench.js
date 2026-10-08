@@ -5,6 +5,7 @@
  *
  *     node test/bench.js geom [--runs 15] [--json out.json] [--no-fail] [--quick]
  *     node test/bench.js large [--only id,id] [--large-runs N] [--record] [--no-fail] [--quick]
+ *     node test/bench.js large-assemble --logs f.log=log,g.log=live [--env run.json] [--loads l.txt=label,…] [--record]
  *
  * Stage "large" (plan G2.2b; PO-LASER-4/9, NFR-03/04): the LARGE_WORKLOADS rows (SRS §12.3 calibration, 2–25 Mpx
  * realistic and busy height maps, the 470 mm-high page at 0.1 mm/px), stages 1–5 per row, final + validation per
@@ -15,6 +16,16 @@
  * (TRACKED_LARGE). Mobile candidates include 1, 1.25 and 1.5 Mpx; if none qualifies, mobile fabrication is recorded as
  * "draft-only" (FAB_DEVICE_DRAFT_ONLY) instead of escalating. Machine: the measured budgets are conservative for the
  * owner's MacBook Air M5; Safari/JavaScriptCore coverage is G4.8.
+ *
+ * Stage "large-assemble" (G2.2b shortened run, product-owner decision 2026-10-08): builds docs/perf/large-image.json
+ * from preserved "[large] …" summary lines instead of re-running rows. Each --logs entry is file=provenance ("log":
+ * a row preserved from an earlier, stopped run; "live": a row measured in the current shortened run); later files win
+ * for the same row id. A summary line carries only bonded/connected p95, working set, max parts per layer and wall
+ * time, so per-stage p50/max, vertex counts and per-row load are null and the row is marked detail "summary-line".
+ * Run counts are the LARGE_WORKLOADS defaults (each row's wall time matches them). --env takes the run's --json
+ * output (node, CPU, load at start/end); --loads takes load-average sample files (time 1m 5m 15m per line) and records
+ * their ranges. The rows then go through the same decideLarge rule; --record writes the JSON (method "shortened").
+ * A later `large --only …` run keeps the assembled rows and marks its own rows source "live".
  *
  * Stage "geom" (spike S1, decision D2) — page 1536×1024 px at 200 µm/px:
  *   B1   8 layers × ~50k vertices, difference of every ADJACENT layer pair in
@@ -58,7 +69,7 @@ const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] :
 const stage = argv[0];
 const QUICK = argv.includes("--quick");
 const RUNS = QUICK ? 1 : +arg("--runs", 15);
-const STAGES = { geom: benchGeom, large: benchLarge };
+const STAGES = { geom: benchGeom, large: benchLarge, "large-assemble": benchLargeAssemble };
 if (MAIN && !STAGES[stage]) { console.error("usage: node test/bench.js " + Object.keys(STAGES).join("|") + " [--runs N] [--json out.json] [--no-fail] [--quick]"); process.exit(2); }
 
 function timeRuns(fn, runs, warm) {
@@ -329,7 +340,7 @@ function benchLarge() {
     for (let i = 0; i < wl.runs; i++) runs.push(largePass(wl, samples, wl.family === "realistic" ? src : null, false).t);
     const st = {};
     for (const k of Object.keys(runs[0])) st[k] = stats(runs.map((r) => r[k]));
-    const row = Object.assign({}, wl, { stages: st, shape: memPass.shape, workingSetMiB: +(memPass.peakBytes / 2 ** 20).toFixed(1),
+    const row = Object.assign({}, wl, { source: "live", detail: "full", stages: st, shape: memPass.shape, workingSetMiB: +(memPass.peakBytes / 2 ** 20).toFixed(1),
       wallS: +((performance.now() - t0) / 1000).toFixed(1), loadAvg: os.loadavg().map((x) => +x.toFixed(2)) });
     report.rows.push(row);
     console.error(`[large] ${wl.id} ${wl.w}×${wl.h} ${wl.family}: final (bonded, gated) p95 ${st.final.p95Ms} ms, connected ${st.finalConnected.p95Ms} ms (reported, KI-CONN-PERF), ws ${row.workingSetMiB} MiB, parts ≤${row.shape.maxPartsPerLayer}/layer, ${row.wallS} s wall`);
@@ -346,7 +357,8 @@ function benchLarge() {
   for (const r of rows) r.xRef = ref ? +(r.stages.final.p95Ms / ref.stages.final.p95Ms).toFixed(2) : null;
   const record = argv.includes("--record");
   const decision = record ? decideLarge(byId) : prev && prev.decision;
-  const merged = Object.assign({}, prev || {}, report, { rows, decision, method: LARGE_METHOD });
+  const merged = Object.assign({}, prev || {}, report, { rows, decision, method: largeMethodKind(rows), methodDetail: LARGE_METHOD });
+  if (merged.method === "full") delete merged.shortened;
   if (record) { fs.mkdirSync(path.dirname(LARGE.perfJson), { recursive: true }); fs.writeFileSync(LARGE.perfJson, JSON.stringify(merged, null, 1) + "\n"); }
   report.decision = decision;
   report.overBudget = gateLarge(byId, decision);
@@ -404,7 +416,7 @@ function decideLarge(byId) {
   let mMp = null;
   for (const mp of Mo.candidates) if (byId.has("r" + mp) && ws("r" + mp) <= Mo.wsMiB && p95("r" + mp) * Mo.k <= Mo.targetMs) mMp = mp;
   const measured = Mo.candidates.filter((mp) => byId.has("r" + mp));
-  const cx = (id) => { const r = byId.get(id); return r ? { maxPartsPerLayer: r.shape.maxPartsPerLayer, maxVerticesPerLayer: r.shape.maxVerticesPerLayer, vertices: r.shape.verticesBonded } : null; };
+  const cx = (id) => { const r = byId.get(id); return r ? { maxPartsPerLayer: r.shape.maxPartsPerLayer, maxVerticesPerLayer: r.shape.maxVerticesPerLayer ?? null, vertices: r.shape.verticesBonded ?? null } : null; };
   return {
     gatingMode: LARGE.gatingMode,
     knownItems: [Object.assign({ mode: "connected", gating: false }, TRACKED_LARGE.connected)],
@@ -436,6 +448,74 @@ function gateLarge(byId, d) {
   return over;
 }
 
+// --------------------------------------------------------------------------- stage "large-assemble" (G2.2b shortened)
+/** The product-owner decision behind the shortened G2.2b run; copied into the results file by large-assemble. */
+const LARGE_SHORTENED = {
+  decided: "2026-10-08 (product owner)",
+  reason: "the full G2.2b run (5 warm-up + 30 runs at the gated points, 1 + 5 elsewhere) was stopped after about 6.5 h as overly thorough",
+  liveRows: "only the rows still needed were run live: realistic 25 Mpx (r25) and the realistic 470 mm page (laser470, 3525×4700), 1 warm-up + 5 runs each",
+  skippedRule: "remaining busy rows (b20, b25, laser470-busy) are not measured; the busy family is reported, never gated, and the measured busy rows already show that cost follows part count, not pixels",
+  loadBaseline: "background 1-minute load ≈ 3–4 from desktop processes (DisplayLinkManager ≈ 50 % CPU, Firefox, Hyprland, short-lived fuser /dev/video* probes) during both runs, plus ≈ 1 from the single-threaded benchmark itself (shortened.load has the sampled ranges); every p95 includes that contention",
+};
+
+/** Parses one "[large] …" summary line (benchLarge's console line) into a row object with provenance; null if not one. */
+function largeRowFromSummary(line, source) {
+  const m = /^\[large\] (\S+) (\d+)×(\d+) (\w+): final \(bonded, gated\) p95 ([\d.]+) ms, connected ([\d.]+) ms .*?ws ([\d.]+) MiB, parts ≤(\d+)\/layer, ([\d.]+) s wall/.exec(line.trim());
+  if (!m) return null;
+  const wl = LARGE_WORKLOADS.find((w) => w.id === m[1]);
+  if (!wl || wl.w !== +m[2] || wl.h !== +m[3] || wl.family !== m[4]) throw new Error("summary line does not match LARGE_WORKLOADS: " + line);
+  const st = (p95) => ({ n: wl.runs, p50Ms: null, p95Ms: p95, maxMs: null });
+  return Object.assign({}, wl, { source, detail: "summary-line",
+    stages: { final: st(+m[5]), finalBonded: st(+m[5]), finalConnected: st(+m[6]) },
+    shape: { maxPartsPerLayer: +m[8], partsPerLayer: null, verticesBonded: null, verticesConnected: null, maxVerticesPerLayer: null, supportPieces: null, contacts: null, svgBytes: null },
+    workingSetMiB: +m[7], wallS: +m[9], loadAvg: null });
+}
+
+/** Load-average samples ("<time> <1m> <5m> <15m> …" per line) → range summary. */
+function largeLoadSummary(text, label) {
+  const s = text.split("\n").map((l) => /^(\S+) ([\d.]+) ([\d.]+) ([\d.]+)/.exec(l)).filter(Boolean).map((m) => ({ t: m[1], l: [+m[2], +m[3], +m[4]] }));
+  if (!s.length) return { label, samples: 0 };
+  const one = s.map((x) => x.l[0]).sort((a, b) => a - b);
+  return { label, samples: s.length, from: s[0].t, to: s[s.length - 1].t, first: s[0].l, last: s[s.length - 1].l,
+    oneMin: { min: one[0], median: one[Math.floor(one.length / 2)], max: one[one.length - 1] } };
+}
+
+/** "full" only when every row was measured live in the harness at its default run counts; otherwise "shortened". */
+function largeMethodKind(rows) {
+  return rows.length === LARGE_WORKLOADS.length && rows.every((r) => r.source !== "log" && r.detail !== "summary-line" && !r.runsOverridden) ? "full" : "shortened";
+}
+
+function benchLargeAssemble() {
+  const logs = (arg("--logs") || "").split(",").filter(Boolean).map((x) => { const [file, prov] = x.split("="); return { file, provenance: prov || "log" }; });
+  if (!logs.length) throw new Error("large-assemble needs --logs file=log|live[,…]");
+  const byId = new Map(), sources = [];
+  for (const { file, provenance } of logs) {
+    if (provenance !== "log" && provenance !== "live") throw new Error("provenance must be log|live: " + file);
+    const ids = [];
+    for (const line of fs.readFileSync(file, "utf8").split("\n")) { const r = largeRowFromSummary(line, provenance); if (r) { byId.set(r.id, r); ids.push(r.id); } }
+    sources.push({ file: path.relative(path.join(__dirname, ".."), path.resolve(file)), provenance, rows: ids });
+  }
+  const env = arg("--env") ? JSON.parse(fs.readFileSync(arg("--env"), "utf8")) : {};
+  const loads = (arg("--loads") || "").split(",").filter(Boolean).map((x) => { const [file, label] = x.split("="); return largeLoadSummary(fs.readFileSync(file, "utf8"), label || file); });
+  const rows = LARGE_WORKLOADS.map((wl) => byId.get(wl.id)).filter(Boolean);
+  const ref = byId.get("srs-desktop");
+  for (const r of rows) r.xRef = ref ? +(r.stages.final.p95Ms / ref.stages.final.p95Ms).toFixed(2) : null;
+  const decision = decideLarge(byId);
+  const report = { stage: "large", method: largeMethodKind(rows), quick: false, node: env.node || null, v8: env.v8 || null, cpu: env.cpu || null, threads: env.threads || null,
+    memGiB: env.memGiB || null, backend: env.backend || null,
+    shortened: Object.assign({}, LARGE_SHORTENED, {
+      sources, skipped: LARGE_WORKLOADS.filter((wl) => !byId.has(wl.id)).map((wl) => wl.id),
+      runCounts: "each row at its LARGE_WORKLOADS default: warm-up + runs = 5 + 30 for the calibration rows, r1/r1.25/r1.5/r2/r4/r6/r8 and r16; 1 + 5 for the rest (rows[].warm, rows[].runs); wall times match",
+      liveRun: { loadAvgStart: env.loadAvgStart || null, loadAvgEnd: env.loadAvgEnd || null }, load: loads,
+      missingFields: "summary lines carry no per-stage p50/max, vertex counts (shape.maxVerticesPerLayer, verticesBonded), per-row load or contact counts; those are null",
+    }),
+    rows, decision, methodDetail: LARGE_METHOD, tracked: TRACKED_LARGE };
+  if (argv.includes("--record")) { fs.mkdirSync(path.dirname(LARGE.perfJson), { recursive: true }); fs.writeFileSync(LARGE.perfJson, JSON.stringify(report, null, 1) + "\n"); }
+  return { stage: "large-assemble", method: report.method, sources, skipped: report.shortened.skipped, decision,
+    overBudget: gateLarge(byId, decision), knownOver: knownOverLarge(byId, decision), tracked: TRACKED_LARGE,
+    rows: rows.map((r) => ({ id: r.id, source: r.source, finalP95Ms: r.stages.final.p95Ms, connectedP95Ms: r.stages.finalConnected.p95Ms, workingSetMiB: r.workingSetMiB, xRef: r.xRef })) };
+}
+
 function main() {
   if (stage === "large" && typeof global.gc !== "function") { // the working-set pass needs gc()
     const r = require("child_process").spawnSync(process.execPath, ["--expose-gc", __filename, ...argv], { stdio: "inherit" });
@@ -453,5 +533,5 @@ function main() {
     process.exit(1);
   }
 }
-module.exports = { LARGE_WORKLOADS, LARGE, TRACKED_LARGE, decideLarge, gateLarge, knownOverLarge };
+module.exports = { LARGE_WORKLOADS, LARGE, TRACKED_LARGE, LARGE_SHORTENED, decideLarge, gateLarge, knownOverLarge, largeRowFromSummary, largeMethodKind };
 if (MAIN) main();

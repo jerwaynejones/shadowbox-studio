@@ -36,6 +36,8 @@ Interpretation, construction and appearance are independent schema fields:
 
 **Amendment (2026-10-07, laser target):** product-owner requirements for the xTool S1 with conveyor feeder (40 W diode, 1/4" basswood or poplar plywood) are in **Appendix D** and decision **D6** (`docs/ARCHITECTURE.md`). They add a machine profile, size-by-height, a physical fabrication pitch with a per-device pixel budget, and 6 mm ply feature defaults, and they fix the G2 execution order (Appendix D.4). Requirements the SRS does not state carry `PO-LASER-n` IDs.
 
+**Amendment (2026-10-08, G2.2b result):** the large-image benchmark finished as a **shortened run** (product-owner decision; G2.2b "Method"), set the pixel budgets to **desktop 25 Mpx, mobile 1 Mpx** (bonded mode), and showed that busy-art cost follows part count, not pixels. The complexity caps and busy-art simplification therefore move from G4.3 into G2 as the new task **G2.7b**, right after G2.7 (Appendix D.4, D.9).
+
 **Repo state (verified 2026-10-07):**
 - `/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked` holds one commit, `f0552c7 Init commit`.
 - `origin` is `jerwaynejones/shadowbox-studio` (the fork already exists); `upstream` is `strondcode/shadowbox-studio`.
@@ -214,11 +216,11 @@ Every opaque-layer requirement in the SRS maps to the task IDs defined in §5–
 | §9.3 | Worker request/response (`engineVersion`, `sourceHash`, `status`, `progress`); cancel | G2.10a, G4.1 | AT-15, AT-24 |
 | §9.4 | Package layout; safe import limits | G3.7, G3.8, G3.9 | AT-16, AT-22 |
 | §9.5 | Severity policy; acks invalidated; no downgrade; full code list | G1.0, G2.2 | AT-08, AT-15 |
-| §12.3 | Complexity caps fail explicitly | G2.7, G2.10a | AT-24 |
+| §12.3 | Complexity caps fail explicitly; per-device part/vertex caps and explicit busy-art simplification (G2.7b, moved from G4.3) | G2.7, G2.7b, G2.10a | AT-24 |
 | NFR-01 | Fully local; no remote URLs (XML namespaces allow-listed) | G4.7 | AT-23 |
 | NFR-02 | Off the main thread; 100 ms acknowledgement; 500 ms cancel | G4.1 | AT-24 |
 | NFR-03 | Desktop p95: 1.5 s draft, 10 s final, 5 s package on the SRS §12.3 workload (1536², 8 layers); mobile 768² × 6 final ≤ 8 s. Laser-detail workloads at the pixel budget have their own recorded targets (PO-LASER-9) | G2.2b, G2.7, G4.4 | AT-24 |
-| NFR-04 | Memory budget; estimate first; never silently lower resolution; per-device pixel budget, cap reported (PO-LASER-4) | G2.1b, G2.2b, G2.14, G4.3 | AT-22, AT-24 |
+| NFR-04 | Memory budget; estimate first; never silently lower resolution; per-device pixel budget, cap reported (PO-LASER-4) | G2.1b, G2.2b, G2.7b, G2.14, G4.3 | AT-22, AT-24 |
 | NFR-05 | Deterministic across engines; no unseeded randomness; no transcendental math in hashed paths | T0.6, S1, S4, S6, G2.10b, G4.8 | AT-16, AT-17, AT-23 |
 | NFR-06 | Escape user strings; safe imports | G3.7, G3.8, G3.9 | AT-22 |
 | NFR-07 | WCAG 2.2 AA target; keyboard; 200% zoom; documented audit | G2.13c, G4.5 | AT-20 |
@@ -240,8 +242,8 @@ Every opaque-layer requirement in the SRS maps to the task IDs defined in §5–
 | PO-LASER-6 | 6 mm ply defaults: min feature 1.5 mm (D3 rules), advisory warning below 2.0 mm (amends MAT-03 starting value) | G2.1, G2.7, G2.8, G5.1 | AT-10 |
 | PO-LASER-7 | Kerf 0.15 mm recorded in the profile and package; export stays nominal, `kerfMode=external` (MAT-05) | G2.1, G3.5, G3.9, G5.1 | AT-19 |
 | PO-LASER-8 | Layer thickness 6.35 mm nominal, editable; UI hints that 1/4" ply is often 5.5–6 mm actual (with PRJ-01, MAT-02) | G2.1, G2.11c | AT-03 |
-| PO-LASER-9 | Large-image benchmark sets the pixel budgets and the recorded laser-detail performance targets (with NFR-03/04) | G2.2b, G2.7, G4.4 | AT-24 |
-| PO-LASER-10 | G2 execution order: G2.0 → G2.1 → G2.1b → G2.2b → rest of G2 in plan order | Appendix D.4 | — |
+| PO-LASER-9 | Large-image benchmark sets the pixel budgets and the recorded laser-detail performance targets (with NFR-03/04) | G2.2b, G2.7, G2.7b, G4.4 | AT-24 |
+| PO-LASER-10 | G2 execution order: G2.0 → G2.1 → G2.1b → G2.2b → rest of G2 in plan order, with G2.7b right after G2.7 | Appendix D.4 | — |
 
 ---
 
@@ -1672,7 +1674,7 @@ Holes and labels are unchanged.
 
 ## 8. Phase G2: bonded relief engine and opaque review UI
 
-**Execution order (PO-LASER-10, Appendix D.4):** G2.0 → G2.1 → **G2.1b** → **G2.2b** → G2.2 → G2.3 → … → G2.14 → checkpoint. Tasks keep their IDs; the list in Appendix D.4 is binding where it differs from the section order below.
+**Execution order (PO-LASER-10, Appendix D.4):** G2.0 → G2.1 → **G2.1b** → **G2.2b** → G2.2 → G2.3 → … → G2.7 → **G2.7b** → G2.8 → … → G2.14 → checkpoint. Tasks keep their IDs; the list in Appendix D.4 is binding where it differs from the section order below.
 
 ### Task G2.0: Deterministic resampling and the raster contract (IMG-02/03, GEO-06, NFR-05, PO-LASER-4/5)
 
@@ -1732,7 +1734,7 @@ Holes and labels are unchanged.
   - `SBSchema.geometryKey(p) → object`, scoped as in §3 (`machine` is included: a profile change re-runs validation and invalidates acks).
   - `SBSchema.MACHINES` (frozen): `{"xtool-s1-feeder": {id, name: "xTool S1 + feeder", maxProcessingHeightMM: 470, maxLengthMM: 3000, maxMaterialWidthMM: 545, maxThicknessMM: 14, kerfMM: 0.15}}` (PO-LASER-1). `defaults()` copies it into `project.machine` for both presets; every field stays editable and is saved with the project.
   - `SBSchema.resolveSize(project, srcW, srcH) → {artWMM, artHMM, pageWMM, pageHMM}` (PO-LASER-3), on the oriented source size, integer µm: with `sizeBy: "height"`, `pageH = targetMM`, `artH = pageH − 2·frame`, `artW = round(artH·srcW/srcH)`; with `"width"` the same on the other axis. With `lockAspect: false` both `widthMM`/`heightMM` are used as entered.
-  - `SBSchema.limits(deviceClass) → {fabPxBudget, …}`. G2.1 introduces it with the **provisional** budgets desktop 16,000,000 px and mobile 4,000,000 px; G2.2b replaces them with the measured values; G2.14 and G4.3 add the other limits.
+  - `SBSchema.limits(deviceClass) → {fabPxBudget, …}`. G2.1 introduces it with the **provisional** budgets desktop 16,000,000 px and mobile 4,000,000 px; G2.2b replaces them with the measured values (done 2026-10-08: desktop 25,000,000 px, mobile 1,000,000 px); G2.7b adds the complexity caps; G2.14 and G4.3 add the other limits.
   - Plywood preset additions: `geometry.sizeBy = "height"`, `targetMM = 300`, `fabPitchMM = 0.1`, `material.minFeatureMM = 1.5`, `advisoryFeatureMM = 2.0`; `thicknessMM = 6.35` nominal stays (PRJ-01), and the thickness control carries the hint "1/4\" ply often measures 5.5–6 mm: measure and enter it" (PO-LASER-8, G2.11c).
   - `SBSchema.toMM(v, unit)` / `fromMM(mm, unit)` for `unit ∈ {"mm","in"}`. Both quantize: `toMM(v,"in") = Math.round(v*25400)/1000`.
   - `SBSchema.modeChangeDiff(p, patch) → [{path, from, to, reason}]`. It lists the settings that a change of `interpretation.mode` or `construction.mode` affects or makes inapplicable. G2.11e uses it.
@@ -1827,6 +1829,10 @@ Runs fourth in G2 (Appendix D.4), **before** the rest of the engine, so that eve
 
 Runs: 5 warm-ups and 30 runs at the candidate budget points (16 Mpx desktop; the chosen mobile point), 1 + 5 runs at the exploration points.
 
+**Method as run — shortened (product owner, 2026-10-08):** the full run was stopped after about 6.5 h as overly thorough. The rows it had completed count as measured data and are taken from their `[large]` summary lines (provenance `log`: `srs-desktop`, `srs-mobile`, `r1`–`r20`, `b4`, `b9`, `b12`, `b16`, each at its default run count). Only the rows still needed were then run live (provenance `live`): realistic 25 Mpx (`r25`) and the realistic 470 mm page (`laser470`), 1 warm-up + 5 runs each. The remaining busy rows (`b20`, `b25`, `laser470-busy`) were skipped. `node test/bench.js large-assemble` builds `docs/perf/large-image.json` from the summary lines and applies the same decision rule. The JSON records `method: "shortened"`, per-row `source` and run counts, the skipped rows and the load samples (background ≈ 3–4 from desktop processes; every p95 includes it). Summary lines carry no per-stage p50/max or vertex counts, so those are `null`. Raw evidence is in `docs/perf/raw/`, and the method is written up in `docs/perf/LARGE_IMAGE.md`.
+
+**Result (2026-10-08):** desktop budget **25 Mpx** at the **10 s** target, not relaxed (`r16` 7.20 s; `r25` 9.75 s, 404 MiB). Mobile budget **1 Mpx**, fabrication enabled (`r1` 1.82 s × k 4 = 7.28 s, 62.6 MiB; k provisional). The SRS desktop reference measures 2.73 s. No escalation, the gate passes, and `FAB_DEVICE_DRAFT_ONLY` is not needed. The busy rows are evidence that cost follows part count, not pixels: 2k–8k parts/layer give 35–163 s bonded at 4–16 Mpx, while realistic art stays near 120 parts/layer. That moves the complexity caps and busy-art simplification forward to **G2.7b**.
+
 **Decision rule** (recorded in `docs/perf/LARGE_IMAGE.md` and D6):
 - **Desktop budget** = the largest candidate in {16, 20, 25} Mpx whose estimated working set is ≤ 512 MiB (NFR-04) and whose final-plus-validation p95 (stages 3–4, realistic family) is ≤ the laser-detail target. The target is **10 s** (the NFR-03 final budget) when 16 Mpx meets it. If 16 Mpx does not, the budget stays at 16 Mpx and a **relaxed laser-detail target** is recorded: the measured p95 rounded up to the next 5 s, applying only to fabrication generation of workloads larger than the SRS §12.3 reference (draft stays 1.5 s and the SRS workload keeps 10 s). The busy family is reported, not gated: it is bounded by `COMPLEXITY_LIMIT` (G4.3).
 - **Gating mode (product owner, 2026-10-08, option (a)):** every p95 in this rule is the **bonded**-mode final plus validation (the plywood/laser default, D1 unsmoothed). Connected mode is measured and reported per row (`stages.finalConnected`) but never gates: its cost (≈18 s p95 on the SRS desktop reference, dominated by `maxDeviationUm` `segDist`/`distToGrid` and the T-junction split) is the tracked known item **KI-CONN-PERF** (Appendix D.8), resolved in G4 by the G4.1 worker pool and/or smoothing optimisation.
@@ -1836,12 +1842,12 @@ Runs: 5 warm-ups and 30 runs at the candidate budget points (16 Mpx desktop; the
 - The measured part and vertex counts at each budget are recorded as the starting point for the G4.3 complexity caps.
 - Note (D6): IMG-07 limits sources to 16 MP (desktop) and 8 MP (mobile), and the engine never upsamples, so a desktop budget above 16 Mpx takes effect only if IMG-07 is raised.
 
-- [ ] **Tests (fast, in `node test/run_tests.js`):**
+- [x] **Tests (fast, in `node test/run_tests.js`):**
   - `PO-LASER-4 SBSchema.limits budgets equal docs/perf/large-image.json`
   - `PO-LASER-9 bench workload list covers 4–25 Mpx and the 470 mm-high page`
   - `PO-LASER-9 large-image targets recorded for desktop and mobile` (the JSON has a target and a p95 for both)
   - `NFR-03 G2.2b decision gates on bonded mode …` and `NFR-03 G2.2b no mobile candidate qualifies → mobile fabrication recorded as draft-only …` (synthetic rows through `decideLarge` / `gateLarge`)
-- [ ] **Run** `node test/bench.js large` and record the results; the stage exits 0 only when every gated (bonded) row is within its recorded target; connected overruns are listed as `KNOWN-OVER (tracked)` KI-CONN-PERF.
+- [x] **Run** `node test/bench.js large` and record the results (done as the shortened run above; `large-assemble` recorded it); the stage exits 0 only when every gated (bonded) row is within its recorded target; connected overruns are listed as `KNOWN-OVER (tracked)` KI-CONN-PERF.
 - **Commit** (budgets, results and the D6 table in one commit).
 
 ### Task G2.2: Acknowledgements and the export gate (`SBDiag`, part 2)
@@ -2145,6 +2151,29 @@ Add `test/bench.js support`, which runs on `randomNestedStack(lcg(1), 1536, 1024
 **B3b budget (required for G2.7 exit; D2, Appendix C):** `test/bench.js geom` B3b, the support pass on the dense B1 stack (3,407 pairs), must reach **p95 < 3 s** (the B3 budget; provisional < 6 s until now). The pass computes **one layer-level `intersection` per adjacent layer pair**, attributes the pieces to parts by bbox sweep, and classifies each piece with `SBGeom.survivesInset` / `classifyContact` (never per part pair: 39 s; never `SBGeom.offset`). It skips the containment `difference` when only the graph is needed and reuses the B1 differences. When B3b passes, remove its provisional entry. The support stage is also run on the G2.2b large workloads and its p95 is recorded next to the PO-LASER-9 targets.
 - [ ] **Step 4–5:** run (fail), implement, run (pass), commit.
 
+### Task G2.7b: Complexity caps and busy-art simplification (§12.3, NFR-03/04, PO-LASER-9; moved from G4.3, 2026-10-08)
+
+Runs right after G2.7 (Appendix D.4, D.9). **Why:** G2.2b showed that the pixel budget bounds realistic art but not busy art. At the same pixel count, busy art costs 10.7× (4 Mpx) to 22.7× (16 Mpx) the realistic row: 2k–8k parts/layer give 35–163 s bonded, and `b9` reaches 706 MiB. Realistic art stays near 120 parts/layer and under 10 s up to 25 Mpx. Part count, not pixels, has to be bounded, and it has to be bounded before G2.10a builds the pipeline that enforces it.
+
+**Files:**
+- Modify: `js/schema.js` (`limits(deviceClass)` gains the caps; the simplification setting in `material.cleanup`), `js/construct.js` (the pre-trace estimate and the simplification pass on masks), `js/diag.js` (the `COMPLEXITY_LIMIT` payload; one info code for applied simplification), `test/bench.js` (`large` records vertex counts and runs the busy rows with simplification), `docs/perf/LARGE_IMAGE.md`, D6 table
+- Test: `test/run_tests.js`
+
+**Interfaces:**
+- `SBSchema.limits(deviceClass)` → adds `maxPartsPerLayer`, `maxVerticesPerLayer`, `maxVerticesTotal`. Mobile starts at the SRS §12.3 values (100 parts/layer, 20,000 vertices; SRS:L562). Desktop is set by measurement in this task: the largest caps at which the capped busy workload at the desktop budget meets the 10 s bonded target and 512 MiB. The G2.2b starting point (`decision.complexityStart`): realistic art at the budgets peaks at 120 parts/layer, and busy art at 1,991 parts/layer already takes 35 s, so the desktop cap lies well below 2k parts/layer. Vertex counts were not recorded by the shortened G2.2b run, and this task measures them.
+- `SBConstruct.estimateComplexity(masks, w, h) → {partsPerLayer[], maxPartsPerLayer}`: a connected-component count per layer on the masks, O(w·h). It runs before trace, so a cap fails before the expensive boolean stages. Vertex caps are checked after `fromMasks`, before validation.
+- **Simplification (explicit, never silent; NFR-04, R5):** `material.cleanup.simplify: "off" | "busy"` (default `"off"`; in `geometryKey`). `"busy"` drops parts below the minimum part area (`minPartMM2`) and merges parts closer than the minimum feature width (mask closing at `minFeatureUm/2`), then re-estimates. The result is reported as an info diagnostic with the before/after part counts per layer. Draft and fabrication apply the same rule at their own pitch, and the diagnostics carry the quality (LYR-06).
+- **Diagnostics:** over a cap → `COMPLEXITY_LIMIT` (blocking, process) with `measured` (parts or vertices), `limit`, the layer and the device class. Its fix text offers "Simplify busy art" and the existing cleanup controls. No truncated geometry is ever returned (§12.3, SRS:L564). G2.10a stage 11 consumes these caps unchanged.
+
+- [ ] **Tests (fast):**
+  - `§12.3 mobile caps 100 parts / 20k vertices` (moved from G4.3)
+  - `§12.3 estimateComplexity counts components per layer before trace (equals fromMasks part count on fixtures)`
+  - `§12.3 busy fixture over the desktop cap → COMPLEXITY_LIMIT (blocking, measured/limit/layer/device class), no layers`
+  - `NFR-04 simplify "busy" is explicit: off by default, in geometryKey, reported with before/after counts`
+  - `NFR-05 simplify "busy" is deterministic (hashes ×3)`
+- [ ] **Bench:** `node test/bench.js large --only b4,b9,r25 …` with the caps and with `simplify: "busy"`. Record vertex counts and the capped busy p95 next to the PO-LASER-9 targets. The G4.1 worker pool remains the other mitigation and is not required here.
+- [ ] **Commit** (caps, simplification, results).
+
 ### Task G2.8: Feature and sampling checks (GEO-05/06, MAT-03, AT-10)
 
 **Files:**
@@ -2225,7 +2254,7 @@ Add `test/bench.js support`, which runs on `randomNestedStack(lcg(1), 1536, 1024
   8. frame union (exact rectangle ring)
   9. replay `repairs[]` (G2.9)
   10. registration holes are proposed from the pre-hole material, then subtracted (G3.1 inserts this; until then, the legacy connected corners from G1.7)
-  11. complexity caps. If parts per layer or total vertices exceed the device-class cap, return `status: "error"` with blocking `COMPLEXITY_LIMIT` and **no** layers.
+  11. complexity caps (G2.7b: `SBSchema.limits(deviceClass)` caps, `SBConstruct.estimateComplexity` before trace). If parts per layer or total vertices exceed the device-class cap, return `status: "error"` with blocking `COMPLEXITY_LIMIT` and **no** layers.
   12. `SBGeom.validate`, `SBSupport.validate` and `featureChecks`, then `SBSupport.checkEnvelope(page, machine, material)` (moved forward from G3.10; GEO-10, PO-LASER-2): when `machine` is set, the shared page (artwork plus frame, the extent of every layer sheet) must satisfy `(pageW ≤ maxLengthMM ∧ pageH ≤ maxProcessingHeightMM) ∨ (pageW ≤ maxProcessingHeightMM ∧ pageH ≤ maxLengthMM)`, compared in µm, else `PAGE_OVERFLOW` (blocking, measured page vs limit, fix: "reduce the target size or edit the machine profile"); `material.thicknessMM > maxThicknessMM` gives `MACHINE_THICKNESS` (blocking; registered with this task). Never rescales
   13. `assignParts`
   14. guides plus guide-containment validation (G3.1 inserts this)
@@ -2497,7 +2526,7 @@ Each task below is fully specified. It is expanded into step-level TDD before ex
 | **G4.0** Service-worker update gating (**before G4.1**) | Remove the unconditional `skipWaiting()` (`sw.js:46-48`). A waiting worker shows "Update available"; `skipWaiting` runs only on user action and never while the project is unsaved or an export is in progress. One cache per version; visible cache/update status. Because a dedicated worker's `importScripts` goes through the controlling SW, the worker must never mix versions (G4.1 handshake). | `sw.js:19-66`, `app.js:664` | `DEP-02 sw.js has no unconditional skipWaiting in install`; `DEP-02 VERSION == APP_VERSION` (T0.2); AT-23 evidence | DEP-02 |
 | **G4.1** Worker pool, cancel and stale handling (§9.3; expanded 2026-10-08, KI-CONN-PERF) | **Worker pool:** a pool of Web Workers sized `min(navigator.hardwareConcurrency − 1, cap)` (at least 1; cap recorded per device class, e.g. 8 desktop / 4 mobile) parallelises the per-layer and per-adjacent-pair stages — trace / `SBMaterial.fromMasks`, connected smoothing, the adjacent-pair differences, the support pass, `layerSVG` and the layer hashes — and merges results in a **deterministic order** (layer index, then pair index), so `materialHash`, `layerHash` and `geometryHash` are unchanged by pool size or scheduling (test: hashes equal for pool sizes 1, 2 and N). Every pool worker passes the engine-version handshake. The pool may be pulled earlier than G4 if performance blocks progress. `js/worker.js` `importScripts`s the pure modules in §4 order and runs `SBEngine.generate`. Messages follow §3 `GenerateRequest`/`GenerateResponse`: `engineVersion` is checked both ways (a mismatch rejects and reloads the worker), `status: "progress"` messages are posted per stage, and the response carries `validatedLayers`, `diagnostics` and `geometryHash`. The controller accepts a response only if `requestId` and `revision` match. It **transfers a copy** of `normalizedSource.pixels`, so the project keeps its own copy. Cancel = `worker.terminate()` plus respawn (< 500 ms). Packaging runs in the worker. `build.js` **changes**: it emits the worker modules as `<script type="text/sb-worker">` and starts a Blob worker in `dist/`. On `file://` failure it falls back to chunked main-thread execution with a notice. | `SBDiag.acceptResult(active, response) → boolean` (pure) | `AT-15 stale response discarded`; `§9.3 engineVersion mismatch rejected`; `AT-15 cancel during export keeps last revision and source`; `§9.3 progress messages precede done`; `NFR-05 worker pool hashes equal for pool sizes 1, 2, N`; `§9.3 every pool worker passes the engine-version handshake`; four-list consistency extended to `worker.js` | NFR-02, UI-06, §9.3, NFR-09, KI-CONN-PERF |
 | **G4.2** Draft vs fabrication pipelining | The G2.10b rule is already enforced. This task makes the fab generation run in the worker while the UI stays responsive, caches the last fab snapshot per revision, and shows "Preparing fabrication geometry…" in the export flow. | `js/app.js`, `js/worker.js` | `LYR-06 export regenerates at the fabrication rasterPlan (G2.1b) in worker`; `LYR-06 cached fab snapshot reused only for the same revision` | LYR-06 |
-| **G4.3** Resource envelope and complexity caps | `deviceClass()` uses `deviceMemory` plus coarse pointer, with a user override. `SBSchema.limits(deviceClass).fabPxBudget` carries the G2.2b budgets (PO-LASER-4). The working-set estimate is `w·h·bytesPerStage` on the `rasterPlan` raster; over budget means reject or offer an explicit downsample. Complexity caps per device class (parts per layer, total vertices; mobile: 100 parts/layer, 20,000 vertices per SRS:L562) feed `COMPLEXITY_LIMIT`. Also applies the mobile `.sbrproj` 64 MiB limit. | `SBSchema.estimateWorkingSet(w, h, N)`, `SBSchema.limits(deviceClass)` | `NFR-04 estimate > 192 MiB on mobile → reject code`; `§12.3 mobile caps 100 parts / 20k vertices`; `§9.4 mobile maxBytes 64 MiB` | IMG-07, NFR-04, §12.3 |
+| **G4.3** Resource envelope (complexity caps moved to G2.7b, 2026-10-08) | `deviceClass()` uses `deviceMemory` plus coarse pointer, with a user override. `SBSchema.limits(deviceClass).fabPxBudget` carries the G2.2b budgets (PO-LASER-4: desktop 25 Mpx, mobile 1 Mpx). The working-set estimate is `w·h·bytesPerStage` on the `rasterPlan` raster; over budget means reject or offer an explicit downsample. The per-device complexity caps and busy-art simplification are **G2.7b** (moved forward after G2.2b); G4.3 re-checks them on the reference devices with the G4.4 numbers. Also applies the mobile `.sbrproj` 64 MiB limit. | `SBSchema.estimateWorkingSet(w, h, N)`, `SBSchema.limits(deviceClass)` | `NFR-04 estimate > 192 MiB on mobile → reject code`; `§9.4 mobile maxBytes 64 MiB` | IMG-07, NFR-04 |
 | **G4.4** Benchmarks | `test/bench.js <stage>`: 5 warmups then 30 runs, reporting p50/p95/max as JSON in `docs/perf/`, plus an in-app `?bench`. Workloads: the SRS §12.3 desktop reference (1536 × 1536 samples, 8 layers; the NFR-03 acceptance workload, unchanged), the **mobile reference (768 × 768 samples, 6 layers, ≤100 parts/layer, ≤20,000 vertices)**, and the **laser-detail workloads of G2.2b** (desktop and mobile at their pixel budgets, PO-LASER-9), re-measured on the reference machines against the targets recorded in D6. Cancellation latency is measured in both. **KI-B1 (tracked):** B1 keeps its 2 s budget; G4.4 resolves the ≈2.14 s p95 overrun from the S6 T-split by optimizing `SBGeom` normalize (numeric vertex keys, skip noding when no collinear contact exists, normalize once per boolean; S5 F5 measured worst-case union + normalize 19 s vs 5.9 s for the union alone), then removes the `TRACKED.B1` entry from `test/bench.js`. | — | Desktop p95: draft ≤ 1.5 s, final plus validation ≤ 10 s, package ≤ 5 s. **Mobile p95: final plus validation ≤ 8 s**, measured on the recorded ≥4 GB device. Cancel ≤ 500 ms on both. **Laser-detail p95 within the D6 targets** (10 s unless G2.2b recorded a relaxed one). | NFR-02, NFR-03, AT-24, PO-LASER-9 |
 | **G4.5** Accessibility | Keyboard path through stages, tabs, diagnostics and dialogs; `aria-live` status; focus styles; `prefers-reduced-motion` disables the tilt animation; **200% zoom** layout check; audit in `docs/A11Y_AUDIT.md`; browser matrix in `docs/ACCEPTANCE.md` | `index.html`, `css/style.css`, `app.js` | AT-20 evidence, including 200% zoom and reduced motion, and proof/section available without tilt | NFR-07, NFR-08, UI-04 |
 | **G4.6** Local server path and deployment docs | README (replacing "No server" at `README.md:18`): serve locally with `python3 -m http.server 8000` (or any static server) and open `http://localhost:8000`. Production needs HTTPS for the service worker and workers. `file://` gives reduced responsiveness (open question 10). The T0.2 four-list test stays the only `SHELL` guard; there is no generated `SHELL`. | `README.md`, `docs/DEPLOY.md` | `DEP-01 README documents local server and HTTPS`; AT-23 evidence | DEP-01 |
@@ -2517,7 +2546,7 @@ Each task below is fully specified. It is expanded into step-level TDD before ex
 | R2 | Containment-aware smoothing falls back to raw so often that smoothing is useless in bonded mode | Faceted bonded edges | **Realized and decided (S2, D1, 2026-10-07):** whole-loop fallback rounds 2.8 % of bonded corners on real images. Bonded ships unsmoothed; connected keeps G1.2 smoothing. Per-vertex lazy pinning (S2 option (c), 70–84 % rounded) is a deferred enhancement gated on NFR-03 (final + validation p95 ≤ 10 s desktop, ≤ 8 s mobile at fabrication pitch; prototype 13.4 s on busy-1536) | **Active:** bonded is unsmoothed (option (b)); nesting holds by construction |
 | R3 | Cross-browser non-determinism (decode, transcendental math, joins) | AT-16/17/23 fail; NFR-05 broken | Raw PNG decoder; hard-coded hash constants; miter/square joins only; integer circle table; integer resampler; `.sbrproj` stores samples; G4.8 cross-browser hash comparison | Store canonical geometry in `.sbrproj` and treat it as authoritative on reopen |
 | R4 | Engine extraction or resampling changes connected-mode output | AT-21 regression | Persisted goldens (sheetMasks, thresholds, oldRun, legacy SVG); the resample change is documented; DEP-04 table | Revert to `legacyRun` for connected mode |
-| R5 | Fabrication resolution plus booleans exceed 10 s (desktop) or 8 s (mobile) p95, or the memory budget; **sharpened by the 0.1 mm/px target (PO-LASER-4): 16 Mpx is about 7× the SRS 1536² workload** | NFR-03 and NFR-04 fail | Large-image benchmark G2.2b sets the per-device pixel budget **before** the engine work; support benchmark from G2.7 (B3b < 3 s); bbox sweep; diagnostic aggregation; worker; per-device complexity caps with `COMPLEXITY_LIMIT` | Coarsen the target pitch or lower the pixel budget only through an explicit UI choice or a recorded D6 change, never silently |
+| R5 | Fabrication resolution plus booleans exceed 10 s (desktop) or 8 s (mobile) p95, or the memory budget; **sharpened by the 0.1 mm/px target (PO-LASER-4): 16 Mpx is about 7× the SRS 1536² workload** | NFR-03 and NFR-04 fail | Large-image benchmark G2.2b sets the per-device pixel budget **before** the engine work; support benchmark from G2.7 (B3b < 3 s); bbox sweep; diagnostic aggregation; worker (G4.1 pool); per-device complexity caps with `COMPLEXITY_LIMIT` and explicit busy-art simplification (G2.7b; G2.2b showed busy cost follows part count, not pixels) | Coarsen the target pitch or lower the pixel budget only through an explicit UI choice or a recorded D6 change, never silently |
 | R6 | Two-phase export and fab re-review of repairs feel heavy to users | Friction, ignored warnings | Aggregated diagnostics; review panel shows only fab-new or changed items prominently; the fab snapshot is cached per revision (G4.2) | Pre-generate the fab snapshot in the background after edits settle |
 | R7 | Four-list, `dist/` or SW drift breaks offline use or serves mixed versions | Broken PWA, wrong hashes | T0.2 hygiene checks; SW off on localhost; G4.0 before G4.1; engine-version handshake | — |
 | R8 | `DecompressionStream` missing on old Safari (< 16.4) | PNG and ZIP read fail | Feature-detect and block with an explanation; NFR-08 only targets current and previous browser versions | — |
@@ -2675,7 +2704,7 @@ Product-owner requirements of **2026-10-07**. Target: **xTool S1 with the convey
 ### D.2 Rules
 
 - **Sizing (PO-LASER-3).** `geometry.sizeBy` is `"height"` (default) or `"width"`; `geometry.targetMM` is the finished page along that axis (artwork plus 2 × frame). `SBSchema.resolveSize` derives the other axis from the oriented source aspect on the 1 µm grid. Default `targetMM` is **300 mm** (the v1.1.0 default size, now applied to the height); it is a proposed value, editable per project.
-- **Pitch (PO-LASER-4/5).** `geometry.fabPitchMM = 0.1`. `SBRaster.fabRaster` computes `ceil(art / pitch)` per axis, coarsens the pitch in 1 µm steps until `W·H ≤ fabPxBudget`, then clamps each axis to the source (never upsample) and reports `shortPx`. mm/px always comes from the real raster (`sxUm`, `syUm`). Diagnostics: `FAB_PITCH_CAPPED` (info: actual vs target mm/px, device class, budget) and `FAB_EXCEEDS_SOURCE` (warning: source vs target px and the shortfall). Both are shown in the dimbar before generation and written to the manifest. Budgets are per device class in `SBSchema.limits`; provisional desktop 16 Mpx and mobile 4 Mpx until G2.2b.
+- **Pitch (PO-LASER-4/5).** `geometry.fabPitchMM = 0.1`. `SBRaster.fabRaster` computes `ceil(art / pitch)` per axis, coarsens the pitch in 1 µm steps until `W·H ≤ fabPxBudget`, then clamps each axis to the source (never upsample) and reports `shortPx`. mm/px always comes from the real raster (`sxUm`, `syUm`). Diagnostics: `FAB_PITCH_CAPPED` (info: actual vs target mm/px, device class, budget) and `FAB_EXCEEDS_SOURCE` (warning: source vs target px and the shortfall). Both are shown in the dimbar before generation and written to the manifest. Budgets are per device class in `SBSchema.limits`: measured by G2.2b (2026-10-08) as **desktop 25 Mpx, mobile 1 Mpx** (provisional 16 / 4 Mpx before that).
 - **Envelope (PO-LASER-1/2).** With `machine` set, the page (the shared extent of every layer sheet, frame included) fits iff `(W ≤ L ∧ H ≤ P) ∨ (W ≤ P ∧ H ≤ L)` with `P = maxProcessingHeightMM`, `L = maxLengthMM`, compared in µm; otherwise `PAGE_OVERFLOW` (blocking). `thicknessMM > maxThicknessMM` gives `MACHINE_THICKNESS` (blocking). `maxMaterialWidthMM` (545) is validated to be ≥ the processing height and stated in the assembly guide as the stock width limit. `machine: null` disables the check (GEO-10's "optional" bed).
 - **Features (PO-LASER-6).** `material.minFeatureMM = 1.5`, `material.advisoryFeatureMM = 2.0`. Support contacts: block if w < 0.5 µm, `SUPPORT_NARROW` if w < 1.5 mm, `FEATURE_MARGINAL` if w < 2.0 mm (D3 width, `survivesInset`, integer-µm rounding before halving). Parts and necks: `PART_THIN` / `NECK_NARROW` at 1.5 mm, `FEATURE_MARGINAL` at 2.0 mm (G2.8 erosion rule). `SAMPLING_LOW` then needs mm/px ≤ 0.5.
 - **Kerf (PO-LASER-7).** `machine.kerfMM = 0.15` is informational: the guide and manifest state it and that no offset was applied (MAT-05). The calibration coupon (G5.1) carries the kerf comb and a 1.0–3.0 mm web ladder. Internal compensation remains out of scope until the SRS L613 fixtures exist.
@@ -2704,22 +2733,23 @@ Product-owner requirements of **2026-10-07**. Target: **xTool S1 with the convey
 10. **G2.5b** Explicit height filter/remap.
 11. **G2.6** Construction strategies.
 12. **G2.7** `SBSupport.validate`, including the advisory tier and **B3b p95 < 3 s** (layer-level intersection per adjacent pair with `survivesInset`).
-13. **G2.8** Feature and sampling checks, including the advisory tier.
-14. **G2.9** Reviewed clip repair.
-15. **G2.10a** `SBEngine.generate` through validation, with the envelope check.
-16. **G2.10b** Z model, accounting, hashes, freeze.
-17. **G2.11a–e** Controller, stages, control groups (size, pitch, machine), applicability, mode-change review.
-18. **G2.12** Opaque proof, section and tilt.
-19. **G2.13a–d** Layer cards, overlays, diagnostics panel, clip dialog.
-20. **G2.14** Source intake and preflight (with `rasterPlan`).
-21. **Checkpoint** v2.0.0-alpha.2.
+13. **G2.7b** Complexity caps and busy-art simplification (new 2026-10-08, moved from G4.3; D.9): per-device part/vertex caps in `SBSchema.limits`, a pre-trace estimate, explicit merging/dropping of tiny parts, `COMPLEXITY_LIMIT` with clear diagnostics.
+14. **G2.8** Feature and sampling checks, including the advisory tier.
+15. **G2.9** Reviewed clip repair.
+16. **G2.10a** `SBEngine.generate` through validation, with the envelope check.
+17. **G2.10b** Z model, accounting, hashes, freeze.
+18. **G2.11a–e** Controller, stages, control groups (size, pitch, machine), applicability, mode-change review.
+19. **G2.12** Opaque proof, section and tilt.
+20. **G2.13a–d** Layer cards, overlays, diagnostics panel, clip dialog.
+21. **G2.14** Source intake and preflight (with `rasterPlan`).
+22. **Checkpoint** v2.0.0-alpha.2.
 
 ### D.5 Affected tasks (summary)
 
 - **Data model (§3, ARCHITECTURE §3):** `geometry.{sizeBy, targetMM, fabPitchMM}` replace `fabPx`; `geometry.bedMM` is replaced by the top-level `machine` profile (in `geometryKey`); `material.minFeatureMM` 1.5 and new `advisoryFeatureMM` 2.0; `GeometryConfig` gains the pitch and cap fields.
-- **G2:** G2.0 (fabRaster, diagnostics, tests), G2.1 (schema fields, `MACHINES`, `resolveSize`, `limits`), G2.1b and G2.2b (new), G2.4b (`procRes` → legacy pitch, `sizeBy: "width"`), G2.7 (advisory tier, B3b budget), G2.8 (advisory tier, sampling at 1.5 mm), G2.10a (raster from `rasterPlan`; envelope check moved here from G3.10), G2.10b (consumes `rasterPlan`), G2.11b (`#in-res` becomes a pitch input), G2.11c (size, pitch and machine controls; dimbar), G2.14 (preflight returns the raster plan; explicit downsample records a coarser pitch).
+- **G2:** G2.0 (fabRaster, diagnostics, tests), G2.1 (schema fields, `MACHINES`, `resolveSize`, `limits`), G2.1b and G2.2b (new), G2.4b (`procRes` → legacy pitch, `sizeBy: "width"`), G2.7 (advisory tier, B3b budget), G2.7b (new: complexity caps and busy-art simplification, moved from G4.3), G2.8 (advisory tier, sampling at 1.5 mm), G2.10a (raster from `rasterPlan`; envelope check moved here from G3.10), G2.10b (consumes `rasterPlan`), G2.11b (`#in-res` becomes a pitch input), G2.11c (size, pitch and machine controls; dimbar), G2.14 (preflight returns the raster plan; explicit downsample records a coarser pitch).
 - **G3:** G3.5 (guide names the machine and the external kerf), G3.9 (manifest: machine profile, pitch, budget, cap, shortfall), G3.10 (export gating on the engine's envelope diagnostics; `bedMM` removed).
-- **G4:** G4.3 (`fabPxBudget` from G2.2b; working set on the planned raster), G4.4 (NFR-03 workloads: SRS reference unchanged, laser-detail workloads added with the D6 targets).
+- **G4:** G4.1 (worker pool, the other busy-art mitigation), G4.3 (`fabPxBudget` from G2.2b; working set on the planned raster; complexity caps moved to G2.7b), G4.4 (NFR-03 workloads: SRS reference unchanged, laser-detail workloads added with the D6 targets).
 - **G5:** G5.1 (coupon ladder 1.0–3.0 mm with 1.5 and 2.0 mm).
 - **Risks:** R5 sharpened; R12 added.
 
@@ -2746,3 +2776,12 @@ Recorded as D6 item 11 in `docs/ARCHITECTURE.md`.
 - **Mobile candidates below 2 Mpx:** 1.0, 1.25 and 1.5 Mpx are added (G2.2b decision rule). If none qualifies in bonded mode, **mobile fabrication is draft-only**: fabrication export is disabled on mobile with a clear diagnostic, proposed code `FAB_DEVICE_DRAFT_ONLY` (blocking at fabrication quality: "Fabrication export is not available on this device; open the project on a desktop to export cut files"), registered and emitted when G2.2b part 2 records that outcome, honoured by G2.14 preflight and the G2.2 export gate; `SBSchema.limits("mobile").fabPxBudget` is then `null`. Draft generation stays available. This outcome is recorded, not a stop.
 - **Worker pool:** G4.1 is expanded from a single worker to a pool of Web Workers (size from `navigator.hardwareConcurrency`, capped) that parallelises the per-layer and per-adjacent-pair stages (trace / `fromMasks`, smoothing, differences, support pass, `layerSVG` / hashes) with a deterministic merge order so hashes are unchanged; the engine-version handshake stays. It may be pulled earlier if performance blocks progress.
 - **Machines:** benchmarks run on the Linux development machine (i7-11800H, 16 threads); budgets measured there are conservative for the owner's MacBook Air M5. Safari / JavaScriptCore coverage stays in G4.8.
+
+### D.9 G2.2b result and plan change (product owner, 2026-10-08)
+
+Recorded as D6 item 12 in `docs/ARCHITECTURE.md`; results in `docs/perf/LARGE_IMAGE.md` and `docs/perf/large-image.json`.
+
+- **Shortened run.** The full G2.2b run (5 + 30 runs at the gated points) was stopped after about 6.5 h as overly thorough. Its completed rows count as measured data (provenance `log`, from the preserved summary lines). Only `r25` and `laser470` were run live (1 warm-up + 5 runs). The busy rows `b20`, `b25` and `laser470-busy` were skipped. The JSON records `method: "shortened"`, per-row provenance and run counts, and the load baseline (≈ 3–4 from desktop processes).
+- **Budgets** come from the realistic-family bonded rows by the G2.2b rule: desktop **25 Mpx** at **10 s** (not relaxed), mobile **1 Mpx** (fabrication enabled, k = 4 provisional). `SBSchema.limits` carries them, and the test `PO-LASER-4 SBSchema.limits budgets equal docs/perf/large-image.json` keeps them in step. The desktop margin is thin (`r25` 9.75 s under load ≈ 5); G4.4 re-measures, and the fallback is 20 Mpx.
+- **Busy rows are evidence, not gates:** 2k–8k parts/layer → 35–163 s bonded at 4–16 Mpx, so cost is driven by part count, not pixels.
+- **Plan change:** the complexity caps and busy-art simplification (formerly G4.3: per-device part/vertex caps, merging or dropping tiny parts, clear diagnostics) move into G2 as **G2.7b**, scheduled right after the support task G2.7 (D.4). The **G4.1 worker pool** is the other mitigation and may still be pulled earlier if performance blocks progress.

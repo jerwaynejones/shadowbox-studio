@@ -1,0 +1,17 @@
+[large] srs-desktop 1536×1536 realistic: final (bonded, gated) p95 2728.4 ms, connected 16525.4 ms (reported, KI-CONN-PERF), ws 107.5 MiB, parts ≤103/layer, 705.3 s wall
+[large] srs-mobile 768×768 realistic: final (bonded, gated) p95 1258.8 ms, connected 6681.2 ms (reported, KI-CONN-PERF), ws 38.2 MiB, parts ≤95/layer, 297.6 s wall
+[large] r1 1155×866 realistic: final (bonded, gated) p95 1820.3 ms, connected 11468.5 ms (reported, KI-CONN-PERF), ws 62.6 MiB, parts ≤120/layer, 494.1 s wall
+[large] r1.25 1291×968 realistic: final (bonded, gated) p95 2492.2 ms, connected 12105.1 ms (reported, KI-CONN-PERF), ws 64.6 MiB, parts ≤120/layer, 534.7 s wall
+[large] r1.5 1414×1061 realistic: final (bonded, gated) p95 2191.3 ms, connected 13026.1 ms (reported, KI-CONN-PERF), ws 74.9 MiB, parts ≤120/layer, 568.3 s wall
+[large] r2 1633×1225 realistic: final (bonded, gated) p95 2430.4 ms, connected 15671.5 ms (reported, KI-CONN-PERF), ws 78.9 MiB, parts ≤120/layer, 675.2 s wall
+[large] r6 2828×2121 realistic: final (bonded, gated) p95 4252.9 ms, connected 23528.8 ms (reported, KI-CONN-PERF), ws 212.5 MiB, parts ≤120/layer, 1045.9 s wall
+[large] r8 3266×2449 realistic: final (bonded, gated) p95 4670.7 ms, connected 27404.9 ms (reported, KI-CONN-PERF), ws 164.1 MiB, parts ≤120/layer, 1223.9 s wall
+[large] r4 2309×1732 realistic: final (bonded, gated) p95 3304.9 ms, connected 20014.5 ms (reported, KI-CONN-PERF), ws 144.3 MiB, parts ≤120/layer, 871.5 s wall
+[large] b4 2309×1732 busy: final (bonded, gated) p95 35393.9 ms, connected 98384.4 ms (reported, KI-CONN-PERF), ws 204.9 MiB, parts ≤1991/layer, 945.4 s wall
+[large] r9 3464×2598 realistic: final (bonded, gated) p95 4733.4 ms, connected 27441.8 ms (reported, KI-CONN-PERF), ws 188.8 MiB, parts ≤120/layer, 240.5 s wall
+[large] b9 3464×2598 busy: final (bonded, gated) p95 87898.5 ms, connected 241957.3 ms (reported, KI-CONN-PERF), ws 706.2 MiB, parts ≤4603/layer, 2326.7 s wall
+[large] r12 4000×3000 realistic: final (bonded, gated) p95 5958.4 ms, connected 31197 ms (reported, KI-CONN-PERF), ws 216.5 MiB, parts ≤120/layer, 280.6 s wall
+[large] b12 4000×3000 busy: final (bonded, gated) p95 123829.4 ms, connected 332890.1 ms (reported, KI-CONN-PERF), ws 516.7 MiB, parts ≤6097/layer, 3232.1 s wall
+[large] r16 4618×3464 realistic: final (bonded, gated) p95 7198.8 ms, connected 35137.7 ms (reported, KI-CONN-PERF), ws 232.3 MiB, parts ≤120/layer, 1567 s wall
+[large] b16 4618×3464 busy: final (bonded, gated) p95 163236 ms, connected 462258.4 ms (reported, KI-CONN-PERF), ws 446.8 MiB, parts ≤8092/layer, 4421.3 s wall
+[large] r20 5164×3873 realistic: final (bonded, gated) p95 8526.3 ms, connected 37674.7 ms (reported, KI-CONN-PERF), ws 304.9 MiB, parts ≤120/layer, 333 s wall

@@ -2376,7 +2376,7 @@ suite("schema.js — project v1 (PRJ-01/02, MAT-02/03, §9.1)", () => {
   const sz = SBSchema.resolveSize({ ...p, construction: { ...p.construction, frame: { enabled: true, widthMM: 10 } } }, 4000, 3000);
   check("PO-LASER-3 height mode: page 300 high, art 280 × 373.333", sz.pageHMM === 300 && sz.artHMM === 280 && sz.artWMM === 373.333 && sz.pageWMM === 393.333);
   check("PO-LASER-4 fab pitch 0.1 mm, draft 720", p.geometry.fabPitchMM === 0.1 && p.geometry.draftPx === 720 && !("fabPx" in p.geometry));
-  check("PO-LASER-4 provisional pixel budgets", SBSchema.limits("desktop").fabPxBudget === 16e6 && SBSchema.limits("mobile").fabPxBudget === 4e6);
+  check("PO-LASER-4 measured pixel budgets (G2.2b): desktop 25 Mpx, mobile 1 Mpx", SBSchema.limits("desktop").fabPxBudget === 25e6 && SBSchema.limits("mobile").fabPxBudget === 1e6);
   check("PO-LASER-6 advisory below minFeature rejected", !SBSchema.validate({ ...p, material: { ...p.material, advisoryFeatureMM: 1 } }).ok);
   check("PO-LASER-8 thickness 6.35 nominal, editable", p.material.thicknessMM === 6.35 && p.material.thicknessState === "nominal" &&
     SBSchema.validate({ ...p, material: { ...p.material, thicknessMM: 5.7, thicknessState: "measured" } }).ok);
@@ -2595,7 +2595,7 @@ suite("engine.js — G2.1b draft/fabrication raster snapshot: rasterPlan, qualit
     d.geometry.artWMM === 450 && d.geometry.artHMM === 300 && d.geometry.sxUm === 625 && d.geometry.syUm === 625 && d.geometry.mmPerPxMax === 0.625 &&
     d.geometry.pitchUm === null && d.geometry.targetPitchUm === null && d.geometry.pxBudget === null && d.geometry.deviceClass === "desktop" &&
     d.geometry.capped === "none" && d.geometry.shortPx === null);
-  check("GEO-06 fabrication mm/px from the real raster", f.geometry.sxUm === 100 && f.geometry.syUm === 100 && f.geometry.mmPerPxMax === 0.1 && f.geometry.pxBudget === 16e6);
+  check("GEO-06 fabrication mm/px from the real raster", f.geometry.sxUm === 100 && f.geometry.syUm === 100 && f.geometry.mmPerPxMax === 0.1 && f.geometry.pxBudget === 25e6);
   check("IMG-03 height mode resample: nearest when downsampled, none when the source fits; tonal → area",
     d.geometry.resample === "nearest" && f.geometry.resample === "nearest" &&
     E.rasterPlan(p, { w: 800, h: 600 }, "fabrication", "desktop").geometry.resample === "none" &&
@@ -2604,10 +2604,10 @@ suite("engine.js — G2.1b draft/fabrication raster snapshot: rasterPlan, qualit
     E.rasterPlan({ ...p, geometry: { ...p.geometry, resample: { height: "area", tonal: "area" } } }, src, "fabrication", "desktop").geometry.resample === "area");
 
   const m = E.rasterPlan(p, src, "fabrication", "mobile"), cap = m.diagnostics.find((x) => x.code === "FAB_PITCH_CAPPED");
-  check("PO-LASER-4 same project on mobile (budget 4e6) → 2446×1631 at 184 µm, FAB_PITCH_CAPPED info with measured 0.184 / limit 0.1 mm/px",
-    m.geometry.rasterW === 2446 && m.geometry.rasterH === 1631 && m.geometry.pitchUm === 184 && m.geometry.capped === "budget" && m.geometry.pxBudget === 4e6 &&
+  check("PO-LASER-4 same project on mobile (budget 1e6, G2.2b) → 1223×816 at 368 µm, FAB_PITCH_CAPPED info with measured 0.368 / limit 0.1 mm/px",
+    m.geometry.rasterW === 1223 && m.geometry.rasterH === 816 && m.geometry.pitchUm === 368 && m.geometry.capped === "budget" && m.geometry.pxBudget === 1e6 &&
     m.geometry.deviceClass === "mobile" && codes(m) === "FAB_PITCH_CAPPED" && cap.severity === "info" && cap.quality === "fabrication" &&
-    cap.measured.value === 0.184 && cap.measured.unit === "mm/px" && cap.limit.value === 0.1 && /mobile/.test(cap.message));
+    cap.measured.value === 0.368 && cap.measured.unit === "mm/px" && cap.limit.value === 0.1 && /mobile/.test(cap.message));
   check("PO-LASER-4 the mobile draft plan is unchanged (720×480) and has no diagnostics",
     (() => { const md = E.rasterPlan(p, src, "draft", "mobile"); return md.geometry.rasterW === 720 && md.geometry.rasterH === 480 && md.diagnostics.length === 0; })());
 
@@ -2619,8 +2619,9 @@ suite("engine.js — G2.1b draft/fabrication raster snapshot: rasterPlan, qualit
     sd.diagnostics.length === 0 && sd.geometry.rasterW === 720 && sd.geometry.rasterH === 540);
   check("GEO-06 the source-capped plan reports the real 0.5 mm/px", sf.geometry.sxUm === 500 && sf.geometry.syUm === 500 && sf.geometry.mmPerPxMax === 0.5);
   check("PO-LASER-4/5 budget and source caps combine on mobile",
-    (() => { const b = E.rasterPlan(p, { w: 2000, h: 1600 }, "fabrication", "mobile");   // art 375×300 mm → 168 µm budget pitch → 2233×1786 > source
-      return b.geometry.capped === "budget+source" && codes(b) === "FAB_EXCEEDS_SOURCE,FAB_PITCH_CAPPED" && b.geometry.rasterW <= 2000 && b.geometry.rasterH <= 1600; })());
+    (() => { const b = E.rasterPlan(p, { w: 1000, h: 800 }, "fabrication", "mobile");   // art 375×300 mm → 336 µm budget pitch → 1117×893 > source
+      return b.geometry.capped === "budget+source" && codes(b) === "FAB_EXCEEDS_SOURCE,FAB_PITCH_CAPPED" && b.geometry.rasterW === 1000 && b.geometry.rasterH === 800 &&
+        JSON.stringify(b.geometry.shortPx) === "[117,93]"; })());
   check("LYR-06 diagnostics carry the project revision", E.rasterPlan({ ...p, revision: 9 }, small, "fabrication", "desktop").diagnostics.every((x) => x.revision === 9));
 
   { const r0 = E.rasterPlan(p, { w: 4000, h: 3000 }, "fabrication", "desktop"), r90 = E.rasterPlan(withRotate(p, 90), { w: 4000, h: 3000 }, "fabrication", "desktop");
@@ -2672,9 +2673,32 @@ suite("engine.js — G2.1b draft/fabrication raster snapshot: rasterPlan, qualit
 suite("G2.2b — large-image benchmark and per-device pixel budgets (PO-LASER-4/9, NFR-03/04, AT-24)", () => {
   // Product-owner decision 2026-10-08 (G2.2b stop condition, option (a)): budgets gate on BONDED mode; connected is
   // measured and reported as KI-CONN-PERF; mobile adds sub-2 Mpx candidates and records "draft-only" if none qualifies.
-  // "PO-LASER-4 SBSchema.limits budgets equal docs/perf/large-image.json" and "PO-LASER-9 large-image targets recorded
-  // for desktop and mobile" are added with the recorded run (G2.2b part 2).
-  const { LARGE_WORKLOADS, LARGE, decideLarge, gateLarge } = require("./bench.js");
+  // Part 2 (2026-10-08): the recorded results (docs/perf/large-image.json, shortened run by product-owner decision:
+  // rows preserved from the stopped full run plus r25 and laser470 measured live) set SBSchema.limits.
+  const { LARGE_WORKLOADS, LARGE, decideLarge, gateLarge, largeRowFromSummary, largeMethodKind } = require("./bench.js");
+  const perf = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "docs", "perf", "large-image.json"), "utf8"));
+  const dec = perf.decision;
+  check("PO-LASER-4 SBSchema.limits budgets equal docs/perf/large-image.json",
+    SBSchema.limits("desktop").fabPxBudget === dec.desktop.fabPxBudget &&
+    SBSchema.limits("mobile").fabPxBudget === (dec.mobile.fabrication === "draft-only" ? null : dec.mobile.fabPxBudget));
+  check("PO-LASER-9 large-image targets recorded for desktop and mobile",
+    dec.gatingMode === "bonded" && dec.escalate.length === 0 &&
+    Number.isFinite(dec.desktop.targetMs) && Number.isFinite(dec.desktop.p95Ms) && dec.desktop.p95Ms <= dec.desktop.targetMs && dec.desktop.workingSetMiB <= LARGE.desktop.wsMiB &&
+    Number.isFinite(dec.mobile.targetMs) && (dec.mobile.fabrication === "draft-only" ||
+      (dec.mobile.fabrication === "enabled" && Number.isFinite(dec.mobile.p95Ms) && dec.mobile.p95Ms <= dec.mobile.targetMs && dec.mobile.workingSetMiB <= LARGE.mobile.wsMiB)) &&
+    Number.isFinite(dec.srsDesktop.p95Ms) && dec.srsDesktop.p95Ms <= dec.srsDesktop.targetMs);
+  { const byId = new Map(perf.rows.map((r) => [r.id, r]));
+    check("PO-LASER-9 recorded decision is reproducible from the recorded rows (decideLarge) and passes gateLarge",
+      JSON.stringify(decideLarge(byId)) === JSON.stringify(dec) && gateLarge(byId, dec).length === 0);
+    check("PO-LASER-9 shortened method recorded honestly: every row has provenance log|live and its run counts, skipped rows listed, load recorded",
+      perf.method === "shortened" && largeMethodKind(perf.rows) === "shortened" && perf.rows.every((r) => (r.source === "log" || r.source === "live") && r.warm >= 1 && r.runs >= 5) &&
+      perf.rows.filter((r) => r.source === "live").map((r) => r.id).sort().join() === "laser470,r25" &&
+      perf.shortened.skipped.join() === "b20,b25,laser470-busy" && perf.shortened.load.length === 2 && perf.shortened.load.every((l) => l.samples > 0)); }
+  { const r = largeRowFromSummary("[large] r25 5774×4330 realistic: final (bonded, gated) p95 9749.1 ms, connected 47273.1 ms (reported, KI-CONN-PERF), ws 404.4 MiB, parts ≤120/layer, 420.3 s wall", "live");
+    check("PO-LASER-9 large-assemble parses a summary line: p95s, working set, parts, default run counts, missing detail null",
+      r.id === "r25" && r.source === "live" && r.stages.final.p95Ms === 9749.1 && r.stages.finalConnected.p95Ms === 47273.1 && r.workingSetMiB === 404.4 &&
+      r.shape.maxPartsPerLayer === 120 && r.shape.maxVerticesPerLayer === null && r.stages.final.p50Ms === null && r.warm === 1 && r.runs === 5 &&
+      largeRowFromSummary("not a summary line", "log") === null); }
   const W = LARGE_WORKLOADS || [];
   const has = (w, h, fam) => W.some((r) => r.w === w && r.h === h && r.family === fam && r.layers === 8);
   const sizes = [[2309, 1732], [3464, 2598], [4000, 3000], [4618, 3464], [5164, 3873], [5774, 4330]];
