@@ -368,7 +368,7 @@ select {
 .tool[hidden], .draftbadge[hidden], .statebadge[hidden] { display: none; }
 /* G2.13b (UI-05): result state badge; the label text carries the state, the border only reinforces it. */
 .statebadge {
-  position: absolute; top: 10px; right: 12px;
+  margin-left: auto; align-self: center;
   padding: 3px 8px;
   font: 11px var(--mono);
   letter-spacing: 0.04em;
@@ -656,13 +656,14 @@ select {
       <button class="tab" data-tab="section" role="tab" aria-selected="false">Section</button>
       <button class="tab" data-tab="sheets" role="tab" aria-selected="false">Layers</button>
       <button class="tab" data-tab="tilt" role="tab" aria-selected="false">Tilt (illustrative)</button>
+      <!-- G2.13b (UI-05): result state badge, text label (draft / stale / processing / validated / failed); in the
+           tab bar so every tab (Layers included) shows the result state. -->
+      <span id="state-badge" class="statebadge" role="status" aria-live="polite" hidden></span>
     </nav>
 
     <div id="pane-stack" class="pane active">
       <canvas id="stackcanvas"></canvas>
       <!-- G2.12: Proof and Section are drawn from the canonical polygons (SBProof); Tilt is illustrative only. -->
-      <!-- G2.13b (UI-05): result state badge, text label (draft / stale / processing / validated / failed). -->
-      <span id="state-badge" class="statebadge" role="status" aria-live="polite" hidden></span>
       <span id="tiltnote" class="draftbadge" role="note" hidden>Illustrative: not to scale. Check fit with Proof and Section</span>
       <div class="stacktools">
         <label class="tool" for="in-explode" id="tool-explode" hidden>Explode
@@ -2394,7 +2395,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
 
   const STATES = Object.freeze(["draft", "stale", "processing", "validated", "failed"]);
   const BADGES = {
-    draft: ["Draft", "Draft-quality result: review only; fabrication export regenerates and validates at fabrication quality."],
+    draft: ["Draft", "Draft-quality result: for review only; not validated at fabrication quality."],
     stale: ["Stale", "Settings changed since this result was produced; it no longer matches the project."],
     processing: ["Processing…", "Generating and validating the current settings."],
     validated: ["Validated", "Fabrication-quality result with no blocking diagnostics for the current settings."],
@@ -6823,7 +6824,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *   drawParams(mode)                     → {smoothing, shadows, parallax, illustrative}
  *   modelHash(model)                     → sha256 hex of the model
  *   cards(layers, page)                  → [{layerIndex, role, empty, retainedMM2, wasteMM2, retainedPct}]  (G2.13a)
- *   overlays({cleanupReport, diagnostics, mode}) → [{layerIndex, label, added, removed, bridges, unsupported}]  (G2.13b)
+ *   overlays({cleanupReport, diagnostics, mode}) → [{layerIndex, label, holesFilled, partsRemoved, added, removed, bridges, unsupported}]  (G2.13b)
  *
  * Everything is read from layer.material (the canonical polygons that also feed layerSVG and assemblySVG),
  * so the on-screen proof, the section and the cut files share one source. Fill and edge-stroke rules come from
@@ -6935,9 +6936,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
 
   /**
    * G2.13b (GEO-08, UI-05): the change-overlay model, one entry per cleanupReport layer:
-   *   {layerIndex, addedMM2, removedMM2, label, added, removed, bridges, unsupported: [{areaMM2, region}]}
+   *   {layerIndex, addedMM2, removedMM2, holesFilled, partsRemoved, label, added, removed, bridges,
+   *    unsupported: [{areaMM2, region}]}
    * added/removed are the report's change polygons (µm; null when absent — a fabrication report carries mm²
-   * only), label "+a mm² / −r mm²" ("" when nothing changed), bridges only in connected-sheet mode, unsupported
+   * only), label "+a mm² / −r mm² / h holes filled / p parts removed" (zero terms omitted; "" when nothing
+   * changed), bridges only in connected-sheet mode, unsupported
    * from BOND_UNSUPPORTED diagnostics (region = bbox in mm). The report is not copied or mutated.
    */
   P.overlays = function (input) {
@@ -6948,8 +6951,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       const parts = [];
       if (c.addedMM2 > 0) parts.push("+" + fmtMM2(c.addedMM2) + " mm²");
       if (c.removedMM2 > 0) parts.push("−" + fmtMM2(c.removedMM2) + " mm²");
+      const holesFilled = c.holesFilled || 0, partsRemoved = c.partsRemoved || 0;
+      if (holesFilled > 0) parts.push(holesFilled + (holesFilled === 1 ? " hole" : " holes") + " filled");
+      if (partsRemoved > 0) parts.push(partsRemoved + (partsRemoved === 1 ? " part" : " parts") + " removed");
       return {
-        layerIndex: c.layer, addedMM2: c.addedMM2, removedMM2: c.removedMM2, label: parts.join(" / "),
+        layerIndex: c.layer, addedMM2: c.addedMM2, removedMM2: c.removedMM2, holesFilled, partsRemoved, label: parts.join(" / "),
         added: c.added || null, removed: c.removed || null,
         bridges: mode === "connected-sheet" && c.bridges ? c.bridges : null,
         unsupported: diags.filter((d) => d.code === "BOND_UNSUPPORTED" && d.layer === c.layer).map((d) => ({ areaMM2: d.areaMM2, region: d.region })),
@@ -7297,6 +7303,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   /** v1.1.0 smoothing intent → G1.2 connected-mode smoothing: "smooth" is bounded to 0.05 mm, "faceted" stays raw. */
   const CONNECTED_SMOOTH_TOL_UM = 50;
 
+  /** The legacy page frame shared by connectedLayers and legacyCleanupReport (so their frames cannot drift). */
+  function legacyPage(w, h, cfg) {
+    return global.SBMaterial.page({ artWMM: cfg.widthMM, artHMM: (h * cfg.widthMM) / w, frameMM: cfg.marginMM > 0 ? cfg.marginMM : 0 });
+  }
+
   /**
    * connectedLayers(sheets, w, h, cfg) → {page, layers: MaterialLayer[]}
    *
@@ -7313,7 +7324,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    */
   E.connectedLayers = function (sheets, w, h, cfg) {
     const M = global.SBMaterial;
-    const page = M.page({ artWMM: cfg.widthMM, artHMM: (h * cfg.widthMM) / w, frameMM: cfg.marginMM > 0 ? cfg.marginMM : 0 });
+    const page = legacyPage(w, h, cfg);
     const WU = Math.round(page.wMM * 1000), HU = Math.round(page.hMM * 1000), fU = Math.round(page.frameMM * 1000);
     const rU = Math.round((cfg.holeDiaMM || 0) * 500), inset = Math.round(fU / 2);
     const holes = cfg.holes && fU > 0 && rU >= 1
@@ -7347,7 +7358,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    */
   E.legacyCleanupReport = function (sheets, w, h, cfg) {
     const M = global.SBMaterial;
-    const page = M.page({ artWMM: cfg.widthMM, artHMM: (h * cfg.widthMM) / w, frameMM: cfg.marginMM > 0 ? cfg.marginMM : 0 });
+    const page = legacyPage(w, h, cfg);
     const { sxUm, syUm } = M.scale({ w, h, artWMM: page.artWMM, artHMM: page.artHMM });
     const fUm = Math.round(page.frameMM * 1000), pxMM2 = (sxUm * syUm) / 1e6;
     return sheets.map((sh, k) => {
@@ -8052,7 +8063,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
           ctx.fillStyle = "#FFFFFF"; ctx.font = "bold 12px system-ui, sans-serif"; ctx.fillText("!", cx - 2, cy + 4);
         }
       }
-      // Legend: per-layer changed area in mm² (text, so the overlay never relies on colour alone).
+      // Legend: per-layer changed area in mm² and part counts (text, so the overlay never relies on colour alone).
       ctx.font = "11px ui-monospace, monospace";
       let ly = oy + 14;
       for (const e of ov) {
@@ -8425,7 +8436,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     setRunState({ type: "start" });
     let out;
     try { out = SBEngine.legacyRun(rgba, w, h, state); }
-    catch (err) { setRunState({ type: "fail" }); setStatus(`Generation failed: ${err && err.message || err}`); return; }
+    catch (err) {
+      setRunState({ type: "fail" });
+      setStatus(`Generation failed: ${err && err.message || err}` + (run.sheets.length ? " (the previous result is still shown)" : ""));
+      return;
+    }
     const { sheets, totals } = out;
     setRunState({ type: "done", quality: "draft", diagnostics: [] });
     run.sheets = sheets;

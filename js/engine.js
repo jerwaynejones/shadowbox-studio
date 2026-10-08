@@ -77,6 +77,11 @@
   /** v1.1.0 smoothing intent → G1.2 connected-mode smoothing: "smooth" is bounded to 0.05 mm, "faceted" stays raw. */
   const CONNECTED_SMOOTH_TOL_UM = 50;
 
+  /** The legacy page frame shared by connectedLayers and legacyCleanupReport (so their frames cannot drift). */
+  function legacyPage(w, h, cfg) {
+    return global.SBMaterial.page({ artWMM: cfg.widthMM, artHMM: (h * cfg.widthMM) / w, frameMM: cfg.marginMM > 0 ? cfg.marginMM : 0 });
+  }
+
   /**
    * connectedLayers(sheets, w, h, cfg) → {page, layers: MaterialLayer[]}
    *
@@ -93,7 +98,7 @@
    */
   E.connectedLayers = function (sheets, w, h, cfg) {
     const M = global.SBMaterial;
-    const page = M.page({ artWMM: cfg.widthMM, artHMM: (h * cfg.widthMM) / w, frameMM: cfg.marginMM > 0 ? cfg.marginMM : 0 });
+    const page = legacyPage(w, h, cfg);
     const WU = Math.round(page.wMM * 1000), HU = Math.round(page.hMM * 1000), fU = Math.round(page.frameMM * 1000);
     const rU = Math.round((cfg.holeDiaMM || 0) * 500), inset = Math.round(fU / 2);
     const holes = cfg.holes && fU > 0 && rU >= 1
@@ -127,7 +132,7 @@
    */
   E.legacyCleanupReport = function (sheets, w, h, cfg) {
     const M = global.SBMaterial;
-    const page = M.page({ artWMM: cfg.widthMM, artHMM: (h * cfg.widthMM) / w, frameMM: cfg.marginMM > 0 ? cfg.marginMM : 0 });
+    const page = legacyPage(w, h, cfg);
     const { sxUm, syUm } = M.scale({ w, h, artWMM: page.artWMM, artHMM: page.artHMM });
     const fUm = Math.round(page.frameMM * 1000), pxMM2 = (sxUm * syUm) / 1e6;
     return sheets.map((sh, k) => {

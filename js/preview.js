@@ -226,7 +226,7 @@
           ctx.fillStyle = "#FFFFFF"; ctx.font = "bold 12px system-ui, sans-serif"; ctx.fillText("!", cx - 2, cy + 4);
         }
       }
-      // Legend: per-layer changed area in mm² (text, so the overlay never relies on colour alone).
+      // Legend: per-layer changed area in mm² and part counts (text, so the overlay never relies on colour alone).
       ctx.font = "11px ui-monospace, monospace";
       let ly = oy + 14;
       for (const e of ov) {

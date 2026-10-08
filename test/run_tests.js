@@ -4718,6 +4718,10 @@ suite("diag.js/proof.js/engine.js/preview.js/app.js — G2.13b overlays and stat
   check("GEO-08 overlays: one entry per layer with added/removed polygons and mm² labels",
     oc.length === 2 && oc[1].layerIndex === 1 && oc[1].added === cr[1].added && oc[1].removed === cr[1].removed &&
     /\+2\.5 mm²/.test(oc[1].label) && /−1\.25 mm²/.test(oc[1].label) && oc[0].label === "" && oc[0].added === null);
+  check("UI-05 overlays: part counts (holesFilled, partsRemoved) carried and in the label, zero terms omitted",
+    oc[1].holesFilled === 1 && oc[1].partsRemoved === 2 && /1 hole filled/.test(oc[1].label) && /2 parts removed/.test(oc[1].label) &&
+    oc[0].holesFilled === 0 && oc[0].partsRemoved === 0 &&
+    P.overlays({ cleanupReport: [{ layer: 0, addedMM2: 0, removedMM2: 0, holesFilled: 3, partsRemoved: 0 }], diagnostics: [], mode: "bonded-relief" })[0].label === "3 holes filled");
   check("UI-05 overlays: unsupported regions from BOND_UNSUPPORTED (layer, mm², region), other codes ignored",
     oc[1].unsupported.length === 1 && oc[1].unsupported[0].areaMM2 === 3.5 && JSON.stringify(oc[1].unsupported[0].region) === "[1,2,3,4]" && oc[0].unsupported.length === 0);
   check("UI-05 overlays: bridges in connected mode only",
@@ -4756,6 +4760,8 @@ suite("diag.js/proof.js/engine.js/preview.js/app.js — G2.13b overlays and stat
   const GREEN = "rgba(46,204,113,0.55)", RED = "#E5484D", AMBERC = "#F0A227";
   check("GEO-08 proof overlay: added in green, removed as a dashed outline, mm² labels",
     on.fills.includes(GREEN) && on.strokes.some((x) => x.dash.length > 0) && on.texts.some((t) => /\+2\.5 mm²/.test(t)));
+  check("UI-05 proof overlay legend shows the part counts with the changed area",
+    on.texts.some((t) => /^Layer 2: .*\+2\.5 mm².*1 hole filled.*2 parts removed/.test(t)));
   check("UI-05 proof overlay: unsupported in red with a \"!\" icon; bridges in amber (connected)",
     on.strokes.some((x) => x.style === RED) && on.texts.includes("!") && on.fills.includes(AMBERC));
   pv.setOverlays(P.overlays({ cleanupReport: cr, diagnostics: [], mode: "bonded-relief" }));
@@ -4768,6 +4774,12 @@ suite("diag.js/proof.js/engine.js/preview.js/app.js — G2.13b overlays and stat
   const root = path.join(__dirname, ".."), appSrc = fs.readFileSync(path.join(root, "js", "app.js"), "utf8"), html = fs.readFileSync(path.join(root, "index.html"), "utf8");
   check("UI-05 index.html: a state badge (role=status) and a Changes overlay toggle; #in-bridgesvis kept",
     /id="state-badge"[^>]*role="status"|role="status"[^>]*id="state-badge"/.test(html) && /id="in-overlays"/.test(html) && /id="in-bridgesvis"/.test(html));
+  check("UI-05 index.html: the state badge is in the tab bar, so every tab (Layers included) shows the result state",
+    (() => { const m = /<nav class="tabs"[\s\S]*?<\/nav>/.exec(html); return !!m && /id="state-badge"/.test(m[0]) && (html.match(/id="state-badge"/g) || []).length === 1; })());
+  check("UI-05 Draft badge does not claim export regenerates at fabrication quality (the app exports the draft sheets)",
+    !/regenerat/i.test(D.stateBadge("draft").text) && /not validated/i.test(D.stateBadge("draft").text));
+  check("UI-05 app.js: a failed run says the previous result is still shown",
+    /previous result is still shown/.test(appSrc));
   check("UI-05 app.js: state via SBDiag.nextState (edit → stale, start → processing, done/fail), badge from SBDiag.stateBadge",
     /SBDiag\.nextState\(/.test(appSrc) && /SBDiag\.stateBadge\(/.test(appSrc) && /type: "edit"/.test(appSrc) && /type: "start"/.test(appSrc) &&
     /type: "done"/.test(appSrc) && /type: "fail"/.test(appSrc));

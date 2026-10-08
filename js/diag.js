@@ -351,7 +351,7 @@
 
   const STATES = Object.freeze(["draft", "stale", "processing", "validated", "failed"]);
   const BADGES = {
-    draft: ["Draft", "Draft-quality result: review only; fabrication export regenerates and validates at fabrication quality."],
+    draft: ["Draft", "Draft-quality result: for review only; not validated at fabrication quality."],
     stale: ["Stale", "Settings changed since this result was produced; it no longer matches the project."],
     processing: ["Processing…", "Generating and validating the current settings."],
     validated: ["Validated", "Fabrication-quality result with no blocking diagnostics for the current settings."],

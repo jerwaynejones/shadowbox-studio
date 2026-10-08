@@ -214,13 +214,14 @@
       <button class="tab" data-tab="section" role="tab" aria-selected="false">Section</button>
       <button class="tab" data-tab="sheets" role="tab" aria-selected="false">Layers</button>
       <button class="tab" data-tab="tilt" role="tab" aria-selected="false">Tilt (illustrative)</button>
+      <!-- G2.13b (UI-05): result state badge, text label (draft / stale / processing / validated / failed); in the
+           tab bar so every tab (Layers included) shows the result state. -->
+      <span id="state-badge" class="statebadge" role="status" aria-live="polite" hidden></span>
     </nav>
 
     <div id="pane-stack" class="pane active">
       <canvas id="stackcanvas"></canvas>
       <!-- G2.12: Proof and Section are drawn from the canonical polygons (SBProof); Tilt is illustrative only. -->
-      <!-- G2.13b (UI-05): result state badge, text label (draft / stale / processing / validated / failed). -->
-      <span id="state-badge" class="statebadge" role="status" aria-live="polite" hidden></span>
       <span id="tiltnote" class="draftbadge" role="note" hidden>Illustrative: not to scale. Check fit with Proof and Section</span>
       <div class="stacktools">
         <label class="tool" for="in-explode" id="tool-explode" hidden>Explode

@@ -133,7 +133,11 @@
     setRunState({ type: "start" });
     let out;
     try { out = SBEngine.legacyRun(rgba, w, h, state); }
-    catch (err) { setRunState({ type: "fail" }); setStatus(`Generation failed: ${err && err.message || err}`); return; }
+    catch (err) {
+      setRunState({ type: "fail" });
+      setStatus(`Generation failed: ${err && err.message || err}` + (run.sheets.length ? " (the previous result is still shown)" : ""));
+      return;
+    }
     const { sheets, totals } = out;
     setRunState({ type: "done", quality: "draft", diagnostics: [] });
     run.sheets = sheets;
