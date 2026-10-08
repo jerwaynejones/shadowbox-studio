@@ -32,8 +32,8 @@
  * Besides the plan's list the registry carries every import error code:
  * SBPng.CODES (12), SBJpeg.CODES (4) and the preflight JPEG_UNSUPPORTED
  * (plan Appendix C, S4/S4b), the G2.14 intake codes SOURCE_TOO_LARGE,
- * SOURCE_TOO_MANY_PIXELS, SOURCE_FORMAT and HEIGHT_NEEDS_PNG (IMG-01/07), plus GEO_MULTIPART, which SBGeom.validate
- * reports under D3. Programmer-error throws (GEO_MULTIPART_POLYGON,
+ * SOURCE_TOO_MANY_PIXELS, SOURCE_FORMAT and HEIGHT_NEEDS_PNG (IMG-01/07),
+ * plus GEO_MULTIPART, which SBGeom.validate reports under D3. Programmer-error throws (GEO_MULTIPART_POLYGON,
  * GEO_OFFSET_NONINTEGER, GEO_INSET_NOT_DYADIC) are not user diagnostics.
  *
  * G2.0 (PO-LASER-4/5): FAB_PITCH_CAPPED (info) is registered here; make()

@@ -5038,10 +5038,12 @@ suite("schema.js/diag.js/app.js — G2.14 source intake and explicit preflight (
   check("G2.14 API present", typeof S.preflight === "function" && typeof S.intake === "function" && typeof S.sniff === "function" && typeof S.applyDownsample === "function");
   if (typeof S.preflight !== "function" || typeof S.intake !== "function" || typeof S.sniff !== "function" || typeof S.applyDownsample !== "function") return;
   // A structurally valid PNG whose IHDR claims w × h with a tiny IDAT: inspect never inflates, so this is header-only.
-  const pngHeader = (w, h, { bitDepth = 8, colorType = 0, apng = false, pad = 0 } = {}) => {
+  const pngHeader = (w, h, { bitDepth = 8, colorType = 0, apng = false, pad = 0, exif = 0 } = {}) => {
     const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = bitDepth; ihdr[9] = colorType;
     const parts = [Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), PE.chunk("IHDR", ihdr)];
     if (apng) parts.push(PE.chunk("acTL", Buffer.from([0, 0, 0, 1, 0, 0, 0, 0])));
+    if (exif) { const t = Buffer.alloc(22); t.write("MM", 0, "latin1"); t.writeUInt16BE(42, 2); t.writeUInt32BE(8, 4);   // eXIf: a bare TIFF block
+      t.writeUInt16BE(1, 8); t.writeUInt16BE(0x0112, 10); t.writeUInt16BE(3, 12); t.writeUInt32BE(1, 14); t.writeUInt16BE(exif, 18); parts.push(PE.chunk("eXIf", t)); }
     parts.push(PE.chunk("IDAT", Buffer.from([0x78, 0x9c, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01])), PE.chunk("IEND", Buffer.alloc(0)), Buffer.alloc(pad));
     return new Uint8Array(Buffer.concat(parts));
   };
@@ -5122,12 +5124,35 @@ suite("schema.js/diag.js/app.js — G2.14 source intake and explicit preflight (
   check("NFR-04 downsample never makes the pitch finer than the project's", (() => { const p = S.defaults("plywood"); p.geometry.fabPitchMM = 1.5;
     const q = S.applyDownsample(p, { fromW: 5000, fromH: 4000, toW: 4472, toH: 3577 }); return q.geometry.fabPitchMM === 1.5 && q.extras.history.length === 1; })());
 
+  // ---- the downsample target in the decoded orientation (both routes rotate for EXIF 5..8)
+  { const rot = (exif) => { const r = run(pngHeader(5000, 3400, { exif }), height); return r; };
+    const r6 = rot(6), r1 = rot(1), t = S.downsampleTarget(r6), u = S.downsampleTarget(r1);
+    check("IMG-05 downsampleTarget: height PNG EXIF 6 (raw route) targets the rotated canvas, aspect kept",
+      r6.code === "SOURCE_TOO_MANY_PIXELS" && r6.intake.decode === "raw" && r6.intake.exif === 6 &&
+      t.w === r6.suggestDownsamplePx.h && t.h === r6.suggestDownsamplePx.w && t.w <= 3400 && t.h <= 5000 &&
+      (() => { try { S.applyDownsample(S.defaults("plywood"), { fromW: 3400, fromH: 5000, toW: t.w, toH: t.h }); return true; } catch (e) { return false; } })());
+    check("IMG-05 downsampleTarget: EXIF 1 unchanged", u.w === r1.suggestDownsamplePx.w && u.h === r1.suggestDownsamplePx.h);
+    const j = run(F.jpegHeader({ w: 5000, h: 3400, exif: 8 }), tonal), tj = j.suggestDownsamplePx && S.downsampleTarget(j);
+    check("IMG-05 downsampleTarget: tonal JPEG EXIF 8 (browser route) swapped too", j.code === "SOURCE_TOO_MANY_PIXELS" && tj.w === j.suggestDownsamplePx.h && tj.h === j.suggestDownsamplePx.w); }
+  check("G2.14 preflight without inspect output refuses instead of throwing", (() => {
+    try { const a = S.preflight({ bytes: pngHeader(64, 64), info: null, deviceClass: "desktop", project: S.defaults("plywood") }),
+      b = S.preflight({ bytes: F.jpegHeader({ w: 64, h: 64 }), info: null, deviceClass: "desktop", project: S.defaults("plywood") });
+      return a.ok === false && a.code === "PNG_HEADER" && b.ok === false && b.code === "JPEG_BAD_SEGMENT"; } catch (e) { return false; } })());
+
   // ---- wiring (app.js)
   const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8"), html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
   check("NFR-04 no code path lowers resolution without explicit flag (downscaleIfHuge is gone from js/app.js)", !/downscaleIfHuge/.test(appSrc));
   check("G2.14 app.js loadFile: SBSchema.intake before any decode; height PNG through SBPng.decode; explicit downsample button",
     /SBSchema\.intake\(/.test(appSrc) && /SBPng\.decode\(/.test(appSrc) && /SBSchema\.applyDownsample\(/.test(appSrc) && /id="btn-downsample"/.test(html) &&
     appSrc.indexOf("SBSchema.intake(") < appSrc.indexOf("SBPng.decode("));
+  { const fn = (name) => { const i = appSrc.indexOf("function " + name + "("); return i < 0 ? "" : appSrc.slice(i, appSrc.indexOf("\n  }\n", i)); };
+    const ds = fn("downsampleExplicitly"), sc = fn("syncControls"), sp = fn("syncPitch");
+    check("NFR-04 app.js: the pitch controls follow the project after a downsample (syncControls refreshes #in-res/#out-res)",
+      /\$\("in-res"\)/.test(sp) && /\$\("out-res"\)/.test(sp) && /geometry\.fabPitchMM/.test(sp) && /syncPitch\(\)/.test(sc) &&
+      /applyDownsample\(/.test(ds) && /acceptSource\(/.test(ds) && ds.indexOf("applyDownsample(") < ds.indexOf("acceptSource(") &&
+      /function acceptSource[\s\S]*?regenerate\(\)/.test(appSrc) && /function regenerate\(\) \{\s*syncControls\(\)/.test(appSrc));
+    check("IMG-05 app.js: downsample target and button label come from SBSchema.downsampleTarget (no intake.w/info.w swap test)",
+      /SBSchema\.downsampleTarget\(pre\)/.test(ds) && !/pre\.intake\.w !== pre\.info\.w/.test(appSrc) && (appSrc.match(/SBSchema\.downsampleTarget\(/g) || []).length >= 2); }
 });
 
 // ------------------------------------------------------------------ report

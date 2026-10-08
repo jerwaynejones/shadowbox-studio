@@ -886,8 +886,7 @@
   function bindPitch() {
     const el = $("in-res"), out = $("out-res");
     const show = () => { if (out) out.textContent = SBUtil.fmt(project.geometry.fabPitchMM, 3) + " mm/px"; };
-    el.value = project.geometry.fabPitchMM;
-    show();
+    syncPitch();
     el.addEventListener("input", () => {
       const before = project.revision;
       project = SBSchema.applyFabPitch(project, el.value);
@@ -895,6 +894,17 @@
       if (project.revision !== before) recompute();
     });
     el.addEventListener("change", () => { el.value = project.geometry.fabPitchMM; show(); });
+  }
+
+  /**
+   * Show the project's fabrication pitch in #in-res / #out-res. syncControls() calls it, so a pitch changed outside
+   * the input (the explicit downsample records a coarser pitch through SBSchema.applyDownsample) is never left stale;
+   * the input keeps the user's typing while it has focus.
+   */
+  function syncPitch() {
+    const el = $("in-res"), out = $("out-res");
+    if (el && document.activeElement !== el) el.value = project.geometry.fabPitchMM;
+    if (out) out.textContent = SBUtil.fmt(project.geometry.fabPitchMM, 3) + " mm/px";
   }
 
   // ------------------------------------------------------- G2.11c control groups
@@ -935,6 +945,7 @@
       const el = $("in-" + id);
       if (el && document.activeElement !== el) el.value = vals["in-" + id];
     }
+    syncPitch();
     const co = $("in-cullon");
     if (co) co.checked = project.construction.bridge.cullEnabled;
     syncLegacy();
@@ -1084,7 +1095,9 @@
    * SBEngine.orient); tonal PNG/JPEG use the browser decode, which applies EXIF itself. Nothing is ever downscaled
    * silently: an over-limit source is rejected, and only the explicit Downsample button reduces it (recording the
    * coarser fabrication pitch and a history entry through SBSchema.applyDownsample). The fabrication raster and mm/px
-   * come from the raster plan (dimbar), never from an assumed long side.
+   * come from the raster plan (dimbar), never from an assumed long side. The decode route is chosen here, at intake:
+   * a PNG loaded in tonal mode keeps its browser decode if the mode is later switched to height (interim legacy
+   * pipeline, recorded deviation 4); reload the file to take the raw height route.
    */
   async function loadFile(file) {
     showSourceProblem(null);
@@ -1101,7 +1114,7 @@
     if (!pre.ok) {
       const sug = pre.suggestDownsamplePx;
       showSourceProblem(`${file.name}: ${pre.reason}`, sug ? () => downsampleExplicitly(file, bytes, pre) : null,
-        sug ? (pre.intake.w !== pre.info.w ? `Downsample to ${sug.h} × ${sug.w} px` : `Downsample to ${sug.w} × ${sug.h} px`) : "");
+        sug ? (() => { const t = SBSchema.downsampleTarget(pre); return `Downsample to ${t.w} × ${t.h} px`; })() : "");
       return;
     }
     setStatus(`loading ${file.name}…`);
@@ -1155,12 +1168,15 @@
    */
   async function downsampleExplicitly(file, bytes, pre) {
     showSourceProblem(null);
-    const swap = pre.intake.w !== pre.info.w;   // browser-applied EXIF 5..8: the decoded image is rotated
-    const toW = swap ? pre.suggestDownsamplePx.h : pre.suggestDownsamplePx.w, toH = swap ? pre.suggestDownsamplePx.w : pre.suggestDownsamplePx.h;
+    // The target in the decoded orientation: for EXIF 5..8 the decoded canvas is rotated whoever applies EXIF (the
+    // browser on the tonal route, SBEngine.orient on the raw height route), so the offer is swapped for both.
+    const { w: toW, h: toH } = SBSchema.downsampleTarget(pre);
     setStatus(`downsampling ${file.name} to ${toW} × ${toH} px…`);
     try {
       const full = await decodeSource(file, bytes, pre);
       const fromW = full.naturalWidth || full.width, fromH = full.naturalHeight || full.height;
+      if ((fromW >= fromH) !== (toW >= toH) && fromW !== fromH)   // never distort the aspect (IMG-05)
+        throw new Error(`the decoded image is ${fromW} × ${fromH} px, which does not match the ${toW} × ${toH} px target`);
       const c = document.createElement("canvas");
       c.width = toW; c.height = toH;
       const cx = c.getContext("2d");

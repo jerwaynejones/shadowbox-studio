@@ -47,6 +47,9 @@
  *   SBSchema.applyDownsample(p, {fromW, fromH, toW, toH}) → new project: the
  *                                    explicit downsample; coarser fabPitchMM
  *                                    (never finer) and extras.history entry.
+ *   SBSchema.downsampleTarget(pre)   → {w, h}: suggestDownsamplePx in the
+ *                                    decoded orientation (swapped for EXIF
+ *                                    5..8 on both decode routes).
  *   construction.cleanup.simplify    "off" | "busy" (G2.7b; default "off", in
  *                                    geometryKey): explicit busy-art
  *                                    simplification, SBConstruct.simplifyBusy.
@@ -140,11 +143,11 @@
   // meets the 10 s bonded target and 512 MiB, never below the realistic art measured at that budget; the test
   // "§12.3/PO-LASER-9 desktop caps equal the measured decision" keeps them in step.
   const DESKTOP_CAPS = { maxPartsPerLayer: 258, maxVerticesPerLayer: 132000, maxVerticesTotal: 356000 };   // c208 row (+ c200 vertices), 2026-10-08
-  const LIMITS = ({
+  const LIMITS = {
     desktop: { deviceClass: "desktop", fabPxBudget: 25000000, maxPartsPerLayer: DESKTOP_CAPS.maxPartsPerLayer,
       maxVerticesPerLayer: DESKTOP_CAPS.maxVerticesPerLayer, maxVerticesTotal: DESKTOP_CAPS.maxVerticesTotal },
     mobile: { deviceClass: "mobile", fabPxBudget: 1000000, maxPartsPerLayer: 100, maxVerticesPerLayer: 20000, maxVerticesTotal: 20000 },
-  });
+  };
   // G2.14 (IMG-07, SRS §12.3): the source envelope. Over-limit input is rejected before decode, or downsampled only
   // through the explicit button (applyDownsample); never silently reduced (NFR-04). Limits are inclusive.
   const SOURCE_LIMITS = { desktop: { maxSourceBytes: 25 * 1024 * 1024, maxSourcePx: 16000000 },
@@ -179,6 +182,18 @@
     while (sw * sh > maxPx) { if (sw / sh > w / h) sw--; else sh--; }
     return { w: sw, h: sh };
   }
+
+  /**
+   * downsampleTarget(pre) → {w, h}: the explicit downsample offer (pre.suggestDownsamplePx, in stored orientation) in
+   * the orientation of the decoded image. For EXIF 5..8 the decoded image is rotated on both routes (the browser
+   * applies EXIF on canvas-tonal, SBEngine.orient on raw), so w and h swap; otherwise they are unchanged.
+   */
+  S.downsampleTarget = function (pre) {
+    const sug = pre && pre.suggestDownsamplePx;
+    if (!sug) throw fail("SCHEMA_SIZE", "downsampleTarget needs a preflight result with suggestDownsamplePx");
+    const exif = pre.intake && pre.intake.exif;
+    return exif >= 5 && exif <= 8 ? { w: sug.h, h: sug.w } : { w: sug.w, h: sug.h };
+  };
 
   /**
    * The decode route of intake step 4 and the orientation it implies. Height PNGs are decoded raw by SBPng (EXIF
@@ -225,6 +240,8 @@
     if (b.length > lim.maxSourceBytes)
       return reject("SOURCE_TOO_LARGE", "File is " + fmtMiB(b.length) + "; the " + deviceClass + " limit is " + fmtLimMiB(lim.maxSourceBytes) + ".");
     if (!format) return reject("SOURCE_FORMAT", "File is not a PNG or JPEG image.");
+    if (!info || !(info.w > 0) || !(info.h > 0))   // the public contract: preflight needs inspect output
+      return reject(format === "png" ? "PNG_HEADER" : "JPEG_BAD_SEGMENT", "Image header was not inspected (no dimensions).");
     if (format === "png") {
       const c = global.SBPng.check(info, mode);
       if (c) return reject(c, global.SBDiag.CODES[c].title + ".");
