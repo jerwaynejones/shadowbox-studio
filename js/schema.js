@@ -218,7 +218,8 @@
    *   3. w·h over maxSourcePx → SOURCE_TOO_MANY_PIXELS with suggestDownsamplePx, the largest size inside the envelope.
    * rasterPlan is SBEngine.rasterPlan(project, decoded size, "fabrication", deviceClass) with the source orientation
    * the decode route implies, so pitch, cap and shortfall show before decoding; warnings are its FAB_PITCH_CAPPED /
-   * FAB_EXCEEDS_SOURCE. It is null when the dimensions are unknown or the size cannot be resolved (planError).
+   * FAB_EXCEEDS_SOURCE, plus EXIF_AMBIGUOUS when info.exifAmbiguous is set on a browser-decoded source (Appendix C).
+   * rasterPlan is null when the dimensions are unknown or the size cannot be resolved (planError).
    * Pure: never mutates the project, never lowers anything.
    */
   S.preflight = function (args) {
@@ -237,6 +238,11 @@
         out.warnings = out.rasterPlan.diagnostics.slice();
       } catch (e) { out.planError = e.message; }
     }
+    // Plan Appendix C (S4b → G2.14): browsers disagree on this file's EXIF orientation (an XMP APP1 before the Exif
+    // one, or an IFD entry short of its declared size). Warn on every route the browser decodes; never a rejection.
+    if (out.intake && out.intake.exifAppliedBy === "browser" && info && info.exifAmbiguous)
+      out.warnings.push(global.SBDiag.make("EXIF_AMBIGUOUS", { revision: project.revision,
+        detail: "the file says EXIF " + out.intake.exif + "; check the preview" }));
     if (b.length > lim.maxSourceBytes)
       return reject("SOURCE_TOO_LARGE", "File is " + fmtMiB(b.length) + "; the " + deviceClass + " limit is " + fmtLimMiB(lim.maxSourceBytes) + ".");
     if (!format) return reject("SOURCE_FORMAT", "File is not a PNG or JPEG image.");

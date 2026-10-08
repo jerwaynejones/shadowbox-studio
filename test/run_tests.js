@@ -5134,6 +5134,18 @@ suite("schema.js/diag.js/app.js — G2.14 source intake and explicit preflight (
     check("IMG-05 downsampleTarget: EXIF 1 unchanged", u.w === r1.suggestDownsamplePx.w && u.h === r1.suggestDownsamplePx.h);
     const j = run(F.jpegHeader({ w: 5000, h: 3400, exif: 8 }), tonal), tj = j.suggestDownsamplePx && S.downsampleTarget(j);
     check("IMG-05 downsampleTarget: tonal JPEG EXIF 8 (browser route) swapped too", j.code === "SOURCE_TOO_MANY_PIXELS" && tj.w === j.suggestDownsamplePx.h && tj.h === j.suggestDownsamplePx.w); }
+  // ---- EXIF_AMBIGUOUS (plan Appendix C, S4b → G2.14): a warning on the browser route, never a rejection
+  { const { seg, app1 } = S4B, xmp = seg(0xe1, Buffer.from("http://ns.adobe.com/xap/1.0/\0<x/>", "latin1"));
+    const amb = run(jpegFile({ pre: [xmp, app1(6)], sofOpts: { w: 640, h: 480 } }), tonal), short = run(jpegFile({ pre: [app1(6, 26)], sofOpts: { w: 640, h: 480 } }), tonal);
+    const clear = run(jpegFile({ pre: [app1(6)], sofOpts: { w: 640, h: 480 } }), tonal), big = run(jpegFile({ pre: [xmp, app1(6)], sofOpts: { w: 6000, h: 4000 } }), tonal);
+    const ea = (r) => r.warnings.filter((d) => d.code === "EXIF_AMBIGUOUS");
+    check("IMG-05 EXIF_AMBIGUOUS is a registered warning (process)", !!SBDiag.CODES.EXIF_AMBIGUOUS && SBDiag.CODES.EXIF_AMBIGUOUS.severity === "warning" &&
+      SBDiag.CODES.EXIF_AMBIGUOUS.kind === "process" && /browsers disagree/i.test(SBDiag.CODES.EXIF_AMBIGUOUS.title));
+    check("IMG-05 preflight warns EXIF_AMBIGUOUS for XMP-then-Exif and a short IFD entry, still accepts the file",
+      amb.ok === true && ea(amb).length === 1 && short.ok === true && ea(short).length === 1 && /EXIF 6/.test(ea(amb)[0].message));
+    check("IMG-05 an unambiguous Exif gives no EXIF_AMBIGUOUS", clear.ok === true && ea(clear).length === 0);
+    check("IMG-05 an ambiguous over-pixel JPEG is refused with its downsample offer and the EXIF_AMBIGUOUS warning",
+      big.code === "SOURCE_TOO_MANY_PIXELS" && !!big.suggestDownsamplePx && ea(big).length === 1); }
   check("G2.14 preflight without inspect output refuses instead of throwing", (() => {
     try { const a = S.preflight({ bytes: pngHeader(64, 64), info: null, deviceClass: "desktop", project: S.defaults("plywood") }),
       b = S.preflight({ bytes: F.jpegHeader({ w: 64, h: 64 }), info: null, deviceClass: "desktop", project: S.defaults("plywood") });
@@ -5151,6 +5163,18 @@ suite("schema.js/diag.js/app.js — G2.14 source intake and explicit preflight (
       /\$\("in-res"\)/.test(sp) && /\$\("out-res"\)/.test(sp) && /geometry\.fabPitchMM/.test(sp) && /syncPitch\(\)/.test(sc) &&
       /applyDownsample\(/.test(ds) && /acceptSource\(/.test(ds) && ds.indexOf("applyDownsample(") < ds.indexOf("acceptSource(") &&
       /function acceptSource[\s\S]*?regenerate\(\)/.test(appSrc) && /function regenerate\(\) \{\s*syncControls\(\)/.test(appSrc));
+    const dec = fn("decodeSource"), lf = fn("loadFile"), rs = fn("refuseSource");
+    check("IMG-05 app.js decodeSource: tonal route through createImageBitmap, never <img> (Appendix C, S4b)",
+      /createImageBitmap\(file\)/.test(dec) && !/new Image\(/.test(dec) && !/\.src\s*=/.test(dec) && !/naturalWidth/.test(appSrc));
+    check("NFR-05 app.js: the height-map downsample resamples with SBRaster.resample (G2.0 nearest/area policy)",
+      /SBRaster\.resample\(/.test(ds) && /resample\.height === "area"/.test(ds) && /"nearest"/.test(ds));
+    check("G2.14 app.js: loads and downsamples take a generation token and drop stale results",
+      /\+\+sourceGen/.test(lf) && /gen !== sourceGen/.test(lf) && /\+\+sourceGen/.test(ds) && /gen !== sourceGen/.test(ds));
+    check("G2.14 app.js: the downsample re-runs intake against the current project (mode may have changed)",
+      /SBSchema\.intake\(bytes/.test(ds) && !/function downsampleExplicitly\(file, bytes, pre\)/.test(appSrc));
+    check("NFR-04 app.js: a refusal shows the preflight plan (pitch the downsample gives) and EXIF_AMBIGUOUS",
+      /rasterPlan/.test(rs) && /planText\(/.test(rs) && /EXIF_AMBIGUOUS/.test(rs) && /EXIF_AMBIGUOUS/.test(lf));
+    check("G2.14 app.js: #filein value is reset so the same file can be chosen again", /\$\("filein"\)[\s\S]{0,200}e\.target\.value = ""/.test(appSrc));
     check("IMG-05 app.js: downsample target and button label come from SBSchema.downsampleTarget (no intake.w/info.w swap test)",
       /SBSchema\.downsampleTarget\(pre\)/.test(ds) && !/pre\.intake\.w !== pre\.info\.w/.test(appSrc) && (appSrc.match(/SBSchema\.downsampleTarget\(/g) || []).length >= 2); }
 });

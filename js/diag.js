@@ -32,9 +32,11 @@
  * Besides the plan's list the registry carries every import error code:
  * SBPng.CODES (12), SBJpeg.CODES (4) and the preflight JPEG_UNSUPPORTED
  * (plan Appendix C, S4/S4b), the G2.14 intake codes SOURCE_TOO_LARGE,
- * SOURCE_TOO_MANY_PIXELS, SOURCE_FORMAT and HEIGHT_NEEDS_PNG (IMG-01/07),
- * plus GEO_MULTIPART, which SBGeom.validate reports under D3. Programmer-error throws (GEO_MULTIPART_POLYGON,
- * GEO_OFFSET_NONINTEGER, GEO_INSET_NOT_DYADIC) are not user diagnostics.
+ * SOURCE_TOO_MANY_PIXELS, SOURCE_FORMAT and HEIGHT_NEEDS_PNG (IMG-01/07)
+ * and the intake warning EXIF_AMBIGUOUS (Appendix C, S4b), plus
+ * GEO_MULTIPART, which SBGeom.validate reports under D3. Programmer-error
+ * throws (GEO_MULTIPART_POLYGON, GEO_OFFSET_NONINTEGER, GEO_INSET_NOT_DYADIC)
+ * are not user diagnostics.
  *
  * G2.0 (PO-LASER-4/5): FAB_PITCH_CAPPED (info) is registered here; make()
  * accepts an optional shortPx [shortW, shortH] that FAB_EXCEEDS_SOURCE
@@ -170,6 +172,8 @@
       "Increase the guide allowance or registration clearance."],
     ["REPAIR_REVIEW_FAB", W, P, "Repair must be reviewed at fabrication quality",
       "Review the repair in the fabrication review before exporting."],
+    ["EXIF_AMBIGUOUS", W, P, "Browsers disagree on this file's orientation",
+      "Check the preview; if it is rotated wrongly, re-save the image with its rotation applied."],
     ["FAB_EXCEEDS_SOURCE", W, P, "Fabrication resolution exceeds the source resolution",
       "Use a higher-resolution source or a smaller artwork; the engine never upsamples, so missing source detail cannot be recovered."],
     // ---- info

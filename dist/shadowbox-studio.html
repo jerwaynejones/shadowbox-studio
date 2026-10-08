@@ -2151,9 +2151,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  * Besides the plan's list the registry carries every import error code:
  * SBPng.CODES (12), SBJpeg.CODES (4) and the preflight JPEG_UNSUPPORTED
  * (plan Appendix C, S4/S4b), the G2.14 intake codes SOURCE_TOO_LARGE,
- * SOURCE_TOO_MANY_PIXELS, SOURCE_FORMAT and HEIGHT_NEEDS_PNG (IMG-01/07),
- * plus GEO_MULTIPART, which SBGeom.validate reports under D3. Programmer-error throws (GEO_MULTIPART_POLYGON,
- * GEO_OFFSET_NONINTEGER, GEO_INSET_NOT_DYADIC) are not user diagnostics.
+ * SOURCE_TOO_MANY_PIXELS, SOURCE_FORMAT and HEIGHT_NEEDS_PNG (IMG-01/07)
+ * and the intake warning EXIF_AMBIGUOUS (Appendix C, S4b), plus
+ * GEO_MULTIPART, which SBGeom.validate reports under D3. Programmer-error
+ * throws (GEO_MULTIPART_POLYGON, GEO_OFFSET_NONINTEGER, GEO_INSET_NOT_DYADIC)
+ * are not user diagnostics.
  *
  * G2.0 (PO-LASER-4/5): FAB_PITCH_CAPPED (info) is registered here; make()
  * accepts an optional shortPx [shortW, shortH] that FAB_EXCEEDS_SOURCE
@@ -2289,6 +2291,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       "Increase the guide allowance or registration clearance."],
     ["REPAIR_REVIEW_FAB", W, P, "Repair must be reviewed at fabrication quality",
       "Review the repair in the fabrication review before exporting."],
+    ["EXIF_AMBIGUOUS", W, P, "Browsers disagree on this file's orientation",
+      "Check the preview; if it is rotated wrongly, re-save the image with its rotation applied."],
     ["FAB_EXCEEDS_SOURCE", W, P, "Fabrication resolution exceeds the source resolution",
       "Use a higher-resolution source or a smaller artwork; the engine never upsamples, so missing source detail cannot be recovered."],
     // ---- info
@@ -2796,7 +2800,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    *   3. w·h over maxSourcePx → SOURCE_TOO_MANY_PIXELS with suggestDownsamplePx, the largest size inside the envelope.
    * rasterPlan is SBEngine.rasterPlan(project, decoded size, "fabrication", deviceClass) with the source orientation
    * the decode route implies, so pitch, cap and shortfall show before decoding; warnings are its FAB_PITCH_CAPPED /
-   * FAB_EXCEEDS_SOURCE. It is null when the dimensions are unknown or the size cannot be resolved (planError).
+   * FAB_EXCEEDS_SOURCE, plus EXIF_AMBIGUOUS when info.exifAmbiguous is set on a browser-decoded source (Appendix C).
+   * rasterPlan is null when the dimensions are unknown or the size cannot be resolved (planError).
    * Pure: never mutates the project, never lowers anything.
    */
   S.preflight = function (args) {
@@ -2815,6 +2820,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
         out.warnings = out.rasterPlan.diagnostics.slice();
       } catch (e) { out.planError = e.message; }
     }
+    // Plan Appendix C (S4b → G2.14): browsers disagree on this file's EXIF orientation (an XMP APP1 before the Exif
+    // one, or an IFD entry short of its declared size). Warn on every route the browser decodes; never a rejection.
+    if (out.intake && out.intake.exifAppliedBy === "browser" && info && info.exifAmbiguous)
+      out.warnings.push(global.SBDiag.make("EXIF_AMBIGUOUS", { revision: project.revision,
+        detail: "the file says EXIF " + out.intake.exif + "; check the preview" }));
     if (b.length > lim.maxSourceBytes)
       return reject("SOURCE_TOO_LARGE", "File is " + fmtMiB(b.length) + "; the " + deviceClass + " limit is " + fmtLimMiB(lim.maxSourceBytes) + ".");
     if (!format) return reject("SOURCE_FORMAT", "File is not a PNG or JPEG image.");
@@ -8855,7 +8865,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   // Runtime only, never saved: the loaded source and the last pipeline result.
   const run = {
     sourceName: null,
-    sourceImage: null,   // HTMLImageElement or canvas; null until the user chooses a source (no auto-demo)
+    sourceImage: null,   // ImageBitmap or canvas; null until the user chooses a source (no auto-demo)
     sourceW: 0, sourceH: 0,   // the decoded source's own pixel size (never downscaled silently), for the fabrication raster plan
     revision: -1,        // project revision of the last pipeline run (the dimbar uses its counts only while current)
     sheets: [],          // [{mask, bridges, loops, stats}]
@@ -9907,14 +9917,19 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   /**
    * G2.14 source intake (IMG-01/02/05/07, NFR-04): 1 sniff, 2 inspect + check, 3 SBSchema.preflight (all inside
    * SBSchema.intake, before any decode), 4 decode. Height PNGs go through SBPng.decode (raw samples, EXIF applied by
-   * SBEngine.orient); tonal PNG/JPEG use the browser decode, which applies EXIF itself. Nothing is ever downscaled
-   * silently: an over-limit source is rejected, and only the explicit Downsample button reduces it (recording the
-   * coarser fabrication pitch and a history entry through SBSchema.applyDownsample). The fabrication raster and mm/px
-   * come from the raster plan (dimbar), never from an assumed long side. The decode route is chosen here, at intake:
-   * a PNG loaded in tonal mode keeps its browser decode if the mode is later switched to height (interim legacy
-   * pipeline, recorded deviation 4); reload the file to take the raw height route.
+   * SBEngine.orient); tonal PNG/JPEG are decoded by the browser with createImageBitmap, never <img> (plan Appendix C,
+   * S4b: <img> accepts 12-bit and truncated JPEGs that createImageBitmap rejects), which applies EXIF itself. Nothing
+   * is ever downscaled silently: an over-limit source is rejected, and only the explicit Downsample button reduces it
+   * (recording the coarser fabrication pitch and a history entry through SBSchema.applyDownsample). The fabrication
+   * raster and mm/px come from the raster plan, never from an assumed long side; preflight's plan and warnings
+   * (FAB_PITCH_CAPPED, FAB_EXCEEDS_SOURCE, EXIF_AMBIGUOUS) are shown before decoding. The decode route is chosen at
+   * intake: a PNG loaded in tonal mode keeps its browser decode if the mode is later switched to height (interim
+   * legacy pipeline, recorded deviation 4); reload the file to take the raw height route. Every load, downsample and
+   * demo takes a new sourceGen, so a slower earlier decode never overwrites a newer source.
    */
+  let sourceGen = 0;
   async function loadFile(file) {
+    const gen = ++sourceGen;
     showSourceProblem(null);
     const dc = deviceClass(), lim = SBSchema.limits(dc);
     if (file.size > lim.maxSourceBytes) {   // refuse before reading the bytes at all (IMG-07)
@@ -9924,88 +9939,139 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     setStatus(`checking ${file.name}…`);
     let bytes;
     try { bytes = new Uint8Array(await file.arrayBuffer()); }
-    catch (e) { showSourceProblem(`couldn’t read ${file.name}`); return; }
+    catch (e) { if (gen === sourceGen) showSourceProblem(`couldn’t read ${file.name}`); return; }
+    if (gen !== sourceGen) return;
     const pre = SBSchema.intake(bytes, { project, deviceClass: dc });
-    if (!pre.ok) {
-      const sug = pre.suggestDownsamplePx;
-      showSourceProblem(`${file.name}: ${pre.reason}`, sug ? () => downsampleExplicitly(file, bytes, pre) : null,
-        sug ? (() => { const t = SBSchema.downsampleTarget(pre); return `Downsample to ${t.w} × ${t.h} px`; })() : "");
+    if (!pre.ok) { refuseSource(file, bytes, pre); return; }
+    setStatus(`loading ${file.name}…`);
+    let src;
+    try { src = await decodeSource(file, bytes, pre); }
+    catch (e) {
+      if (gen === sourceGen) showSourceProblem(`couldn’t decode ${file.name}: ${e.code ? (SBDiag.CODES[e.code] ? SBDiag.CODES[e.code].title : e.code) : e.message}`);
       return;
     }
-    setStatus(`loading ${file.name}…`);
-    try {
-      const src = await decodeSource(file, bytes, pre);
-      acceptSource(file.name, src);
-    } catch (e) {
-      showSourceProblem(`couldn’t decode ${file.name}: ${e.code ? (SBDiag.CODES[e.code] ? SBDiag.CODES[e.code].title : e.code) : e.message}`);
-    }
+    if (gen !== sourceGen) { if (src.close) src.close(); return; }
+    acceptSource(file.name, src);
+    const notes = pre.warnings.filter((d) => d.code === "EXIF_AMBIGUOUS").map((d) => d.message);
+    if (notes.length) showSourceProblem(`${file.name}: ${notes.join("; ")}`);
   }
 
-  /** Intake step 4: the decode route preflight chose. Resolves to a canvas or image at the full source size. */
-  async function decodeSource(file, bytes, pre) {
-    if (pre.intake.decode === "raw") {
-      const d = await SBPng.decode(bytes, { mode: "height" });
-      const o = SBEngine.orient({ samples: d.samples, alpha: d.alpha, w: d.w, h: d.h },
-        { exif: d.exif || 1, exifAppliedBy: "engine", rotate: 0, mirror: false });
-      const c = document.createElement("canvas");
-      c.width = o.w; c.height = o.h;
-      const cx = c.getContext("2d"), im = cx.createImageData(o.w, o.h), px = im.data, ch = d.channels;
-      for (let i = 0, n = o.w * o.h; i < n; i++) {
-        const v = o.samples[i * ch];
-        px[4 * i] = v; px[4 * i + 1] = ch >= 3 ? o.samples[i * ch + 1] : v; px[4 * i + 2] = ch >= 3 ? o.samples[i * ch + 2] : v;
-        px[4 * i + 3] = o.alpha ? o.alpha[i] : 255;
-      }
-      cx.putImageData(im, 0, 0);
-      return c;
+  /** The fabrication plan text (pitch, cap, shortfall) for a plan, as the dimbar words it. */
+  function planText(plan) {
+    return SBDocs.dimbarModel({ project, plan, stats: null }).pitch.text;
+  }
+
+  /**
+   * Show a preflight refusal with what preflight already knows before decoding: the plan at the file's own size and,
+   * for SOURCE_TOO_MANY_PIXELS, the pitch and raster the explicit downsample would give, then offer the button.
+   */
+  function refuseSource(file, bytes, pre) {
+    const parts = [`${file.name}: ${pre.reason}`];
+    const sug = pre.suggestDownsamplePx;
+    let target = null;
+    if (sug) {
+      target = SBSchema.downsampleTarget(pre);
+      try {
+        const q = SBSchema.applyDownsample(project, { fromW: pre.intake.w, fromH: pre.intake.h, toW: target.w, toH: target.h });
+        parts.push(`After the downsample: ${planText(SBEngine.rasterPlan(q, target, "fabrication", deviceClass()))}.`);
+      } catch (e) { /* the size cannot be resolved: the dimbar says why once a source loads */ }
+    } else if (pre.rasterPlan) parts.push(`At this size: ${planText(pre.rasterPlan)}.`);
+    for (const d of pre.warnings) if (d.code === "EXIF_AMBIGUOUS") parts.push(d.message + ".");
+    showSourceProblem(parts.join(" "), target ? () => downsampleExplicitly(file, bytes) : null,
+      target ? `Downsample to ${target.w} × ${target.h} px` : "");
+  }
+
+  /** The raw height route: SBPng samples, EXIF applied by SBEngine.orient (exifAppliedBy "engine"). */
+  async function decodeRaw(bytes) {
+    const d = await SBPng.decode(bytes, { mode: "height" });
+    const o = SBEngine.orient({ samples: d.samples, alpha: d.alpha, w: d.w, h: d.h },
+      { exif: d.exif || 1, exifAppliedBy: "engine", rotate: 0, mirror: false });
+    return { samples: o.samples, alpha: o.alpha, w: o.w, h: o.h, channels: d.channels };
+  }
+
+  /** Raw samples (1 or 3 channels, optional alpha) into an RGBA canvas for the interim legacy pipeline. */
+  function samplesToCanvas(r) {
+    const c = document.createElement("canvas");
+    c.width = r.w; c.height = r.h;
+    const cx = c.getContext("2d"), im = cx.createImageData(r.w, r.h), px = im.data, ch = r.channels;
+    for (let i = 0, n = r.w * r.h; i < n; i++) {
+      const v = r.samples[i * ch];
+      px[4 * i] = v; px[4 * i + 1] = ch >= 3 ? r.samples[i * ch + 1] : v; px[4 * i + 2] = ch >= 3 ? r.samples[i * ch + 2] : v;
+      px[4 * i + 3] = r.alpha ? r.alpha[i] : 255;
     }
-    const url = URL.createObjectURL(file);
-    try {
-      const img = new Image();
-      if ("decoding" in img) img.decoding = "async";
-      await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = () => reject(new Error("the browser could not decode it")); img.src = url; });
-      if (!img.naturalWidth || !img.naturalHeight) throw new Error("the image has no pixels");
-      return img;
-    } finally { URL.revokeObjectURL(url); }
+    cx.putImageData(im, 0, 0);
+    return c;
+  }
+
+  /** Intake step 4: the decode route preflight chose. Resolves to a canvas or ImageBitmap at the full source size. */
+  async function decodeSource(file, bytes, pre) {
+    if (pre.intake.decode === "raw") return samplesToCanvas(await decodeRaw(bytes));
+    if (typeof createImageBitmap !== "function") throw new Error("this browser has no createImageBitmap; use a current Chrome, Firefox or Safari");
+    let bmp;
+    try { bmp = await createImageBitmap(file); }   // the default orientation applies EXIF, as <img> did
+    catch (e) { throw new Error("the browser could not decode it"); }
+    if (!bmp.width || !bmp.height) { bmp.close(); throw new Error("the image has no pixels"); }
+    return bmp;
   }
 
   /** Use a decoded source at its own size (run.sourceW/H feed the fabrication raster plan). */
   function acceptSource(name, src) {
+    const old = run.sourceImage;
     run.sourceImage = src;
-    run.sourceW = src.naturalWidth || src.width; run.sourceH = src.naturalHeight || src.height;
+    run.sourceW = src.width; run.sourceH = src.height;
     run.sourceName = name;
+    if (old && old !== src && typeof old.close === "function") old.close();   // release a replaced ImageBitmap
     if (project.title === "untitled") setProjectName(name.replace(/\.[^.]+$/, ""));
     regenerate();
   }
 
   /**
-   * The explicit downsample (IMG-07, NFR-04): decode at full size, resample once to the size preflight offered, and
-   * record the coarser fabrication pitch and a history entry on the project. Height maps resample nearest (G2.0).
+   * The explicit downsample (IMG-07, NFR-04): re-run intake against the current project (the mode may have changed
+   * since the refusal, and with it the decode route), decode at full size, resample once to the size preflight
+   * offered and record the coarser fabrication pitch and a history entry on the project. Height maps resample with
+   * the deterministic SBRaster.resample (G2.0 policy: nearest, area only when geometry.resample.height says so);
+   * tonal sources use the browser's drawImage (recorded deviation 6). When the browser did not rotate an EXIF 5..8
+   * (or did rotate an ambiguous) file as parsed, the target follows what the browser decoded (Appendix C).
    */
-  async function downsampleExplicitly(file, bytes, pre) {
+  async function downsampleExplicitly(file, bytes) {
+    const gen = ++sourceGen;
     showSourceProblem(null);
-    // The target in the decoded orientation: for EXIF 5..8 the decoded canvas is rotated whoever applies EXIF (the
-    // browser on the tonal route, SBEngine.orient on the raw height route), so the offer is swapped for both.
-    const { w: toW, h: toH } = SBSchema.downsampleTarget(pre);
+    const pre = SBSchema.intake(bytes, { project, deviceClass: deviceClass() });
+    if (!pre.ok && !pre.suggestDownsamplePx) { refuseSource(file, bytes, pre); return; }
+    if (pre.ok) { loadFile(file); return; }   // nothing to reduce any more (limits or mode changed)
+    let { w: toW, h: toH } = SBSchema.downsampleTarget(pre);
     setStatus(`downsampling ${file.name} to ${toW} × ${toH} px…`);
     try {
-      const full = await decodeSource(file, bytes, pre);
-      const fromW = full.naturalWidth || full.width, fromH = full.naturalHeight || full.height;
-      if ((fromW >= fromH) !== (toW >= toH) && fromW !== fromH)   // never distort the aspect (IMG-05)
-        throw new Error(`the decoded image is ${fromW} × ${fromH} px, which does not match the ${toW} × ${toH} px target`);
-      const c = document.createElement("canvas");
-      c.width = toW; c.height = toH;
-      const cx = c.getContext("2d");
-      cx.imageSmoothingEnabled = pre.intake.decode !== "raw";
-      cx.drawImage(full, 0, 0, toW, toH);
+      let c, fromW, fromH;
+      if (pre.intake.decode === "raw") {
+        const r = await decodeRaw(bytes);
+        if (gen !== sourceGen) return;
+        fromW = r.w; fromH = r.h;
+        const method = project.geometry.resample.height === "area" ? "area" : "nearest";
+        c = samplesToCanvas({ w: toW, h: toH, channels: r.channels,
+          samples: SBRaster.resample(r.samples, r.channels, r.w, r.h, toW, toH, method),
+          alpha: r.alpha ? SBRaster.resample(r.alpha, 1, r.w, r.h, toW, toH, method) : null });
+      } else {
+        const full = await decodeSource(file, bytes, pre);
+        if (gen !== sourceGen) { full.close(); return; }
+        fromW = full.width; fromH = full.height;
+        if ((fromW >= fromH) !== (toW >= toH) && fromW !== fromH) [toW, toH] = [toH, toW];   // the browser's orientation wins
+        c = document.createElement("canvas");
+        c.width = toW; c.height = toH;
+        const cx = c.getContext("2d");
+        cx.imageSmoothingEnabled = true;
+        cx.drawImage(full, 0, 0, toW, toH);
+        full.close();
+      }
       project = SBSchema.applyDownsample(project, { fromW, fromH, toW, toH });
       acceptSource(file.name, c);
       setStatus(`downsampled ${file.name} to ${toW} × ${toH} px; fabrication pitch ${project.geometry.fabPitchMM} mm/px`, true);
     } catch (e) {
-      showSourceProblem(`couldn’t downsample ${file.name}: ${e.message}`);
+      if (gen === sourceGen) showSourceProblem(`couldn’t downsample ${file.name}: ${e.message}`);
     }
   }
 
-  /** Show (or clear, text null) why a source was refused; offer the explicit Downsample button when given. */
+  /** Show (or clear, text null) why a source was refused or needs a look; offer the explicit Downsample button when given. */
   function showSourceProblem(text, onDownsample, label) {
     const why = $("why-source"), btn = $("btn-downsample");
     if (why) { why.textContent = text || ""; why.hidden = !text; }
@@ -10056,16 +10122,16 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
 
     // photo
     $("filein").addEventListener("change", (e) => {
-      if (e.target.files[0]) loadFile(e.target.files[0]);
+      const f = e.target.files[0];
+      e.target.value = "";   // choosing the same file again (after a refusal) must fire change again
+      if (f) loadFile(f);
     });
     // PRJ-01: the demo is an explicit source button; nothing loads it automatically.
     $("btn-demo").addEventListener("click", () => {
+      sourceGen++;   // a load still decoding must not replace the demo
       showSourceProblem(null);
-      run.sourceImage = demoScene();
-      run.sourceW = run.sourceImage.width; run.sourceH = run.sourceImage.height;
-      run.sourceName = "demo scene";
       if (project.title === "untitled") setProjectName("night-over-the-valley");
-      regenerate();
+      acceptSource("demo scene", demoScene());
     });
     // PO-LASER-4 (G2.11b): #in-res is the fabrication pitch in mm/px. The draft raster (720 px) is not a control.
     bindPitch();
