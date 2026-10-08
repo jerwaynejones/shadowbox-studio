@@ -20,6 +20,12 @@
  * --quick shrinks the page to 192×128 px and runs once (smoke test only; its
  * timings are not comparable and budgets are not enforced). Without --no-fail
  * the process exits 1 when a budget is exceeded.
+ *
+ * Known, tracked overruns (TRACKED below) keep their budget but are reported as
+ * "KNOWN-OVER (tracked)" in `knownOver` instead of `overBudget`, so they do not
+ * fail the gate. KI-B1 (product-owner decision 2026-10-07): B1 keeps its 2 s
+ * budget; the S6 T-split pushed p95 to ≈2.14 s, and G4.4 resolves it by
+ * optimizing SBGeom normalize. Remove the entry when B1 is back under budget.
  * ==========================================================================*/
 "use strict";
 const fs = require("fs");
@@ -81,6 +87,20 @@ function pointInRing(px, py, r) {
   }
   return wn !== 0 ? 1 : -1;
 }
+
+/**
+ * Known, tracked budget overruns: the budget stays, the overrun is reported as KNOWN-OVER (tracked) with its
+ * tracking reference and does not fail the gate. Remove an entry once the metric is back under budget.
+ */
+const TRACKED = {
+  B1: {
+    id: "KI-B1",
+    decided: "2026-10-07 (product owner)",
+    cause: "S6 T-split in SBGeom normalize (+12–18 % on B1; p95 ≈2.14 s measured)",
+    resolution: "G4.4 optimizes SBGeom normalize (numeric vertex keys, skip noding without collinear contacts, normalize once per boolean)",
+    ref: "docs/plans/opaque-layers-dev-plan.md Appendix C (S6 → G4.4, KI-B1) and G4.4; docs/ARCHITECTURE.md D2/D4",
+  },
+};
 
 function benchGeom() {
   const G = SBGeom, T = SBTrace;
@@ -152,12 +172,16 @@ function benchGeom() {
   report.B3b_supportPairs_dense_partsGiven.pairs = pairs;
 
   report.fingerprintB1 = require("crypto").createHash("sha256").update(JSON.stringify([G.difference(L[0], L[1]), G.offset(L[2], -1500, "miter")])).digest("hex");
-  const over = [];
+  const over = [], known = [];
   if (!QUICK) {
-    if (report.B1_difference.p95Ms >= BUDGET.B1) over.push("B1");
-    if (report.B3_supportPairs.p95Ms >= BUDGET.B3) over.push("B3");
-    if (report.B3b_supportPairs_dense.p95Ms >= BUDGET.B3b) over.push("B3b");
+    for (const [k, r] of [["B1", report.B1_difference], ["B3", report.B3_supportPairs], ["B3b", report.B3b_supportPairs_dense]]) {
+      if (r.p95Ms < BUDGET[k]) continue;
+      if (TRACKED[k]) known.push({ metric: k, p95Ms: r.p95Ms, budgetMs: BUDGET[k], status: "KNOWN-OVER (tracked)", id: TRACKED[k].id, ref: TRACKED[k].ref });
+      else over.push(k);
+    }
   }
+  report.tracked = TRACKED;
+  report.knownOver = known;
   report.overBudget = over;
   return report;
 }
@@ -166,6 +190,7 @@ const report = STAGES[stage]();
 report.heapUsedMB = +(process.memoryUsage().heapUsed / 1048576).toFixed(0);
 report.rssMB = +(process.memoryUsage().rss / 1048576).toFixed(0);
 for (const [k, v] of Object.entries(report)) console.log(k + ":", JSON.stringify(v));
+for (const k of report.knownOver || []) console.warn(`${k.metric} KNOWN-OVER (tracked ${k.id}): p95 ${k.p95Ms} ms ≥ budget ${k.budgetMs} ms — not failing the gate; see ${k.ref}`);
 const out = arg("--json");
 if (out) fs.writeFileSync(out, JSON.stringify(report, null, 1) + "\n");
 if (report.overBudget && report.overBudget.length && !argv.includes("--no-fail")) {

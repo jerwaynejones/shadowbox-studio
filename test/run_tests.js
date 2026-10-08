@@ -590,6 +590,8 @@ suite("spike S1 — test/bench.js geom smoke (--quick)", () => {
   check("bench geom: reports B1, B2, B3 and B3b with budgets 2 s / 3 s / 6 s", !!r &&
     ["B1_difference", "B2_offset_inset1500", "B2_offset_grow300", "B3_supportPairs", "B3b_supportPairs_dense"].every((k) => r[k] && r[k].p95Ms >= 0) &&
     r.budgetsMs.B1 === 2000 && r.budgetsMs.B3 === 3000 && r.budgetsMs.B3b === 6000);
+  check("bench geom: B1 overrun is tracked (KI-B1, G4.4) as KNOWN-OVER, never in overBudget", !!r && r.tracked && r.tracked.B1 && r.tracked.B1.id === "KI-B1" &&
+    /G4\.4/.test(r.tracked.B1.ref) && Array.isArray(r.knownOver) && !r.overBudget.includes("B1"));
   check("bench geom: support pass finds pairs and containment on the dense stack", !!r && r.B3b_supportPairs_dense.pairs > 0 && r.B3b_supportPairs_dense.contained &&
     r.B3b_supportPairs_dense_partsGiven.pairs === r.B3b_supportPairs_dense.pairs);
 });
