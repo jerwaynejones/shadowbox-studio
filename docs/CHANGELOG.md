@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **G2.6, construction strategies (engine; the app path is unchanged):** new module `SBConstruct`
+  (`js/construct.js`). `SBConstruct.connected(masks, w, h, px)` is the v1.1.0 per-sheet chain
+  (open → close → removeSpecks → fillHoles → `SBIslands.resolve`), byte-identical; `legacyRun`
+  now delegates to it. `SBConstruct.bonded(masks, w, h, px)` runs the same open → close →
+  fillHoles chain, `removeSpecks` only when `cullEnabled` is set, and never bridges, culls islands
+  or clips (SUP-01): disconnected parts are kept and no material is added outside the layer
+  below (GEO-07). Both return `{final, bridges, report}`, with a per-layer cleanup report
+  (`addedPx`, `removedPx`, `filledHoles`, `removedParts`) for GEO-08. The T0.4
+  `KNOWN-DEFECT SUP-01` / `GEO-07 (bridge)` checks are replaced by FIXED checks on the strategies.
+
 - **G2.5, domain mask and orientation (engine only; not yet wired into the app):**
   `SBHeight.domainMask(alpha, mode, t = 0.5)` returns the alpha domain A (1 where alpha ≥
   round(t·255), so 128 at t = 0.5), or `null` (whole image) for mode `full` or a source without

@@ -329,11 +329,8 @@ suite("baseline — characterization (KNOWN-DEFECT checks invert when fixed)", (
   check("G0 backing sheet emits only rect (+label), no paths", !/<path /.test(svgBack) && /<rect /.test(svgBack));
   // KNOWN-DEFECT GEO-01 proof extent was fixed in G1.6: the check now lives on SBSvg.assemblySVG (suite "svgout.js — assemblySVG …");
   // the shim version was deleted, not edited, because T0.7 freezes proofSVG.
-  // GEO-07 raster source: islands.resolve adds bridge material where layer k-1 is void.
-  const lb = F.MASKS.looseBridge, lower = lb.layers[1], m = lb.layers[2].slice();
-  SBIslands.resolve(m, lb.w, lb.h, { frameAnchored: true, bridgeRadius: 0.6, cullBelowPx: 0, maxBridgePx: 10 });
-  check("KNOWN-DEFECT GEO-07 (bridge): islands.resolve adds material outside layer k-1", m.some((v, i) => v && !lower[i]));
-  check("KNOWN-DEFECT SUP-01: islands.resolve bridges a loose part", m.some((v, i) => v !== lb.layers[2][i]));
+  // KNOWN-DEFECT GEO-07 (bridge) and KNOWN-DEFECT SUP-01 were fixed in G2.6: the checks now live on SBConstruct.bonded /
+  // connected (suite "construct.js — strategies …"); the islands.resolve versions were deleted.
   // Characterization (not a defect): the per-layer morphology chain keeps nested masks nested.
   let viol = 0;
   for (let s = 1; s <= 200; s++) { const st = F.randomNestedStack(F.lcg(s), 40, 30, 5);
@@ -349,6 +346,68 @@ suite("baseline — characterization (KNOWN-DEFECT checks invert when fixed)", (
     const th = SBRaster.thresholds(L, g.N, g.mode);
     return JSON.stringify(Array.from(th)) === JSON.stringify(g.thresholds) &&
       SBRaster.sheetMasks(SBRaster.bands(L, th), g.N, 37, 11, g.darkFront).every((m, k) => H(m) === g.masks[k]); }));
+});
+
+// ------------------------------------------------ construction strategies (G2.6)
+suite("construct.js — strategies (SUP-01/06, GEO-07, GEO-08)", () => {
+  const F = require("./fixtures.js"), lb = F.MASKS.looseBridge;
+  const px = { featR: 0, bridgeR: 0.6, cullPx: 0, maxBridgePx: 10, speckPx: 0, holePx: 0, frameAnchored: true, cullEnabled: false };
+  const orig = SBIslands.resolve; let called = 0; SBIslands.resolve = (...a) => (called++, orig(...a));
+  const b = SBConstruct.bonded(lb.layers, lb.w, lb.h, px);
+  check("SUP-01 islands.resolve not called in bonded", called === 0);
+  check("SUP-01 bonded keeps disconnected loose part", SBMorph.components(b.final[2], lb.w, lb.h).count === 2);
+  check("GEO-07 (bridge) FIXED: bonded adds no material outside layer k-1", b.final[2].every((v, i) => !v || b.final[1][i]));
+  const c = SBConstruct.connected(lb.layers, lb.w, lb.h, px);
+  SBIslands.resolve = orig;
+  check("SUP-01 FIXED: only connected mode bridges", called > 0 && c.report[2].addedPx > 0);
+  check("GEO-08 cleanup report sums match mask diff", b.report.every((r, k) => k === 0 ||
+    r.addedPx - r.removedPx === b.final[k].reduce((a, v) => a + v, 0) - lb.layers[k].reduce((a, v) => a + v, 0)));
+  let nested = true;
+  for (let s = 1; s <= 200; s++) { const st = F.randomNestedStack(F.lcg(s), 40, 30, 5);
+    for (const featR of [1, 3]) { const r = SBConstruct.bonded(st, 40, 30, { ...px, featR, holePx: 8 * featR * featR });
+      for (let k = 2; k < r.final.length; k++) if (r.final[k].some((v, i) => v && !r.final[k - 1][i])) nested = false; } }
+  check("D-4.5 property: bonded morphology keeps nesting (200 seeds, featR 1 and 3)", nested);
+});
+
+suite("construct.js — G2.6 extended (shape, purity, culling, legacy identity)", () => {
+  const F = require("./fixtures.js"), lb = F.MASKS.looseBridge, w = lb.w, h = lb.h;
+  const px = { featR: 0, bridgeR: 0.6, cullPx: 0, maxBridgePx: 10, speckPx: 0, holePx: 0, frameAnchored: true, cullEnabled: false };
+  const before = lb.layers.map((m) => m.join());
+  const b = SBConstruct.bonded(lb.layers, w, h, px), c = SBConstruct.connected(lb.layers, w, h, px);
+  check("G2.6 inputs are not mutated", lb.layers.every((m, k) => m.join() === before[k]));
+  check("G2.6 one final, bridge slot and report entry per layer", [b, c].every((r) => r.final.length === 3 && r.bridges.length === 3 && r.report.length === 3 &&
+    r.final.every((m) => m instanceof Uint8Array && m.length === w * h) && r.report.every((e, k) => e.layer === k)));
+  check("GEO-08 report entries carry addedPx, removedPx, filledHoles, removedParts (non-negative integers)", [b, c].every((r) => r.report.every((e) =>
+    ["addedPx", "removedPx", "filledHoles", "removedParts"].every((f) => Number.isInteger(e[f]) && e[f] >= 0))));
+  check("SUP-01 bonded has no bridge masks", b.bridges.every((x) => x === null));
+  check("SUP-06 connected: base has no bridge mask, layers 1.. have one; bridged pixels are reported as added", c.bridges[0] === null &&
+    c.bridges.slice(1).every((x) => x instanceof Uint8Array) && c.report.slice(1).every((e, k) => e.addedPx >= c.bridges[k + 1].reduce((a, v) => a + v, 0)));
+  check("SUP-06 connected verifies one part per layer (looseBridge, frame anchored)", c.final.slice(1).every((m) => SBMorph.components(m, w, h).count === 1));
+  check("GEO-08 connected report sums match mask diff", c.report.every((r, k) =>
+    r.addedPx - r.removedPx === c.final[k].reduce((a, v) => a + v, 0) - lb.layers[k].reduce((a, v) => a + v, 0)));
+  check("G2.6 base layer passes through unchanged (copy)", [b, c].every((r) => r.final[0] !== lb.layers[0] && r.final[0].join() === before[0] &&
+    r.report[0].addedPx === 0 && r.report[0].removedPx === 0));
+  check("SUP-01 bonded with featR 0 and no culling is the identity", b.final.every((m, k) => m.join() === before[k]));
+  // culling is explicit in bonded: the 2-px loose part survives a 4-px speck limit unless cullEnabled is set
+  const bc = SBConstruct.bonded(lb.layers, w, h, { ...px, speckPx: 4 }), be = SBConstruct.bonded(lb.layers, w, h, { ...px, speckPx: 4, cullEnabled: true });
+  check("SUP-01 bonded removeSpecks only with cullEnabled", SBMorph.components(bc.final[2], w, h).count === 2 && bc.report[2].removedParts === 0 &&
+    SBMorph.components(be.final[2], w, h).count === 1 && be.report[2].removedParts === 1 && be.report[2].removedPx === 2);
+  const dn = F.MASKS.donutIsland, bh = SBConstruct.bonded(dn.layers, dn.w, dn.h, { ...px, holePx: 100 });
+  check("GEO-08 bonded fillHoles counts filled holes", bh.report[1].filledHoles >= 1 && bh.report[1].addedPx > 0);
+  check("D-4.5 bonded hole fill stays inside the lower layer", bh.final[1].every((v, i) => !v || bh.final[0][i]));
+  // connected = the v1.1.0 per-sheet chain (open → close → removeSpecks → fillHoles → islands.resolve), byte for byte
+  let same = true;
+  for (let s = 1; s <= 40 && same; s++) { const st = F.randomNestedStack(F.lcg(s), 40, 30, 5);
+    for (const featR of [1, 3]) { const q = { featR, bridgeR: featR + 0.5, cullPx: 6, maxBridgePx: 20, speckPx: 4, holePx: 2 * featR * featR * 4, frameAnchored: s % 2 === 0, cullEnabled: false };
+      const r = SBConstruct.connected(st, 40, 30, q);
+      st.forEach((mask, k) => { if (!k) return; let m = SBMorph.open(mask, 40, 30, featR); m = SBMorph.close(m, 40, 30, Math.max(1, featR - 1));
+        SBMorph.removeSpecks(m, 40, 30, q.speckPx); SBMorph.fillHoles(m, 40, 30, q.holePx);
+        const isl = SBIslands.resolve(m, 40, 30, { frameAnchored: q.frameAnchored, bridgeRadius: q.bridgeR, cullBelowPx: q.cullPx, maxBridgePx: q.maxBridgePx });
+        if (m.join() !== r.final[k].join() || isl.bridges.join() !== r.bridges[k].join() || r.report[k].bridged !== isl.bridged || r.report[k].culled !== isl.culled) same = false; }); } }
+  check("SUP-06/DEP-04 connected == the v1.1.0 chain incl. islands.resolve (40 seeds, featR 1 and 3)", same);
+  const bad = (f) => { try { f(); return false; } catch (e) { return e.code === "CONSTRUCT_ARG"; } };
+  check("G2.6 bad arguments are CONSTRUCT_ARG", bad(() => SBConstruct.bonded([], w, h, px)) && bad(() => SBConstruct.bonded(lb.layers, w, h, { ...px, featR: -1 })) &&
+    bad(() => SBConstruct.connected([new Uint8Array(3)], w, h, px)) && bad(() => SBConstruct.bonded(lb.layers, w, h, null)));
 });
 
 // ------------------------------------------------ engine seam (T0.5)
@@ -1570,7 +1629,7 @@ suite("material.js — canonical polygons (GEO-01/03, D-4.2, SUP-05; G1.1)", () 
   const F = require("./fixtures.js"), O = require("./oracle_raster.js"), G = SBGeom, M = globalThis.SBMaterial;
   check("G1.1 SBMaterial is loaded", !!M && typeof M.fromMasks === "function" && typeof M.assignParts === "function" && typeof M.scale === "function");
   if (!M) return;
-  check("§4 module order: material.js after trace.js (construct not yet present)", (() => { const L = require("./modules.js").NODE_MODULES; return L.indexOf("material.js") === L.indexOf("trace.js") + 1; })());
+  check("§4 module order: material.js after construct.js after trace.js", (() => { const L = require("./modules.js").NODE_MODULES; return L.indexOf("construct.js") === L.indexOf("trace.js") + 1 && L.indexOf("material.js") === L.indexOf("construct.js") + 1; })());
   // ---- plan checks (verbatim)
   const d = F.MASKS.donutIsland;
   const L = SBMaterial.assignParts(SBMaterial.fromMasks(d.layers, d.w, d.h, { artWMM: 9, artHMM: 9, frameMM: 0 }, {}));

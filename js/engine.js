@@ -2,7 +2,8 @@
  * Shadowbox Studio — js/engine.js
  * ----------------------------------------------------------------------------
  * SBEngine: the DOM-free engine. T0.5 seam: legacyRun is the v1.1.0
- * runPipeline() body after getImageData, moved verbatim (state -> cfg).
+ * runPipeline() body after getImageData, moved verbatim (state -> cfg); since G2.6 its per-sheet
+ * morphology + islands pass is SBConstruct.connected (byte-identical, pinned by test/golden/oldrun.json).
  * connectedLayers/connectedFiles (G1.7) carry the connected export on the
  * canonical path. rasterPlan/qualityPair (G2.1b) are the one draft/fabrication
  * raster rule (LYR-06, PO-LASER-4/5). orient (G2.5) is the one orientation rule (IMG-05).
@@ -11,7 +12,7 @@
  * ==========================================================================*/
 (function (global) {
   "use strict";
-  /* global SBRaster, SBMorph, SBIslands, SBTrace, SBUtil */
+  /* global SBRaster, SBTrace, SBUtil */
   const E = {};
 
   /**
@@ -38,24 +39,15 @@
     const speckPx = Math.max(4, cullPx * 0.5);
     const holePx = Math.max(4, (cfg.minFeatureMM * pxPerMM) ** 2 * 2);
 
-    // 5. Per-sheet fabrication pass.
+    // 5. Per-sheet fabrication pass: morphology + islands via the connected strategy (G2.6), then trace.
+    const C = global.SBConstruct.connected(masks, w, h, { featR, bridgeR, cullPx, maxBridgePx, speckPx, holePx, frameAnchored: cfg.marginMM > 0, cullEnabled: false });
     const chaikinIters = cfg.cornerStyle === "smooth" ? 2 : 0;
     const totals = { bridged: 0, culled: 0, cutMM: 0 };
     const sheets = masks.map((mask, s) => {
       if (s === 0) {
         return { mask, bridges: null, loops: [], stats: { cutMM: 0, bridged: 0, culled: 0, loops: 0 } };
       }
-      let m = SBMorph.open(mask, w, h, featR);
-      m = SBMorph.close(m, w, h, Math.max(1, featR - 1));
-      SBMorph.removeSpecks(m, w, h, speckPx);
-      SBMorph.fillHoles(m, w, h, holePx);
-
-      const isl = SBIslands.resolve(m, w, h, {
-        frameAnchored: cfg.marginMM > 0,
-        bridgeRadius: bridgeR,
-        cullBelowPx: cullPx,
-        maxBridgePx,
-      });
+      const m = C.final[s], isl = C.report[s];
 
       let loops = SBTrace.trace(m, w, h)
         .map((lp) => SBTrace.simplify(lp, cfg.detailEps))
@@ -67,7 +59,7 @@
       totals.bridged += isl.bridged; totals.culled += isl.culled; totals.cutMM += cutMM;
       return {
         mask: m,
-        bridges: isl.bridges,
+        bridges: C.bridges[s],
         loops,
         stats: { cutMM, bridged: isl.bridged, culled: isl.culled, loops: loops.length },
       };

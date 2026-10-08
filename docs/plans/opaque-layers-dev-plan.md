@@ -2054,7 +2054,12 @@ The integer rule was verified against the float definition for every N in 1..16 
 - `px = {featR, bridgeR, cullPx, maxBridgePx, speckPx, holePx, frameAnchored, cullEnabled}`.
 - **Bonded never calls `SBIslands.resolve`.** It runs the same per-layer `open → close → fillHoles` chain as connected; `removeSpecks` runs only when `cullEnabled` is set (SUP-01: culling is explicit). That chain preserves nesting (verified in T0.4), so bonded morphology never creates an overhang. Bonded applies **no** clip.
 
-- [ ] **Step 1: Tests**
+- Implementation notes (as built):
+  - `featR` 0 disables both opening and closing; for `featR ≥ 1` the closing radius is `max(1, featR − 1)` (the v1.1.0 rule), so `connected` with `legacyRun`'s parameters is byte-identical to the v1.1.0 chain (`test/golden/oldrun.json` stays green). `connected` always runs `removeSpecks` (as v1.1.0 did); `cullEnabled` gates it only in bonded mode.
+  - Layer 0 (the base) is passed through as a copy with an all-zero report entry; `bridges[0]` is `null` in both strategies and every bonded `bridges[k]` is `null`.
+  - Connected report entries also carry `bridged` and `culled` (the islands counts; `removedParts` = specks + culled), which `legacyRun` reads for its totals. Inputs are never mutated. Bad arguments throw `CONSTRUCT_ARG`.
+  - `construct.js` is registered in the four lists between `trace` and `material` (§4).
+- [x] **Step 1: Tests**
 
 ```js
 suite("construct.js — strategies (SUP-01/06, GEO-07, GEO-08)", () => {
@@ -2080,7 +2085,7 @@ suite("construct.js — strategies (SUP-01/06, GEO-07, GEO-08)", () => {
 
 Delete the T0.4 `KNOWN-DEFECT SUP-01` and `KNOWN-DEFECT GEO-07 (bridge)` checks; they are replaced by the FIXED variants above.
 
-- [ ] **Step 2–5:** fail, implement, pass, commit.
+- [x] **Step 2–5:** fail, implement, pass, commit. Plus an extended suite: shape and purity, explicit bonded culling, hole-fill report, connected == the v1.1.0 chain (40 seeds × featR 1, 3) and `CONSTRUCT_ARG`.
 
 ### Task G2.7: `SBSupport.validate`: containment, support graph and empty-layer rules on final polygons
 
