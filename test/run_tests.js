@@ -4068,6 +4068,74 @@ suite("schema.js/app.js — G2.11a controller state adapter: legacyState, applyL
     /SBSchema\.legacyState\(/.test(appSrc) && /SBSchema\.applyLegacy\(/.test(appSrc));
 });
 
+suite("index.html/app.js/schema.js — G2.11b stages, the fabrication pitch input and slider ranges (UI-01, PO-LASER-4, LYR-01)", () => {
+  const S = SBSchema;
+  const root = path.join(__dirname, "..");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const appSrc = fs.readFileSync(path.join(root, "js", "app.js"), "utf8");
+  const tagOf = (id) => { const m = new RegExp("<[a-z]+\\b[^>]*\\bid=\"" + id + "\"[^>]*>").exec(html); return m ? m[0] : ""; };
+  const attr = (tag, a) => { const m = new RegExp("\\b" + a + "=\"([^\"]*)\"").exec(tag); return m ? m[1] : null; };
+  const STAGES = ["Source", "Interpretation", "Construction", "Review", "Export"];
+  const IDS = STAGES.map((s) => "stage-" + s.toLowerCase());
+  const rail = (/<aside class="rail"[\s\S]*?<\/aside>/.exec(html) || [""])[0];
+  const sections = Array.from(rail.matchAll(/<section class="step"[^>]*\bid="([^"]+)"[^>]*>\s*<h2[^>]*>([\s\S]*?)<\/h2>/g),
+    (m) => ({ id: m[1], title: m[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(), tag: m[0] }));
+
+  check("UI-01 rail stages are Source / Interpretation / Construction / Review / Export, in that order",
+    sections.length === 5 && sections.every((s, i) => s.id === IDS[i] && s.title.endsWith(STAGES[i]) && s.title.startsWith(String(i + 1))));
+  check("UI-01 each stage is a labelled, focusable region (aria-labelledby, tabindex=-1)",
+    sections.length === 5 && sections.every((s) => attr(s.tag, "tabindex") === "-1" && attr(s.tag, "aria-labelledby") &&
+      new RegExp("<h2[^>]*id=\"" + attr(s.tag, "aria-labelledby") + "\"").test(s.tag)));
+  const nav = (/<nav class="stagenav"[\s\S]*?<\/nav>/.exec(rail) || [""])[0];
+  const links = Array.from(nav.matchAll(/<a [^>]*href="#([^"]+)"/g), (m) => m[1]);
+  check("UI-01 stage navigation reaches every stage by keyboard in order (links before the stages in tab order)",
+    JSON.stringify(links) === JSON.stringify(IDS) && rail.indexOf(nav) >= 0 && rail.indexOf(nav) < rail.indexOf("<section"));
+
+  // PO-LASER-4: #in-res becomes the fabrication pitch; the draft resolution (720 px) is not a user control.
+  const res = tagOf("in-res");
+  check("PO-LASER-4 #in-res is the \"Fabrication pitch (mm/px)\" number input, min 0.05 max 2 step 0.01, default 0.1",
+    attr(res, "type") === "number" && attr(res, "min") === "0.05" && attr(res, "max") === "2" && attr(res, "step") === "0.01" &&
+    attr(res, "value") === "0.1" && /<label for="in-res">Fabrication pitch \(mm\/px\)/.test(html));
+  check("PO-LASER-4 the pitch input bounds equal SBSchema.FAB_PITCH and the presets' default pitch",
+    S.FAB_PITCH && S.FAB_PITCH.min === 0.05 && S.FAB_PITCH.max === 2 && S.FAB_PITCH.step === 0.01 && S.FAB_PITCH.defaultMM === 0.1 &&
+    S.defaults("plywood").geometry.fabPitchMM === 0.1 && S.defaults("acrylic").geometry.fabPitchMM === 0.1 && Object.isFrozen(S.FAB_PITCH));
+  check("PO-LASER-4 the draft resolution is not a user control (no procRes binding; no 360–1280 px range)",
+    !/bindRange\("in-res", "procRes"/.test(appSrc) && !/min="360" max="1280"/.test(html) && !/Working resolution/.test(html));
+
+  const A = S.defaults("acrylic"), A0 = JSON.stringify(A);
+  check("PO-LASER-4 applyFabPitch sets geometry.fabPitchMM, bumps revision, validates; input not mutated", (() => {
+    const q = S.applyFabPitch(A, 0.25);
+    return q.geometry.fabPitchMM === 0.25 && q.revision === A.revision + 1 && S.validate(q).ok && JSON.stringify(A) === A0 && q !== A; })());
+  check("PO-LASER-4 applyFabPitch: the same pitch keeps the revision", S.applyFabPitch(A, 0.1).revision === A.revision);
+  check("PO-LASER-4 applyFabPitch clamps to 0.05–2 mm/px and quantizes to the 0.001 mm grid",
+    S.applyFabPitch(A, 0.01).geometry.fabPitchMM === 0.05 && S.applyFabPitch(A, 9).geometry.fabPitchMM === 2 &&
+    S.applyFabPitch(A, 0.12345).geometry.fabPitchMM === 0.123 && S.validate(S.applyFabPitch(A, 0.12345)).ok);
+  check("PO-LASER-4 applyFabPitch ignores a non-numeric entry (project unchanged, same revision)",
+    [NaN, "", null, undefined, Infinity, "abc"].every((v) => { const q = S.applyFabPitch(A, v); return JSON.stringify(q) === A0; }));
+  check("PO-LASER-4 app.js binds #in-res to SBSchema.applyFabPitch",
+    /\$\("in-res"\)/.test(appSrc) && /SBSchema\.applyFabPitch\(/.test(appSrc));
+
+  // LYR-01: 1–16 sheets.
+  const sh = tagOf("in-sheets");
+  check("LYR-01 #in-sheets is 1–16 (step 1), the schema's construction.sheets range",
+    attr(sh, "min") === "1" && attr(sh, "max") === "16" && attr(sh, "step") === "1" &&
+    S.validate(S.applyLegacy(A, "nSheets", 1)).ok && S.validate(S.applyLegacy(A, "nSheets", 16)).ok && !S.validate(S.applyLegacy(A, "nSheets", 17)).ok);
+  check("LYR-01 the controller pipeline runs at 1 and 16 sheets", (() => {
+    const w = 64, h = 48, rgba = new Uint8ClampedArray(w * h * 4);
+    for (let i = 0; i < w * h; i++) { const v = ((i % w) * 4 + ((i / w) | 0) * 2) & 255; rgba[4 * i] = rgba[4 * i + 1] = rgba[4 * i + 2] = v; rgba[4 * i + 3] = 255; }
+    return [1, 16].every((n) => SBEngine.legacyRun(rgba, w, h, S.legacyState(S.applyLegacy(A, "nSheets", n), w, h)).sheets.length === n); })());
+
+  // The staged Generate control, under the same guard as Export (G2.11a note).
+  const gen = tagOf("btn-generate");
+  check("UI-01 Review has a Generate button, disabled with the \"Choose a source\" reason until a source exists",
+    gen !== "" && / disabled\b/.test(gen) && attr(gen, "aria-describedby") === "why-generate" &&
+    /<p id="why-generate" class="why"[^>]*>Choose a source<\/p>/.test(html) &&
+    html.indexOf('id="btn-generate"') > html.indexOf('id="stage-review"') && html.indexOf('id="btn-generate"') < html.indexOf('id="stage-export"'));
+  check("UI-01 app.js: Generate calls regenerate() and its state follows SBSchema.canGenerate",
+    /\$\("btn-generate"\)\.addEventListener\("click", regenerate\)/.test(appSrc) &&
+    /function updateGate\(gate\)\s*\{[\s\S]{0,800}btn-generate/.test(appSrc));
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

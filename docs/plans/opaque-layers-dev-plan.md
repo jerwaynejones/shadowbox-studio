@@ -2386,6 +2386,12 @@ Runs right after G2.7 (Appendix D.4, D.9). **Why:** G2.2b showed that the pixel 
   - `css/style.css`.
 - **QA:** stages are reachable by keyboard in order. **Commit.**
 
+**Result (2026-10-08):**
+- **Markup.** The rail is five `section.step` regions `#stage-source`, `#stage-interpretation`, `#stage-construction`, `#stage-review`, `#stage-export` (each `tabindex="-1"`, `aria-labelledby` its heading), preceded by a `nav.stagenav` of in-page links in the same order (keyboard reachability). Source holds Load photo and Demo; Interpretation holds sheets, tone split, dark front and smoothing; Construction holds size, frame, the pitch and the feature/bridge/hole controls; Review holds the Generate button and the palette (appearance); Export is unchanged.
+- **Pitch.** `#in-res` is "Fabrication pitch (mm/px)", `type=number min=0.05 max=2 step=0.01 value=0.1`. Added the pure write path `SBSchema.applyFabPitch(project, value)` and the frozen bounds `SBSchema.FAB_PITCH` (clamp to 0.05–2, 0.001 mm grid, revision + 1 iff it changes, non-numeric → unchanged). The draft raster (720 px, `geometry.draftPx`) is no longer bound to a control. The app path is still the legacy connected pipeline, so the pitch is recorded on the project but does not change the draft preview until the engine path is wired (G2.11c dimbar, G2.14).
+- **Ranges.** `#in-sheets` is 1–16 (the legacy pipeline and the preview were checked at 1 and 16 sheets).
+- **Generate.** The staged `#btn-generate` (Review) shares `SBSchema.canGenerate` with Export (`#why-generate` "Choose a source"); generation still also runs on change. Headless smoke check (Chromium on `dist`): opens with Generate and Export disabled; Demo enables both; pitch 0.25 reads "0.25 mm/px" and a blank entry restores it; 16 sheets gives 16 layer cards.
+
 ### Task G2.11c: Control groups, dimension bar and disclaimers
 
 **Files:**

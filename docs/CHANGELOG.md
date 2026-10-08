@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **G2.11b, stages and the fabrication pitch input (UI-01, PO-LASER-4, LYR-01):** the control rail
+  is now the five UI-01 stages, Source, Interpretation, Construction, Review and Export, in order.
+  A stage link list at the top of the rail moves keyboard focus to each stage (each stage is a
+  labelled region with `tabindex="-1"`). `#in-res` is no longer the 360–1280 px "Working resolution"
+  slider: it is "Fabrication pitch (mm/px)", a number input (0.05–2, step 0.01, default 0.1)
+  written through the new pure `SBSchema.applyFabPitch(project, value)` (clamped to the new frozen
+  `SBSchema.FAB_PITCH`, on the 0.001 mm grid, revision + 1 when it changes; a blank or non-numeric
+  entry leaves the project unchanged). The draft raster (720 px) is no longer a user control.
+  `#in-sheets` now ranges 1–16 (was 3–8). Review gains a Generate button under the same
+  `SBSchema.canGenerate` guard as Export ("Choose a source" until a source exists); generation still
+  also runs on every change. The pitch does not change the draft preview yet (the app path is still
+  the legacy connected pipeline); it is recorded on the project for the fabrication raster.
+
 - **G2.11a, controller state adapter; no auto-demo (PRJ-01):** the app keeps one schema v1
   `project` (acrylic preset, today's connected tonal behaviour) instead of the v1.1.0 `state`
   object. The legacy pipeline reads it through the new pure `SBSchema.legacyState(project, w?, h?)`

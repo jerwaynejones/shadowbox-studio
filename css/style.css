@@ -124,7 +124,17 @@ body {
   border-right: 1px solid var(--line);
   padding: 4px 0 24px;
 }
-.step { padding: 14px 16px 6px; border-bottom: 1px solid var(--line); }
+/* G2.11b (UI-01): stage links, Source → Interpretation → Construction → Review → Export. */
+.stagenav { padding: 8px 16px; border-bottom: 1px solid var(--line); }
+.stagenav ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.stagenav a {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--score); text-decoration: none;
+}
+.stagenav a:hover { text-decoration: underline; }
+.stagenav a:focus-visible, .step:focus-visible { outline: 2px solid var(--score); outline-offset: 2px; }
+.step { padding: 14px 16px 6px; border-bottom: 1px solid var(--line); scroll-margin-top: 4px; }
+.step:focus { outline: none; }
 .step h2 {
   margin: 0 0 10px;
   font-family: var(--disp);
@@ -162,6 +172,15 @@ input[type="range"] {
   height: 22px;
 }
 input[type="checkbox"] { accent-color: var(--cut); width: 16px; height: 16px; }
+input[type="number"] {
+  width: 100%;
+  font: 13px var(--body);
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 3px;
+}
 select {
   width: 100%;
   font: 13px var(--body);

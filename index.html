@@ -47,29 +47,35 @@
 
 <div class="workspace">
 
-  <!-- Process rail: the four real stages of the pipeline, in order.       -->
+  <!-- Process rail: the five stages of UI-01, in order (G2.11b). The stage
+       links let a keyboard user jump to a stage; the stages follow in the
+       same order, so Tab also walks them in sequence.                     -->
   <aside class="rail" id="rail">
 
-    <section class="step">
-      <h2><span class="stepnum">1</span> Photo</h2>
+    <nav class="stagenav" aria-label="Stages">
+      <ol>
+        <li><a href="#stage-source">1 Source</a></li>
+        <li><a href="#stage-interpretation">2 Interpretation</a></li>
+        <li><a href="#stage-construction">3 Construction</a></li>
+        <li><a href="#stage-review">4 Review</a></li>
+        <li><a href="#stage-export">5 Export</a></li>
+      </ol>
+    </nav>
+
+    <section class="step" id="stage-source" tabindex="-1" aria-labelledby="h-source">
+      <h2 id="h-source"><span class="stepnum">1</span> Source</h2>
       <div class="row btnrow">
         <label class="btn primary filebtn">
           Load photo<input id="filein" type="file" accept="image/*">
         </label>
         <button id="btn-demo" class="btn">Demo scene</button>
       </div>
-      <div class="row"><label for="in-res">Working resolution <output id="out-res"></output></label>
-        <input id="in-res" type="range" min="360" max="1280" step="20"></div>
-      <div class="row"><label for="in-smooth">Cartoon smoothing <output id="out-smooth"></output></label>
-        <input id="in-smooth" type="range" min="1" max="10" step="1"></div>
-      <div class="row"><label for="in-passes">Smoothing passes <output id="out-passes"></output></label>
-        <input id="in-passes" type="range" min="1" max="3" step="1"></div>
     </section>
 
-    <section class="step">
-      <h2><span class="stepnum">2</span> Layers</h2>
+    <section class="step" id="stage-interpretation" tabindex="-1" aria-labelledby="h-interpretation">
+      <h2 id="h-interpretation"><span class="stepnum">2</span> Interpretation</h2>
       <div class="row"><label for="in-sheets">Sheets <output id="out-sheets"></output></label>
-        <input id="in-sheets" type="range" min="3" max="8" step="1"></div>
+        <input id="in-sheets" type="range" min="1" max="16" step="1"></div>
       <div class="row"><label for="in-thmode">Tone split</label>
         <select id="in-thmode">
           <option value="balanced">Balanced areas</option>
@@ -77,17 +83,21 @@
         </select></div>
       <div class="row check"><input id="in-darkfront" type="checkbox">
         <label for="in-darkfront">Dark tones in front</label></div>
-      <div class="row"><label for="in-palette">Acrylic palette</label>
-        <select id="in-palette"></select>
-        <div id="chips" class="chips"></div></div>
+      <div class="row"><label for="in-smooth">Cartoon smoothing <output id="out-smooth"></output></label>
+        <input id="in-smooth" type="range" min="1" max="10" step="1"></div>
+      <div class="row"><label for="in-passes">Smoothing passes <output id="out-passes"></output></label>
+        <input id="in-passes" type="range" min="1" max="3" step="1"></div>
     </section>
 
-    <section class="step">
-      <h2><span class="stepnum">3</span> Fabrication</h2>
+    <section class="step" id="stage-construction" tabindex="-1" aria-labelledby="h-construction">
+      <h2 id="h-construction"><span class="stepnum">3</span> Construction</h2>
       <div class="row"><label for="in-width">Artwork width <output id="out-width"></output></label>
         <input id="in-width" type="range" min="100" max="600" step="10"></div>
       <div class="row"><label for="in-margin">Frame ring <output id="out-margin"></output></label>
         <input id="in-margin" type="range" min="0" max="30" step="1"></div>
+      <!-- PO-LASER-4: physical fabrication pitch; the 720 px draft is not a control. -->
+      <div class="row"><label for="in-res">Fabrication pitch (mm/px) <output id="out-res"></output></label>
+        <input id="in-res" type="number" min="0.05" max="2" step="0.01" value="0.1" inputmode="decimal"></div>
       <div class="row"><label for="in-feature">Min feature <output id="out-feature"></output></label>
         <input id="in-feature" type="range" min="0.6" max="3" step="0.1"></div>
       <div class="row"><label for="in-bridge">Bridge width <output id="out-bridge"></output></label>
@@ -107,8 +117,17 @@
         </select></div>
     </section>
 
-    <section class="step">
-      <h2><span class="stepnum">4</span> Export</h2>
+    <section class="step" id="stage-review" tabindex="-1" aria-labelledby="h-review">
+      <h2 id="h-review"><span class="stepnum">4</span> Review</h2>
+      <button id="btn-generate" class="btn wide" disabled aria-describedby="why-generate">Generate</button>
+      <p id="why-generate" class="why" role="status">Choose a source</p>
+      <div class="row"><label for="in-palette">Acrylic palette</label>
+        <select id="in-palette"></select>
+        <div id="chips" class="chips"></div></div>
+    </section>
+
+    <section class="step" id="stage-export" tabindex="-1" aria-labelledby="h-export">
+      <h2 id="h-export"><span class="stepnum">5</span> Export</h2>
       <p class="hint">One ZIP with every sheet SVG (real mm units), a color
       proof, the assembly guide, a preview render, and your settings.</p>
       <button id="btn-export" class="btn primary wide" disabled aria-describedby="why-export">Download cut files (.zip)</button>

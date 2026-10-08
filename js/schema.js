@@ -40,6 +40,11 @@
  *                                    controller adapter for legacyRun).
  *   SBSchema.applyLegacy(p, key, v)  → new project with one v1.1.0 control
  *                                    set; revision + 1 iff geometryKey changes.
+ *   SBSchema.FAB_PITCH               frozen {min 0.05, max 2, step 0.01, defaultMM 0.1}:
+ *                                    the #in-res pitch input (G2.11b, PO-LASER-4).
+ *   SBSchema.applyFabPitch(p, v)     → new project with geometry.fabPitchMM
+ *                                    clamped and on the 0.001 mm grid; revision
+ *                                    + 1 iff it changed; non-numeric → unchanged.
  *   SBSchema.canGenerate(p, source)  → {ok, reason}; "Choose a source" (PRJ-01).
  *   SBSchema.fromLegacySettings(json) → {project, diagnostics}: v1.1.0
  *                                    settings.json → tonal + connected-sheet
@@ -542,6 +547,26 @@
       case "cornerStyle": c.cleanup.cornerStyle = value === "faceted" ? "sharp" : "smooth"; break;
       default: throw fail("SCHEMA_LEGACY", "applyLegacy: " + key + " is not a project control key");
     }
+    if (JSON.stringify(S.geometryKey(p)) !== JSON.stringify(S.geometryKey(project))) p.revision = project.revision + 1;
+    return p;
+  };
+
+  /**
+   * The fabrication pitch control (G2.11b, PO-LASER-4): `#in-res` is a number input in mm/px with these bounds; the
+   * draft raster (geometry.draftPx, 720 px) is not a user control. The schema itself admits 0.01–2 mm (G2.1).
+   */
+  S.FAB_PITCH = deepFreeze({ min: 0.05, max: 2, step: 0.01, defaultMM: 0.1 });
+
+  /**
+   * Set geometry.fabPitchMM from the pitch input → a new project (input not mutated). The value is clamped to
+   * FAB_PITCH.min–max and quantized to the 0.001 mm grid; a non-numeric or non-finite entry leaves the project unchanged.
+   * revision + 1 exactly when geometryKey changes (the pitch is geometry).
+   */
+  S.applyFabPitch = function (project, value) {
+    const p = clone(project);
+    const v = typeof value === "number" ? value : (typeof value === "string" && value.trim() !== "" ? Number(value) : NaN);
+    if (!Number.isFinite(v)) return p;
+    p.geometry.fabPitchMM = grid(Math.min(S.FAB_PITCH.max, Math.max(S.FAB_PITCH.min, v)));
     if (JSON.stringify(S.geometryKey(p)) !== JSON.stringify(S.geometryKey(project))) p.revision = project.revision + 1;
     return p;
   };

@@ -65,8 +65,14 @@
   // ------------------------------------------------------------- pipeline
   const recompute = SBUtil.debounce(regenerate, 160);
 
-  /** Enable Export only when generation is possible, and say why not otherwise (PRJ-01). */
+  /**
+   * Enable Generate when SBSchema.canGenerate allows it and Export only once sheets exist; say why not otherwise
+   * (PRJ-01, UI-01). Generate and Export share the one guard (G2.11a/b).
+   */
   function updateGate(gate) {
+    const gen = $("btn-generate"), whyGen = $("why-generate");
+    if (gen) gen.disabled = !gate.ok;
+    if (whyGen) { whyGen.textContent = gate.ok ? "" : gate.reason; whyGen.hidden = gate.ok; }
     const btn = $("btn-export"), why = $("why-export");
     if (!btn || btn.dataset.busy === "1") return;
     const blocked = !gate.ok || !run.sheets.length;
@@ -103,7 +109,7 @@
 
     const ms = performance.now() - t0;
     run.report =
-      `${w}×${h}px · ${state.nSheets} sheets · ` +
+      `${w}×${h}px · ${state.nSheets} sheet${state.nSheets === 1 ? "" : "s"} · ` +
       `${totalBridged} bridged · ${totalCulled} culled · ` +
       `${SBUtil.fmt(totalCutMM / 1000, 2)} m of cuts · ${ms.toFixed(0)} ms`;
     setStatus(run.report);
@@ -454,6 +460,25 @@
     });
   }
 
+  /**
+   * The fabrication pitch (PO-LASER-4): a number input in mm/px written through SBSchema.applyFabPitch (clamped to
+   * SBSchema.FAB_PITCH, 0.001 mm grid). It is geometry, so a change bumps the revision and regenerates; a blank or
+   * invalid entry leaves the project unchanged and the field shows the project value again on change.
+   */
+  function bindPitch() {
+    const el = $("in-res"), out = $("out-res");
+    const show = () => { if (out) out.textContent = SBUtil.fmt(project.geometry.fabPitchMM, 3) + " mm/px"; };
+    el.value = project.geometry.fabPitchMM;
+    show();
+    el.addEventListener("input", () => {
+      const before = project.revision;
+      project = SBSchema.applyFabPitch(project, el.value);
+      show();
+      if (project.revision !== before) recompute();
+    });
+    el.addEventListener("change", () => { el.value = project.geometry.fabPitchMM; show(); });
+  }
+
   function bindSelect(id, key) {
     const el = $(id);
     el.value = String(cfg()[key]);
@@ -551,7 +576,8 @@
       if (project.title === "untitled") setProjectName("night-over-the-valley");
       regenerate();
     });
-    bindRange("in-res", "procRes", "out-res", (v) => v + " px");
+    // PO-LASER-4 (G2.11b): #in-res is the fabrication pitch in mm/px. The draft raster (720 px) is not a control.
+    bindPitch();
     bindRange("in-smooth", "smoothRadius", "out-smooth", (v) => v + " px");
     bindRange("in-passes", "smoothPasses", "out-passes");
 
@@ -589,6 +615,9 @@
     // tabs
     document.querySelectorAll(".tab").forEach((t) =>
       t.addEventListener("click", () => switchTab(t.dataset.tab)));
+
+    // review: the staged Generate control, under the same guard as Export (canGenerate)
+    $("btn-generate").addEventListener("click", regenerate);
 
     // export
     $("btn-export").addEventListener("click", exportBundle);
