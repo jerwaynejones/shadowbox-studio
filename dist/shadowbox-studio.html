@@ -4845,6 +4845,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *       in one pass: smoothing → frame union → hole subtraction → normalize → validate → parts. With
  *       opts.frame the connected-mode layer-topology check sees the frame ring (smoothStack frameUm), so
  *       smoothing never merges frame-edge holes or leaves frame-edge slivers (S5 F3).
+ *   SBMaterial.withMaterial(layer, material, opts?) → layer'   (G2.9)
+ *       The layer rebuilt around new material (clip repair): parts/IDs, stats, cutPaths, geometry
+ *       diagnostics and canonicalHash recomputed; holes, Z, carriers, score paths and other diagnostics kept.
  *   SBMaterial.diagnosticsFor(material, layer, {revision, quality}) → Diagnostic[]
  *       SBGeom.validate codes as blocking diagnostics; region = bbox in mm.
  *
@@ -5148,6 +5151,17 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     return M.assignParts([buildLayer(layer.index, material, all, r.dOpts, r.keep, layer)])[0];
   };
 
+  /**
+   * withMaterial(layer, material, opts?) → new MaterialLayer with `material` (normalized here) in place of the layer's
+   * (G2.9 clip repair). Holes, Z, carriers and score paths are carried over; parts/IDs, stats, cutPaths, geometry
+   * diagnostics and canonicalHash are recomputed; other diagnostics are kept. The input is not mutated.
+   */
+  M.withMaterial = function (layer, material, opts) {
+    if (!layer || !Array.isArray(material)) throw new Error("SBMaterial.withMaterial: needs a layer and a PolygonWithHoles[]");
+    const r = rebuildOpts(layer, opts);
+    return M.assignParts([buildLayer(layer.index, global.SBGeom.normalize(material), layer.holes || [], r.dOpts, r.keep, layer)])[0];
+  };
+
   /** MaterialLayer from normalized material (§3, §9.2); `from` carries zBottomMM/zTopMM/carriers/scorePaths over. */
   function buildLayer(k, material, holes, dOpts, extraDiags, from) {
     const G = global.SBGeom;
@@ -5242,7 +5256,23 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *     cfg = {minFeatureMM > 0, advisoryFeatureMM? (≥ minFeatureMM; absent = no advisory tier), minPartMM2 ≥ 0 (absent
  *       = 0), mmPerPxMax > 0 (the coarser real axis pitch), calibrated: boolean, revision = 0, quality = "draft"}.
  *
- * Bad arguments throw SUPPORT_ARG. Inputs are never mutated. Looks up SBGeom and SBDiag at
+ *   Reviewed clip repair (plan G2.9; SUP-04, D-4.6, PRJ-04, LYR-06). Clip-to-lower is never automatic: it exists only as a
+ *   reviewed construction.repairs[] entry.
+ *   proposeClip(snapshot, k) → {layer, removed = difference(Final[k], Final[k−1]), removedAreaMM2, partCountBefore,
+ *       partCountAfter, beforeHash, afterHash (materialHash, D4-B), quality, revision?}. Pure.
+ *   applyClip(project, proposal) → a NEW project at revision + 1 with {op: "clip-to-lower", layer, sourceRevision,
+ *       resultRevision, keyHash, reviewed: {...}} appended; keyHash = hashJSON(geometryKey(project with repairs
+ *       truncated before the entry)). A proposal carrying another revision is refused (never applied silently).
+ *   removeRepair(project, i) → a NEW project at revision + 1 without entry i and every later entry (Revert).
+ *   replayRepairs(layers, repairs, ctx = {project, quality, revision?}) → {layers, diagnostics, applied: number[]}
+ *       After the frame union, before holes and validation. Per entry, in order: keyHash ≠ the current truncated key →
+ *       REPAIR_STALE (blocking), skipped; same quality and the pre-repair materialHash = reviewed.beforeHash → applied
+ *       (Final[k] = Final[k] ∩ Final[k−1], on the already-replayed lower layer); same quality, other layer →
+ *       REPAIR_STALE, skipped; other quality → applied, and a fabrication replay of a draft review raises
+ *       REPAIR_REVIEW_FAB (warning; removed mm² and part counts at THIS resolution). A fabrication-reviewed entry in a
+ *       draft preview is applied with no diagnostic (draft never exports).
+ *
+ * Bad arguments throw SUPPORT_ARG. Inputs are never mutated. Looks up SBGeom, SBDiag (and, for repairs, SBMaterial, SBSchema, SBHash) at
  * call time.
  * ==========================================================================*/
 (function (global) {
@@ -5522,6 +5552,105 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     if (!Array.isArray(layers) || !graph || !Array.isArray(graph.edges)) throw sfail("annotate needs layers and a supportGraph");
     const by = new Map(graph.edges.map((e) => [e.layer + "|" + e.part, e.supports.map((s) => s.part)]));
     return layers.map((L) => Object.assign({}, L, { parts: L.parts.map((p) => Object.assign({}, p, { supports: (by.get(L.index + "|" + p.id) || []).slice() })) }));
+  };
+
+  // ------------------------------------------------------------ reviewed clip repair (G2.9; SUP-04, D-4.6, PRJ-04)
+  const QUALITIES = ["draft", "fabrication"];
+  const clone = (v) => JSON.parse(JSON.stringify(v));
+  const isHash = (h) => typeof h === "string" && /^[0-9a-f]{64}$/.test(h);
+
+  /** Final[k] ∩ Final[k−1] as a rebuilt layer, plus the removed difference (one boolean each). */
+  function clipLayer(layers, k, opts) {
+    const G = global.SBGeom, up = layers[k], lo = layers[k - 1];
+    const removed = G.normalize(G.difference(up.material, lo.material));
+    const kept = G.isEmpty(removed) ? up.material : G.intersection(up.material, lo.material);
+    return { removed, layer: global.SBMaterial.withMaterial(up, kept, opts) };
+  }
+
+  /** geometryKey hash with construction.repairs truncated to its first i entries (keyHash, §3 Repair). */
+  function keyHashAt(project, repairs, i) {
+    const p = Object.assign({}, project, { construction: Object.assign({}, project.construction, { repairs: repairs.slice(0, i) }) });
+    return global.SBHash.hashJSON(global.SBSchema.geometryKey(p));
+  }
+
+  S.proposeClip = function (snapshot, k) {
+    if (!snapshot || !Array.isArray(snapshot.layers)) throw sfail("proposeClip needs a snapshot with layers[]");
+    if (!Number.isInteger(k) || k < 1 || k >= snapshot.layers.length) throw sfail("proposeClip layer must be an integer 1.." + (snapshot.layers.length - 1) + " (got " + k + ")");
+    const quality = snapshot.quality || "draft";
+    if (!QUALITIES.includes(quality)) throw sfail("snapshot quality must be draft|fabrication (got " + quality + ")");
+    const up = snapshot.layers[k];
+    if (!up || !Array.isArray(up.material) || !snapshot.layers[k - 1] || !Array.isArray(snapshot.layers[k - 1].material)) throw sfail("layers " + (k - 1) + " and " + k + " must carry material[]");
+    const c = clipLayer(snapshot.layers, k, { revision: snapshot.revision, quality });
+    const out = { layer: k, removed: c.removed, removedAreaMM2: global.SBGeom.area(c.removed) / 1e6,
+      partCountBefore: up.parts.length, partCountAfter: c.layer.parts.length,
+      beforeHash: up.canonicalHash || global.SBGeom.materialHash(up), afterHash: c.layer.canonicalHash, quality };
+    if (Number.isInteger(snapshot.revision)) out.revision = snapshot.revision;
+    return out;
+  };
+
+  S.applyClip = function (project, proposal) {
+    if (!project || typeof project !== "object" || !project.construction || !Array.isArray(project.construction.repairs) || !Number.isInteger(project.revision))
+      throw sfail("applyClip needs a project with revision and construction.repairs[]");
+    const pr = proposal;
+    if (!pr || typeof pr !== "object" || !Number.isInteger(pr.layer) || pr.layer < 1 || !QUALITIES.includes(pr.quality) || !isHash(pr.beforeHash) || !isHash(pr.afterHash) ||
+        !(Number.isFinite(pr.removedAreaMM2) && pr.removedAreaMM2 >= 0) || !Number.isInteger(pr.partCountBefore) || !Number.isInteger(pr.partCountAfter))
+      throw sfail("applyClip needs a proposal from proposeClip");
+    if (pr.layer >= project.construction.sheets) throw sfail("proposal layer " + pr.layer + " is outside the " + project.construction.sheets + " sheets");
+    // A proposal reviewed on another revision is never applied silently (SUP-04).
+    if (pr.revision !== undefined && pr.revision !== project.revision) throw sfail("proposal was reviewed on revision " + pr.revision + ", the project is at " + project.revision);
+    const p = clone(project), repairs = p.construction.repairs;
+    p.revision = project.revision + 1;
+    repairs.push({ op: "clip-to-lower", layer: pr.layer, sourceRevision: project.revision, resultRevision: p.revision,
+      keyHash: keyHashAt(project, project.construction.repairs, repairs.length),
+      reviewed: { quality: pr.quality, beforeHash: pr.beforeHash, afterHash: pr.afterHash, removedAreaMM2: pr.removedAreaMM2,
+        partCountBefore: pr.partCountBefore, partCountAfter: pr.partCountAfter } });
+    return p;
+  };
+
+  S.removeRepair = function (project, i) {
+    if (!project || !project.construction || !Array.isArray(project.construction.repairs) || !Number.isInteger(project.revision))
+      throw sfail("removeRepair needs a project with revision and construction.repairs[]");
+    if (!Number.isInteger(i) || i < 0 || i >= project.construction.repairs.length) throw sfail("removeRepair index out of range (got " + i + ")");
+    const p = clone(project);
+    p.revision = project.revision + 1;
+    p.construction.repairs = p.construction.repairs.slice(0, i);
+    return p;
+  };
+
+  S.replayRepairs = function (layers, repairs, ctx) {
+    if (!Array.isArray(layers)) throw sfail("layers must be a MaterialLayer array");
+    if (!Array.isArray(repairs)) throw sfail("repairs must be an array");
+    if (!ctx || !ctx.project || !ctx.project.construction || !QUALITIES.includes(ctx.quality)) throw sfail("ctx must be {project, quality: draft|fabrication, revision?}");
+    const D = global.SBDiag, quality = ctx.quality, revision = ctx.revision !== undefined ? ctx.revision : ctx.project.revision;
+    const dOpts = { revision: revision === undefined ? 0 : revision, quality };
+    const out = layers.slice(), diagnostics = [], applied = [];
+    repairs.forEach((r, i) => {
+      const k = r && r.layer, rv = (r && r.reviewed) || {};
+      const stale = (why) => diagnostics.push(D.make("REPAIR_STALE", Object.assign({}, dOpts, { layer: Number.isInteger(k) ? k : null,
+        detail: "clip-to-lower " + (i + 1) + " on layer " + k + " " + why + "; review the clip again" })));
+      if (!r || r.op !== "clip-to-lower" || !Number.isInteger(k) || k < 1 || k >= out.length) return stale("does not match the current layers");
+      // 1. settings changed since the review
+      if (r.keyHash !== keyHashAt(ctx.project, repairs, i)) return stale("was reviewed under different settings");
+      const pre = out[k], preHash = pre.canonicalHash || global.SBGeom.materialHash(pre);
+      if (rv.quality === quality) {
+        // 2. same settings and quality: the pre-repair layer must be the reviewed one; 4. otherwise stale
+        if (preHash !== rv.beforeHash) return stale("no longer matches the reviewed layer");
+        out[k] = clipLayer(out, k, dOpts).layer;
+        applied.push(i);
+        return;
+      }
+      // 3. same settings at the other quality: apply; a fabrication replay of a draft review needs a fab re-review
+      const c = clipLayer(out, k, dOpts);
+      out[k] = c.layer;
+      applied.push(i);
+      if (quality !== "fabrication") return; // a fab-reviewed clip shown in a draft preview: draft never exports
+      const areaMM2 = global.SBGeom.area(c.removed) / 1e6, b = bboxOf(c.removed);
+      diagnostics.push(D.make("REPAIR_REVIEW_FAB", Object.assign({}, dOpts, { layer: k, areaMM2, region: regionMM(b),
+        measured: { value: areaMM2, unit: "mm2" },
+        detail: "clip-to-lower " + (i + 1) + " was reviewed at " + rv.quality + " quality; at this resolution it removes " +
+          Math.round(areaMM2 * 100) / 100 + " mm² and parts " + pre.parts.length + " → " + c.layer.parts.length })));
+    });
+    return { layers: out, diagnostics, applied };
   };
 
   global.SBSupport = S;

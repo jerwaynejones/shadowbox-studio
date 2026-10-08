@@ -2255,7 +2255,7 @@ Runs right after G2.7 (Appendix D.4, D.9). **Why:** G2.2b showed that the pixel 
     3. Else (the same settings at the other quality, for example fab after a draft review), apply it, and raise `REPAIR_REVIEW_FAB` (warning) with the removed area and part counts **at this resolution**. The user must acknowledge it in the fabrication review panel (G3.10) before export.
     4. Otherwise, raise `REPAIR_STALE` and skip.
 
-- [ ] **Tests:**
+- [x] **Tests:**
   - `SUP-04 proposeClip reports removed area and part counts before apply`
   - `SUP-04 apply → new revision, original project object unchanged`
   - `PRJ-04 repair records source and resulting revisions and afterHash`
@@ -2265,7 +2265,12 @@ Runs right after G2.7 (Appendix D.4, D.9). **Why:** G2.2b showed that the pixel 
   - `SUP-04 settings change → REPAIR_STALE, clip not applied`
   - `LYR-06 draft-reviewed clip at fab quality → applied + REPAIR_REVIEW_FAB with fab-resolution area`
   - `D-4.6 removeRepair restores the pre-repair layer hash`
-- **Commit.**
+- [x] **Commit.**
+
+**Result (2026-10-08):**
+- **API.** As specified. `proposeClip` also returns `revision` (the snapshot's), and `applyClip` refuses a proposal from another revision (`SUPPORT_ARG`), so a stale review is never applied silently. `replayRepairs` takes `ctx = {project, quality, revision?}`. It computes each entry's truncated key from `ctx.project` with `repairs.slice(0, i)`, and it also returns `applied` (entry indices). Each clip is one layer-level difference (the removed area) plus one intersection, and only the difference when nothing is removed. The clip runs on the already-replayed lower layer. Bad arguments throw `SUPPORT_ARG`.
+- **Layer rebuild.** New `SBMaterial.withMaterial(layer, material, opts)` (`js/material.js`) rebuilds a layer around clipped material: parts and IDs, stats, cutPaths, geometry diagnostics and `canonicalHash` (materialHash, D4-B) are recomputed, and holes, Z and other diagnostics are kept. `beforeHash` and `afterHash` are materialHashes.
+- **Deviations.** (1) Step 3 is applied as written for a draft review replayed at fabrication (`REPAIR_REVIEW_FAB` with the removed mm² as `areaMM2` and `measured`, and part counts "before → after" in the message, all at this resolution). For the reverse case, a fabrication-reviewed entry shown in a draft preview, the clip is applied with **no** diagnostic: draft never exports, and a "review at fabrication" warning would be false there. (2) The `D-4.6 no clip without a repairs[] entry` test runs on `replayRepairs` + `validate` instead of engine output, because `SBEngine.generate` lands in G2.10a. G2.10a's stage 9 must call `replayRepairs` and keep this pin end to end. (3) Fixture: a 10 × 8 mm bonded stack at 1 mm/px (draft) and 0.5 mm/px (fab). The upper part spans a 2 mm gap in the base, so the clip removes 8 mm² (draft) or 9 mm² (fab) and splits one part into two.
 
 ### Task G2.10a: `SBEngine.generate`, the §11.1 pipeline through validation
 

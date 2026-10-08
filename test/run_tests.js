@@ -618,6 +618,75 @@ suite("support.js — G2.8 feature and sampling checks (GEO-05/06, MAT-03, AT-10
   check("G2.8 bad arguments are SUPPORT_ARG", bad({ ...base, minFeatureMM: 0 }) && bad({ ...base, mmPerPxMax: -1 }) && bad({ ...base, advisoryFeatureMM: 1 }) &&
     bad({ ...base, minPartMM2: -1 }) && bad({ ...base, calibrated: "no" }) && bad(null) && (() => { try { SBSupport.featureChecks("x", base); return false; } catch (e) { return e.code === "SUPPORT_ARG"; } })());
 });
+// ------------------------------------------------ reviewed clip repair (G2.9)
+suite("support.js — G2.9 reviewed clip repair (SUP-04, D-4.6, PRJ-04, LYR-06, AT-09)", () => {
+  // One bonded project at two resolutions. The upper part spans a 2 mm gap in the base, so the clip removes the gap
+  // area and splits the part in two. Draft: 10 × 8 px at 1 mm/px (gap x 4..6 mm, upper x 1..9, y 2..6 mm → 8 mm²);
+  // fabrication: 20 × 16 px at 0.5 mm/px (upper y 2..6.5 mm → 9 mm²): the removed area depends on the resolution.
+  const grid = (w, h, f) => { const m = new Uint8Array(w * h); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = f(x, y) ? 1 : 0; return m; };
+  const build = (s, yTop) => { const w = 10 * s, h = 8 * s;
+    const base = grid(w, h, (x) => x < 4 * s || x >= 6 * s), up = grid(w, h, (x, y) => x >= s && x < 9 * s && y >= 2 * s && y <= yTop);
+    return SBMaterial.fromMasks([base, up], w, h, { artWMM: 10, artHMM: 8, frameMM: 0 }, {}); };
+  const draft = { revision: 3, quality: "draft", layers: build(1, 5) }, fab = { revision: 3, quality: "fabrication", layers: build(2, 12) };
+  const proj = () => { const p = SBSchema.defaults("plywood"); p.construction.sheets = 2; p.revision = 3; return p; };
+  const P0 = proj(), frozen = JSON.stringify(P0);
+  const G = SBGeom, codes = (ds) => ds.map((d) => d.code);
+  const cfgV = { minFeatureMM: 0.5 };
+  const unsupportedOn = (Ls, k) => SBSupport.validate(Ls, "bonded-relief", cfgV).diagnostics.some((d) => d.code === "BOND_UNSUPPORTED" && d.layer === k);
+  check("G2.9 fixture: the project is valid and layer 1 is unsupported before any repair", SBSchema.validate(P0).ok && unsupportedOn(draft.layers, 1));
+
+  const snapD = JSON.stringify(draft);
+  const prop = SBSupport.proposeClip(draft, 1);
+  check("SUP-04 proposeClip reports removed area and part counts before apply", prop.layer === 1 && prop.removedAreaMM2 === 8 &&
+    prop.partCountBefore === 1 && prop.partCountAfter === 2 && prop.quality === "draft" && JSON.stringify(draft) === snapD);
+  check("AT-09 removed polygons == difference(Final[k], Final[k-1])",
+    JSON.stringify(G.normalize(prop.removed)) === JSON.stringify(G.normalize(G.difference(draft.layers[1].material, draft.layers[0].material))));
+  check("SUP-04 proposal beforeHash is the layer's materialHash", prop.beforeHash === draft.layers[1].canonicalHash && prop.afterHash !== prop.beforeHash);
+
+  const P1 = SBSupport.applyClip(P0, prop);
+  check("SUP-04 apply → new revision, original project object unchanged", P1 !== P0 && P1.revision === 4 && JSON.stringify(P0) === frozen &&
+    P1.construction.repairs.length === 1 && P0.construction.repairs.length === 0 && SBSchema.validate(P1).ok);
+  const r0 = P1.construction.repairs[0];
+  check("PRJ-04 repair records source and resulting revisions and afterHash", r0.op === "clip-to-lower" && r0.layer === 1 &&
+    r0.sourceRevision === 3 && r0.resultRevision === 4 && r0.reviewed.afterHash === prop.afterHash && r0.reviewed.beforeHash === prop.beforeHash &&
+    r0.reviewed.quality === "draft" && r0.reviewed.removedAreaMM2 === 8 && r0.reviewed.partCountBefore === 1 && r0.reviewed.partCountAfter === 2);
+  check("D4 keyHash = hashJSON(geometryKey) with repairs truncated before the entry", r0.keyHash === SBHash.hashJSON(SBSchema.geometryKey(P0)));
+
+  const rd = SBSupport.replayRepairs(draft.layers, P1.construction.repairs, { project: P1, quality: "draft" });
+  check("SUP-04 replay at the reviewed quality applies the clip with the reviewed afterHash and no diagnostics",
+    rd.diagnostics.length === 0 && rd.layers[1].canonicalHash === r0.reviewed.afterHash && rd.layers[1].parts.length === 2 && JSON.stringify(draft) === snapD);
+  check("SUP-04 after replay, validate() reports no BOND_UNSUPPORTED on k", !unsupportedOn(rd.layers, 1));
+  const none = SBSupport.replayRepairs(draft.layers, [], { project: P0, quality: "draft" });
+  check("D-4.6 no clip without a repairs[] entry", none.layers[1].canonicalHash === draft.layers[1].canonicalHash && unsupportedOn(none.layers, 1));
+
+  const P2 = JSON.parse(JSON.stringify(P1)); P2.material.minFeatureMM = 1.6;
+  const st = SBSupport.replayRepairs(draft.layers, P2.construction.repairs, { project: P2, quality: "draft" });
+  const sd = st.diagnostics.find((d) => d.code === "REPAIR_STALE");
+  check("SUP-04 settings change → REPAIR_STALE, clip not applied", codes(st.diagnostics).join() === "REPAIR_STALE" && sd.severity === "blocking" &&
+    sd.layer === 1 && st.layers[1].canonicalHash === draft.layers[1].canonicalHash && unsupportedOn(st.layers, 1));
+  const other = SBSupport.replayRepairs(build(1, 4), P1.construction.repairs, { project: P1, quality: "draft" });
+  check("SUP-04 same settings and quality but a different pre-repair layer → REPAIR_STALE, not applied",
+    codes(other.diagnostics).join() === "REPAIR_STALE" && unsupportedOn(other.layers, 1));
+
+  const rf = SBSupport.replayRepairs(fab.layers, P1.construction.repairs, { project: P1, quality: "fabrication" });
+  const fd = rf.diagnostics.find((d) => d.code === "REPAIR_REVIEW_FAB");
+  check("LYR-06 draft-reviewed clip at fab quality → applied + REPAIR_REVIEW_FAB with fab-resolution area",
+    codes(rf.diagnostics).join() === "REPAIR_REVIEW_FAB" && fd.severity === "warning" && fd.quality === "fabrication" && fd.layer === 1 &&
+    fd.areaMM2 === 9 && fd.measured.value === 9 && /1 → 2/.test(fd.message) && !unsupportedOn(rf.layers, 1));
+  check("LYR-06 fab replay equals a fab-resolution proposal", rf.layers[1].canonicalHash === SBSupport.proposeClip(fab, 1).afterHash);
+
+  const Pf = SBSupport.applyClip(P0, SBSupport.proposeClip(fab, 1)), rdf = SBSupport.replayRepairs(draft.layers, Pf.construction.repairs, { project: Pf, quality: "draft" });
+  check("LYR-06 fab-reviewed clip in a draft preview → applied, no REPAIR_REVIEW_FAB (draft never exports)",
+    rdf.diagnostics.length === 0 && rdf.layers[1].canonicalHash === prop.afterHash && rdf.applied.join() === "0");
+  const P3 = SBSupport.removeRepair(P1, 0);
+  const rr = SBSupport.replayRepairs(draft.layers, P3.construction.repairs, { project: P3, quality: "draft" });
+  check("D-4.6 removeRepair restores the pre-repair layer hash", P3.revision === 5 && P3.construction.repairs.length === 0 && P1.construction.repairs.length === 1 &&
+    rr.layers[1].canonicalHash === draft.layers[1].canonicalHash && unsupportedOn(rr.layers, 1));
+  const bad = (f) => { try { f(); return false; } catch (e) { return e.code === "SUPPORT_ARG"; } };
+  check("G2.9 bad arguments are SUPPORT_ARG", bad(() => SBSupport.proposeClip(draft, 0)) && bad(() => SBSupport.proposeClip(draft, 2)) &&
+    bad(() => SBSupport.removeRepair(P1, 1)) && bad(() => SBSupport.applyClip(P0, null)) &&
+    bad(() => SBSupport.applyClip(P1, prop)) /* proposal from revision 3, project at 4 */ && bad(() => SBSupport.replayRepairs(draft.layers, [], {})));
+});
 
 suite("engine.js — legacyRun seam (NFR-10, DEP-04)", () => {
   const G = require("./golden/oldrun.json"), H = (u8) => require("crypto").createHash("sha256").update(Buffer.from(u8)).digest("hex");

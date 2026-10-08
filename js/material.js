@@ -52,6 +52,9 @@
  *       in one pass: smoothing → frame union → hole subtraction → normalize → validate → parts. With
  *       opts.frame the connected-mode layer-topology check sees the frame ring (smoothStack frameUm), so
  *       smoothing never merges frame-edge holes or leaves frame-edge slivers (S5 F3).
+ *   SBMaterial.withMaterial(layer, material, opts?) → layer'   (G2.9)
+ *       The layer rebuilt around new material (clip repair): parts/IDs, stats, cutPaths, geometry
+ *       diagnostics and canonicalHash recomputed; holes, Z, carriers, score paths and other diagnostics kept.
  *   SBMaterial.diagnosticsFor(material, layer, {revision, quality}) → Diagnostic[]
  *       SBGeom.validate codes as blocking diagnostics; region = bbox in mm.
  *
@@ -353,6 +356,17 @@
     const material = G.normalize(G.difference(layer.material || [], hs.map(circleOf)));
     const all = holeList((layer.holes || []).concat(hs), "subtractHoles");
     return M.assignParts([buildLayer(layer.index, material, all, r.dOpts, r.keep, layer)])[0];
+  };
+
+  /**
+   * withMaterial(layer, material, opts?) → new MaterialLayer with `material` (normalized here) in place of the layer's
+   * (G2.9 clip repair). Holes, Z, carriers and score paths are carried over; parts/IDs, stats, cutPaths, geometry
+   * diagnostics and canonicalHash are recomputed; other diagnostics are kept. The input is not mutated.
+   */
+  M.withMaterial = function (layer, material, opts) {
+    if (!layer || !Array.isArray(material)) throw new Error("SBMaterial.withMaterial: needs a layer and a PolygonWithHoles[]");
+    const r = rebuildOpts(layer, opts);
+    return M.assignParts([buildLayer(layer.index, global.SBGeom.normalize(material), layer.holes || [], r.dOpts, r.keep, layer)])[0];
   };
 
   /** MaterialLayer from normalized material (§3, §9.2); `from` carries zBottomMM/zTopMM/carriers/scorePaths over. */
