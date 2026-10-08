@@ -250,6 +250,19 @@
   </main>
 </div>
 
+<!-- G2.11e (PRJ-02): a construction or interpretation mode change is reviewed before it is applied -->
+<dialog id="dlg-mode" class="modal" aria-labelledby="dlg-mode-title" aria-describedby="dlg-mode-intro">
+  <form method="dialog">
+    <h2 id="dlg-mode-title">Review mode change</h2>
+    <p id="dlg-mode-intro">Accepting applies these changes to the project. Cancel keeps the project as it is.</p>
+    <ul id="dlg-mode-list" class="modelist"></ul>
+    <div class="modal-actions">
+      <button class="btn" value="cancel" autofocus>Cancel</button>
+      <button class="btn primary" value="accept">Accept</button>
+    </div>
+  </form>
+</dialog>
+
 <script src="js/util.js"></script>
 <script src="js/hash.js"></script>
 <script src="js/vendor/clipper2.js"></script>

@@ -504,14 +504,21 @@
   // ------------------------------------------------------- G2.11c control groups
   // Every G2.11c control writes through SBSchema.applyControl (lengths in project.units; invalid → unchanged). A geometry
   // change (revision + 1) regenerates; an appearance, units or view change calls renderAll() only (PRJ-02).
-  const CONTROLS = ["interp", "polarity", "construction", "thmode", "manual-th", "thickness", "thickstate", "gap", "units",
+  // The two mode selects are not in CONTROLS: a mode change is reviewed in #dlg-mode before it applies (G2.11e).
+  const CONTROLS = ["polarity", "thmode", "manual-th", "thickness", "thickstate", "gap", "units",
     "sizeby", "target", "machine", "m-height", "m-length", "m-matwidth", "m-thick", "m-kerf", "appearance", "color", "explode"];
+  const MODE_CONTROLS = { "interp": "interpretation", "construction": "construction" };
   const EXPLODE_MAX_MM = 60;   // the #in-explode range; the preview takes a 0–1 fraction
 
   function onControl(id, value) {
-    const before = project;
     const ctx = run.sourceImage ? { srcW: run.sourceW, srcH: run.sourceH } : undefined;
-    project = SBSchema.applyControl(project, id, value, ctx);
+    commitProject(SBSchema.applyControl(project, id, value, ctx), id);
+  }
+
+  /** Install a new project from a control: a geometry change (revision + 1) regenerates, anything else re-renders. */
+  function commitProject(next, id) {
+    const before = project;
+    project = next;
     syncControls();
     if (id === "explode") preview.setExplode(Math.min(1, project.view.explodeMM / EXPLODE_MAX_MM));
     if (project.revision !== before.revision) { updateDimbar(); recompute(); }
@@ -528,7 +535,7 @@
       pol.dataset.mode = project.interpretation.mode;
     }
     const vals = SBSchema.controlValues(project);
-    for (const id of CONTROLS) {
+    for (const id of CONTROLS.concat(Object.keys(MODE_CONTROLS))) {
       const el = $("in-" + id);
       if (el && document.activeElement !== el) el.value = vals["in-" + id];
     }
@@ -561,7 +568,53 @@
     }
   }
 
+  // ------------------------------------------------------- G2.11e mode-change review (PRJ-02, AT-21)
+  /** A value in the review list: lengths in mm, objects as "key: value" pairs, null as "none". */
+  function fmtValue(path, v) {
+    if (v === null || v === undefined) return "none";
+    if (typeof v === "object") return Object.keys(v).map((k) => k + ": " + fmtValue(k, v[k])).join(", ");
+    return typeof v === "number" && /MM$/.test(path) ? v + " mm" : String(v);
+  }
+
+  /**
+   * Changing #in-interp or #in-construction does not apply at once: the modal #dlg-mode lists
+   * SBSchema.modeChangeDiff(project, patch). Accept applies SBSchema.applyModeChange(…, true) (revision + 1);
+   * Cancel or Escape leaves the project untouched and restores the select. Focus returns to the select either way.
+   */
+  function reviewModeChange(id, value) {
+    const sel = $("in-" + id), key = MODE_CONTROLS[id], patch = { [key]: { mode: value } };
+    const restore = () => { sel.value = project[key].mode; };
+    let diff;
+    try { diff = SBSchema.modeChangeDiff(project, patch); } catch (e) { restore(); return; }
+    if (diff.length === 0) return;
+    const dlg = $("dlg-mode"), list = $("dlg-mode-list");
+    list.innerHTML = "";
+    for (const d of diff) {
+      const li = document.createElement("li"), path = document.createElement("span"), what = document.createElement("span");
+      const changes = JSON.stringify(d.from) !== JSON.stringify(d.to);
+      path.className = "path"; path.textContent = d.path;
+      what.textContent = changes ? ": " + fmtValue(d.path, d.from) + " \u2192 " + fmtValue(d.path, d.to) + ". " + d.reason
+        : " (kept: " + fmtValue(d.path, d.from) + "). " + d.reason;
+      if (!changes) li.className = "note";
+      li.append(path, what);
+      list.appendChild(li);
+    }
+    const finish = (accepted) => {
+      if (accepted) commitProject(SBSchema.applyModeChange(project, patch, true), id);
+      restore();   // the select shows the project's mode (Cancel: the old one)
+      sel.focus();
+    };
+    if (typeof dlg.showModal !== "function") { finish(window.confirm("Apply the " + key + " mode change?")); return; }
+    dlg.returnValue = "";
+    dlg.addEventListener("close", () => finish(dlg.returnValue === "accept"), { once: true });
+    dlg.showModal();
+  }
+
   function bindControls() {
+    for (const id of Object.keys(MODE_CONTROLS)) {
+      const el = $("in-" + id);
+      el.addEventListener("change", () => { if (el.value !== project[MODE_CONTROLS[id]].mode) reviewModeChange(id, el.value); });
+    }
     // G2.11d: the bonded cull opt-in (construction.bridge.cullEnabled) is a checkbox
     $("in-cullon").addEventListener("change", (e) => onControl("cullon", e.target.checked));
     for (const id of CONTROLS) {

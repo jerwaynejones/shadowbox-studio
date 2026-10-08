@@ -277,6 +277,17 @@ select {
 .row.disabled > label, .row.disabled output { opacity: 0.5; }
 .row.disabled input, .row.disabled select { cursor: not-allowed; }
 .row.disabled .why { opacity: 0.9; }
+/* G2.11e (PRJ-02): the mode-change review dialog */
+.modal { max-width: min(560px, calc(100vw - 32px)); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px;
+  background: var(--panel); color: var(--ink); }
+.modal::backdrop { background: rgba(23, 29, 36, 0.45); }
+.modal h2 { margin: 0 0 8px; font-size: 17px; }
+.modal p { margin: 0 0 10px; font-size: 13px; color: var(--ink-soft); }
+.modelist { margin: 0 0 14px; padding-left: 18px; max-height: 50vh; overflow-y: auto; font-size: 13px; }
+.modelist li { margin: 0 0 6px; }
+.modelist .path { font-family: var(--mono); font-size: 12px; }
+.modelist .note { color: var(--ink-soft); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .filebtn { position: relative; overflow: hidden; flex: 1; }
 .filebtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 
@@ -653,6 +664,19 @@ select {
     <footer class="statusbar"><span id="statusline">loading…</span></footer>
   </main>
 </div>
+
+<!-- G2.11e (PRJ-02): a construction or interpretation mode change is reviewed before it is applied -->
+<dialog id="dlg-mode" class="modal" aria-labelledby="dlg-mode-title" aria-describedby="dlg-mode-intro">
+  <form method="dialog">
+    <h2 id="dlg-mode-title">Review mode change</h2>
+    <p id="dlg-mode-intro">Accepting applies these changes to the project. Cancel keeps the project as it is.</p>
+    <ul id="dlg-mode-list" class="modelist"></ul>
+    <div class="modal-actions">
+      <button class="btn" value="cancel" autofocus>Cancel</button>
+      <button class="btn primary" value="accept">Accept</button>
+    </div>
+  </form>
+</dialog>
 
 <script>
 /* ============================================================================
@@ -2372,6 +2396,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *                                    simplification, SBConstruct.simplifyBusy.
  *   SBSchema.toMM / fromMM           lossless units, quantized to 0.001 mm.
  *   SBSchema.modeChangeDiff(p, patch) → [{path, from, to, reason}] (G2.11e).
+ *   SBSchema.applyModeChange(p, patch, accepted) → project (Cancel: unchanged; Accept: diff targets, revision + 1) (G2.11e).
  *   SBSchema.sourceTemplate()        a valid placeholder `source` record.
  *   SBSchema.legacyState(p, w?, h?)  → the 19 v1.1.0 settings keys (G2.11a
  *                                    controller adapter for legacyRun).
@@ -2958,7 +2983,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    * The one write path for the G2.11c controls → a new project (input never mutated). `id` is the control id without
    * the "in-" prefix; length values are entered in project.units (SBSchema.toMM, 0.001 mm grid) and clamped to the
    * schema ranges. ctx = {srcW, srcH} (optional) lets a sizeBy switch keep the finished page size (PO-LASER-3).
-   *   interp, construction   apply SBSchema.modeChangeDiff's target values (G2.11e puts its review dialog in front)
+   *   interp, construction   SBSchema.applyModeChange(project, patch, true) (the app puts the G2.11e review dialog in front)
    *   polarity, thmode, cullon (bonded only: construction.bridge.cullEnabled), manual-th ("0.2, 0.5, …": N − 1 increasing values in (0, 1)), thickness, thickstate, gap,
    *   sizeby, target, machine (profile id | "none"), m-height, m-length, m-matwidth, m-thick, m-kerf  — geometry
    *   units, appearance, color (#rrggbb), explode (view.explodeMM)                                     — not geometry
@@ -2973,8 +2998,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       case "interp": case "construction": {
         const patch = id === "interp" ? { interpretation: { mode: value } } : { construction: { mode: value } };
         if (!(id === "interp" ? E.interp : E.construction).includes(value)) return unchanged();
-        for (const d of S.modeChangeDiff(project, patch)) setPath(p, d.path, d.to);
-        break;
+        return S.applyModeChange(project, patch, true);
       }
       case "polarity": if (!POLARITY_FOR[it.mode].includes(value)) return unchanged(); it.polarity = value; break;
       case "thmode":
@@ -3226,6 +3250,22 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       }
     }
     return out;
+  };
+
+  /**
+   * The reviewed mode change (PRJ-02, G2.11e) → a new project (input never mutated). `accepted` false (Cancel) returns
+   * an unchanged copy (same revision); true (Accept) applies every SBSchema.modeChangeDiff target value. revision + 1
+   * exactly when geometryKey changes, so a patch that keeps the modes changes nothing. An unknown mode throws
+   * SCHEMA_MODE either way; a result that fails SBSchema.validate leaves the project unchanged.
+   */
+  S.applyModeChange = function (project, patch, accepted) {
+    const diff = S.modeChangeDiff(project, patch);
+    if (!accepted || diff.length === 0) return clone(project);
+    const p = clone(project);
+    for (const d of diff) setPath(p, d.path, d.to);
+    if (!S.validate(p).ok) return clone(project);
+    if (JSON.stringify(S.geometryKey(p)) !== JSON.stringify(S.geometryKey(project))) p.revision = project.revision + 1;
+    return p;
   };
 
   global.SBSchema = S;
@@ -8163,14 +8203,21 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   // ------------------------------------------------------- G2.11c control groups
   // Every G2.11c control writes through SBSchema.applyControl (lengths in project.units; invalid → unchanged). A geometry
   // change (revision + 1) regenerates; an appearance, units or view change calls renderAll() only (PRJ-02).
-  const CONTROLS = ["interp", "polarity", "construction", "thmode", "manual-th", "thickness", "thickstate", "gap", "units",
+  // The two mode selects are not in CONTROLS: a mode change is reviewed in #dlg-mode before it applies (G2.11e).
+  const CONTROLS = ["polarity", "thmode", "manual-th", "thickness", "thickstate", "gap", "units",
     "sizeby", "target", "machine", "m-height", "m-length", "m-matwidth", "m-thick", "m-kerf", "appearance", "color", "explode"];
+  const MODE_CONTROLS = { "interp": "interpretation", "construction": "construction" };
   const EXPLODE_MAX_MM = 60;   // the #in-explode range; the preview takes a 0–1 fraction
 
   function onControl(id, value) {
-    const before = project;
     const ctx = run.sourceImage ? { srcW: run.sourceW, srcH: run.sourceH } : undefined;
-    project = SBSchema.applyControl(project, id, value, ctx);
+    commitProject(SBSchema.applyControl(project, id, value, ctx), id);
+  }
+
+  /** Install a new project from a control: a geometry change (revision + 1) regenerates, anything else re-renders. */
+  function commitProject(next, id) {
+    const before = project;
+    project = next;
     syncControls();
     if (id === "explode") preview.setExplode(Math.min(1, project.view.explodeMM / EXPLODE_MAX_MM));
     if (project.revision !== before.revision) { updateDimbar(); recompute(); }
@@ -8187,7 +8234,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       pol.dataset.mode = project.interpretation.mode;
     }
     const vals = SBSchema.controlValues(project);
-    for (const id of CONTROLS) {
+    for (const id of CONTROLS.concat(Object.keys(MODE_CONTROLS))) {
       const el = $("in-" + id);
       if (el && document.activeElement !== el) el.value = vals["in-" + id];
     }
@@ -8220,7 +8267,53 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     }
   }
 
+  // ------------------------------------------------------- G2.11e mode-change review (PRJ-02, AT-21)
+  /** A value in the review list: lengths in mm, objects as "key: value" pairs, null as "none". */
+  function fmtValue(path, v) {
+    if (v === null || v === undefined) return "none";
+    if (typeof v === "object") return Object.keys(v).map((k) => k + ": " + fmtValue(k, v[k])).join(", ");
+    return typeof v === "number" && /MM$/.test(path) ? v + " mm" : String(v);
+  }
+
+  /**
+   * Changing #in-interp or #in-construction does not apply at once: the modal #dlg-mode lists
+   * SBSchema.modeChangeDiff(project, patch). Accept applies SBSchema.applyModeChange(…, true) (revision + 1);
+   * Cancel or Escape leaves the project untouched and restores the select. Focus returns to the select either way.
+   */
+  function reviewModeChange(id, value) {
+    const sel = $("in-" + id), key = MODE_CONTROLS[id], patch = { [key]: { mode: value } };
+    const restore = () => { sel.value = project[key].mode; };
+    let diff;
+    try { diff = SBSchema.modeChangeDiff(project, patch); } catch (e) { restore(); return; }
+    if (diff.length === 0) return;
+    const dlg = $("dlg-mode"), list = $("dlg-mode-list");
+    list.innerHTML = "";
+    for (const d of diff) {
+      const li = document.createElement("li"), path = document.createElement("span"), what = document.createElement("span");
+      const changes = JSON.stringify(d.from) !== JSON.stringify(d.to);
+      path.className = "path"; path.textContent = d.path;
+      what.textContent = changes ? ": " + fmtValue(d.path, d.from) + " \u2192 " + fmtValue(d.path, d.to) + ". " + d.reason
+        : " (kept: " + fmtValue(d.path, d.from) + "). " + d.reason;
+      if (!changes) li.className = "note";
+      li.append(path, what);
+      list.appendChild(li);
+    }
+    const finish = (accepted) => {
+      if (accepted) commitProject(SBSchema.applyModeChange(project, patch, true), id);
+      restore();   // the select shows the project's mode (Cancel: the old one)
+      sel.focus();
+    };
+    if (typeof dlg.showModal !== "function") { finish(window.confirm("Apply the " + key + " mode change?")); return; }
+    dlg.returnValue = "";
+    dlg.addEventListener("close", () => finish(dlg.returnValue === "accept"), { once: true });
+    dlg.showModal();
+  }
+
   function bindControls() {
+    for (const id of Object.keys(MODE_CONTROLS)) {
+      const el = $("in-" + id);
+      el.addEventListener("change", () => { if (el.value !== project[MODE_CONTROLS[id]].mode) reviewModeChange(id, el.value); });
+    }
     // G2.11d: the bonded cull opt-in (construction.bridge.cullEnabled) is a checkbox
     $("in-cullon").addEventListener("change", (e) => onControl("cullon", e.target.checked));
     for (const id of CONTROLS) {

@@ -4358,6 +4358,49 @@ suite("schema.js/index.html/app.js — G2.11d applicability and disabled-with-re
   check("UI-01 style.css styles .row.disabled and .why", /\.row\.disabled\b/.test(css) && /\.why\b/.test(css));
 });
 
+suite("schema.js/index.html/app.js — G2.11e mode-change review (PRJ-02, AT-21)", () => {
+  const S = SBSchema;
+  const root = path.join(__dirname, "..");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const appSrc = fs.readFileSync(path.join(root, "js", "app.js"), "utf8");
+  const codeOf = (fn) => { try { fn(); return null; } catch (e) { return e.code || "UNCODED:" + e.message; } };
+  const P = S.defaults("plywood"), A = S.defaults("acrylic"), P0 = JSON.stringify(P), A0 = JSON.stringify(A);
+  const toConn = { construction: { mode: "connected-sheet" } }, toBond = { construction: { mode: "bonded-relief" } };
+  const toTonal = { interpretation: { mode: "tonal" } }, toHeight = { interpretation: { mode: "height" } };
+  const am = S.applyModeChange;
+
+  check("PRJ-02 cancel leaves project revision unchanged", typeof am === "function" &&
+    [[P, toConn], [P, toTonal], [A, toBond], [A, toHeight]].every(([p, patch]) => {
+      const r = am(p, patch, false);
+      return r.revision === p.revision && JSON.stringify(r) === JSON.stringify(p) && r !== p; }));
+  check("PRJ-02 accept applies every modeChangeDiff target (revision + 1, valid project)", typeof am === "function" &&
+    [[P, toConn], [P, toTonal], [A, toBond], [A, toHeight]].every(([p, patch]) => {
+      const r = am(p, patch, true), get = (o, k) => k.split(".").reduce((t, x) => t[x], o);
+      return r.revision === p.revision + 1 && S.validate(r).ok &&
+        S.modeChangeDiff(p, patch).every((d) => JSON.stringify(get(r, d.path)) === JSON.stringify(d.to)); }));
+  check("PRJ-02 accepting a patch that keeps the mode changes nothing (same revision)", typeof am === "function" &&
+    JSON.stringify(am(P, toBond, true)) === P0 && JSON.stringify(am(A, toTonal, true)) === A0 && JSON.stringify(am(P, {}, true)) === P0);
+  check("PRJ-02 applyModeChange is pure: the input project is never mutated", typeof am === "function" && (() => {
+    am(P, toConn, true); am(A, toHeight, true); am(P, toTonal, false);
+    return JSON.stringify(P) === P0 && JSON.stringify(A) === A0; })());
+  check("PRJ-02 applyModeChange rejects an unknown mode (SCHEMA_MODE), accepted or not",
+    codeOf(() => am(P, { construction: { mode: "glued" } }, true)) === "SCHEMA_MODE" && codeOf(() => am(P, { interpretation: { mode: "x" } }, false)) === "SCHEMA_MODE");
+  check("PRJ-02 applyControl interp/construction is applyModeChange(…, true) (one write path)", typeof am === "function" &&
+    JSON.stringify(S.applyControl(A, "construction", "bonded-relief")) === JSON.stringify(am(A, toBond, true)) &&
+    JSON.stringify(S.applyControl(P, "interp", "tonal")) === JSON.stringify(am(P, toTonal, true)));
+
+  // ---- markup and bindings (QA: keyboard-operable dialog, focus returns to the select)
+  check("PRJ-02 index.html has a modal review <dialog> with a change list, Accept and Cancel",
+    /<dialog[^>]*id="dlg-mode"[^>]*aria-labelledby="dlg-mode-title"/.test(html) && /id="dlg-mode-title"/.test(html) && /id="dlg-mode-list"/.test(html) &&
+    /<form[^>]*method="dialog"/.test(html.slice(html.indexOf('id="dlg-mode"'))) &&
+    /<button[^>]*value="accept"[^>]*>/.test(html) && /<button[^>]*value="cancel"[^>]*>/.test(html));
+  check("PRJ-02 app.js: #in-interp/#in-construction open the review (showModal) from SBSchema.modeChangeDiff instead of applying at once",
+    /SBSchema\.modeChangeDiff\(/.test(appSrc) && /\.showModal\(\)/.test(appSrc) && /SBSchema\.applyModeChange\(/.test(appSrc) &&
+    !/onControl\("(interp|construction)"/.test(appSrc) && /const CONTROLS = \[(?![^\]]*"(interp|construction)")[^\]]*\]/.test(appSrc));
+  check("PRJ-02 app.js: Cancel/Escape restores the select and focus returns to it",
+    /returnValue === "accept"/.test(appSrc) && /addEventListener\("close"/.test(appSrc) && /\.focus\(\)/.test(appSrc));
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

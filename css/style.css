@@ -213,6 +213,17 @@ select {
 .row.disabled > label, .row.disabled output { opacity: 0.5; }
 .row.disabled input, .row.disabled select { cursor: not-allowed; }
 .row.disabled .why { opacity: 0.9; }
+/* G2.11e (PRJ-02): the mode-change review dialog */
+.modal { max-width: min(560px, calc(100vw - 32px)); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px;
+  background: var(--panel); color: var(--ink); }
+.modal::backdrop { background: rgba(23, 29, 36, 0.45); }
+.modal h2 { margin: 0 0 8px; font-size: 17px; }
+.modal p { margin: 0 0 10px; font-size: 13px; color: var(--ink-soft); }
+.modelist { margin: 0 0 14px; padding-left: 18px; max-height: 50vh; overflow-y: auto; font-size: 13px; }
+.modelist li { margin: 0 0 6px; }
+.modelist .path { font-family: var(--mono); font-size: 12px; }
+.modelist .note { color: var(--ink-soft); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .filebtn { position: relative; overflow: hidden; flex: 1; }
 .filebtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 

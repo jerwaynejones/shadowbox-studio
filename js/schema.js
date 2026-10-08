@@ -35,6 +35,7 @@
  *                                    simplification, SBConstruct.simplifyBusy.
  *   SBSchema.toMM / fromMM           lossless units, quantized to 0.001 mm.
  *   SBSchema.modeChangeDiff(p, patch) → [{path, from, to, reason}] (G2.11e).
+ *   SBSchema.applyModeChange(p, patch, accepted) → project (Cancel: unchanged; Accept: diff targets, revision + 1) (G2.11e).
  *   SBSchema.sourceTemplate()        a valid placeholder `source` record.
  *   SBSchema.legacyState(p, w?, h?)  → the 19 v1.1.0 settings keys (G2.11a
  *                                    controller adapter for legacyRun).
@@ -621,7 +622,7 @@
    * The one write path for the G2.11c controls → a new project (input never mutated). `id` is the control id without
    * the "in-" prefix; length values are entered in project.units (SBSchema.toMM, 0.001 mm grid) and clamped to the
    * schema ranges. ctx = {srcW, srcH} (optional) lets a sizeBy switch keep the finished page size (PO-LASER-3).
-   *   interp, construction   apply SBSchema.modeChangeDiff's target values (G2.11e puts its review dialog in front)
+   *   interp, construction   SBSchema.applyModeChange(project, patch, true) (the app puts the G2.11e review dialog in front)
    *   polarity, thmode, cullon (bonded only: construction.bridge.cullEnabled), manual-th ("0.2, 0.5, …": N − 1 increasing values in (0, 1)), thickness, thickstate, gap,
    *   sizeby, target, machine (profile id | "none"), m-height, m-length, m-matwidth, m-thick, m-kerf  — geometry
    *   units, appearance, color (#rrggbb), explode (view.explodeMM)                                     — not geometry
@@ -636,8 +637,7 @@
       case "interp": case "construction": {
         const patch = id === "interp" ? { interpretation: { mode: value } } : { construction: { mode: value } };
         if (!(id === "interp" ? E.interp : E.construction).includes(value)) return unchanged();
-        for (const d of S.modeChangeDiff(project, patch)) setPath(p, d.path, d.to);
-        break;
+        return S.applyModeChange(project, patch, true);
       }
       case "polarity": if (!POLARITY_FOR[it.mode].includes(value)) return unchanged(); it.polarity = value; break;
       case "thmode":
@@ -889,6 +889,22 @@
       }
     }
     return out;
+  };
+
+  /**
+   * The reviewed mode change (PRJ-02, G2.11e) → a new project (input never mutated). `accepted` false (Cancel) returns
+   * an unchanged copy (same revision); true (Accept) applies every SBSchema.modeChangeDiff target value. revision + 1
+   * exactly when geometryKey changes, so a patch that keeps the modes changes nothing. An unknown mode throws
+   * SCHEMA_MODE either way; a result that fails SBSchema.validate leaves the project unchanged.
+   */
+  S.applyModeChange = function (project, patch, accepted) {
+    const diff = S.modeChangeDiff(project, patch);
+    if (!accepted || diff.length === 0) return clone(project);
+    const p = clone(project);
+    for (const d of diff) setPath(p, d.path, d.to);
+    if (!S.validate(p).ok) return clone(project);
+    if (JSON.stringify(S.geometryKey(p)) !== JSON.stringify(S.geometryKey(project))) p.revision = project.revision + 1;
+    return p;
   };
 
   global.SBSchema = S;

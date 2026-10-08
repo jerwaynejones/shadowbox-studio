@@ -2459,8 +2459,14 @@ Runs right after G2.7 (Appendix D.4, D.9). **Why:** G2.2b showed that the pixel 
 **Interfaces:**
 - Changing `#in-interp` or `#in-construction` does not apply the change at once. It opens a dialog listing `SBSchema.modeChangeDiff(project, patch)`. **Accept** applies the patch (revision + 1); **Cancel** leaves the project untouched.
 
-- [ ] **Tests:** `PRJ-02 cancel leaves project revision unchanged`, run on a pure `SBProject`-free helper `applyModeChange(project, patch, accepted)`.
-- **QA:** the dialog is keyboard-operable, and focus returns to the select. **Commit.**
+- [x] **Tests:** `PRJ-02 cancel leaves project revision unchanged`, run on a pure `SBProject`-free helper `applyModeChange(project, patch, accepted)`.
+- [x] **QA:** the dialog is keyboard-operable, and focus returns to the select. **Commit.**
+
+**Result (2026-10-08):**
+- **Pure part.** `SBSchema.applyModeChange(project, patch, accepted)` (in `js/schema.js`, next to `modeChangeDiff`): Cancel returns an unchanged copy (same revision); Accept applies every `modeChangeDiff` target, revision + 1 exactly when `geometryKey` changes (a patch that keeps the modes changes nothing); an unknown mode throws `SCHEMA_MODE` either way; a result that fails `validate` leaves the project unchanged; the input is never mutated. `applyControl("interp" | "construction")` now delegates to it (one write path).
+- **App.** `index.html` has a modal `<dialog id="dlg-mode">` (`aria-labelledby`/`aria-describedby`, `<form method="dialog">`, Cancel with `autofocus`, Accept). `#in-interp` and `#in-construction` left `CONTROLS` (`MODE_CONTROLS`): a change lists `modeChangeDiff` (changed values "from → to", kept settings as usage notes, each with its reason) and calls `showModal()`. On `close`, `returnValue === "accept"` commits `applyModeChange(…, true)` through the shared `commitProject` (regenerate on revision + 1); Cancel or Escape restores the select. Focus returns to the select either way. A browser without `showModal` falls back to `confirm()`. `.modal`/`.modelist` styles in `css/style.css`.
+- **QA.** Headless Chromium on `dist` (CDP keyboard events): Demo → construction to bonded opens the dialog with 9 entries and focus on Cancel; Escape closes it, the select shows connected again and has focus, gap stays enabled; reopen, Tab → Accept, Enter → bonded applied (gap disabled), focus on the select; interpretation to height, Enter on Cancel → tonal kept, focus on `#in-interp`; no page errors.
+- **Deviation.** None in scope. The helper is `SBSchema.applyModeChange` (the plan names only the function); `commitProject` is factored out of `onControl` so both paths share the regenerate/render rule.
 
 ### Task G2.12: Opaque proof, stack section and tilt modes (`SBProof` plus the preview)
 
