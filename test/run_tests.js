@@ -2631,8 +2631,8 @@ suite("engine.js — connected export through the canonical path (DEP-04, GEO-02
   const bad = app.slice(app.indexOf("async function buildAndDeliver"), app.indexOf("async function deliverFile"));
   check("G1.7 buildAndDeliver uses the canonical path (SBEngine.connectedFiles), not the legacy shims",
     /SBEngine\.connectedFiles\(/.test(bad) && !/sheetSVG|proofSVG/.test(bad) && !/SBSvg\.(sheetSVG|proofSVG)/.test(app));
-  check("G1.7 preview badge: \"Draft preview: cut files come from polygons\"",
-    (app + html).includes("Draft preview: cut files come from polygons"));
+  check("G1.7 → G2.12 preview badge retired: the preview is drawn from the canonical polygons (preview.setSnapshot)",
+    !(app + html).includes("Draft preview: cut files come from polygons") && /preview\.setSnapshot\(/.test(app));
   check("DEP-02 release 2.0.0-alpha.1 (APP_VERSION)", /const APP_VERSION\s*=\s*"2\.0\.0-alpha\.1"/.test(app));
   const cl = fs.readFileSync(path.join(root, "docs/CHANGELOG.md"), "utf8"), sec = (cl.split(/^## v2\.0\.0-alpha\.1\b.*$/m)[1] || "").split(/^## /m)[0];
   check("DEP-04 CHANGELOG v2.0.0-alpha.1 lists the intentional connected-mode changes",
@@ -4399,6 +4399,129 @@ suite("schema.js/index.html/app.js — G2.11e mode-change review (PRJ-02, AT-21)
     !/onControl\("(interp|construction)"/.test(appSrc) && /const CONTROLS = \[(?![^\]]*"(interp|construction)")[^\]]*\]/.test(appSrc));
   check("PRJ-02 app.js: Cancel/Escape restores the select and focus returns to it",
     /returnValue === "accept"/.test(appSrc) && /addEventListener\("close"/.test(appSrc) && /\.focus\(\)/.test(appSrc));
+});
+
+suite("proof.js/preview.js/index.html/app.js — G2.12 opaque proof, stack section and tilt (UI-02/03, MAT-04, GEO-01, AT-11)", () => {
+  const F = require("./fixtures.js"), M = SBMaterial, S = SBSvg, G = SBGeom, P = globalThis.SBProof;
+  check("G2.12 SBProof API present", !!P && ["model", "section", "drawParams", "modelHash"].every((k) => typeof P[k] === "function"));
+  if (!P) return;
+  const throws = (f, re) => { try { f(); return false; } catch (x) { return !re || re.test(x.message); } };
+  const ringsOf = (l) => { const o = []; for (const p of l.material) o.push(p.outer, ...p.holes); return o; };
+  const di = F.MASKS.donutIsland, bt = F.MASKS.borderTouch;
+  const pgB = M.page({ artWMM: 90, artHMM: 90, frame: { enabled: false, widthMM: 10 } }), LB = M.fromMasks(di.layers, 9, 9, pgB, {});
+  const pgC = M.page({ artWMM: 80, artHMM: 50, frameMM: 10 });
+  const LC = M.fromMasks(bt.layers, 8, 5, pgC, { frame: true, holes: [{ cxUm: 5000, cyUm: 5000, rUm: 1500 }] });
+  const pal = ["#ffffff", "#336699", "#000000", "#cc0000"];
+
+  // ---- section (UI-03)
+  const sec = P.section(LB, 45, { tMM: 6.35, gMM: 0 });
+  check("UI-03 section of donutIsland at the island row has 3 intervals on layer 1 (ring left, island, ring right)",
+    sec.length === 2 && sec[1].layerIndex === 1 && JSON.stringify(sec[1].intervals) === "[[10,20],[40,50],[70,80]]" &&
+    JSON.stringify(sec[0].intervals) === "[[0,90]]");
+  check("UI-03 section off the island row: layer 1 has 2 intervals (ring only); outside the art: none",
+    JSON.stringify(P.section(LB, 25, { tMM: 3, gMM: 0 })[1].intervals) === "[[10,20],[70,80]]" &&
+    P.section(LB, 5, { tMM: 3, gMM: 0 })[1].intervals.length === 0);
+  check("UI-03 bonded z = k*t; connected z = k*(t+g)", (() => {
+    const b = P.section(LB, 45, { tMM: 6.35, gMM: 0 }), c = P.section(LC, 35, { tMM: 3, gMM: 2.5 });
+    return b.every((r) => r.z0 === r.layerIndex * 6.35 && r.z1 === r.z0 + 6.35) &&
+      c.length === LC.length && c.every((r) => r.z0 === r.layerIndex * 5.5 && r.z1 === r.layerIndex * 5.5 + 3); })());
+  check("UI-03 section z is exact on the µm grid (no float drift: k=7, t=6.35 → 44.45)",
+    P.section([{ index: 7, material: [] }], 1, { tMM: 6.35, gMM: 0 })[0].z0 === 44.45);
+  check("UI-03 section is ordered back to front by index and reports empty layers with no intervals",
+    JSON.stringify(P.section([LB[1], { index: 2, material: [] }, LB[0]], 45, { tMM: 1, gMM: 0 }).map((r) => [r.layerIndex, r.intervals.length])) === "[[0,1],[1,3],[2,0]]");
+  check("UI-03 section scanline on a vertex row uses the half-open rule (no double count)",
+    JSON.stringify(P.section(LB, 40, { tMM: 1, gMM: 0 })[1].intervals) === "[[10,20],[40,50],[70,80]]" &&
+    JSON.stringify(P.section(LB, 50, { tMM: 1, gMM: 0 })[1].intervals) === "[[10,20],[70,80]]");
+  check("UI-03 section refuses a non-finite y, t ≤ 0 or g < 0", throws(() => P.section(LB, NaN, { tMM: 1, gMM: 0 }), /NONFINITE/) &&
+    throws(() => P.section(LB, 1, { tMM: 0, gMM: 0 }), /NONFINITE/) && throws(() => P.section(LB, 1, { tMM: 1, gMM: -1 }), /NONFINITE/));
+
+  // ---- drawParams (UI-02)
+  check("UI-02 proof drawParams: no smoothing, no shadows, no parallax",
+    JSON.stringify(P.drawParams("proof")) === JSON.stringify({ smoothing: false, shadows: false, parallax: false, illustrative: false }));
+  check("UI-02 section drawParams are exact too; only tilt is illustrative (smoothing, shadows, parallax)",
+    JSON.stringify(P.drawParams("section")) === JSON.stringify({ smoothing: false, shadows: false, parallax: false, illustrative: false }) &&
+    JSON.stringify(P.drawParams("tilt")) === JSON.stringify({ smoothing: true, shadows: true, parallax: true, illustrative: true }) &&
+    throws(() => P.drawParams("glow"), /MODE/) && Object.isFrozen(P.drawParams("proof")));
+
+  // ---- model (UI-02, MAT-04, GEO-01)
+  const mp = P.model(LC, pal, {});
+  check("UI-02 retained/waste model per layer equals material polygons (back to front, empty layers skipped)", [LC, LB].every((L) => {
+    const m = P.model(L.slice().reverse(), pal, {}), ne = L.filter((l) => l.material.length);
+    return m.length === ne.length && m.every((e, j) => e.layerIndex === ne[j].index && JSON.stringify(e.rings) === JSON.stringify(ringsOf(ne[j]))); }) &&
+    P.model([{ index: 0, material: [] }], "#808080", {}).length === 0);
+  check("MAT-04 palette model: fill = colors[layer.index] (normalized), no stroke by default", mp.every((e) => e.fill === pal[e.layerIndex] && e.stroke === null));
+  const mu = P.model(LC, "#808080", {});
+  check("MAT-04 uniform proof strokes layer edges (stroke darker than fill, same as assemblySVG)", (() => {
+    const svgStroke = (S.assemblySVG(LC, pgC, "#808080").match(/stroke="(#[0-9a-f]{6})"/) || [])[1];
+    return mu.length > 0 && mu.every((e) => e.fill === "#808080" && e.stroke === svgStroke && e.stroke === "#4c4c4c"); })());
+  check("MAT-04 {edgeStroke} overrides both ways; a repeated palette counts as uniform; #rgb normalized",
+    P.model(LC, pal, { edgeStroke: true }).every((e) => !!e.stroke) && P.model(LC, "#808080", { edgeStroke: false }).every((e) => e.stroke === null) &&
+    P.model(LC, ["#888", "#888", "#888"], {}).every((e) => e.fill === "#888888" && !!e.stroke));
+  check("NFR-06 model refuses a non-hex color", throws(() => P.model(LC, ['#fff" x', "#000"], {}), /COLOR/) && throws(() => P.model(LC, "red", {}), /COLOR/));
+  check("MAT-04 proof colors do not change any layer canonicalHash and do not mutate layers", (() => {
+    const L = M.fromMasks(bt.layers, 8, 5, pgC, { frame: true }), before = JSON.stringify(L);
+    P.model(L, pal, {}); P.model(L, "#123456", { edgeStroke: true }); P.section(L, 30, { tMM: 3, gMM: 1 });
+    return JSON.stringify(L) === before && L.every((l) => l.canonicalHash === G.materialHash(l)); })());
+  check("MAT-04 modelHash: deterministic, sensitive to color, 64 hex",
+    /^[0-9a-f]{64}$/.test(P.modelHash(mp)) && P.modelHash(P.model(LC, pal, {})) === P.modelHash(mp) && P.modelHash(mu) !== P.modelHash(mp));
+
+  // ---- preview.js with a recording 2D context (no DOM)
+  const rec = (() => {
+    const log = { canvases: 0, fills: 0, draws: [], rects: 0 };
+    const mkCtx = () => { const st = { imageSmoothingEnabled: true, shadowBlur: 0, shadowColor: "rgba(0,0,0,0)", fillStyle: "#000", strokeStyle: "#000", lineWidth: 1 };
+      const stack = [];
+      return Object.assign(st, {
+        setTransform() {}, clearRect() {}, save() { stack.push(Object.assign({}, st)); }, restore() { Object.assign(st, stack.pop() || {}); },
+        fillRect() { log.rects++; }, strokeRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, fillText() {}, translate() {}, scale() {},
+        fill() { log.fills++; }, createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData() {},
+        drawImage(img, x, y, w, h) { log.draws.push({ x, y, w, h, smoothing: st.imageSmoothingEnabled, blur: st.shadowBlur, img }); },
+        measureText: (t) => ({ width: t.length * 6 }) }); };
+    const mkCanvas = () => { log.canvases++; return { width: 0, height: 0, clientWidth: 400, clientHeight: 300, _ctx: null,
+      getContext() { return this._ctx || (this._ctx = mkCtx()); }, addEventListener() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 300 }),
+      toBlob(cb) { cb(null); } }; };
+    const ctx = vm.createContext({ console, Math, Uint8Array, Uint8ClampedArray, Promise, SBUtil, SBProof: P, devicePixelRatio: 1,
+      document: { createElement: () => mkCanvas() }, addEventListener() {}, requestAnimationFrame() {},
+      Path2D: function () { this.moveTo = () => {}; this.lineTo = () => {}; this.closePath = () => {}; } });
+    ctx.globalThis = ctx; ctx.window = ctx;
+    vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "js", "preview.js"), "utf8"), ctx, { filename: "preview.js" });
+    return { log, ctx, mkCanvas };
+  })();
+  const pv = rec.ctx.SBPreview.create(rec.mkCanvas());
+  check("UI-02 preview exposes setSnapshot and setMode", typeof pv.setSnapshot === "function" && typeof pv.setMode === "function");
+  if (typeof pv.setSnapshot !== "function") return;
+  const snap = { page: pgC, layers: LC, tMM: 3, gMM: 2 };
+  const c0 = rec.log.canvases;
+  pv.setSnapshot(snap, pal);
+  const made = rec.log.canvases - c0, nonEmpty = LC.filter((l) => l.material.length).length;
+  check("UI-02 setSnapshot rasterizes each layer's Path2D once into an offscreen canvas", made === nonEmpty && rec.log.fills === nonEmpty);
+  const frame = () => { rec.log.draws = []; rec.log.rects = 0; pv.snapshot(); return rec.log.draws.slice(); };
+  pv.setMode("tilt"); pv.setExplode(1); frame(); frame();
+  check("UI-02 tilt frames only composite (no re-rasterization)", rec.log.canvases - c0 === made && rec.log.fills === nonEmpty);
+  const td = frame();
+  check("UI-02 tilt is illustrative: smoothing, shadows and per-layer parallax/explode offsets", td.length === nonEmpty &&
+    td.every((d) => d.smoothing === true && d.blur > 0) && new Set(td.map((d) => d.x + "," + d.y)).size === nonEmpty);
+  pv.setMode("proof");
+  const pd = frame();
+  check("UI-02 proof mode: imageSmoothingEnabled = false, no shadows, no parallax or explode offsets (explode display-only)",
+    pd.length === nonEmpty && pd.every((d) => d.smoothing === false && d.blur === 0 && d.x === pd[0].x && d.y === pd[0].y && d.w === pd[0].w));
+  pv.setMode("section"); const sd = frame();
+  const nInt = P.section(LC, pgC.hMM / 2, { tMM: 3, gMM: 2 }).reduce((a, r) => a + r.intervals.length, 0);
+  check("UI-03 section mode draws one bar per SBProof.section interval (mid-page by default), no layer images", sd.length === 0 && rec.log.rects >= nInt && nInt > 0);
+  check("UI-02 setMode refuses an unknown mode", throws(() => pv.setMode("glow"), /MODE/));
+
+  // ---- markup and wiring
+  const root = path.join(__dirname, "..");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8"), appSrc = fs.readFileSync(path.join(root, "js", "app.js"), "utf8");
+  const tabs = [...html.matchAll(/<button class="tab[^"]*" data-tab="([a-z]+)"[^>]*>([^<]*)<\/button>/g)].map((m) => [m[1], m[2].trim()]);
+  check("UI-02 tabs Proof, Section, Layers, Tilt (illustrative) in that order",
+    JSON.stringify(tabs) === JSON.stringify([["proof", "Proof"], ["section", "Section"], ["sheets", "Layers"], ["tilt", "Tilt (illustrative)"]]));
+  check("UI-02 index.html loads js/proof.js before js/preview.js; modules.js lists proof.js",
+    html.indexOf('src="js/proof.js"') > 0 && html.indexOf('src="js/proof.js"') < html.indexOf('src="js/preview.js"') &&
+    require("./modules.js").NODE_MODULES.includes("proof.js"));
+  check("UI-02 app.js: switchTab sets the preview mode; renderAll feeds setSnapshot from canonical polygons",
+    /preview\.setMode\(/.test(appSrc) && /preview\.setSnapshot\(/.test(appSrc) && /SBEngine\.connectedLayers\(/.test(appSrc));
+  check("UI-02 the draft badge is gone; the tilt view carries an Illustrative note",
+    !/Draft preview: cut files come from polygons/.test(html) && /id="tiltnote"[^>]*>[^<]*Illustrative/.test(html));
 });
 
 // ------------------------------------------------------------------ report

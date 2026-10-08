@@ -2487,13 +2487,21 @@ Runs right after G2.7 (Appendix D.4, D.9). **Why:** G2.2b showed that the pixel 
   - `SBProof.drawParams(mode) → {smoothing, shadows, parallax}` (pure; `proof` gives all false);
   - `SBProof.modelHash(model)`.
 
-- [ ] **Tests:**
+- [x] **Tests:**
   - `UI-03 section of donutIsland at the island row has 3 intervals on layer 1` (ring left, island, ring right)
   - `UI-03 bonded z = k*t; connected z = k*(t+g)`
   - `UI-02 proof drawParams: no smoothing, no shadows, no parallax`
   - `UI-02 retained/waste model per layer equals material polygons`
   - `MAT-04 uniform proof strokes layer edges`
-- **Manual:** the AT-11 visual comparison of the proof against `assemblySVG`; the tilt tab label reads "Illustrative"; the explode slider moves layers without changing `geometryHash` (AT-11 hash part is in G2.10b). **Commit.**
+- [x] **Manual:** the AT-11 visual comparison of the proof against `assemblySVG`; the tilt tab label reads "Illustrative"; the explode slider moves layers without changing `geometryHash` (AT-11 hash part is in G2.10b). **Commit.**
+
+**Result (2026-10-08):**
+- **Pure part.** `js/proof.js` (`SBProof`, loaded after `svgread.js` in `index.html`, `sw.js` SHELL and `test/modules.js`): `model` (non-empty layers back to front; `rings` = material outer + holes in µm; fill and edge-stroke rules identical to `assemblySVG`, `COLOR` refusal), `section` (half-open even-odd scanline per layer, µm-exact crossings, abutting spans merged; `z0 = index·(t + g)`, `z1 = z0 + t` on the µm grid; empty layers listed with no intervals; `NONFINITE` on bad y/t/g), `drawParams` (frozen; proof and section all false, tilt all true plus `illustrative`; `MODE` refusal), `modelHash = SBHash.hashJSON(model)`.
+- **Preview.** `SBPreview` gains `setSnapshot(snap, colors, {bridges})`, `setMode`, `getMode`, `setSectionY`. Each non-empty layer's `Path2D` (even-odd, plus the 0.2 mm edge stroke when uniform) is rasterized once per snapshot into a page-sized offscreen canvas (long side 1600 px); frames only composite. Proof: page on the bed colour, `imageSmoothingEnabled = false`, no shadows, no parallax or explode offsets. Section: one bar per interval at real Z, Z ticks and a t / g / height / width callout; vertical drag moves the line. Tilt: the v1.1.0 parallax, shadows and explode, with the amber bridge highlight (tilt only). `setSheets` (legacy raster) stays.
+- **App.** Tabs Proof, Section, Layers, Tilt (illustrative); Proof is the default. `renderAll` feeds `setSnapshot` from `SBEngine.connectedLayers` (the export path's polygons), built once per run (`run.view`) and re-tinted on appearance changes; t is `material.thicknessMM`, g is `construction.gapMM` (0 when bonded). The "Draft preview" badge is retired (the G1.7 check is retargeted); the tilt view shows "Illustrative: not to scale" and the explode/bridges tools only there.
+- **Tests.** 28 checks in the G2.12 suite, including a recording-2D-context run of `preview.js` (no DOM): one rasterization per layer, none on tilt frames, proof draws with no smoothing/shadow/offset, section draws one bar per interval. Full suite 1259 passed.
+- **QA.** Headless Chromium on `dist`: Demo → four tabs in order, Proof active; Proof matches the polygon proof (frame, holes, layers aligned); Section at y = 125.3 mm shows 5 bands at 3 mm + 3 mm gap (27 mm); Tilt shows the Illustrative note and explode/bridges; a palette change re-renders in about 180 ms; no page errors. Explode not changing `geometryHash` is covered by the G2.10b check (explode is a view setting only).
+- **Deviations.** The app still runs the legacy connected pipeline, so the "snapshot" is `{page, layers}` from `SBEngine.connectedLayers` plus t and g, not an `SBEngine.generate` snapshot; `setSnapshot` takes the same shape a generate snapshot provides (`layers`, page) and switches over when the app adopts `generate`. `drawParams` also returns `illustrative`. Bridges show only in Tilt so the Proof stays the material alone (overlays are G2.13b).
 
 ### Task G2.13a: Retained/waste layer cards
 

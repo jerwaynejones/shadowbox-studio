@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **G2.12, opaque proof, stack section and tilt (UI-02/03, MAT-04, GEO-01):** the preview now has
+  four tabs, Proof, Section, Layers and Tilt (illustrative), and is drawn from the same canonical
+  polygons as the cut files. Proof paints each layer's material back to front in the page frame
+  with no image smoothing, no shadows and no parallax, so it matches `proof.svg`. Section shows the
+  material spans along one line across the page at the real layer thickness and gap, with Z
+  dimensions (drag up or down to move the line). Tilt keeps the drag-to-tilt, shadows, explode and
+  bridge highlight and is labelled "Illustrative: not to scale". The "Draft preview" badge is gone.
+  New pure module `js/proof.js` (`SBProof.model`, `section`, `drawParams`, `modelHash`).
+
 - **G2.11b, stages and the fabrication pitch input (UI-01, PO-LASER-4, LYR-01):** the control rail
   is now the five UI-01 stages, Source, Interpretation, Construction, Review and Export, in order.
   A stage link list at the top of the rail moves keyboard focus to each stage (each stage is a

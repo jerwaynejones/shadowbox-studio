@@ -44,6 +44,7 @@ const SHELL = [
   "./js/support.js",
   "./js/svgout.js",
   "./js/svgread.js",
+  "./js/proof.js",
   "./js/zip.js",
   "./js/docs.js",
   "./js/engine.js",

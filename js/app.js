@@ -45,6 +45,7 @@
     revision: -1,        // project revision of the last pipeline run (the dimbar uses its counts only while current)
     sheets: [],          // [{mask, bridges, loops, stats}]
     procW: 0, procH: 0,
+    view: null,          // G2.12: {page, layers} canonical polygons of the last run for the review views
     report: "",
   };
 
@@ -108,6 +109,7 @@
     // 2-5. DOM-free engine (T0.5 seam).
     const { sheets, totals } = SBEngine.legacyRun(rgba, w, h, state);
     run.sheets = sheets;
+    run.view = null;   // G2.12: canonical polygons for Proof/Section/Tilt, rebuilt lazily per run (viewLayers)
     let totalBridged = totals.bridged, totalCulled = totals.culled, totalCutMM = totals.cutMM;
     run.procW = w; run.procH = h; run.revision = project.revision;
 
@@ -153,10 +155,22 @@
     ).reverse();
   }
 
+  /**
+   * G2.12: the review views are drawn from the same canonical polygons as the cut files and proof.svg
+   * (SBEngine.connectedLayers), built once per pipeline run; appearance changes only re-tint them.
+   */
+  function viewLayers() {
+    if (!run.view) run.view = SBEngine.connectedLayers(run.sheets, run.procW, run.procH, cfg());
+    return run.view;
+  }
+
   function renderAll() {
     if (!run.sheets.length) return;
     const colors = sheetColors();
-    preview.setSheets(run.sheets, colors, run.procW, run.procH);
+    const v = viewLayers();
+    const bonded = project.construction.mode === "bonded-relief";
+    preview.setSnapshot({ page: v.page, layers: v.layers, tMM: project.material.thicknessMM, gMM: bonded ? 0 : project.construction.gapMM },
+      colors, { bridges: { masks: run.sheets.map((sh) => sh.bridges || null), w: run.procW, h: run.procH } });
     renderSheetGrid(colors);
     renderPaletteChips(colors);
   }
@@ -737,12 +751,27 @@
     $("projname").value = n;
   }
 
+  // G2.12 (UI-02/03): Proof, Section and Tilt share the stack canvas in different preview modes.
+  const VIEW_HINTS = {
+    proof: "opaque proof: every layer's material, back to front, as in proof.svg",
+    section: "stack section at real thickness and gap; drag up/down to move the line",
+    tilt: "illustrative: drag the artwork to tilt; explode is display-only",
+  };
   function switchTab(name) {
-    document.querySelectorAll(".tab").forEach((t) =>
-      t.classList.toggle("active", t.dataset.tab === name));
+    document.querySelectorAll(".tab").forEach((t) => {
+      t.classList.toggle("active", t.dataset.tab === name);
+      t.setAttribute("aria-selected", String(t.dataset.tab === name));
+    });
+    const view = Object.prototype.hasOwnProperty.call(VIEW_HINTS, name);
     document.querySelectorAll(".pane").forEach((p) =>
-      p.classList.toggle("active", p.id === "pane-" + name));
-    if (name === "stack") preview.redraw();
+      p.classList.toggle("active", p.id === "pane-" + (view ? "stack" : name)));
+    if (!view) return;
+    preview.setMode(name);
+    $("tiltnote").hidden = name !== "tilt";
+    $("tool-explode").hidden = name !== "tilt";
+    $("tool-bridges").hidden = name !== "tilt";
+    $("view-hint").textContent = VIEW_HINTS[name];
+    preview.redraw();
   }
 
   function init() {

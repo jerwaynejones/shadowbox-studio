@@ -210,20 +210,22 @@
   <!-- Viewport: the laser bed.                                            -->
   <main class="viewport">
     <nav class="tabs" role="tablist">
-      <button class="tab active" data-tab="stack" role="tab">Stack preview</button>
-      <button class="tab" data-tab="sheets" role="tab">Layer sheets</button>
+      <button class="tab active" data-tab="proof" role="tab" aria-selected="true">Proof</button>
+      <button class="tab" data-tab="section" role="tab" aria-selected="false">Section</button>
+      <button class="tab" data-tab="sheets" role="tab" aria-selected="false">Layers</button>
+      <button class="tab" data-tab="tilt" role="tab" aria-selected="false">Tilt (illustrative)</button>
     </nav>
 
     <div id="pane-stack" class="pane active">
       <canvas id="stackcanvas"></canvas>
-      <!-- G1.7 → G2.12: the raster preview is a draft; exported files are built from polygons. -->
-      <span class="draftbadge" role="note">Draft preview: cut files come from polygons</span>
+      <!-- G2.12: Proof and Section are drawn from the canonical polygons (SBProof); Tilt is illustrative only. -->
+      <span id="tiltnote" class="draftbadge" role="note" hidden>Illustrative: not to scale. Check fit with Proof and Section</span>
       <div class="stacktools">
-        <label class="tool" for="in-explode">Explode
+        <label class="tool" for="in-explode" id="tool-explode" hidden>Explode
           <input id="in-explode" type="range" min="0" max="60" step="1" value="0"></label>
-        <label class="tool check"><input id="in-bridgesvis" type="checkbox" checked>
+        <label class="tool check" id="tool-bridges" hidden><input id="in-bridgesvis" type="checkbox" checked>
           Show bridges</label>
-        <span class="tool hint">drag the artwork to tilt</span>
+        <span class="tool hint" id="view-hint">opaque proof: every layer's material, back to front, as in proof.svg</span>
       </div>
     </div>
 
@@ -281,6 +283,7 @@
 <script src="js/support.js"></script>
 <script src="js/svgout.js"></script>
 <script src="js/svgread.js"></script>
+<script src="js/proof.js"></script>
 <script src="js/zip.js"></script>
 <script src="js/docs.js"></script>
 <script src="js/engine.js"></script>

@@ -301,6 +301,7 @@ select {
 }
 .tool input[type="range"] { width: 140px; }
 .tool.hint { margin-left: auto; color: rgba(255,255,255,0.4); text-transform: none; }
+.tool[hidden], .draftbadge[hidden] { display: none; }
 
 .sheetgrid {
   flex: 1;

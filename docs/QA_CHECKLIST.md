@@ -66,3 +66,15 @@ that added it.
 - [ ] Read the image as Height disables Tone split, Manual thresholds and the smoothing sliders with a
       reason; Manual thresholds is otherwise enabled only with the Manual tone split. Laser profile
       None disables the five limits; Registration holes off disables Hole diameter.
+
+## Opaque proof, section and tilt (UI-02/03, MAT-04, AT-11, G2.12)
+
+- [ ] After Demo scene the tabs read Proof, Section, Layers, Tilt (illustrative), and Proof is selected.
+- [ ] Proof lines up with `proof.svg` from the export (frame, registration holes and every layer edge
+      in the same place); edges are crisp (no blur), with no drop shadows and no offset between layers.
+- [ ] Uniform appearance: each layer edge has a thin darker outline in Proof.
+- [ ] Section shows one band per layer at the material thickness, separated by the gap in Connected
+      mode and touching in Bonded relief; the callout reads the same t and g as the controls; dragging
+      up and down moves the line.
+- [ ] Tilt shows "Illustrative: not to scale"; Explode spreads the layers and does not change the
+      exported files; Explode and Show bridges are only shown on Tilt.
