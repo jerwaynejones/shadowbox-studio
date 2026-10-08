@@ -37,6 +37,7 @@ const SHELL = [
   "./js/morph.js",
   "./js/islands.js",
   "./js/trace.js",
+  "./js/material.js",
   "./js/svgout.js",
   "./js/zip.js",
   "./js/engine.js",

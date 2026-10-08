@@ -1485,6 +1485,120 @@ suite("diag.js — SBDiag registry, make() and aggregate() (§9.1, §9.5, UI-04;
   check("§9.5 aggregate does not mutate its input", mixed.length === 7 && mixed[1].count === undefined && mixed[1].part === "L01-P001");
 });
 
+suite("material.js — canonical polygons (GEO-01/03, D-4.2, SUP-05; G1.1)", () => {
+  const F = require("./fixtures.js"), O = require("./oracle_raster.js"), G = SBGeom, M = globalThis.SBMaterial;
+  check("G1.1 SBMaterial is loaded", !!M && typeof M.fromMasks === "function" && typeof M.assignParts === "function" && typeof M.scale === "function");
+  if (!M) return;
+  check("§4 module order: material.js after trace.js (construct not yet present)", (() => { const L = require("./modules.js").NODE_MODULES; return L.indexOf("material.js") === L.indexOf("trace.js") + 1; })());
+  // ---- plan checks (verbatim)
+  const d = F.MASKS.donutIsland;
+  const L = SBMaterial.assignParts(SBMaterial.fromMasks(d.layers, d.w, d.h, { artWMM: 9, artHMM: 9, frameMM: 0 }, {}));
+  const parts = L[1].parts;
+  check("GEO-01 donut+island → 2 parts", parts.length === 2);
+  check("GEO-01 ring part has exactly 1 hole", parts.some((p) => p.polygon.holes.length === 1));
+  check("GEO-01 island is its own part, no hole", parts.some((p) => p.polygon.holes.length === 0));
+  check("GEO-01 carriers representable and empty in v1.0", Array.isArray(L[1].carriers) && L[1].carriers.length === 0);
+  check("GEO-03 no validation diagnostics on clean fixture", L[1].diagnostics.length === 0);
+  check("SUP-05 ID format L01-P001", /^L01-P00[12]$/.test(parts[0].id));
+  const shuffled = SBMaterial.assignParts(SBMaterial.fromMasks(d.layers, d.w, d.h, { artWMM: 9, artHMM: 9, frameMM: 0 }, {}).map((l) => ({ ...l, parts: l.parts.slice().reverse() })));
+  check("SUP-05 part order stable across runs and shuffled input", JSON.stringify(shuffled[1].parts.map((p) => p.id + p.areaMM2)) === JSON.stringify(parts.map((p) => p.id + p.areaMM2)));
+  const s = SBMaterial.scale({ w: 300, h: 197, artWMM: 304.8, artHMM: 200 });
+  check("D-4.2 non-square px scales both axes", s.sxUm === 1016 && Math.abs(s.syUm - 200000 / 197) < 1e-9);
+  check("GEO-06 sampling uses larger pixel dimension", s.mmPerPxMax === Math.max(304.8 / 300, 200 / 197));
+  // ---- MaterialLayer contract (§3, §9.2)
+  const KEYS = ["index", "zBottomMM", "zTopMM", "status", "material", "carriers", "parts", "cutPaths", "scorePaths", "holes", "stats", "diagnostics", "canonicalHash"];
+  check("§9.2 MaterialLayer carries every §3 field", L.every((l) => KEYS.every((k) => Object.prototype.hasOwnProperty.call(l, k))));
+  check("§9.2 layer indices are 0..N-1 in order", L.length === 2 && L[0].index === 0 && L[1].index === 1);
+  check("§9.2 non-empty layers have status ok", L[0].status === "ok" && L[1].status === "ok");
+  check("GEO-01 material is SBGeom-normalized", JSON.stringify(G.normalize(L[1].material)) === JSON.stringify(L[1].material));
+  const comps = G.components(L[1].material).map((c) => JSON.stringify(c[0]));
+  check("GEO-01 parts are exactly SBGeom.components(material) (one polygon per part, D3)",
+    comps.length === parts.length && parts.every((p) => comps.includes(JSON.stringify(p.polygon))));
+  check("§3 Part carries layer, bbox, areaMM2, supports[], guideRefs[], warnings[]",
+    parts.every((p) => p.layer === 1 && Array.isArray(p.bbox) && p.bbox.length === 4 && Number.isFinite(p.areaMM2) && Array.isArray(p.supports) && Array.isArray(p.guideRefs) && Array.isArray(p.warnings)));
+  // donut: 7×7 outer minus 5×5 hole = 24 px; island 1 px; 1 mm/px → 25 mm²
+  check("GEO-01 stats.areaMM2 = area/1e6 (24 + 1 mm²)", L[1].stats.areaMM2 === 25 && parts.map((p) => p.areaMM2).sort((a, b) => a - b).join() === "1,24");
+  check("GEO-01 stats.cutMM = ring perimeters (28 + 20 + 4 mm)", L[1].stats.cutMM === 52);
+  check("GEO-01 stats.vertices counts every ring vertex (4 + 4 + 4)", L[1].stats.vertices === 12);
+  check("GEO-01 cutPaths are the material rings", L[1].cutPaths.length === 3 && L[1].cutPaths.every(Array.isArray));
+  check("§3 scorePaths and holes empty until G3", L[1].scorePaths.length === 0 && L[1].holes.length === 0);
+  check("D4/amendment B canonicalHash = SBGeom.materialHash(layer)", L.every((l) => l.canonicalHash === G.materialHash(l)) && /^[0-9a-f]{64}$/.test(L[1].canonicalHash));
+  check("D4 canonicalHash independent of parts/IDs (shuffled parts, same hash)", shuffled[1].canonicalHash === L[1].canonicalHash);
+  // ---- base layer and exact page geometry (D-4.2)
+  check("D-4.2 base layer B is the exact 4-vertex art rectangle", JSON.stringify(L[0].material) === JSON.stringify([{ outer: [0, 0, 9000, 0, 9000, 9000, 0, 9000], holes: [] }]));
+  const fw = 300, fh = 197, full = new Uint8Array(fw * fh).fill(1);
+  const big = SBMaterial.fromMasks([full, full], fw, fh, { artWMM: 304.8, artHMM: 200, frameMM: 0 }, {});
+  check("D-4.2 non-square 300×197 px traced full layer spans exactly 304.8 × 200 mm", JSON.stringify(big[1].material[0].outer) === "[0,0,304800,0,304800,200000,0,200000]" && JSON.stringify(big[1].material) === JSON.stringify(big[0].material));
+  const fr = SBMaterial.fromMasks(d.layers, d.w, d.h, { artWMM: 9, artHMM: 9, frameMM: 2.5 }, {});
+  check("D-4.2 art is offset by frameMM on both axes", JSON.stringify(fr[0].material[0].outer) === "[2500,2500,11500,2500,11500,11500,2500,11500]" && G.bbox(fr[1].material[0]).join() === "3500,3500,10500,10500");
+  // ---- empty layer
+  const e = F.MASKS.emptyIntermediate, Le = SBMaterial.fromMasks(e.layers, e.w, e.h, { artWMM: 5, artHMM: 5, frameMM: 0 }, {});
+  check("§3 empty mask → status empty, no material, no parts, zero stats", Le[1].status === "empty" && Le[1].material.length === 0 && Le[1].parts.length === 0 && Le[1].stats.areaMM2 === 0 && Le[1].stats.vertices === 0);
+  check("D4 empty layer canonicalHash = sha256 of words [1, k, 0, 0, 0]", Le[1].canonicalHash === SBHash.sha256(new Uint8Array(new Int32Array([1, 1, 0, 0, 0]).buffer)));
+  check("§3 layers above an empty layer are still produced (no dedupe, no omission)", Le.length === 3 && Le[2].status === "ok" && Le[2].parts.length === 1);
+  // ---- deterministic part IDs (SUP-05, §9.2)
+  const st = F.art(["##..#", "##...", ".....", "#..##", "...##"]), St = SBMaterial.fromMasks([new Uint8Array(25).fill(1), st.m], 5, 5, { artWMM: 5, artHMM: 5, frameMM: 0 }, {});
+  check("SUP-05 parts sorted by (bbox minY, minX, −area): row 0 left→right, then row 3",
+    St[1].parts.map((p) => p.id + "@" + p.bbox[0] / 1000 + "," + p.bbox[1] / 1000).join(" ") === "L01-P001@0,0 L01-P002@4,0 L01-P003@0,3 L01-P004@3,3");
+  check("SUP-05 fromMasks already assigns IDs; assignParts is idempotent", JSON.stringify(SBMaterial.assignParts(St)) === JSON.stringify(St) && St[1].parts.every((p) => typeof p.id === "string"));
+  // same (minY, minX): larger area first; same area too: total order on coordinates (ringHash tiebreak)
+  const tie = SBMaterial.assignParts([{ index: 2, parts: [
+    { layer: 2, polygon: { outer: [0, 0, 1000, 0, 1000, 1000, 0, 1000], holes: [] }, bbox: [0, 0, 1000, 1000], areaMM2: 1 },
+    { layer: 2, polygon: { outer: [0, 0, 3000, 0, 3000, 1000, 0, 1000], holes: [] }, bbox: [0, 0, 3000, 1000], areaMM2: 3 },
+    { layer: 2, polygon: { outer: [0, 0, 2000, 0, 0, 1000], holes: [] }, bbox: [0, 0, 2000, 1000], areaMM2: 1 },
+  ] }]);
+  check("SUP-05 equal (minY, minX): larger area first, equal area broken by the ring-sequence total order (vertex count, then coordinates), labels L02-",
+    tie[0].parts.map((p) => p.id + ":" + p.areaMM2 + ":" + p.bbox[2]).join() === "L02-P001:3:3000,L02-P002:1:2000,L02-P003:1:1000");
+  const tie2 = SBMaterial.assignParts([{ index: 2, parts: tie[0].parts.slice().reverse().map((p) => ({ ...p, id: undefined })) }]);
+  check("SUP-05 tie order independent of input order", JSON.stringify(tie2[0].parts.map((p) => p.id + p.bbox[2])) === JSON.stringify(tie[0].parts.map((p) => p.id + p.bbox[2])));
+  check("SUP-05 assignParts does not mutate its input", tie2[0].parts.length === 3 && (() => { const inp = [{ index: 0, parts: [{ layer: 0, polygon: { outer: [0, 0, 1, 0, 1, 1], holes: [] }, bbox: [0, 0, 1, 1], areaMM2: 0 }] }]; SBMaterial.assignParts(inp); return inp[0].parts[0].id === undefined; })());
+  const many = new Uint8Array(80 * 60); for (let y = 0; y < 60; y += 2) for (let x = 0; x < 80; x += 2) many[y * 80 + x] = 1;
+  const Lm = SBMaterial.fromMasks([new Uint8Array(4800).fill(1), many], 80, 60, { artWMM: 80, artHMM: 60, frameMM: 0 }, {});
+  check("SUP-05 > 999 parts keep unique, ordered IDs (L01-P1200 last)", Lm[1].parts.length === 1200 &&
+    new Set(Lm[1].parts.map((p) => p.id)).size === 1200 && Lm[1].parts[1199].id === "L01-P1200");
+  // part-ID stability is tied to materialHash (D4 amendment B)
+  const r1 = SBMaterial.fromMasks([new Uint8Array(25).fill(1), st.m], 5, 5, { artWMM: 5, artHMM: 5, frameMM: 0 }, {});
+  check("D4/SUP-05 same materialHash → same part IDs and polygons (repeat run)", r1[1].canonicalHash === St[1].canonicalHash && JSON.stringify(r1[1].parts) === JSON.stringify(St[1].parts));
+  // ---- D3 / spike S5 ported checks for G1.1 (Appendix C)
+  const cyc = F.art(["##.#.", "#.###", "##.##", "###.."]);
+  const Lc = SBMaterial.fromMasks([new Uint8Array(20).fill(1), cyc.m], 5, 4, { artWMM: 5, artHMM: 4, frameMM: 0 }, {});
+  check("D3/AT-06 cyclic saddle contact: 2 parts, distinct IDs, no diagnostics", Lc[1].parts.length === 2 && Lc[1].parts[0].id !== Lc[1].parts[1].id && Lc[1].diagnostics.length === 0);
+  check("D3 cyclic saddle: parts in pixel-exact bijection with raster 4-components", O.checkPartsAgainstRaster(Lc[1].parts.map((p) => p.polygon), cyc.m, 5, 4, 1000, 0).ok);
+  const dt = F.MASKS.diagonalTouch, Ld = SBMaterial.fromMasks(dt.layers, dt.w, dt.h, { artWMM: 6, artHMM: 6, frameMM: 0 }, {});
+  check("AT-06 diagonal-only contact → 2 parts (point contact never joins)", Ld[1].parts.length === 2 && Ld[1].diagnostics.length === 0);
+  let okB = true, okV = true, cyc2 = 0, first = "";
+  for (let sd = 1; sd <= 200 && okB; sd++) {
+    const r = F.lcg(sd * 13 + 5), w = 20, h = 16, mm = new Uint8Array(w * h); for (let i = 0; i < mm.length; i++) mm[i] = r() < 0.55 ? 1 : 0;
+    cyc2 += O.saddleStats(mm, w, h).multiPartSaddleCycles;
+    const frameUm = 250 * (sd % 3); // 250 µm/px, art offset 0 / 250 / 500 µm
+    const Lr = SBMaterial.fromMasks([new Uint8Array(w * h).fill(1), mm], w, h, { artWMM: w * 0.25, artHMM: h * 0.25, frameMM: frameUm / 1000 }, {});
+    const or = O.checkPartsAgainstRaster(Lr[1].parts.map((p) => p.polygon), mm, w, h, 250, frameUm);
+    if (!or.ok) { okB = false; first = or.reasons.slice(0, 2).join("; "); }
+    if (Lr[1].diagnostics.length) okV = false;
+  }
+  check(`D3 property (200 noise masks, ${cyc2} multi-part saddle cycles): parts in pixel-exact bijection with BFS 4-components${first ? " — " + first : ""}`, okB && cyc2 > 100);
+  check("GEO-03 those 200 noise layers raise no validation diagnostics", okV);
+  // ---- validation errors become blocking geometry diagnostics (GEO-03)
+  const bad = SBMaterial.diagnosticsFor([{ outer: [0, 0, 300, 0, 300, 300, 0, 300], holes: [[100, 0, 50, 100, 150, 100], [200, 0, 150, 100, 250, 100]] }], 3, { revision: 4, quality: "fabrication" });
+  check("GEO-03 SBGeom.validate errors → blocking SBDiag diagnostics with layer, revision, quality, region",
+    bad.length === 1 && bad[0].code === "GEO_MULTIPART" && bad[0].severity === "blocking" && bad[0].layer === 3 && bad[0].revision === 4 && bad[0].quality === "fabrication" &&
+    JSON.stringify(bad[0].region) === "[0,0,0.3,0.3]");
+  check("GEO-03 clean material → no diagnostics", SBMaterial.diagnosticsFor(L[1].material, 1, {}).length === 0);
+  const dflt = SBMaterial.diagnosticsFor([{ outer: [0, 0, 10, 0, 20, 0], holes: [] }], 0, {});
+  check("§9.1 diagnostics default to revision 0 / draft quality", dflt.length > 0 && dflt.every((x) => x.revision === 0 && x.quality === "draft"));
+  // ---- D1: bonded is unsmoothed; connected smoothing is G1.2
+  const ci = F.MASKS.crescentInterior, pg = { artWMM: ci.w * 0.25, artHMM: ci.h * 0.25, frameMM: 0 };
+  check("D1 bonded mode is unsmoothed: smooth {mode: bonded} equals raw contours",
+    JSON.stringify(SBMaterial.fromMasks(ci.layers, ci.w, ci.h, pg, { smooth: { tolUm: 50, mode: "bonded" } }).map((l) => l.material)) === JSON.stringify(SBMaterial.fromMasks(ci.layers, ci.w, ci.h, pg, {}).map((l) => l.material)));
+  const throws = (f, re) => { try { f(); return false; } catch (x) { return !re || re.test(x.message); } };
+  check("D1 connected smoothing is refused until G1.2 (never silently raw)", throws(() => SBMaterial.fromMasks(ci.layers, ci.w, ci.h, pg, { smooth: { tolUm: 50, mode: "connected" } }), /G1\.2/));
+  // ---- input guards
+  check("NONFINITE non-finite or non-positive art size throws", throws(() => SBMaterial.fromMasks(d.layers, 9, 9, { artWMM: NaN, artHMM: 9, frameMM: 0 }, {}), /NONFINITE/) &&
+    throws(() => SBMaterial.scale({ w: 9, h: 9, artWMM: 0, artHMM: 9 }), /NONFINITE/) && throws(() => SBMaterial.fromMasks(d.layers, 9, 9, { artWMM: 9, artHMM: 9, frameMM: -1 }, {}), /NONFINITE/));
+  check("D4/amendment C page beyond COORD_LIMIT throws a coded error (never truncates)", throws(() => SBMaterial.fromMasks(d.layers, 9, 9, { artWMM: 40000, artHMM: 9, frameMM: 0 }, {}), /COORD_LIMIT/));
+  check("mask size mismatch throws", throws(() => SBMaterial.fromMasks([new Uint8Array(5)], 9, 9, { artWMM: 9, artHMM: 9, frameMM: 0 }, {})));
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {
