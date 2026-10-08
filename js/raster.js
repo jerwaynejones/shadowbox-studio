@@ -336,30 +336,40 @@
   }
 
   /**
-   * Fabrication diagnostics for a fabRaster result (PO-LASER-4/5):
-   *   FAB_PITCH_CAPPED (info)      — the budget coarsened the pitch; measured is
-   *                                  the real raster mm/px, limit the target.
-   *   FAB_EXCEEDS_SOURCE (warning) — the source has fewer pixels than the target
-   *                                  raster; measured/limit are source/target px,
-   *                                  shortPx and the shortfall are carried.
+   * Fabrication diagnostics for a fabRaster result (PO-LASER-4/5). Each names only the coarsening it caused:
+   *   FAB_PITCH_CAPPED (info)      — the budget coarsened the pitch. measured = mm/px of the budget-limited raster
+   *                                  (ceil(art/pitchUm) per axis, before the source clamp), limit = the target.
+   *                                  When the source then clamps further (budget+source), the detail says so and
+   *                                  gives the real mm/px, attributing that part to the source.
+   *   FAB_EXCEEDS_SOURCE (warning) — the source has fewer pixels than the raster at the (possibly budget-capped)
+   *                                  pitch. measured/limit are source px / target px on the MOST-SHORT axis (largest
+   *                                  target/source ratio; ties → width), so measured < limit whenever it warns;
+   *                                  shortPx carries both axes.
    * ctx: {artWUm, artHUm, srcW, srcH, targetPitchUm, pxBudget, deviceClass, quality, revision}.
    */
   R.fabDiagnostics = function (fab, ctx) {
     const out = [], base = { quality: ctx.quality === undefined ? "fabrication" : ctx.quality, revision: ctx.revision };
     const realUm = Math.round(R.scaleUm(ctx.artWUm, ctx.artHUm, fab.W, fab.H).mmPerPxMax * 1000);
-    if (fab.capped === "budget" || fab.capped === "budget+source") {
+    const W1 = cdiv(ctx.artWUm, fab.pitchUm), H1 = cdiv(ctx.artHUm, fab.pitchUm);
+    const budget = fab.capped === "budget" || fab.capped === "budget+source", source = !!fab.shortPx;
+    if (budget) {
+      const budgetUm = Math.round(R.scaleUm(ctx.artWUm, ctx.artHUm, W1, H1).mmPerPxMax * 1000);
       out.push(global.SBDiag.make("FAB_PITCH_CAPPED", Object.assign({}, base, {
-        measured: { value: realUm / 1000, unit: "mm/px" }, limit: { value: ctx.targetPitchUm / 1000, unit: "mm/px" },
-        detail: umText(realUm) + " mm/px instead of the " + umText(ctx.targetPitchUm) + " mm/px target (pitch " + fab.pitchUm +
-          " µm) to fit the " + (ctx.deviceClass || "device") + " pixel budget of " + ctx.pxBudget + " px",
+        measured: { value: budgetUm / 1000, unit: "mm/px" }, limit: { value: ctx.targetPitchUm / 1000, unit: "mm/px" },
+        detail: "the " + (ctx.deviceClass || "device") + " pixel budget of " + ctx.pxBudget + " px coarsened the pitch to " + umText(budgetUm) +
+          " mm/px instead of the " + umText(ctx.targetPitchUm) + " mm/px target (pitch " + fab.pitchUm + " µm, " + W1 + " × " + H1 + " px)" +
+          (source ? "; the source (" + ctx.srcW + " × " + ctx.srcH + " px) then limits the raster to " + fab.W + " × " + fab.H + " px at " +
+            umText(realUm) + " mm/px (see FAB_EXCEEDS_SOURCE)" : ""),
       })));
     }
-    if (fab.shortPx) {
-      const W1 = fab.W + fab.shortPx[0], H1 = fab.H + fab.shortPx[1];
+    if (source) {
+      const byH = H1 * ctx.srcW > W1 * ctx.srcH;   // H1/srcH > W1/srcW, exact in integers; ties → width
+      const axis = byH ? "height" : "width", sPx = byH ? ctx.srcH : ctx.srcW, tPx = byH ? H1 : W1;
       out.push(global.SBDiag.make("FAB_EXCEEDS_SOURCE", Object.assign({}, base, {
-        measured: { value: ctx.srcW * ctx.srcH, unit: "px" }, limit: { value: W1 * H1, unit: "px" }, shortPx: fab.shortPx.slice(),
+        measured: { value: sPx, unit: "px" }, limit: { value: tPx, unit: "px" }, shortPx: fab.shortPx.slice(),
         detail: "source " + ctx.srcW + " × " + ctx.srcH + " px is " + fab.shortPx[0] + " × " + fab.shortPx[1] + " px short of the " +
-          umText(fab.pitchUm) + " mm/px target (" + W1 + " × " + H1 + " px); source detail cannot be recovered, so the raster stays " +
+          umText(fab.pitchUm) + " mm/px " + (budget ? "budget-capped pitch (target " + umText(ctx.targetPitchUm) + " mm/px)" : "target") +
+          " (" + W1 + " × " + H1 + " px), most short on the " + axis + ": " + sPx + " of " + tPx + " px; source detail cannot be recovered, so the raster stays " +
           fab.W + " × " + fab.H + " px at " + umText(realUm) + " mm/px",
       })));
     }

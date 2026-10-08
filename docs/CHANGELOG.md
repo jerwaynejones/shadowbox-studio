@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Fixes (G2.0/G2.1 review):** `FAB_EXCEEDS_SOURCE` now reports the source and target pixels
+  on the most-short axis (so the measured value is always below the limit when it warns);
+  `FAB_PITCH_CAPPED` reports only the coarsening the pixel budget caused and names the source
+  when the source limits the raster further; `SBSchema.resolveSize` enforces MAT-02 (1–2000 mm)
+  on both artwork axes, including the one derived from the source aspect, and throws
+  `SCHEMA_SIZE` naming the axis.
+
 - **G2.1b, draft/fabrication raster plan (engine only; not yet wired into the app):**
   `SBEngine.rasterPlan(project, {w, h}, quality, deviceClass)` sizes the raster from the
   dimensions alone, before any decode: draft quality keeps the 720 px long side, fabrication

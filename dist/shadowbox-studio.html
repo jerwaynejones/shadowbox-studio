@@ -2006,7 +2006,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *   SBSchema.geometryKey(p)          → the hashed scope of §3 (machine included).
  *   SBSchema.MACHINES                frozen; "xtool-s1-feeder" (PO-LASER-1).
  *   SBSchema.resolveSize(p, w, h)    → art and page size on the 1 µm grid from
- *                                    the ORIENTED source size (PO-LASER-3).
+ *                                    the ORIENTED source size (PO-LASER-3);
+ *                                    both art axes range-checked (MAT-02).
  *   SBSchema.limits(deviceClass)     → {deviceClass, fabPxBudget}. PROVISIONAL
  *                                    budgets (desktop 16 Mpx, mobile 4 Mpx)
  *                                    until G2.2b measures them; G2.14/G4.3 add
@@ -2355,6 +2356,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   /** round(a·b / c) half up, exact for non-negative integers with a·b < 2^53. */
   const mulDivRound = (a, b, c) => { const n = 2 * a * b + c, d = 2 * c; return (n - (n % d)) / d; };
 
+  const ART_MIN_UM = 1000, ART_MAX_UM = 2000000;   // MAT-02, per axis
+  /**
+   * Art and page size (PO-LASER-3). Throws SCHEMA_SIZE for a bad source size, and — with e.axis ("width"|"height"),
+   * e.valueMM, e.minMM, e.maxMM — when an artwork axis, entered or derived, is outside MAT-02's 1–2000 mm.
+   */
   S.resolveSize = function (p, srcW, srcH) {
     if (!Number.isInteger(srcW) || !Number.isInteger(srcH) || srcW < 1 || srcH < 1) throw fail("SCHEMA_SIZE", "source size must be positive integers (got " + srcW + " × " + srcH + ")");
     const g = p.geometry, fr = p.construction.frame;
@@ -2370,7 +2376,14 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       artWUm = toUm(g.targetMM) - 2 * frameUm;
       artHUm = artWUm > 0 ? mulDivRound(artWUm, srcH, srcW) : 0;
     }
-    if (!(artWUm >= 1 && artHUm >= 1)) throw fail("SCHEMA_SIZE", "artwork size is not positive (" + artWUm + " × " + artHUm + " µm)");
+    // MAT-02: every artwork axis — entered or derived from the source aspect — must be 1–2000 mm (frame excluded).
+    for (const [axis, um] of [["width", artWUm], ["height", artHUm]]) {
+      if (um >= ART_MIN_UM && um <= ART_MAX_UM) continue;
+      const e = fail("SCHEMA_SIZE", "MAT-02: artwork " + axis + " " + um / 1000 + " mm is outside " + ART_MIN_UM / 1000 + "–" + ART_MAX_UM / 1000 +
+        " mm (" + (g.lockAspect ? "derived from " + g.sizeBy + " " + g.targetMM + " mm and the " + srcW + " × " + srcH + " px source" : "as entered") + ")");
+      e.axis = axis; e.valueMM = um / 1000; e.minMM = ART_MIN_UM / 1000; e.maxMM = ART_MAX_UM / 1000;
+      throw e;
+    }
     const pageWUm = artWUm + 2 * frameUm, pageHUm = artHUm + 2 * frameUm;
     return { artWMM: artWUm / 1000, artHMM: artHUm / 1000, pageWMM: pageWUm / 1000, pageHMM: pageHUm / 1000,
       artWUm, artHUm, pageWUm, pageHUm, frameUm };
@@ -3309,30 +3322,40 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   }
 
   /**
-   * Fabrication diagnostics for a fabRaster result (PO-LASER-4/5):
-   *   FAB_PITCH_CAPPED (info)      — the budget coarsened the pitch; measured is
-   *                                  the real raster mm/px, limit the target.
-   *   FAB_EXCEEDS_SOURCE (warning) — the source has fewer pixels than the target
-   *                                  raster; measured/limit are source/target px,
-   *                                  shortPx and the shortfall are carried.
+   * Fabrication diagnostics for a fabRaster result (PO-LASER-4/5). Each names only the coarsening it caused:
+   *   FAB_PITCH_CAPPED (info)      — the budget coarsened the pitch. measured = mm/px of the budget-limited raster
+   *                                  (ceil(art/pitchUm) per axis, before the source clamp), limit = the target.
+   *                                  When the source then clamps further (budget+source), the detail says so and
+   *                                  gives the real mm/px, attributing that part to the source.
+   *   FAB_EXCEEDS_SOURCE (warning) — the source has fewer pixels than the raster at the (possibly budget-capped)
+   *                                  pitch. measured/limit are source px / target px on the MOST-SHORT axis (largest
+   *                                  target/source ratio; ties → width), so measured < limit whenever it warns;
+   *                                  shortPx carries both axes.
    * ctx: {artWUm, artHUm, srcW, srcH, targetPitchUm, pxBudget, deviceClass, quality, revision}.
    */
   R.fabDiagnostics = function (fab, ctx) {
     const out = [], base = { quality: ctx.quality === undefined ? "fabrication" : ctx.quality, revision: ctx.revision };
     const realUm = Math.round(R.scaleUm(ctx.artWUm, ctx.artHUm, fab.W, fab.H).mmPerPxMax * 1000);
-    if (fab.capped === "budget" || fab.capped === "budget+source") {
+    const W1 = cdiv(ctx.artWUm, fab.pitchUm), H1 = cdiv(ctx.artHUm, fab.pitchUm);
+    const budget = fab.capped === "budget" || fab.capped === "budget+source", source = !!fab.shortPx;
+    if (budget) {
+      const budgetUm = Math.round(R.scaleUm(ctx.artWUm, ctx.artHUm, W1, H1).mmPerPxMax * 1000);
       out.push(global.SBDiag.make("FAB_PITCH_CAPPED", Object.assign({}, base, {
-        measured: { value: realUm / 1000, unit: "mm/px" }, limit: { value: ctx.targetPitchUm / 1000, unit: "mm/px" },
-        detail: umText(realUm) + " mm/px instead of the " + umText(ctx.targetPitchUm) + " mm/px target (pitch " + fab.pitchUm +
-          " µm) to fit the " + (ctx.deviceClass || "device") + " pixel budget of " + ctx.pxBudget + " px",
+        measured: { value: budgetUm / 1000, unit: "mm/px" }, limit: { value: ctx.targetPitchUm / 1000, unit: "mm/px" },
+        detail: "the " + (ctx.deviceClass || "device") + " pixel budget of " + ctx.pxBudget + " px coarsened the pitch to " + umText(budgetUm) +
+          " mm/px instead of the " + umText(ctx.targetPitchUm) + " mm/px target (pitch " + fab.pitchUm + " µm, " + W1 + " × " + H1 + " px)" +
+          (source ? "; the source (" + ctx.srcW + " × " + ctx.srcH + " px) then limits the raster to " + fab.W + " × " + fab.H + " px at " +
+            umText(realUm) + " mm/px (see FAB_EXCEEDS_SOURCE)" : ""),
       })));
     }
-    if (fab.shortPx) {
-      const W1 = fab.W + fab.shortPx[0], H1 = fab.H + fab.shortPx[1];
+    if (source) {
+      const byH = H1 * ctx.srcW > W1 * ctx.srcH;   // H1/srcH > W1/srcW, exact in integers; ties → width
+      const axis = byH ? "height" : "width", sPx = byH ? ctx.srcH : ctx.srcW, tPx = byH ? H1 : W1;
       out.push(global.SBDiag.make("FAB_EXCEEDS_SOURCE", Object.assign({}, base, {
-        measured: { value: ctx.srcW * ctx.srcH, unit: "px" }, limit: { value: W1 * H1, unit: "px" }, shortPx: fab.shortPx.slice(),
+        measured: { value: sPx, unit: "px" }, limit: { value: tPx, unit: "px" }, shortPx: fab.shortPx.slice(),
         detail: "source " + ctx.srcW + " × " + ctx.srcH + " px is " + fab.shortPx[0] + " × " + fab.shortPx[1] + " px short of the " +
-          umText(fab.pitchUm) + " mm/px target (" + W1 + " × " + H1 + " px); source detail cannot be recovered, so the raster stays " +
+          umText(fab.pitchUm) + " mm/px " + (budget ? "budget-capped pitch (target " + umText(ctx.targetPitchUm) + " mm/px)" : "target") +
+          " (" + W1 + " × " + H1 + " px), most short on the " + axis + ": " + sPx + " of " + tPx + " px; source detail cannot be recovered, so the raster stays " +
           fab.W + " × " + fab.H + " px at " + umText(realUm) + " mm/px",
       })));
     }

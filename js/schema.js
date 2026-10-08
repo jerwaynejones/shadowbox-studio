@@ -17,7 +17,8 @@
  *   SBSchema.geometryKey(p)          → the hashed scope of §3 (machine included).
  *   SBSchema.MACHINES                frozen; "xtool-s1-feeder" (PO-LASER-1).
  *   SBSchema.resolveSize(p, w, h)    → art and page size on the 1 µm grid from
- *                                    the ORIENTED source size (PO-LASER-3).
+ *                                    the ORIENTED source size (PO-LASER-3);
+ *                                    both art axes range-checked (MAT-02).
  *   SBSchema.limits(deviceClass)     → {deviceClass, fabPxBudget}. PROVISIONAL
  *                                    budgets (desktop 16 Mpx, mobile 4 Mpx)
  *                                    until G2.2b measures them; G2.14/G4.3 add
@@ -366,6 +367,11 @@
   /** round(a·b / c) half up, exact for non-negative integers with a·b < 2^53. */
   const mulDivRound = (a, b, c) => { const n = 2 * a * b + c, d = 2 * c; return (n - (n % d)) / d; };
 
+  const ART_MIN_UM = 1000, ART_MAX_UM = 2000000;   // MAT-02, per axis
+  /**
+   * Art and page size (PO-LASER-3). Throws SCHEMA_SIZE for a bad source size, and — with e.axis ("width"|"height"),
+   * e.valueMM, e.minMM, e.maxMM — when an artwork axis, entered or derived, is outside MAT-02's 1–2000 mm.
+   */
   S.resolveSize = function (p, srcW, srcH) {
     if (!Number.isInteger(srcW) || !Number.isInteger(srcH) || srcW < 1 || srcH < 1) throw fail("SCHEMA_SIZE", "source size must be positive integers (got " + srcW + " × " + srcH + ")");
     const g = p.geometry, fr = p.construction.frame;
@@ -381,7 +387,14 @@
       artWUm = toUm(g.targetMM) - 2 * frameUm;
       artHUm = artWUm > 0 ? mulDivRound(artWUm, srcH, srcW) : 0;
     }
-    if (!(artWUm >= 1 && artHUm >= 1)) throw fail("SCHEMA_SIZE", "artwork size is not positive (" + artWUm + " × " + artHUm + " µm)");
+    // MAT-02: every artwork axis — entered or derived from the source aspect — must be 1–2000 mm (frame excluded).
+    for (const [axis, um] of [["width", artWUm], ["height", artHUm]]) {
+      if (um >= ART_MIN_UM && um <= ART_MAX_UM) continue;
+      const e = fail("SCHEMA_SIZE", "MAT-02: artwork " + axis + " " + um / 1000 + " mm is outside " + ART_MIN_UM / 1000 + "–" + ART_MAX_UM / 1000 +
+        " mm (" + (g.lockAspect ? "derived from " + g.sizeBy + " " + g.targetMM + " mm and the " + srcW + " × " + srcH + " px source" : "as entered") + ")");
+      e.axis = axis; e.valueMM = um / 1000; e.minMM = ART_MIN_UM / 1000; e.maxMM = ART_MAX_UM / 1000;
+      throw e;
+    }
     const pageWUm = artWUm + 2 * frameUm, pageHUm = artHUm + 2 * frameUm;
     return { artWMM: artWUm / 1000, artHMM: artHUm / 1000, pageWMM: pageWUm / 1000, pageHMM: pageHUm / 1000,
       artWUm, artHUm, pageWUm, pageHUm, frameUm };

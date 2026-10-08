@@ -2328,7 +2328,16 @@ suite("raster.js — G2.0 deterministic resampling and the raster contract, fabR
       ds.length === 1 && d.code === "FAB_EXCEEDS_SOURCE" && d.quality === "fabrication" && d.revision === 3 &&
       JSON.stringify(d.shortPx) === "[3800,2850]" && /3800 × 2850 px short of the 0\.1 mm\/px target/.test(d.message) &&
       /cannot be recovered/.test(d.message) && /200 × 150 px/.test(d.message) && /2 mm\/px/.test(d.message) &&
-      d.measured.value === 30000 && d.measured.unit === "px" && d.limit.value === 12e6 && d.limit.unit === "px"); }
+      d.measured.value === 200 && d.measured.unit === "px" && d.limit.value === 4000 && d.limit.unit === "px" && /most short on the width: 200 of 4000 px/.test(d.message)); }
+  { const ctx = { artWUm: 400000, artHUm: 300000, srcW: 3000, srcH: 6000, targetPitchUm: 100, pxBudget: 16e6, deviceClass: "desktop", quality: "fabrication" };
+    const ds = R.fabDiagnostics(R.fabRaster(ctx), ctx), d = ds[0];   // 18 Mpx source, 12 Mpx target, short only on the width
+    check("PO-LASER-5 FAB_EXCEEDS_SOURCE reports the most-short axis (source vs target px on it), so measured < limit whenever it warns",
+      ds.length === 1 && d.code === "FAB_EXCEEDS_SOURCE" && d.measured.value === 3000 && d.limit.value === 4000 && d.measured.value < d.limit.value &&
+      JSON.stringify(d.shortPx) === "[1000,0]" && /most short on the width: 3000 of 4000 px/.test(d.message)); }
+  { const ctx = { artWUm: 300000, artHUm: 400000, srcW: 2000, srcH: 1000, targetPitchUm: 100, pxBudget: 16e6, deviceClass: "desktop", quality: "fabrication" };
+    const d = R.fabDiagnostics(R.fabRaster(ctx), ctx)[0];            // width 3000/2000 = 1.5×, height 4000/1000 = 4× short
+    check("PO-LASER-5 FAB_EXCEEDS_SOURCE picks the axis with the larger target/source ratio (height here)",
+      d.measured.value === 1000 && d.limit.value === 4000 && /most short on the height: 1000 of 4000 px/.test(d.message) && JSON.stringify(d.shortPx) === "[1000,3000]"); }
   { const ctx = { artWUm: 470000, artHUm: 470000, srcW: 8000, srcH: 8000, targetPitchUm: 100, pxBudget: 16e6, deviceClass: "mobile", quality: "fabrication" };
     const ds = R.fabDiagnostics(R.fabRaster(ctx), ctx), d = ds[0];
     check("PO-LASER-4 FAB_PITCH_CAPPED: actual vs target mm/px from the real raster, names device class and budget",
@@ -2337,7 +2346,16 @@ suite("raster.js — G2.0 deterministic resampling and the raster contract, fabR
   { const ctx = { artWUm: 470000, artHUm: 470000, srcW: 3000, srcH: 5000, targetPitchUm: 100, pxBudget: 16e6, deviceClass: "desktop", quality: "fabrication" };
     const ds = R.fabDiagnostics(R.fabRaster(ctx), ctx);
     check("PO-LASER-4/5 budget+source raises both diagnostics (capped first, then the shortfall)",
-      ds.map((d) => d.code).join() === "FAB_PITCH_CAPPED,FAB_EXCEEDS_SOURCE" && JSON.stringify(ds[1].shortPx) === "[984,0]"); }
+      ds.map((d) => d.code).join() === "FAB_PITCH_CAPPED,FAB_EXCEEDS_SOURCE" && JSON.stringify(ds[1].shortPx) === "[984,0]");
+    const [cap, ex] = ds;   // budget pitch 118 µm (3984 × 3984 px); the 3000 px source width then gives 0.157 mm/px
+    check("PO-LASER-4 FAB_PITCH_CAPPED attributes only the budget's coarsening (0.118 mm/px), and names the source for the rest (0.157 mm/px)",
+      cap.measured.value === 0.118 && cap.limit.value === 0.1 && /0\.118 mm\/px/.test(cap.message) && /budget/.test(cap.message) &&
+      /source/.test(cap.message) && /0\.157 mm\/px/.test(cap.message) && !/0\.157 mm\/px instead of/.test(cap.message));
+    check("PO-LASER-5 FAB_EXCEEDS_SOURCE in budget+source: width 3000 of 3984 px at the budget-capped pitch, real 0.157 mm/px",
+      ex.measured.value === 3000 && ex.limit.value === 3984 && /budget-capped/.test(ex.message) && /0\.157 mm\/px/.test(ex.message)); }
+  { const ctx = { artWUm: 470000, artHUm: 470000, srcW: 8000, srcH: 8000, targetPitchUm: 100, pxBudget: 16e6, deviceClass: "mobile", quality: "fabrication" };
+    const d = R.fabDiagnostics(R.fabRaster(ctx), ctx)[0];
+    check("PO-LASER-4 budget-only cap does not mention the source", !/source/.test(d.message)); }
   { const ctx = { artWUm: 300000, artHUm: 225000, srcW: 6000, srcH: 4500, targetPitchUm: 100, pxBudget: 16e6, deviceClass: "desktop", quality: "fabrication" };
     check("PO-LASER-4 uncapped plan raises no fabrication diagnostics", R.fabDiagnostics(R.fabRaster(ctx), ctx).length === 0); }
   check("§9.1 SBDiag.make validates shortPx ([int ≥ 0, int ≥ 0]) and omits it when absent",
@@ -2487,8 +2505,19 @@ suite("schema.js — G2.1 extended (strict keys, presets, sizing, units, geometr
   { const r = S.resolveSize(withAt(p, "geometry.targetMM", 100), 3, 7);
     check("PO-LASER-3 free axis rounded half up on the 1 µm grid (100·3/7 = 42.857142… → 42.857)", r.artWMM === 42.857 && Number.isInteger(r.artWUm)); }
   { const r = S.resolveSize(withAt(p, "geometry.targetMM", 100), 2, 8);       // exact: 25000 µm
-    const t = S.resolveSize(withAt(p, "geometry.targetMM", 1), 1, 2000);      // 1000 µm · 1/2000 = 0.5 µm → 1 µm (half up)
-    check("PO-LASER-3 free-axis ties go up (0.5 µm → 1 µm)", r.artWUm === 25000 && t.artWUm === 1); }
+    const t = S.resolveSize(withAt(p, "geometry.targetMM", 100), 1, 64);      // 100000 µm · 1/64 = 1562.5 µm → 1563 µm (half up)
+    check("PO-LASER-3 free-axis ties go up (1562.5 µm → 1563 µm)", r.artWUm === 25000 && t.artWUm === 1563); }
+  { const e = (() => { try { S.resolveSize(p, 8000, 1000); } catch (x) { return x; } return null; })();   // 300 mm high → 2400 mm wide
+    check("MAT-02 resolveSize range-checks the derived axis: 2400 mm wide > 2000 mm → SCHEMA_SIZE naming the axis and the range",
+      e && e.code === "SCHEMA_SIZE" && e.axis === "width" && e.valueMM === 2400 && e.minMM === 1 && e.maxMM === 2000 && /MAT-02/.test(e.message) && /2400/.test(e.message)); }
+  { const e = (() => { try { S.resolveSize(withAt(p, "geometry.sizeBy", "width"), 1000, 4000); } catch (x) { return x; } return null; })();
+    check("MAT-02 width mode: derived height 1200 mm passes, 300 wide × 4:1 source → 1200 mm; 600 wide × 4:1 → 2400 mm high rejected",
+      e === null && codeOf(() => S.resolveSize(withAt(withAt(p, "geometry.sizeBy", "width"), "geometry.targetMM", 600), 1000, 4000)) === "SCHEMA_SIZE"); }
+  { const e = (() => { try { S.resolveSize(withAt(p, "geometry.targetMM", 100), 1, 200); } catch (x) { return x; } return null; })();   // 0.5 mm wide
+    check("MAT-02 derived axis below 1 mm → SCHEMA_SIZE (axis width, 0.5 mm)", e && e.code === "SCHEMA_SIZE" && e.axis === "width" && e.valueMM === 0.5); }
+  { const fr = withAt(p, "construction.frame", { enabled: true, widthMM: 10 });   // page 300 high → art 280 high, 1960 wide (7:1) passes
+    check("MAT-02 the art axes are checked (frame excluded): 1960 mm art passes, 2000.005 mm fails",
+      S.resolveSize(fr, 7000, 1000).artWMM === 1960 && codeOf(() => S.resolveSize(withAt(p, "geometry.targetMM", 285.715), 7000, 1000)) === "SCHEMA_SIZE"); }
   { const c = withAt(withAt(withAt(p, "geometry.lockAspect", false), "geometry.widthMM", 250), "geometry.heightMM", 120);
     const r = S.resolveSize(withAt(c, "construction.frame", { enabled: true, widthMM: 5 }), 4000, 3000);
     check("MAT-02 lockAspect false: both art axes as entered, page adds the frame", r.artWMM === 250 && r.artHMM === 120 && r.pageWMM === 260 && r.pageHMM === 130); }
