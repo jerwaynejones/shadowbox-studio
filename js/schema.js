@@ -28,8 +28,25 @@
  *                                    provisional). Complexity caps (G2.7b,
  *                                    SRS §12.3): mobile 100 parts/layer and
  *                                    20,000 vertices; desktop measured
- *                                    (docs/perf/complexity.json). G2.14/G4.3
- *                                    add the remaining limits.
+ *                                    (docs/perf/complexity.json). G2.14
+ *                                    adds the IMG-07 source envelope
+ *                                    maxSourceBytes / maxSourcePx (desktop
+ *                                    25 MiB / 16 MP, mobile 10 MiB / 8 MP,
+ *                                    inclusive); G4.3 adds the rest.
+ *   SBSchema.sniff(bytes)            → "png" | "jpeg" | null (G2.14 intake step 1).
+ *   SBSchema.preflight({bytes, info, deviceClass, project}) → {ok, code?,
+ *                                    reason?, suggestDownsamplePx?: {w, h},
+ *                                    rasterPlan, warnings, intake}: IMG-07
+ *                                    envelope, IMG-01 checks (both modes),
+ *                                    JPEG_UNSUPPORTED / JPEG_TRUNCATED, and the
+ *                                    fabrication raster plan, all before decode
+ *                                    (G2.14, PO-LASER-4/5, GEO-06, NFR-04).
+ *   SBSchema.intake(bytes, {project, deviceClass}) → preflight result plus
+ *                                    {format, info}: sniff, inspect + check,
+ *                                    preflight (the caller decodes, step 4).
+ *   SBSchema.applyDownsample(p, {fromW, fromH, toW, toH}) → new project: the
+ *                                    explicit downsample; coarser fabPitchMM
+ *                                    (never finer) and extras.history entry.
  *   construction.cleanup.simplify    "off" | "busy" (G2.7b; default "off", in
  *                                    geometryKey): explicit busy-art
  *                                    simplification, SBConstruct.simplifyBusy.
@@ -86,7 +103,8 @@
  *
  * Errors thrown by helpers carry e.code: SCHEMA_PRESET, SCHEMA_SIZE,
  * SCHEMA_DEVICE, SCHEMA_UNIT, SCHEMA_MODE, SCHEMA_LEGACY. SBDiag is looked up
- * at call time (legacy diagnostics only); no other SB* global is used.
+ * at call time (legacy diagnostics, preflight reasons); the G2.14 intake also
+ * looks up SBPng, SBJpeg and SBEngine (rasterPlan) at call time.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -122,14 +140,151 @@
   // meets the 10 s bonded target and 512 MiB, never below the realistic art measured at that budget; the test
   // "§12.3/PO-LASER-9 desktop caps equal the measured decision" keeps them in step.
   const DESKTOP_CAPS = { maxPartsPerLayer: 258, maxVerticesPerLayer: 132000, maxVerticesTotal: 356000 };   // c208 row (+ c200 vertices), 2026-10-08
-  const LIMITS = deepFreeze({
+  const LIMITS = ({
     desktop: { deviceClass: "desktop", fabPxBudget: 25000000, maxPartsPerLayer: DESKTOP_CAPS.maxPartsPerLayer,
       maxVerticesPerLayer: DESKTOP_CAPS.maxVerticesPerLayer, maxVerticesTotal: DESKTOP_CAPS.maxVerticesTotal },
     mobile: { deviceClass: "mobile", fabPxBudget: 1000000, maxPartsPerLayer: 100, maxVerticesPerLayer: 20000, maxVerticesTotal: 20000 },
   });
+  // G2.14 (IMG-07, SRS §12.3): the source envelope. Over-limit input is rejected before decode, or downsampled only
+  // through the explicit button (applyDownsample); never silently reduced (NFR-04). Limits are inclusive.
+  const SOURCE_LIMITS = { desktop: { maxSourceBytes: 25 * 1024 * 1024, maxSourcePx: 16000000 },
+    mobile: { maxSourceBytes: 10 * 1024 * 1024, maxSourcePx: 8000000 } };
+  for (const dc of Object.keys(SOURCE_LIMITS)) Object.assign(LIMITS[dc], SOURCE_LIMITS[dc]);
+  deepFreeze(LIMITS);
   S.limits = function (deviceClass) {
     if (!Object.prototype.hasOwnProperty.call(LIMITS, deviceClass)) throw fail("SCHEMA_DEVICE", "deviceClass must be desktop|mobile (got " + deviceClass + ")");
     return LIMITS[deviceClass];
+  };
+
+  // ------------------------------------------------------------ source intake and preflight (G2.14)
+  const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  const u8 = (b) => (b instanceof Uint8Array ? b : new Uint8Array(b));
+  const fmtMiB = (n) => (n / 1048576).toFixed(1) + " MiB";
+  const fmtLimMiB = (n) => (n / 1048576) + " MiB";
+  const fmtMP = (n) => (n / 1e6).toFixed(1) + " MP";
+  const fmtLimMP = (n) => (n / 1e6) + " MP";
+
+  /** sniff(bytes) → "png" | "jpeg" | null, from the signature alone (intake step 1). */
+  S.sniff = function (bytes) {
+    const b = u8(bytes);
+    if (b.length >= 8 && PNG_SIG.every((v, i) => b[i] === v)) return "png";
+    if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "jpeg";
+    return null;
+  };
+
+  /** Largest {w, h} with w·h ≤ maxPx at the source aspect (the explicit downsample offer, IMG-07). */
+  function downsampleSize(w, h, maxPx) {
+    const k = Math.sqrt(maxPx / (w * h));
+    let sw = Math.max(1, Math.floor(w * k)), sh = Math.max(1, Math.floor(h * k));
+    while (sw * sh > maxPx) { if (sw / sh > w / h) sw--; else sh--; }
+    return { w: sw, h: sh };
+  }
+
+  /**
+   * The decode route of intake step 4 and the orientation it implies. Height PNGs are decoded raw by SBPng (EXIF
+   * applied by the engine, SBEngine.orient); tonal PNG/JPEG by the browser, which applies EXIF itself, so the decoded
+   * buffer is already rotated for EXIF 5..8 (plan Appendix A #8).
+   */
+  function intakeRoute(format, mode, info) {
+    const raw = format === "png" && mode === "height";
+    const exif = info && info.exif >= 1 && info.exif <= 8 ? info.exif : 1;
+    const swap = !raw && exif >= 5;
+    return { format, decode: raw ? "raw" : "canvas-tonal", exif, exifAppliedBy: raw ? "engine" : "browser",
+      w: info ? (swap ? info.h : info.w) : null, h: info ? (swap ? info.w : info.h) : null };
+  }
+
+  /**
+   * preflight({bytes, info, deviceClass, project}) → {ok, code?, reason?, suggestDownsamplePx?: {w, h}, rasterPlan,
+   * warnings: Diagnostic[], intake: {format, decode: "raw"|"canvas-tonal", exif, exifAppliedBy, w, h}}
+   * (IMG-01/07, GEO-06, NFR-04, PO-LASER-4/5, AT-22). Runs on SBPng.inspect / SBJpeg.inspect output, before any decode:
+   *   1. bytes over limits(deviceClass).maxSourceBytes → SOURCE_TOO_LARGE (no downsample offer);
+   *   2. IMG-01: PNG through SBPng.check (both modes); a JPEG in height mode → HEIGHT_NEEDS_PNG; SBJpeg.unsupported →
+   *      JPEG_UNSUPPORTED (reason); SBJpeg.scanEnd eoi null → JPEG_TRUNCATED (truncated in scan data);
+   *   3. w·h over maxSourcePx → SOURCE_TOO_MANY_PIXELS with suggestDownsamplePx, the largest size inside the envelope.
+   * rasterPlan is SBEngine.rasterPlan(project, decoded size, "fabrication", deviceClass) with the source orientation
+   * the decode route implies, so pitch, cap and shortfall show before decoding; warnings are its FAB_PITCH_CAPPED /
+   * FAB_EXCEEDS_SOURCE. It is null when the dimensions are unknown or the size cannot be resolved (planError).
+   * Pure: never mutates the project, never lowers anything.
+   */
+  S.preflight = function (args) {
+    const { bytes, info, deviceClass, project } = args || {};
+    const b = u8(bytes), lim = S.limits(deviceClass), mode = project.interpretation.mode;
+    const format = S.sniff(b);
+    const out = { ok: true, rasterPlan: null, warnings: [], intake: format ? intakeRoute(format, mode, info) : null };
+    const reject = (code, reason, extra) => Object.assign(out, { ok: false, code, reason }, extra || {});
+    if (out.intake && info && info.w > 0 && info.h > 0) {
+      try {
+        const o = project.source && project.source.orientation;
+        const q = clone(project);
+        q.source = Object.assign({}, q.source || S.sourceTemplate(), { orientation: { exif: out.intake.exif,
+          exifAppliedBy: out.intake.exifAppliedBy, rotate: o ? o.rotate : 0, mirror: o ? o.mirror : false } });
+        out.rasterPlan = global.SBEngine.rasterPlan(q, { w: out.intake.w, h: out.intake.h }, "fabrication", deviceClass);
+        out.warnings = out.rasterPlan.diagnostics.slice();
+      } catch (e) { out.planError = e.message; }
+    }
+    if (b.length > lim.maxSourceBytes)
+      return reject("SOURCE_TOO_LARGE", "File is " + fmtMiB(b.length) + "; the " + deviceClass + " limit is " + fmtLimMiB(lim.maxSourceBytes) + ".");
+    if (!format) return reject("SOURCE_FORMAT", "File is not a PNG or JPEG image.");
+    if (format === "png") {
+      const c = global.SBPng.check(info, mode);
+      if (c) return reject(c, global.SBDiag.CODES[c].title + ".");
+    } else {
+      if (mode === "height") return reject("HEIGHT_NEEDS_PNG", "Height mode takes an 8-bit grayscale PNG; this file is a JPEG.");
+      const why = global.SBJpeg.unsupported(info);
+      if (why) return reject("JPEG_UNSUPPORTED", "JPEG variant is not supported: " + why + ".");
+      if (global.SBJpeg.scanEnd(b, info.headerBytes).eoi === null) return reject("JPEG_TRUNCATED", "JPEG file is incomplete (its image data ends early).");
+    }
+    const px = info.w * info.h;
+    if (px > lim.maxSourcePx) {
+      const sug = downsampleSize(info.w, info.h, lim.maxSourcePx);
+      return reject("SOURCE_TOO_MANY_PIXELS", "Image is " + info.w + " × " + info.h + " px (" + fmtMP(px) + "); the " + deviceClass +
+        " limit is " + fmtLimMP(lim.maxSourcePx) + ". Downsample explicitly to " + sug.w + " × " + sug.h + " px, or use a smaller image.",
+        { suggestDownsamplePx: sug });
+    }
+    return out;
+  };
+
+  /**
+   * intake(bytes, {project, deviceClass}) → preflight result plus {format, info}: intake steps 1–3 (sniff; inspect and
+   * check; preflight). An oversized file is refused before it is inspected; an inspect fault returns its SBPng/SBJpeg
+   * code. Step 4 (decode) belongs to the caller and follows result.intake.decode.
+   */
+  S.intake = function (bytes, opts) {
+    const { project, deviceClass } = opts || {};
+    const b = u8(bytes), format = S.sniff(b);
+    if (!format || b.length > S.limits(deviceClass).maxSourceBytes)
+      return Object.assign(S.preflight({ bytes: b, info: null, deviceClass, project }), { format, info: null });
+    let info;
+    try { info = format === "png" ? global.SBPng.inspect(b) : global.SBJpeg.inspect(b); }
+    catch (e) {
+      return { ok: false, code: e.code || (format === "png" ? "PNG_HEADER" : "JPEG_BAD_SEGMENT"), reason: e.message,
+        rasterPlan: null, warnings: [], intake: null, format, info: null };
+    }
+    return Object.assign(S.preflight({ bytes: b, info, deviceClass, project }), { format, info });
+  };
+
+  /**
+   * applyDownsample(project, {fromW, fromH, toW, toH}) → new project (IMG-07, NFR-04, PO-LASER-4): the explicit
+   * downsample button. geometry.fabPitchMM becomes the coarser of the project's pitch and the pitch the downsampled
+   * (oriented) source can deliver, ceil(art / px) in whole µm (never finer, never past FAB_PITCH.max), and
+   * extras.history gains {op: "downsample", from, to, fabPitchMM: {from, to}, revision}. revision + 1 iff the
+   * pitch changed.
+   */
+  S.applyDownsample = function (project, d) {
+    const ok = (v) => Number.isInteger(v) && v > 0;
+    if (!d || ![d.fromW, d.fromH, d.toW, d.toH].every(ok) || d.toW > d.fromW || d.toH > d.fromH)
+      throw fail("SCHEMA_SIZE", "downsample needs positive integer sizes with to ≤ from");
+    const sz = S.resolveSize(project, d.toW, d.toH);
+    const srcUm = Math.max(Math.ceil(sz.artWUm / d.toW), Math.ceil(sz.artHUm / d.toH));
+    const from = project.geometry.fabPitchMM;
+    const to = Math.min(S.FAB_PITCH.max, Math.max(from, srcUm / 1000));
+    const q = clone(project);
+    q.geometry.fabPitchMM = to;
+    if (to !== from) q.revision = project.revision + 1;
+    const hist = Array.isArray(q.extras.history) ? q.extras.history : [];
+    q.extras = Object.assign({}, q.extras, { history: hist.concat([{ op: "downsample", from: [d.fromW, d.fromH], to: [d.toW, d.toH],
+      fabPitchMM: { from, to }, revision: q.revision }]) });
+    return q;
   };
 
   // ------------------------------------------------------------ enums

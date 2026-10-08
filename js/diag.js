@@ -31,7 +31,8 @@
  *
  * Besides the plan's list the registry carries every import error code:
  * SBPng.CODES (12), SBJpeg.CODES (4) and the preflight JPEG_UNSUPPORTED
- * (plan Appendix C, S4/S4b), plus GEO_MULTIPART, which SBGeom.validate
+ * (plan Appendix C, S4/S4b), the G2.14 intake codes SOURCE_TOO_LARGE,
+ * SOURCE_TOO_MANY_PIXELS, SOURCE_FORMAT and HEIGHT_NEEDS_PNG (IMG-01/07), plus GEO_MULTIPART, which SBGeom.validate
  * reports under D3. Programmer-error throws (GEO_MULTIPART_POLYGON,
  * GEO_OFFSET_NONINTEGER, GEO_INSET_NOT_DYADIC) are not user diagnostics.
  *
@@ -135,6 +136,15 @@
       "Re-export the image from an image editor."],
     ["JPEG_UNSUPPORTED", B, P, "JPEG variant is not supported (12-bit, arithmetic, lossless or hierarchical)",
       "Re-save as a standard 8-bit baseline or progressive JPEG, or as a PNG."],
+    // G2.14 (IMG-01/07): SBSchema.preflight / intake rejections, before any decode
+    ["SOURCE_TOO_LARGE", B, P, "Image file is larger than this device accepts",
+      "Use a smaller file (desktop 25 MiB, mobile 10 MiB), for example by re-saving it with more compression."],
+    ["SOURCE_TOO_MANY_PIXELS", B, P, "Image has more pixels than this device accepts",
+      "Use the Downsample button to reduce it explicitly (the coarser pitch is recorded), or use a smaller image."],
+    ["SOURCE_FORMAT", B, P, "File is not a PNG or JPEG image",
+      "Choose a PNG or JPEG image."],
+    ["HEIGHT_NEEDS_PNG", B, P, "Height maps must be PNG",
+      "Save the height map as an 8-bit grayscale PNG, or switch to tonal mode."],
     // ---- warning
     ["MAT_UNCALIBRATED", W, F, "Material is not calibrated",
       "Cut the calibration coupon and record the measured kerf and minimum feature."],

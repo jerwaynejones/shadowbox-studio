@@ -5033,6 +5033,103 @@ suite("support.js/engine.js/proof.js/preview.js/app.js — G2.13d clip dialog an
     /SBEngine\.connectedFiles\([^)]*project\)/.test(appSrc));
 });
 
+suite("schema.js/diag.js/app.js — G2.14 source intake and explicit preflight (IMG-01/07, GEO-06, NFR-04, PO-LASER-4/5, AT-22/24)", () => {
+  const S = SBSchema, F = require("./fixtures.js"), PE = require("./png_enc.js"), { file: jpegFile } = S4B;
+  check("G2.14 API present", typeof S.preflight === "function" && typeof S.intake === "function" && typeof S.sniff === "function" && typeof S.applyDownsample === "function");
+  if (typeof S.preflight !== "function" || typeof S.intake !== "function" || typeof S.sniff !== "function" || typeof S.applyDownsample !== "function") return;
+  // A structurally valid PNG whose IHDR claims w × h with a tiny IDAT: inspect never inflates, so this is header-only.
+  const pngHeader = (w, h, { bitDepth = 8, colorType = 0, apng = false, pad = 0 } = {}) => {
+    const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = bitDepth; ihdr[9] = colorType;
+    const parts = [Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), PE.chunk("IHDR", ihdr)];
+    if (apng) parts.push(PE.chunk("acTL", Buffer.from([0, 0, 0, 1, 0, 0, 0, 0])));
+    parts.push(PE.chunk("IDAT", Buffer.from([0x78, 0x9c, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01])), PE.chunk("IEND", Buffer.alloc(0)), Buffer.alloc(pad));
+    return new Uint8Array(Buffer.concat(parts));
+  };
+  const tonal = S.defaults("acrylic"), height = S.defaults("plywood");
+  const run = (bytes, project, deviceClass = "desktop") => S.intake(bytes, { project, deviceClass });
+  const MiB = 1024 * 1024;
+
+  // ---- limits (IMG-07)
+  check("IMG-07 limits carry the source envelope: desktop 25 MiB / 16 MP, mobile 10 MiB / 8 MP",
+    S.limits("desktop").maxSourceBytes === 25 * MiB && S.limits("desktop").maxSourcePx === 16e6 &&
+    S.limits("mobile").maxSourceBytes === 10 * MiB && S.limits("mobile").maxSourcePx === 8e6);
+  check("G2.14 sniff: PNG, JPEG and anything else", S.sniff(pngHeader(4, 4)) === "png" && S.sniff(F.jpegHeader({ w: 4, h: 4 })) === "jpeg" &&
+    S.sniff(new Uint8Array([0x47, 0x49, 0x46, 0x38])) === null && S.sniff(new Uint8Array(0)) === null);
+  check("IMG-01 a non-PNG/JPEG file is rejected at intake with SOURCE_FORMAT", (() => { const r = run(new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]), tonal); return r.ok === false && r.code === "SOURCE_FORMAT"; })());
+
+  // ---- byte and pixel envelope
+  { const r = run(pngHeader(1000, 800, { pad: 26 * MiB }), height);
+    check("IMG-07 desktop 26MiB rejected", r.ok === false && r.code === "SOURCE_TOO_LARGE" && /26(\.0)? MiB/.test(r.reason) && /25 MiB/.test(r.reason)); }
+  { const r = run(pngHeader(4200, 4100), height);
+    check("IMG-07 desktop 17MP rejected with downsample suggestion", r.ok === false && r.code === "SOURCE_TOO_MANY_PIXELS" &&
+      r.info.w === 4200 && r.info.h === 4100 && !!r.suggestDownsamplePx && r.suggestDownsamplePx.w * r.suggestDownsamplePx.h <= 16e6 &&
+      r.suggestDownsamplePx.w <= 4200 && r.suggestDownsamplePx.h <= 4100 && Math.abs(r.suggestDownsamplePx.w / r.suggestDownsamplePx.h - 4200 / 4100) < 0.002 &&
+      (r.suggestDownsamplePx.w + 1) * (r.suggestDownsamplePx.h + 1) > 16e6); }
+  { const r = run(F.jpegHeader({ w: 6000, h: 4000 }), tonal);
+    check("IMG-07 JPEG 6000×4000 (24 MP) rejected from SOF before decode", r.ok === false && r.code === "SOURCE_TOO_MANY_PIXELS" && r.format === "jpeg" && r.info.w === 6000 && /24(\.0)? MP/.test(r.reason)); }
+  { const r = run(pngHeader(3000, 3000), height, "mobile"), d = run(pngHeader(3000, 3000), height, "desktop");
+    check("IMG-07 mobile 9MP rejected", r.ok === false && r.code === "SOURCE_TOO_MANY_PIXELS" && /8(\.0)? MP/.test(r.reason) && d.ok === true); }
+  { const r = run(pngHeader(1000, 800, { pad: 11 * MiB }), height, "mobile");
+    check("IMG-07 mobile 11 MiB rejected (10 MiB envelope)", r.ok === false && r.code === "SOURCE_TOO_LARGE"); }
+  check("IMG-07 exactly 16 MP on desktop is accepted (limit inclusive)", run(pngHeader(4000, 4000), height).ok === true);
+
+  // ---- IMG-01 in both modes
+  check("IMG-01 tonal APNG and tonal 16-bit PNG rejected at intake",
+    run(pngHeader(64, 64, { apng: true, colorType: 2 }), tonal).code === "PNG_APNG" && run(pngHeader(64, 64, { bitDepth: 16, colorType: 2 }), tonal).code === "PNG_16BIT" &&
+    run(pngHeader(64, 64, { apng: true }), height).code === "PNG_APNG" && run(pngHeader(64, 64, { bitDepth: 16 }), height).code === "PNG_16BIT");
+  check("IMG-01 a JPEG height map is rejected (height mode takes PNG only)", (() => { const r = run(F.jpegHeader({ w: 64, h: 64 }), height); return r.ok === false && r.code === "HEIGHT_NEEDS_PNG"; })());
+  check("IMG-01 a corrupt PNG is rejected at intake with its SBPng code", run(pngHeader(64, 64).subarray(0, 40), tonal).code === "PNG_TRUNCATED");
+  check("IMG-01 unsupported JPEG variant (12-bit/arithmetic) rejected before decode", (() => {
+    const a = run(jpegFile({ sofOpts: { precision: 12 } }), tonal), b = run(jpegFile({ sofOpts: { m: 0xc9 } }), tonal);
+    return a.code === "JPEG_UNSUPPORTED" && /12-bit/.test(a.reason) && b.code === "JPEG_UNSUPPORTED" && /arithmetic/.test(b.reason); })());
+  check("AT-22 truncated-in-scan JPEG rejected before decode", (() => { const r = run(jpegFile({ eoi: false }), tonal); return r.ok === false && r.code === "JPEG_TRUNCATED"; })());
+  check("AT-22 trailing bytes after EOI (Motion Photo) stay accepted", run(jpegFile({ trailing: 64 }), tonal).ok === true);
+  check("G2.14 every preflight/intake rejection code is a registered blocking process diagnostic",
+    ["SOURCE_TOO_LARGE", "SOURCE_TOO_MANY_PIXELS", "SOURCE_FORMAT", "HEIGHT_NEEDS_PNG"].every((c) => SBDiag.CODES[c] && SBDiag.CODES[c].severity === "blocking" && SBDiag.CODES[c].kind === "process"));
+
+  // ---- the decode route (intake order step 4)
+  { const h = run(pngHeader(64, 48), height), t = run(pngHeader(64, 48, { colorType: 2 }), tonal), j = run(F.jpegHeader({ w: 640, h: 480, exif: 6 }), tonal);
+    check("G2.14 decode route: height PNG raw (engine EXIF), tonal PNG/JPEG canvas-tonal (browser EXIF)",
+      h.ok && h.intake.decode === "raw" && h.intake.exifAppliedBy === "engine" && t.ok && t.intake.decode === "canvas-tonal" && t.intake.exifAppliedBy === "browser" &&
+      j.ok && j.intake.decode === "canvas-tonal" && j.intake.exif === 6 && j.intake.exifAppliedBy === "browser"); }
+
+  // ---- raster plan before decode (PO-LASER-4/5, GEO-06)
+  { const p = JSON.parse(JSON.stringify(height)); p.geometry.targetMM = 300;
+    const r = run(pngHeader(800, 600), p), g = r.rasterPlan && r.rasterPlan.geometry;
+    check("GEO-06/PO-LASER-5 target raster above source → FAB_EXCEEDS_SOURCE with px shortfall, mm/px from source",
+      r.ok === true && !!g && g.rasterW === 800 && g.rasterH === 600 && g.sxUm === 500 && g.syUm === 500 &&
+      g.shortPx[0] === 3200 && g.shortPx[1] === 2400 && r.warnings.some((d) => d.code === "FAB_EXCEEDS_SOURCE" && d.quality === "fabrication")); }
+  { const p = JSON.parse(JSON.stringify(height)); p.geometry.targetMM = 470;
+    const r = run(pngHeader(2000, 4000), p, "mobile"), g = r.rasterPlan && r.rasterPlan.geometry;
+    check("PO-LASER-4 preflight returns the capped pitch for a 470 mm-high page on mobile",
+      r.ok === true && !!g && g.deviceClass === "mobile" && g.capped === "budget" && g.pitchUm > 100 && g.targetPitchUm === 100 &&
+      g.rasterW * g.rasterH <= 1e6 && r.warnings.some((d) => d.code === "FAB_PITCH_CAPPED")); }
+  { const r = run(F.jpegHeader({ w: 640, h: 480, exif: 6 }), tonal), g = r.rasterPlan.geometry;
+    check("IMG-05 browser-applied EXIF 6: the plan uses the decoded (rotated) size", g.srcW === 480 && g.srcH === 640); }
+  { const r = run(pngHeader(4200, 4100), height);
+    check("NFR-04 a rejected over-pixel source still shows its plan before decode", !!r.rasterPlan && r.rasterPlan.geometry.srcW === 4200); }
+  check("G2.14 preflight never mutates the project", (() => { const p = S.defaults("plywood"), before = JSON.stringify(p); run(pngHeader(800, 600), p); return JSON.stringify(p) === before; })());
+
+  // ---- explicit downsample (no silent downscale)
+  // 470 mm high from 3952 px: the downsampled source delivers 0.119 mm/px, coarser than the 0.1 mm target
+  { const p = S.defaults("plywood"); p.geometry.targetMM = 470; const q = S.applyDownsample(p, { fromW: 4200, fromH: 4100, toW: 4048, toH: 3952 });
+    const hist = q.extras.history;
+    check("NFR-04 explicit downsample records a coarser geometry.fabPitchMM and a history entry",
+      q.geometry.fabPitchMM > p.geometry.fabPitchMM && Math.round(q.geometry.fabPitchMM * 1000) / 1000 === q.geometry.fabPitchMM &&
+      q.revision === p.revision + 1 && Array.isArray(hist) && hist.length === 1 && hist[0].op === "downsample" &&
+      hist[0].from.join() === "4200,4100" && hist[0].to.join() === "4048,3952" && hist[0].fabPitchMM.from === 0.1 && q.geometry.fabPitchMM === 0.119 && hist[0].fabPitchMM.to === q.geometry.fabPitchMM &&
+      S.validate(q).ok && p.extras.history === undefined); }
+  check("NFR-04 downsample never makes the pitch finer than the project's", (() => { const p = S.defaults("plywood"); p.geometry.fabPitchMM = 1.5;
+    const q = S.applyDownsample(p, { fromW: 5000, fromH: 4000, toW: 4472, toH: 3577 }); return q.geometry.fabPitchMM === 1.5 && q.extras.history.length === 1; })());
+
+  // ---- wiring (app.js)
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8"), html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+  check("NFR-04 no code path lowers resolution without explicit flag (downscaleIfHuge is gone from js/app.js)", !/downscaleIfHuge/.test(appSrc));
+  check("G2.14 app.js loadFile: SBSchema.intake before any decode; height PNG through SBPng.decode; explicit downsample button",
+    /SBSchema\.intake\(/.test(appSrc) && /SBPng\.decode\(/.test(appSrc) && /SBSchema\.applyDownsample\(/.test(appSrc) && /id="btn-downsample"/.test(html) &&
+    appSrc.indexOf("SBSchema.intake(") < appSrc.indexOf("SBPng.decode("));
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

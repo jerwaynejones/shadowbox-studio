@@ -209,6 +209,7 @@ select {
 .btn:disabled, .btn:disabled:hover { opacity: 0.5; cursor: not-allowed; background: var(--film); border-color: var(--film); color: inherit; }
 .why { margin: 6px 0 0; font-size: 12px; opacity: 0.75; }
 .why[hidden] { display: none; }
+#btn-downsample[hidden] { display: none; }
 
 /* G2.13c (UI-04, NFR-07): diagnostics panel. Severity is always in text (badge label) with a glyph icon; the
    border style (solid / dashed / dotted) and colour only reinforce it. Text stays on the panel ink for contrast. */

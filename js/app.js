@@ -41,7 +41,7 @@
   const run = {
     sourceName: null,
     sourceImage: null,   // HTMLImageElement or canvas; null until the user chooses a source (no auto-demo)
-    sourceW: 0, sourceH: 0,   // the source's own pixel size (before downscaleIfHuge), for the fabrication raster plan
+    sourceW: 0, sourceH: 0,   // the decoded source's own pixel size (never downscaled silently), for the fabrication raster plan
     revision: -1,        // project revision of the last pipeline run (the dimbar uses its counts only while current)
     sheets: [],          // [{mask, bridges, loops, stats}]
     procW: 0, procH: 0,
@@ -1078,54 +1078,111 @@
     el.addEventListener("change", () => { setLegacy(key, el.checked); recompute(); });
   }
 
-  function loadFile(file) {
-    if (!file.type || !file.type.startsWith("image/")) {
-      setStatus("that file isn’t an image", true);
+  /**
+   * G2.14 source intake (IMG-01/02/05/07, NFR-04): 1 sniff, 2 inspect + check, 3 SBSchema.preflight (all inside
+   * SBSchema.intake, before any decode), 4 decode. Height PNGs go through SBPng.decode (raw samples, EXIF applied by
+   * SBEngine.orient); tonal PNG/JPEG use the browser decode, which applies EXIF itself. Nothing is ever downscaled
+   * silently: an over-limit source is rejected, and only the explicit Downsample button reduces it (recording the
+   * coarser fabrication pitch and a history entry through SBSchema.applyDownsample). The fabrication raster and mm/px
+   * come from the raster plan (dimbar), never from an assumed long side.
+   */
+  async function loadFile(file) {
+    showSourceProblem(null);
+    const dc = deviceClass(), lim = SBSchema.limits(dc);
+    if (file.size > lim.maxSourceBytes) {   // refuse before reading the bytes at all (IMG-07)
+      showSourceProblem(`${file.name}: file is ${(file.size / 1048576).toFixed(1)} MiB; the ${dc} limit is ${lim.maxSourceBytes / 1048576} MiB.`);
+      return;
+    }
+    setStatus(`checking ${file.name}…`);
+    let bytes;
+    try { bytes = new Uint8Array(await file.arrayBuffer()); }
+    catch (e) { showSourceProblem(`couldn’t read ${file.name}`); return; }
+    const pre = SBSchema.intake(bytes, { project, deviceClass: dc });
+    if (!pre.ok) {
+      const sug = pre.suggestDownsamplePx;
+      showSourceProblem(`${file.name}: ${pre.reason}`, sug ? () => downsampleExplicitly(file, bytes, pre) : null,
+        sug ? (pre.intake.w !== pre.info.w ? `Downsample to ${sug.h} × ${sug.w} px` : `Downsample to ${sug.w} × ${sug.h} px`) : "");
       return;
     }
     setStatus(`loading ${file.name}…`);
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    // Phone cameras produce very large images (12MP+). Nothing here needs the
-    // full sensor resolution — the pipeline works at procRes — so cap the
-    // decoded dimensions to keep memory and decode time sane on mobile.
-    if ("decoding" in img) img.decoding = "async";
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      if (!img.naturalWidth || !img.naturalHeight) {
-        setStatus("couldn’t read that image", true);
-        return;
+    try {
+      const src = await decodeSource(file, bytes, pre);
+      acceptSource(file.name, src);
+    } catch (e) {
+      showSourceProblem(`couldn’t decode ${file.name}: ${e.code ? (SBDiag.CODES[e.code] ? SBDiag.CODES[e.code].title : e.code) : e.message}`);
+    }
+  }
+
+  /** Intake step 4: the decode route preflight chose. Resolves to a canvas or image at the full source size. */
+  async function decodeSource(file, bytes, pre) {
+    if (pre.intake.decode === "raw") {
+      const d = await SBPng.decode(bytes, { mode: "height" });
+      const o = SBEngine.orient({ samples: d.samples, alpha: d.alpha, w: d.w, h: d.h },
+        { exif: d.exif || 1, exifAppliedBy: "engine", rotate: 0, mirror: false });
+      const c = document.createElement("canvas");
+      c.width = o.w; c.height = o.h;
+      const cx = c.getContext("2d"), im = cx.createImageData(o.w, o.h), px = im.data, ch = d.channels;
+      for (let i = 0, n = o.w * o.h; i < n; i++) {
+        const v = o.samples[i * ch];
+        px[4 * i] = v; px[4 * i + 1] = ch >= 3 ? o.samples[i * ch + 1] : v; px[4 * i + 2] = ch >= 3 ? o.samples[i * ch + 2] : v;
+        px[4 * i + 3] = o.alpha ? o.alpha[i] : 255;
       }
-      run.sourceW = img.naturalWidth; run.sourceH = img.naturalHeight;
-      run.sourceImage = downscaleIfHuge(img);
-      run.sourceName = file.name;
-      if (project.title === "untitled")
-        setProjectName(file.name.replace(/\.[^.]+$/, ""));
-      regenerate();
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      setStatus(`couldn’t load ${file.name} — try a JPG or PNG`, true);
-    };
-    img.src = url;
+      cx.putImageData(im, 0, 0);
+      return c;
+    }
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      if ("decoding" in img) img.decoding = "async";
+      await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = () => reject(new Error("the browser could not decode it")); img.src = url; });
+      if (!img.naturalWidth || !img.naturalHeight) throw new Error("the image has no pixels");
+      return img;
+    } finally { URL.revokeObjectURL(url); }
+  }
+
+  /** Use a decoded source at its own size (run.sourceW/H feed the fabrication raster plan). */
+  function acceptSource(name, src) {
+    run.sourceImage = src;
+    run.sourceW = src.naturalWidth || src.width; run.sourceH = src.naturalHeight || src.height;
+    run.sourceName = name;
+    if (project.title === "untitled") setProjectName(name.replace(/\.[^.]+$/, ""));
+    regenerate();
   }
 
   /**
-   * If an image is larger than we could ever need, downscale it once into a
-   * canvas so every later processing step is cheap. The pipeline resamples to
-   * procRes anyway, so this is lossless for our purposes and prevents the
-   * out-of-memory stalls large phone photos can cause on iOS.
+   * The explicit downsample (IMG-07, NFR-04): decode at full size, resample once to the size preflight offered, and
+   * record the coarser fabrication pitch and a history entry on the project. Height maps resample nearest (G2.0).
    */
-  function downscaleIfHuge(img, cap = 2000) {
-    const big = Math.max(img.naturalWidth, img.naturalHeight);
-    if (big <= cap) return img;
-    const k = cap / big;
-    const w = Math.round(img.naturalWidth * k);
-    const h = Math.round(img.naturalHeight * k);
-    const c = document.createElement("canvas");
-    c.width = w; c.height = h;
-    c.getContext("2d").drawImage(img, 0, 0, w, h);
-    return c;
+  async function downsampleExplicitly(file, bytes, pre) {
+    showSourceProblem(null);
+    const swap = pre.intake.w !== pre.info.w;   // browser-applied EXIF 5..8: the decoded image is rotated
+    const toW = swap ? pre.suggestDownsamplePx.h : pre.suggestDownsamplePx.w, toH = swap ? pre.suggestDownsamplePx.w : pre.suggestDownsamplePx.h;
+    setStatus(`downsampling ${file.name} to ${toW} × ${toH} px…`);
+    try {
+      const full = await decodeSource(file, bytes, pre);
+      const fromW = full.naturalWidth || full.width, fromH = full.naturalHeight || full.height;
+      const c = document.createElement("canvas");
+      c.width = toW; c.height = toH;
+      const cx = c.getContext("2d");
+      cx.imageSmoothingEnabled = pre.intake.decode !== "raw";
+      cx.drawImage(full, 0, 0, toW, toH);
+      project = SBSchema.applyDownsample(project, { fromW, fromH, toW, toH });
+      acceptSource(file.name, c);
+      setStatus(`downsampled ${file.name} to ${toW} × ${toH} px; fabrication pitch ${project.geometry.fabPitchMM} mm/px`, true);
+    } catch (e) {
+      showSourceProblem(`couldn’t downsample ${file.name}: ${e.message}`);
+    }
+  }
+
+  /** Show (or clear, text null) why a source was refused; offer the explicit Downsample button when given. */
+  function showSourceProblem(text, onDownsample, label) {
+    const why = $("why-source"), btn = $("btn-downsample");
+    if (why) { why.textContent = text || ""; why.hidden = !text; }
+    if (text) setStatus(text, true);
+    if (!btn) return;
+    btn.hidden = !onDownsample;
+    btn.onclick = onDownsample || null;
+    if (onDownsample) btn.textContent = label || "Downsample";
   }
 
   function setProjectName(n) {
@@ -1172,6 +1229,7 @@
     });
     // PRJ-01: the demo is an explicit source button; nothing loads it automatically.
     $("btn-demo").addEventListener("click", () => {
+      showSourceProblem(null);
       run.sourceImage = demoScene();
       run.sourceW = run.sourceImage.width; run.sourceH = run.sourceImage.height;
       run.sourceName = "demo scene";

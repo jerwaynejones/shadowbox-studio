@@ -273,6 +273,7 @@ select {
 .btn:disabled, .btn:disabled:hover { opacity: 0.5; cursor: not-allowed; background: var(--film); border-color: var(--film); color: inherit; }
 .why { margin: 6px 0 0; font-size: 12px; opacity: 0.75; }
 .why[hidden] { display: none; }
+#btn-downsample[hidden] { display: none; }
 
 /* G2.13c (UI-04, NFR-07): diagnostics panel. Severity is always in text (badge label) with a glyph icon; the
    border style (solid / dashed / dotted) and colour only reinforce it. Text stays on the panel ink for contrast. */
@@ -556,7 +557,9 @@ button.diag-go:hover .diag-msg { text-decoration: underline; }
           Load photo<input id="filein" type="file" accept="image/*">
         </label>
         <button id="btn-demo" class="btn">Demo scene</button>
+        <button id="btn-downsample" class="btn" hidden>Downsample</button>
       </div>
+      <p id="why-source" class="why" role="status" hidden></p>
     </section>
 
     <section class="step" id="stage-interpretation" tabindex="-1" aria-labelledby="h-interpretation">
@@ -2147,7 +2150,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *
  * Besides the plan's list the registry carries every import error code:
  * SBPng.CODES (12), SBJpeg.CODES (4) and the preflight JPEG_UNSUPPORTED
- * (plan Appendix C, S4/S4b), plus GEO_MULTIPART, which SBGeom.validate
+ * (plan Appendix C, S4/S4b), the G2.14 intake codes SOURCE_TOO_LARGE,
+ * SOURCE_TOO_MANY_PIXELS, SOURCE_FORMAT and HEIGHT_NEEDS_PNG (IMG-01/07), plus GEO_MULTIPART, which SBGeom.validate
  * reports under D3. Programmer-error throws (GEO_MULTIPART_POLYGON,
  * GEO_OFFSET_NONINTEGER, GEO_INSET_NOT_DYADIC) are not user diagnostics.
  *
@@ -2251,6 +2255,15 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       "Re-export the image from an image editor."],
     ["JPEG_UNSUPPORTED", B, P, "JPEG variant is not supported (12-bit, arithmetic, lossless or hierarchical)",
       "Re-save as a standard 8-bit baseline or progressive JPEG, or as a PNG."],
+    // G2.14 (IMG-01/07): SBSchema.preflight / intake rejections, before any decode
+    ["SOURCE_TOO_LARGE", B, P, "Image file is larger than this device accepts",
+      "Use a smaller file (desktop 25 MiB, mobile 10 MiB), for example by re-saving it with more compression."],
+    ["SOURCE_TOO_MANY_PIXELS", B, P, "Image has more pixels than this device accepts",
+      "Use the Downsample button to reduce it explicitly (the coarser pitch is recorded), or use a smaller image."],
+    ["SOURCE_FORMAT", B, P, "File is not a PNG or JPEG image",
+      "Choose a PNG or JPEG image."],
+    ["HEIGHT_NEEDS_PNG", B, P, "Height maps must be PNG",
+      "Save the height map as an 8-bit grayscale PNG, or switch to tonal mode."],
     // ---- warning
     ["MAT_UNCALIBRATED", W, F, "Material is not calibrated",
       "Cut the calibration coupon and record the measured kerf and minimum feature."],
@@ -2593,8 +2606,25 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *                                    provisional). Complexity caps (G2.7b,
  *                                    SRS §12.3): mobile 100 parts/layer and
  *                                    20,000 vertices; desktop measured
- *                                    (docs/perf/complexity.json). G2.14/G4.3
- *                                    add the remaining limits.
+ *                                    (docs/perf/complexity.json). G2.14
+ *                                    adds the IMG-07 source envelope
+ *                                    maxSourceBytes / maxSourcePx (desktop
+ *                                    25 MiB / 16 MP, mobile 10 MiB / 8 MP,
+ *                                    inclusive); G4.3 adds the rest.
+ *   SBSchema.sniff(bytes)            → "png" | "jpeg" | null (G2.14 intake step 1).
+ *   SBSchema.preflight({bytes, info, deviceClass, project}) → {ok, code?,
+ *                                    reason?, suggestDownsamplePx?: {w, h},
+ *                                    rasterPlan, warnings, intake}: IMG-07
+ *                                    envelope, IMG-01 checks (both modes),
+ *                                    JPEG_UNSUPPORTED / JPEG_TRUNCATED, and the
+ *                                    fabrication raster plan, all before decode
+ *                                    (G2.14, PO-LASER-4/5, GEO-06, NFR-04).
+ *   SBSchema.intake(bytes, {project, deviceClass}) → preflight result plus
+ *                                    {format, info}: sniff, inspect + check,
+ *                                    preflight (the caller decodes, step 4).
+ *   SBSchema.applyDownsample(p, {fromW, fromH, toW, toH}) → new project: the
+ *                                    explicit downsample; coarser fabPitchMM
+ *                                    (never finer) and extras.history entry.
  *   construction.cleanup.simplify    "off" | "busy" (G2.7b; default "off", in
  *                                    geometryKey): explicit busy-art
  *                                    simplification, SBConstruct.simplifyBusy.
@@ -2651,7 +2681,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *
  * Errors thrown by helpers carry e.code: SCHEMA_PRESET, SCHEMA_SIZE,
  * SCHEMA_DEVICE, SCHEMA_UNIT, SCHEMA_MODE, SCHEMA_LEGACY. SBDiag is looked up
- * at call time (legacy diagnostics only); no other SB* global is used.
+ * at call time (legacy diagnostics, preflight reasons); the G2.14 intake also
+ * looks up SBPng, SBJpeg and SBEngine (rasterPlan) at call time.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -2687,14 +2718,151 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   // meets the 10 s bonded target and 512 MiB, never below the realistic art measured at that budget; the test
   // "§12.3/PO-LASER-9 desktop caps equal the measured decision" keeps them in step.
   const DESKTOP_CAPS = { maxPartsPerLayer: 258, maxVerticesPerLayer: 132000, maxVerticesTotal: 356000 };   // c208 row (+ c200 vertices), 2026-10-08
-  const LIMITS = deepFreeze({
+  const LIMITS = ({
     desktop: { deviceClass: "desktop", fabPxBudget: 25000000, maxPartsPerLayer: DESKTOP_CAPS.maxPartsPerLayer,
       maxVerticesPerLayer: DESKTOP_CAPS.maxVerticesPerLayer, maxVerticesTotal: DESKTOP_CAPS.maxVerticesTotal },
     mobile: { deviceClass: "mobile", fabPxBudget: 1000000, maxPartsPerLayer: 100, maxVerticesPerLayer: 20000, maxVerticesTotal: 20000 },
   });
+  // G2.14 (IMG-07, SRS §12.3): the source envelope. Over-limit input is rejected before decode, or downsampled only
+  // through the explicit button (applyDownsample); never silently reduced (NFR-04). Limits are inclusive.
+  const SOURCE_LIMITS = { desktop: { maxSourceBytes: 25 * 1024 * 1024, maxSourcePx: 16000000 },
+    mobile: { maxSourceBytes: 10 * 1024 * 1024, maxSourcePx: 8000000 } };
+  for (const dc of Object.keys(SOURCE_LIMITS)) Object.assign(LIMITS[dc], SOURCE_LIMITS[dc]);
+  deepFreeze(LIMITS);
   S.limits = function (deviceClass) {
     if (!Object.prototype.hasOwnProperty.call(LIMITS, deviceClass)) throw fail("SCHEMA_DEVICE", "deviceClass must be desktop|mobile (got " + deviceClass + ")");
     return LIMITS[deviceClass];
+  };
+
+  // ------------------------------------------------------------ source intake and preflight (G2.14)
+  const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  const u8 = (b) => (b instanceof Uint8Array ? b : new Uint8Array(b));
+  const fmtMiB = (n) => (n / 1048576).toFixed(1) + " MiB";
+  const fmtLimMiB = (n) => (n / 1048576) + " MiB";
+  const fmtMP = (n) => (n / 1e6).toFixed(1) + " MP";
+  const fmtLimMP = (n) => (n / 1e6) + " MP";
+
+  /** sniff(bytes) → "png" | "jpeg" | null, from the signature alone (intake step 1). */
+  S.sniff = function (bytes) {
+    const b = u8(bytes);
+    if (b.length >= 8 && PNG_SIG.every((v, i) => b[i] === v)) return "png";
+    if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "jpeg";
+    return null;
+  };
+
+  /** Largest {w, h} with w·h ≤ maxPx at the source aspect (the explicit downsample offer, IMG-07). */
+  function downsampleSize(w, h, maxPx) {
+    const k = Math.sqrt(maxPx / (w * h));
+    let sw = Math.max(1, Math.floor(w * k)), sh = Math.max(1, Math.floor(h * k));
+    while (sw * sh > maxPx) { if (sw / sh > w / h) sw--; else sh--; }
+    return { w: sw, h: sh };
+  }
+
+  /**
+   * The decode route of intake step 4 and the orientation it implies. Height PNGs are decoded raw by SBPng (EXIF
+   * applied by the engine, SBEngine.orient); tonal PNG/JPEG by the browser, which applies EXIF itself, so the decoded
+   * buffer is already rotated for EXIF 5..8 (plan Appendix A #8).
+   */
+  function intakeRoute(format, mode, info) {
+    const raw = format === "png" && mode === "height";
+    const exif = info && info.exif >= 1 && info.exif <= 8 ? info.exif : 1;
+    const swap = !raw && exif >= 5;
+    return { format, decode: raw ? "raw" : "canvas-tonal", exif, exifAppliedBy: raw ? "engine" : "browser",
+      w: info ? (swap ? info.h : info.w) : null, h: info ? (swap ? info.w : info.h) : null };
+  }
+
+  /**
+   * preflight({bytes, info, deviceClass, project}) → {ok, code?, reason?, suggestDownsamplePx?: {w, h}, rasterPlan,
+   * warnings: Diagnostic[], intake: {format, decode: "raw"|"canvas-tonal", exif, exifAppliedBy, w, h}}
+   * (IMG-01/07, GEO-06, NFR-04, PO-LASER-4/5, AT-22). Runs on SBPng.inspect / SBJpeg.inspect output, before any decode:
+   *   1. bytes over limits(deviceClass).maxSourceBytes → SOURCE_TOO_LARGE (no downsample offer);
+   *   2. IMG-01: PNG through SBPng.check (both modes); a JPEG in height mode → HEIGHT_NEEDS_PNG; SBJpeg.unsupported →
+   *      JPEG_UNSUPPORTED (reason); SBJpeg.scanEnd eoi null → JPEG_TRUNCATED (truncated in scan data);
+   *   3. w·h over maxSourcePx → SOURCE_TOO_MANY_PIXELS with suggestDownsamplePx, the largest size inside the envelope.
+   * rasterPlan is SBEngine.rasterPlan(project, decoded size, "fabrication", deviceClass) with the source orientation
+   * the decode route implies, so pitch, cap and shortfall show before decoding; warnings are its FAB_PITCH_CAPPED /
+   * FAB_EXCEEDS_SOURCE. It is null when the dimensions are unknown or the size cannot be resolved (planError).
+   * Pure: never mutates the project, never lowers anything.
+   */
+  S.preflight = function (args) {
+    const { bytes, info, deviceClass, project } = args || {};
+    const b = u8(bytes), lim = S.limits(deviceClass), mode = project.interpretation.mode;
+    const format = S.sniff(b);
+    const out = { ok: true, rasterPlan: null, warnings: [], intake: format ? intakeRoute(format, mode, info) : null };
+    const reject = (code, reason, extra) => Object.assign(out, { ok: false, code, reason }, extra || {});
+    if (out.intake && info && info.w > 0 && info.h > 0) {
+      try {
+        const o = project.source && project.source.orientation;
+        const q = clone(project);
+        q.source = Object.assign({}, q.source || S.sourceTemplate(), { orientation: { exif: out.intake.exif,
+          exifAppliedBy: out.intake.exifAppliedBy, rotate: o ? o.rotate : 0, mirror: o ? o.mirror : false } });
+        out.rasterPlan = global.SBEngine.rasterPlan(q, { w: out.intake.w, h: out.intake.h }, "fabrication", deviceClass);
+        out.warnings = out.rasterPlan.diagnostics.slice();
+      } catch (e) { out.planError = e.message; }
+    }
+    if (b.length > lim.maxSourceBytes)
+      return reject("SOURCE_TOO_LARGE", "File is " + fmtMiB(b.length) + "; the " + deviceClass + " limit is " + fmtLimMiB(lim.maxSourceBytes) + ".");
+    if (!format) return reject("SOURCE_FORMAT", "File is not a PNG or JPEG image.");
+    if (format === "png") {
+      const c = global.SBPng.check(info, mode);
+      if (c) return reject(c, global.SBDiag.CODES[c].title + ".");
+    } else {
+      if (mode === "height") return reject("HEIGHT_NEEDS_PNG", "Height mode takes an 8-bit grayscale PNG; this file is a JPEG.");
+      const why = global.SBJpeg.unsupported(info);
+      if (why) return reject("JPEG_UNSUPPORTED", "JPEG variant is not supported: " + why + ".");
+      if (global.SBJpeg.scanEnd(b, info.headerBytes).eoi === null) return reject("JPEG_TRUNCATED", "JPEG file is incomplete (its image data ends early).");
+    }
+    const px = info.w * info.h;
+    if (px > lim.maxSourcePx) {
+      const sug = downsampleSize(info.w, info.h, lim.maxSourcePx);
+      return reject("SOURCE_TOO_MANY_PIXELS", "Image is " + info.w + " × " + info.h + " px (" + fmtMP(px) + "); the " + deviceClass +
+        " limit is " + fmtLimMP(lim.maxSourcePx) + ". Downsample explicitly to " + sug.w + " × " + sug.h + " px, or use a smaller image.",
+        { suggestDownsamplePx: sug });
+    }
+    return out;
+  };
+
+  /**
+   * intake(bytes, {project, deviceClass}) → preflight result plus {format, info}: intake steps 1–3 (sniff; inspect and
+   * check; preflight). An oversized file is refused before it is inspected; an inspect fault returns its SBPng/SBJpeg
+   * code. Step 4 (decode) belongs to the caller and follows result.intake.decode.
+   */
+  S.intake = function (bytes, opts) {
+    const { project, deviceClass } = opts || {};
+    const b = u8(bytes), format = S.sniff(b);
+    if (!format || b.length > S.limits(deviceClass).maxSourceBytes)
+      return Object.assign(S.preflight({ bytes: b, info: null, deviceClass, project }), { format, info: null });
+    let info;
+    try { info = format === "png" ? global.SBPng.inspect(b) : global.SBJpeg.inspect(b); }
+    catch (e) {
+      return { ok: false, code: e.code || (format === "png" ? "PNG_HEADER" : "JPEG_BAD_SEGMENT"), reason: e.message,
+        rasterPlan: null, warnings: [], intake: null, format, info: null };
+    }
+    return Object.assign(S.preflight({ bytes: b, info, deviceClass, project }), { format, info });
+  };
+
+  /**
+   * applyDownsample(project, {fromW, fromH, toW, toH}) → new project (IMG-07, NFR-04, PO-LASER-4): the explicit
+   * downsample button. geometry.fabPitchMM becomes the coarser of the project's pitch and the pitch the downsampled
+   * (oriented) source can deliver, ceil(art / px) in whole µm (never finer, never past FAB_PITCH.max), and
+   * extras.history gains {op: "downsample", from, to, fabPitchMM: {from, to}, revision}. revision + 1 iff the
+   * pitch changed.
+   */
+  S.applyDownsample = function (project, d) {
+    const ok = (v) => Number.isInteger(v) && v > 0;
+    if (!d || ![d.fromW, d.fromH, d.toW, d.toH].every(ok) || d.toW > d.fromW || d.toH > d.fromH)
+      throw fail("SCHEMA_SIZE", "downsample needs positive integer sizes with to ≤ from");
+    const sz = S.resolveSize(project, d.toW, d.toH);
+    const srcUm = Math.max(Math.ceil(sz.artWUm / d.toW), Math.ceil(sz.artHUm / d.toH));
+    const from = project.geometry.fabPitchMM;
+    const to = Math.min(S.FAB_PITCH.max, Math.max(from, srcUm / 1000));
+    const q = clone(project);
+    q.geometry.fabPitchMM = to;
+    if (to !== from) q.revision = project.revision + 1;
+    const hist = Array.isArray(q.extras.history) ? q.extras.history : [];
+    q.extras = Object.assign({}, q.extras, { history: hist.concat([{ op: "downsample", from: [d.fromW, d.fromH], to: [d.toW, d.toH],
+      fabPitchMM: { from, to }, revision: q.revision }]) });
+    return q;
   };
 
   // ------------------------------------------------------------ enums
@@ -8671,7 +8839,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   const run = {
     sourceName: null,
     sourceImage: null,   // HTMLImageElement or canvas; null until the user chooses a source (no auto-demo)
-    sourceW: 0, sourceH: 0,   // the source's own pixel size (before downscaleIfHuge), for the fabrication raster plan
+    sourceW: 0, sourceH: 0,   // the decoded source's own pixel size (never downscaled silently), for the fabrication raster plan
     revision: -1,        // project revision of the last pipeline run (the dimbar uses its counts only while current)
     sheets: [],          // [{mask, bridges, loops, stats}]
     procW: 0, procH: 0,
@@ -9708,54 +9876,111 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     el.addEventListener("change", () => { setLegacy(key, el.checked); recompute(); });
   }
 
-  function loadFile(file) {
-    if (!file.type || !file.type.startsWith("image/")) {
-      setStatus("that file isn’t an image", true);
+  /**
+   * G2.14 source intake (IMG-01/02/05/07, NFR-04): 1 sniff, 2 inspect + check, 3 SBSchema.preflight (all inside
+   * SBSchema.intake, before any decode), 4 decode. Height PNGs go through SBPng.decode (raw samples, EXIF applied by
+   * SBEngine.orient); tonal PNG/JPEG use the browser decode, which applies EXIF itself. Nothing is ever downscaled
+   * silently: an over-limit source is rejected, and only the explicit Downsample button reduces it (recording the
+   * coarser fabrication pitch and a history entry through SBSchema.applyDownsample). The fabrication raster and mm/px
+   * come from the raster plan (dimbar), never from an assumed long side.
+   */
+  async function loadFile(file) {
+    showSourceProblem(null);
+    const dc = deviceClass(), lim = SBSchema.limits(dc);
+    if (file.size > lim.maxSourceBytes) {   // refuse before reading the bytes at all (IMG-07)
+      showSourceProblem(`${file.name}: file is ${(file.size / 1048576).toFixed(1)} MiB; the ${dc} limit is ${lim.maxSourceBytes / 1048576} MiB.`);
+      return;
+    }
+    setStatus(`checking ${file.name}…`);
+    let bytes;
+    try { bytes = new Uint8Array(await file.arrayBuffer()); }
+    catch (e) { showSourceProblem(`couldn’t read ${file.name}`); return; }
+    const pre = SBSchema.intake(bytes, { project, deviceClass: dc });
+    if (!pre.ok) {
+      const sug = pre.suggestDownsamplePx;
+      showSourceProblem(`${file.name}: ${pre.reason}`, sug ? () => downsampleExplicitly(file, bytes, pre) : null,
+        sug ? (pre.intake.w !== pre.info.w ? `Downsample to ${sug.h} × ${sug.w} px` : `Downsample to ${sug.w} × ${sug.h} px`) : "");
       return;
     }
     setStatus(`loading ${file.name}…`);
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    // Phone cameras produce very large images (12MP+). Nothing here needs the
-    // full sensor resolution — the pipeline works at procRes — so cap the
-    // decoded dimensions to keep memory and decode time sane on mobile.
-    if ("decoding" in img) img.decoding = "async";
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      if (!img.naturalWidth || !img.naturalHeight) {
-        setStatus("couldn’t read that image", true);
-        return;
+    try {
+      const src = await decodeSource(file, bytes, pre);
+      acceptSource(file.name, src);
+    } catch (e) {
+      showSourceProblem(`couldn’t decode ${file.name}: ${e.code ? (SBDiag.CODES[e.code] ? SBDiag.CODES[e.code].title : e.code) : e.message}`);
+    }
+  }
+
+  /** Intake step 4: the decode route preflight chose. Resolves to a canvas or image at the full source size. */
+  async function decodeSource(file, bytes, pre) {
+    if (pre.intake.decode === "raw") {
+      const d = await SBPng.decode(bytes, { mode: "height" });
+      const o = SBEngine.orient({ samples: d.samples, alpha: d.alpha, w: d.w, h: d.h },
+        { exif: d.exif || 1, exifAppliedBy: "engine", rotate: 0, mirror: false });
+      const c = document.createElement("canvas");
+      c.width = o.w; c.height = o.h;
+      const cx = c.getContext("2d"), im = cx.createImageData(o.w, o.h), px = im.data, ch = d.channels;
+      for (let i = 0, n = o.w * o.h; i < n; i++) {
+        const v = o.samples[i * ch];
+        px[4 * i] = v; px[4 * i + 1] = ch >= 3 ? o.samples[i * ch + 1] : v; px[4 * i + 2] = ch >= 3 ? o.samples[i * ch + 2] : v;
+        px[4 * i + 3] = o.alpha ? o.alpha[i] : 255;
       }
-      run.sourceW = img.naturalWidth; run.sourceH = img.naturalHeight;
-      run.sourceImage = downscaleIfHuge(img);
-      run.sourceName = file.name;
-      if (project.title === "untitled")
-        setProjectName(file.name.replace(/\.[^.]+$/, ""));
-      regenerate();
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      setStatus(`couldn’t load ${file.name} — try a JPG or PNG`, true);
-    };
-    img.src = url;
+      cx.putImageData(im, 0, 0);
+      return c;
+    }
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      if ("decoding" in img) img.decoding = "async";
+      await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = () => reject(new Error("the browser could not decode it")); img.src = url; });
+      if (!img.naturalWidth || !img.naturalHeight) throw new Error("the image has no pixels");
+      return img;
+    } finally { URL.revokeObjectURL(url); }
+  }
+
+  /** Use a decoded source at its own size (run.sourceW/H feed the fabrication raster plan). */
+  function acceptSource(name, src) {
+    run.sourceImage = src;
+    run.sourceW = src.naturalWidth || src.width; run.sourceH = src.naturalHeight || src.height;
+    run.sourceName = name;
+    if (project.title === "untitled") setProjectName(name.replace(/\.[^.]+$/, ""));
+    regenerate();
   }
 
   /**
-   * If an image is larger than we could ever need, downscale it once into a
-   * canvas so every later processing step is cheap. The pipeline resamples to
-   * procRes anyway, so this is lossless for our purposes and prevents the
-   * out-of-memory stalls large phone photos can cause on iOS.
+   * The explicit downsample (IMG-07, NFR-04): decode at full size, resample once to the size preflight offered, and
+   * record the coarser fabrication pitch and a history entry on the project. Height maps resample nearest (G2.0).
    */
-  function downscaleIfHuge(img, cap = 2000) {
-    const big = Math.max(img.naturalWidth, img.naturalHeight);
-    if (big <= cap) return img;
-    const k = cap / big;
-    const w = Math.round(img.naturalWidth * k);
-    const h = Math.round(img.naturalHeight * k);
-    const c = document.createElement("canvas");
-    c.width = w; c.height = h;
-    c.getContext("2d").drawImage(img, 0, 0, w, h);
-    return c;
+  async function downsampleExplicitly(file, bytes, pre) {
+    showSourceProblem(null);
+    const swap = pre.intake.w !== pre.info.w;   // browser-applied EXIF 5..8: the decoded image is rotated
+    const toW = swap ? pre.suggestDownsamplePx.h : pre.suggestDownsamplePx.w, toH = swap ? pre.suggestDownsamplePx.w : pre.suggestDownsamplePx.h;
+    setStatus(`downsampling ${file.name} to ${toW} × ${toH} px…`);
+    try {
+      const full = await decodeSource(file, bytes, pre);
+      const fromW = full.naturalWidth || full.width, fromH = full.naturalHeight || full.height;
+      const c = document.createElement("canvas");
+      c.width = toW; c.height = toH;
+      const cx = c.getContext("2d");
+      cx.imageSmoothingEnabled = pre.intake.decode !== "raw";
+      cx.drawImage(full, 0, 0, toW, toH);
+      project = SBSchema.applyDownsample(project, { fromW, fromH, toW, toH });
+      acceptSource(file.name, c);
+      setStatus(`downsampled ${file.name} to ${toW} × ${toH} px; fabrication pitch ${project.geometry.fabPitchMM} mm/px`, true);
+    } catch (e) {
+      showSourceProblem(`couldn’t downsample ${file.name}: ${e.message}`);
+    }
+  }
+
+  /** Show (or clear, text null) why a source was refused; offer the explicit Downsample button when given. */
+  function showSourceProblem(text, onDownsample, label) {
+    const why = $("why-source"), btn = $("btn-downsample");
+    if (why) { why.textContent = text || ""; why.hidden = !text; }
+    if (text) setStatus(text, true);
+    if (!btn) return;
+    btn.hidden = !onDownsample;
+    btn.onclick = onDownsample || null;
+    if (onDownsample) btn.textContent = label || "Downsample";
   }
 
   function setProjectName(n) {
@@ -9802,6 +10027,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     });
     // PRJ-01: the demo is an explicit source button; nothing loads it automatically.
     $("btn-demo").addEventListener("click", () => {
+      showSourceProblem(null);
       run.sourceImage = demoScene();
       run.sourceW = run.sourceImage.width; run.sourceH = run.sourceImage.height;
       run.sourceName = "demo scene";
