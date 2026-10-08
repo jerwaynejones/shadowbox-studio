@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **G2.10a, `SBEngine.generate` through validation, with the machine-envelope check (engine; the
+  app path is unchanged):** `SBEngine.generate(request, {isCanceled, onProgress})` runs the §11.1
+  pipeline: orientation, resampling to the draft or fabrication raster plan, the alpha domain,
+  height or tonal interpretation, cumulative masks, construction (bonded or connected), the
+  complexity caps (before trace for parts, after vectorization for vertices; `COMPLEXITY_LIMIT`
+  returns no layers), trace with connected-mode smoothing only (bonded stays raw, D1), the frame
+  union, reviewed repairs, the legacy connected corner holes, and validation (geometry, support,
+  features). It answers `ENGINE_MISMATCH` to a request for another engine version and `canceled`
+  when canceled. New `SBSupport.checkEnvelope`: a page that does not fit the machine's processing
+  area in either orientation gives `PAGE_OVERFLOW`, and stock thicker than the machine accepts
+  gives the new blocking `MACHINE_THICKNESS`; nothing is rescaled, and `machine: null` turns the
+  check off. `SBMorph.dilate`/`erode` now run in O(w·h) for any radius with identical results,
+  which makes bonded construction at the fabrication pitch about 5× faster.
+
 - **G2.8, feature and sampling checks (engine; the app path is unchanged):**
   `SBSupport.featureChecks(layers, cfg)` reports `SAMPLING_LOW` (blocking) when the minimum
   feature gets fewer than 3 samples at the coarser real pitch (GEO-06; with the plywood 1.5 mm

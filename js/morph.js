@@ -10,6 +10,15 @@
  * All ops use a 3×3 structuring element iterated r times, which approximates
  * a disc of radius r well enough for fabrication purposes and keeps the code
  * dependency-free and fast.
+ *
+ * G2.10a (bonded-gated performance, NFR-03): dilate/erode compute the r-fold
+ * iteration directly as one separable (2r+1)² square pass, O(w·h) for any r
+ * (the iterated form cost 5.3 s at featR 8 on 1 Mpx × 8 layers). The result
+ * is identical, borders included: dilation takes the window clipped to the
+ * image; erosion keeps border pixels as they are (the iterated pass never
+ * erodes them) and erodes an interior pixel iff its clipped window has an
+ * empty pixel. The iterated forms stay as _dilateIter/_erodeIter (test
+ * reference; test/golden/oldrun.json pins the v1.1.0 chain byte for byte).
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -50,16 +59,63 @@
     }
   }
 
-  M.dilate = function (mask, w, h, r) {
+  M._dilateIter = function (mask, w, h, r) {
     let a = mask.slice(), b = new Uint8Array(w * h);
     for (let i = 0; i < r; i++) { dilateOnce(a, b, w, h); [a, b] = [b, a]; }
     return a;
   };
 
-  M.erode = function (mask, w, h, r) {
+  M._erodeIter = function (mask, w, h, r) {
     let a = mask.slice(), b = new Uint8Array(w * h);
     for (let i = 0; i < r; i++) { erodeOnce(a, b, w, h); [a, b] = [b, a]; }
     return a;
+  };
+
+  /**
+   * Clipped (2r+1)² window test, separable: ind is a 0/1 indicator; per row, the number of indicator pixels in
+   * [x−r, x+r] ∩ [0, w) (a sliding count), then per column the same over rows. Returns a Uint8Array with 1 where the
+   * window holds ≥ 1 indicator pixel. O(w·h) for any r.
+   */
+  function windowAny(ind, w, h, r) {
+    const mid = new Uint8Array(w * h), out = new Uint8Array(w * h);
+    for (let y = 0, o = 0; y < h; y++, o += w) {
+      let c = 0;
+      const e0 = Math.min(w - 1, r);
+      for (let x = 0; x <= e0; x++) c += ind[o + x];
+      mid[o] = c > 0 ? 1 : 0;
+      for (let x = 1; x < w; x++) {
+        if (x + r < w) c += ind[o + x + r];
+        if (x - r - 1 >= 0) c -= ind[o + x - r - 1];
+        mid[o + x] = c > 0 ? 1 : 0;
+      }
+    }
+    const cnt = new Int32Array(w);
+    for (let y = 0; y <= Math.min(h - 1, r); y++) { const o = y * w; for (let x = 0; x < w; x++) cnt[x] += mid[o + x]; }
+    for (let y = 0, o = 0; y < h; y++, o += w) {
+      if (y > 0) {
+        if (y + r < h) { const a = (y + r) * w; for (let x = 0; x < w; x++) cnt[x] += mid[a + x]; }
+        if (y - r - 1 >= 0) { const b = (y - r - 1) * w; for (let x = 0; x < w; x++) cnt[x] -= mid[b + x]; }
+      }
+      for (let x = 0; x < w; x++) out[o + x] = cnt[x] > 0 ? 1 : 0;
+    }
+    return out;
+  }
+
+  M.dilate = function (mask, w, h, r) {
+    if (r < 1) return mask.slice();
+    const ind = new Uint8Array(w * h);
+    for (let i = 0; i < ind.length; i++) ind[i] = mask[i] !== 0 ? 1 : 0;
+    return windowAny(ind, w, h, r);
+  };
+
+  M.erode = function (mask, w, h, r) {
+    const out = mask.slice();
+    if (r < 1 || w < 3 || h < 3) return out;
+    const ind = new Uint8Array(w * h);
+    for (let i = 0; i < ind.length; i++) ind[i] = mask[i] === 0 ? 1 : 0;
+    const hole = windowAny(ind, w, h, r);
+    for (let y = 1; y < h - 1; y++) for (let x = 1, o = y * w + 1; x < w - 1; x++, o++) if (hole[o]) out[o] = 0;
+    return out;
   };
 
   /** Opening = erode then dilate. Removes features thinner than ~2r px. */

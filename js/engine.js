@@ -8,7 +8,8 @@
  * canonical path. rasterPlan/qualityPair (G2.1b) are the one draft/fabrication
  * raster rule (LYR-06, PO-LASER-4/5). orient (G2.5) is the one orientation rule (IMG-05).
  * interpretHeight (G2.5b) is the height-mode interpretation stage: raw unless an explicit heightFilter is set (IMG-03).
- * The full SBEngine.generate lands in G2.10a/b.
+ * generate (G2.10a) is the §11.1 pipeline through validation, with the machine-envelope check; G2.10b adds the Z model,
+ * accounting, hashes and freezing.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -265,6 +266,227 @@
   E.qualityPair = function (project, source, deviceClass) {
     return Object.freeze({ draft: E.rasterPlan(project, source, "draft", deviceClass), fabrication: E.rasterPlan(project, source, "fabrication", deviceClass) });
   };
+
+  // ------------------------------------------------------------ generate (G2.10a, the §11.1 pipeline through validation)
+  /**
+   * The engine version a request must name (§9.3 handshake): SBSchema.ENGINE.version, looked up at call time.
+   * TEST_HOOKS: set only by the Node test runner; never in the browser and never persisted. It admits req.debug.
+   */
+  Object.defineProperty(E, "VERSION", { enumerable: true, get: () => global.SBSchema.ENGINE.version });
+  E.TEST_HOOKS = false;
+
+  /**
+   * Construction parameters in px for SBConstruct (G2.6 px contract) from construction.cleanup / bridge at the real
+   * raster scales (sxUm, syUm; D-4.2). Radii use the coarser axis pitch pMax (the smaller radius: less is removed);
+   * areas use the real pixel area sx·sy. featR = max(1, round(minFeatureUm / (2·pMax))) as in v1.1.0, 0 when the cleanup
+   * minimum feature is 0 (no morphology). Bonded culling (cullEnabled) removes specks below bridge.cullBelowMM2 (the
+   * explicit cull threshold, SUP-01); connected mode removes specks below cleanup.speckMM2 and culls/bridges islands.
+   */
+  function constructPx(c, bonded, sxUm, syUm) {
+    const pMax = Math.max(sxUm, syUm), pxUm2 = sxUm * syUm;
+    const featUm = Math.round(c.cleanup.minFeatureMM * 1000);
+    const featR = featUm > 0 ? Math.max(1, Math.round(featUm / (2 * pMax))) : 0;
+    const area = (mm2) => (mm2 * 1e6) / pxUm2;
+    return {
+      featR,
+      bridgeR: Math.max(featR, (c.bridge.bridgeMM * 1000) / (2 * pMax)),
+      cullPx: area(c.bridge.cullBelowMM2),
+      maxBridgePx: Math.round((c.bridge.maxBridgeMM * 1000) / pMax),
+      speckPx: area(bonded ? c.bridge.cullBelowMM2 : c.cleanup.speckMM2),
+      holePx: area(c.cleanup.holeMM2),
+      frameAnchored: !!c.frame.enabled,
+      cullEnabled: !!c.bridge.cullEnabled,
+    };
+  }
+
+  /** The legacy connected corner holes (G1.7) until G3.1 places validated registration holes; [] in bonded mode. */
+  function legacyHoles(project, page) {
+    const c = project.construction, reg = c.registration;
+    if (c.mode !== "connected-sheet" || !reg.enabled) return [];
+    const WU = Math.round(page.wMM * 1000), HU = Math.round(page.hMM * 1000), fU = Math.round(page.frameMM * 1000);
+    const rU = Math.round(reg.diaMM * 500), inset = Math.round(fU / 2);
+    if (fU <= 0 || rU < 1) return [];
+    return [[inset, inset], [WU - inset, inset], [inset, HU - inset], [WU - inset, HU - inset]].map(([x, y]) => ({ cxUm: x, cyUm: y, rUm: rU }));
+  }
+
+  class Canceled extends Error {}
+  const codedError = (e) => ({ code: (e && e.code) || "ENGINE_INTERNAL", message: (e && e.message) || String(e) });
+
+  /**
+   * generate(req: GenerateRequest, {isCanceled?, onProgress?}) → GenerateResponse (§3, §9.3; plan G2.10a).
+   *
+   * req = {requestId, revision, engineVersion, quality, normalizedSource: {pixels, channels: 1|4, w, h, alpha}, sourceHash,
+   *        config: Project, deviceClass?: "desktop"|"mobile" (default "desktop"; rasterPlan and the complexity caps),
+   *        debug?: {smoothBonded: true} (test-only; refused unless SBEngine.TEST_HOOKS)}.
+   * Synchronous and pure (inputs are not mutated); never throws: a failure is status "error" with error {code, message}.
+   * Stages (§11.1), cancelable between stages and inside the engine's own per-layer loops:
+   *   1  orient (EXIF only when engine-applied, then rotate, mirror)            SBEngine.orient
+   *   2  resample to SBEngine.rasterPlan(config, source, quality, deviceClass)   its FAB_* diagnostics; never upsample
+   *   3  domain mask A                                                           SBHeight.domainMask (alpha moves with 1–2)
+   *   4  interpret: height = interpretHeight (heightFilter only when set); tonal = luminance → Kuwahara → thresholds
+   *      (domain-aware) → bands → tonalAdded (EMPTY_BAND info per empty band)
+   *   5  cumulativeMasks
+   *   6  construct (SBConstruct.bonded | connected; cleanupReport in mm², connected bridges as µm polygons)
+   *  11a complexity: SBConstruct.complexityGate on the final masks (simplify "busy" if set, then the parts cap) BEFORE trace
+   *   7  trace → bounded smoothing on pixel loops (connected + cornerStyle smooth only; bonded raw, D1) → fromPixelLoops →
+   *      normalize   (SBMaterial.fromMasks)
+   *   8  frame union (exact rectangle ring; inside fromMasks, after smoothing)
+   *  11b vertex caps: SBConstruct.vertexGate after fromMasks, before validation
+   *   9  replay construction.repairs[] (SBSupport.replayRepairs)
+   *  10  holes: the legacy connected corners (G1.7) until G3.1
+   *  12  SBGeom.validate (per layer, in fromMasks/withMaterial), SBSupport.validate, featureChecks, checkEnvelope
+   *  13  assignParts, then Part.supports from the support graph (SBSupport.annotate)
+   *  14  guides: G3.1 inserts them (snapshot.guides null until then)
+   * A cap over its limit returns status "error", COMPLEXITY_LIMIT and NO layers. Z, accounting, hashes and freezing are
+   * G2.10b: zBottomMM/zTopMM, snapshot.geometryHash and snapshot.stats are null here.
+   */
+  E.generate = function (req, opts) {
+    opts = opts || {};
+    const head = { requestId: req && req.requestId !== undefined ? req.requestId : null, revision: req && req.revision !== undefined ? req.revision : null, engineVersion: E.VERSION };
+    const isCanceled = typeof opts.isCanceled === "function" ? opts.isCanceled : () => false;
+    const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : () => {};
+    const step = (stage, frac) => { if (isCanceled()) throw new Canceled(); onProgress(stage, frac); };
+    const fail = (code, message, diagnostics) => Object.assign({}, head, { status: "error", error: { code, message }, diagnostics: diagnostics || [] });
+    if (!req || typeof req !== "object") return fail("ENGINE_ARG", "request must be a GenerateRequest");
+    if (req.engineVersion !== E.VERSION) return fail("ENGINE_MISMATCH", "request names engine " + req.engineVersion + ", this engine is " + E.VERSION);
+    if (req.debug !== undefined && req.debug !== null && !E.TEST_HOOKS) return fail("ENGINE_DEBUG_DISABLED", "req.debug is a test-only hook");
+    try {
+      return run(req, head, step, fail);
+    } catch (e) {
+      if (e instanceof Canceled) return Object.assign({}, head, { status: "canceled" });
+      return Object.assign({}, head, { status: "error", error: codedError(e), diagnostics: [] });
+    }
+  };
+
+  function run(req, head, step, fail) {
+    const R = global.SBRaster, Hh = global.SBHeight, C = global.SBConstruct, M = global.SBMaterial, S = global.SBSupport, D = global.SBDiag, G = global.SBGeom;
+    const p = req.config, quality = req.quality, deviceClass = req.deviceClass === undefined ? "desktop" : req.deviceClass;
+    if (quality !== "draft" && quality !== "fabrication") return fail("ENGINE_ARG", "quality must be draft|fabrication (got " + quality + ")");
+    if (deviceClass !== "desktop" && deviceClass !== "mobile") return fail("ENGINE_ARG", "deviceClass must be desktop|mobile (got " + deviceClass + ")");
+    if (!p || typeof p !== "object") return fail("ENGINE_ARG", "config must be a Project");
+    if (!p.source) return fail("NO_SOURCE", "the project has no source (PRJ-01: no auto-demo)");
+    const v = global.SBSchema.validate(p);
+    if (!v.ok) return fail("PROJECT_INVALID", v.errors.slice(0, 5).map((x) => x.path + " " + x.code).join("; "));
+    if (req.revision !== p.revision) return fail("REVISION_MISMATCH", "request revision " + req.revision + " != project revision " + p.revision);
+    const ns = req.normalizedSource;
+    if (!ns || typeof ns !== "object" || !isPosInt(ns.w) || !isPosInt(ns.h) || (ns.channels !== 1 && ns.channels !== 4) ||
+        !ns.pixels || ns.pixels.length !== ns.w * ns.h * ns.channels || (ns.alpha != null && ns.alpha.length !== ns.w * ns.h))
+      return fail("ENGINE_ARG", "normalizedSource must be {pixels: w·h·channels bytes, channels: 1|4, w, h, alpha: w·h bytes|null}");
+    const debug = req.debug || {}, smoothBonded = !!debug.smoothBonded;
+    const revision = p.revision, dOpts = { revision, quality };
+    const interp = p.interpretation, con = p.construction, mat = p.material, N = con.sheets, bonded = con.mode === "bonded-relief";
+    const diagnostics = [];
+
+    // 1. orient (one channel in height mode: the gray plane; RGBA kept for tonal luminance)
+    step("orient", 0);
+    let px = ns.pixels, ch = ns.channels;
+    if (interp.mode === "height" && ch === 4) { const g = new Uint8Array(ns.w * ns.h); for (let i = 0; i < g.length; i++) g[i] = px[i * 4]; px = g; ch = 1; }
+    const o = E.orient({ samples: px, alpha: ns.alpha == null ? null : ns.alpha, w: ns.w, h: ns.h }, p.source.orientation);
+
+    // 2. resample to the planned raster (rasterPlan orients the source size itself, so it gets the unoriented size)
+    step("resample", 0.05);
+    const plan = E.rasterPlan(p, { w: ns.w, h: ns.h }, quality, deviceClass), geo = plan.geometry, W = geo.rasterW, H = geo.rasterH;
+    diagnostics.push(...plan.diagnostics);
+    const samples = R.resample(o.samples, ch, o.w, o.h, W, H, geo.resample);
+    const alpha = o.alpha ? R.resample(o.alpha, 1, o.w, o.h, W, H, geo.resample) : null;
+    if (geo.resample !== "none") diagnostics.push(D.make("RESAMPLED", Object.assign({}, dOpts, {
+      detail: o.w + " × " + o.h + " px → " + W + " × " + H + " px (" + geo.resample + ")" })));
+
+    // 3. domain mask A
+    step("domain", 0.1);
+    const src = p.source.alpha || { mode: "full", t: 0.5 };
+    const domain = Hh.domainMask(alpha, src.mode, src.t);
+
+    // 4. interpret
+    step("interpret", 0.15);
+    let added;
+    if (interp.mode === "height") {
+      const r = E.interpretHeight(samples, W, H, interp, N, domain, dOpts);
+      added = r.added; diagnostics.push(...r.diagnostics);
+    } else {
+      let L;
+      if (ch === 4) L = R.luminance(samples, W, H); else { L = new Float32Array(W * H); for (let i = 0; i < L.length; i++) L[i] = samples[i]; }
+      L = R.kuwahara(L, W, H, interp.smoothing.radius, interp.smoothing.passes, domain);
+      const th = R.thresholds(L, N, interp.thresholdRule, { manual: interp.manual, domain });
+      for (const b of th.emptyBands) diagnostics.push(D.make("EMPTY_BAND", Object.assign({}, dOpts, { detail: "band " + b + " of " + N + " has no pixels" })));
+      added = Hh.tonalAdded(R.bands(L, th), N, interp.polarity === "dark-front");
+    }
+
+    // 5. cumulative masks
+    step("masks", 0.2);
+    const masks = Hh.cumulativeMasks(added, domain, N, W, H);
+
+    // 6. construct
+    step("construct", 0.25);
+    const cpx = constructPx(con, bonded, geo.sxUm, geo.syUm);
+    const built = bonded ? C.bonded(masks, W, H, cpx) : C.connected(masks, W, H, cpx);
+    const pxMM2 = (geo.sxUm * geo.syUm) / 1e6;
+    const page = M.page({ artWMM: geo.artWMM, artHMM: geo.artHMM, frame: con.frame });
+    const fUm = Math.round(page.frameMM * 1000);
+    const cleanupReport = built.report.map((r, k) => {
+      step("construct", 0.25 + (0.05 * k) / N);
+      const e = { layer: k, addedMM2: r.addedPx * pxMM2, removedMM2: r.removedPx * pxMM2, holesFilled: r.filledHoles, partsRemoved: r.removedParts };
+      const b = built.bridges[k];
+      if (b && b.some((x) => x)) e.bridges = G.normalize(G.union(G.fromPixelLoops(global.SBTrace.trace(b, W, H), geo.sxUm, geo.syUm, fUm, fUm), []));
+      return e;
+    });
+
+    // 11a. complexity: parts cap (with explicit busy simplification) before trace
+    step("complexity", 0.3);
+    const gate = C.complexityGate(built.final, W, H, { deviceClass, simplify: con.cleanup.simplify, minFeatureMM: mat.minFeatureMM, minPartMM2: mat.minPartMM2,
+      sxUm: geo.sxUm, syUm: geo.syUm, quality, revision });
+    diagnostics.push(...gate.diagnostics);
+    if (gate.status !== "ok") return fail("COMPLEXITY_LIMIT", "parts per layer exceed the " + deviceClass + " cap; no layers are returned", diagnostics);
+
+    // 7–8. trace, bounded smoothing on pixel loops (connected only; D1), fromPixelLoops, normalize, frame union
+    step("trace", 0.35);
+    const fOpts = { revision, quality, frame: fUm > 0 };
+    if (con.cleanup.cornerStyle === "smooth" && (!bonded || smoothBonded))
+      fOpts.smooth = { mode: "connected", tolUm: Math.round(con.cleanup.toleranceMM * 1000) };
+    let layers = M.fromMasks(gate.masks, W, H, page, fOpts);
+
+    // 11b. vertex caps after fromMasks, before validation
+    step("complexity", 0.6);
+    const vg = C.vertexGate(layers, deviceClass, { quality, revision });
+    diagnostics.push(...vg.diagnostics);
+    if (vg.status !== "ok") return fail("COMPLEXITY_LIMIT", "vertices exceed the " + deviceClass + " cap; no layers are returned", diagnostics);
+
+    // 9. replay reviewed repairs (after the frame union, before holes and validation)
+    step("repairs", 0.62);
+    if (con.repairs.length) {
+      const rp = S.replayRepairs(layers, con.repairs, { project: p, quality, revision });
+      layers = rp.layers; diagnostics.push(...rp.diagnostics);
+    }
+
+    // 10. holes (legacy connected corners until G3.1)
+    step("holes", 0.65);
+    const holes = legacyHoles(p, page);
+    if (holes.length) layers = layers.map((L, k) => {
+      step("holes", 0.65 + (0.03 * k) / N);
+      return con.registration.layers === "all" || con.registration.layers.includes(k) ? M.subtractHoles(L, holes, { revision, quality }) : L;
+    });
+
+    // 12. validation: SBGeom.validate (layer diagnostics), support, features, envelope
+    step("validate", 0.7);
+    for (const L of layers) diagnostics.push(...L.diagnostics);
+    const sv = S.validate(layers, con.mode, { minFeatureMM: mat.minFeatureMM, advisoryFeatureMM: mat.advisoryFeatureMM, revision, quality });
+    diagnostics.push(...sv.diagnostics);
+    step("features", 0.85);
+    diagnostics.push(...S.featureChecks(layers, { minFeatureMM: mat.minFeatureMM, advisoryFeatureMM: mat.advisoryFeatureMM, minPartMM2: mat.minPartMM2,
+      mmPerPxMax: geo.mmPerPxMax, calibrated: mat.calibrated, revision, quality }));
+    step("envelope", 0.95);
+    diagnostics.push(...S.checkEnvelope({ wMM: page.wMM, hMM: page.hMM }, p.machine, mat, dOpts));
+
+    // 13. parts and their supports; 14. guides arrive with G3.1
+    step("parts", 0.98);
+    layers = S.annotate(M.assignParts(layers), sv.supportGraph);
+    const snapshot = {
+      revision, engineVersion: E.VERSION, geometryHash: null, quality, layers, diagnostics, cleanupReport,
+      supportGraph: sv.supportGraph, guides: null, geometry: geo, page: { wMM: page.wMM, hMM: page.hMM }, stats: null,
+    };
+    step("done", 1);
+    return Object.assign({}, head, { status: "done", validatedLayers: layers, snapshot, diagnostics, geometryHash: null });
+  }
 
   global.SBEngine = E;
 })(typeof window !== "undefined" ? window : globalThis);

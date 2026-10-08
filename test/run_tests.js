@@ -3721,6 +3721,191 @@ suite("construct.js/schema.js — G2.7b complexity caps and busy-art simplificat
     (() => { try { D.make("BUSY_SIMPLIFIED", { counts: { before: [1], after: [1, 2] } }); return false; } catch (e) { return true; } })());
 });
 
+suite("engine.js — G2.10a SBEngine.generate through validation, with the envelope check (§9.3, §11.1, GEO-02/10, AT-09, IMG-03, §12.3, PO-LASER-2)", async () => {
+  const F = require("./fixtures.js"), E = SBEngine, G = SBGeom;
+  check("G2.10a API present", typeof E.generate === "function" && typeof E.VERSION === "string" && typeof SBSupport.checkEnvelope === "function");
+  if (typeof E.generate !== "function") return;
+  E.TEST_HOOKS = true;   // Node runner only (never set in the browser, never persisted)
+  const codes = (ds) => (ds || []).map((d) => d.code);
+  // a project around a gray height plane (one channel, no alpha): the source record follows the plane
+  const proj = (preset, w, h, edit) => { const p = SBSchema.defaults(preset); p.source = SBSchema.sourceTemplate(); p.source.w = w; p.source.h = h;
+    if (edit) edit(p); return p; };
+  const req = (p, pixels, w, h, o) => Object.assign({ requestId: "r1", revision: p.revision, engineVersion: E.VERSION, quality: "draft",
+    normalizedSource: { pixels, channels: 1, w, h, alpha: null }, sourceHash: null, config: p, deviceClass: "desktop" }, o || {});
+  const bondedRaw = (p) => { p.construction.cleanup.minFeatureMM = 0; p.construction.cleanup.holeMM2 = 0; };
+
+  // ---- NFR-10: from PNG bytes (SBPng) to a Snapshot, in Node
+  await (async () => {
+    const w = 120, h = 80, hm = F.heightMap(4, w, h, 30);
+    const dec = await SBPng.decode(F.pngEncode({ w, h, colorType: 0, bitDepth: 8, data: hm }), { mode: "height" });
+    const p = proj("plywood", dec.w, dec.h, (q) => { q.source.sampleHash = dec.sampleHash; q.source.decode = dec.policy; });
+    const r = E.generate(req(p, dec.samples, dec.w, dec.h, { normalizedSource: { pixels: dec.samples, channels: dec.channels, w: dec.w, h: dec.h, alpha: dec.alpha } }));
+    const s = r.snapshot;
+    check("NFR-10 generate runs in Node from PNG bytes (via SBPng) to Snapshot", r.status === "done" && !!s && s.quality === "draft" && s.layers.length === 8 &&
+      r.validatedLayers === s.layers && s.engineVersion === E.VERSION && s.revision === p.revision && s.geometry.rasterW === w && s.geometry.rasterH === h &&
+      s.layers.every((L, k) => L.index === k && L.material.every((poly) => poly.outer.every(Number.isInteger))) &&
+      s.page.hMM === 300 && Array.isArray(s.diagnostics) && Array.isArray(s.cleanupReport) && s.cleanupReport.length === 8 && !!s.supportGraph);
+    check("§3 cleanupReport in mm² per layer (GEO-08)", s.cleanupReport.every((c, k) => c.layer === k && Number.isFinite(c.addedMM2) && Number.isFinite(c.removedMM2) &&
+      Number.isInteger(c.holesFilled) && Number.isInteger(c.partsRemoved)));
+    check("§9.1 every snapshot diagnostic carries the request revision and quality", s.diagnostics.length > 0 && s.diagnostics.every((d) => d.revision === p.revision && d.quality === "draft"));
+    check("SUP-03 parts carry their supports as part IDs (assignParts + annotate)", s.layers[1].parts.length > 0 && s.layers.slice(1).every((L) => L.parts.every((pt) => Array.isArray(pt.supports))) &&
+      s.layers[2].parts.some((pt) => pt.supports.length > 0 && pt.supports.every((id) => /^L01-P\d{3}$/.test(id))));
+    const twice = E.generate(req(p, dec.samples, dec.w, dec.h));
+    check("NFR-05 same request → same layer hashes and diagnostics", JSON.stringify(twice.snapshot.layers.map((L) => L.canonicalHash)) === JSON.stringify(s.layers.map((L) => L.canonicalHash)) &&
+      JSON.stringify(codes(twice.snapshot.diagnostics)) === JSON.stringify(codes(s.diagnostics)));
+    const fab = E.generate(req(p, dec.samples, dec.w, dec.h, { quality: "fabrication" }));
+    check("LYR-06 fabrication quality takes its raster from rasterPlan (FAB_EXCEEDS_SOURCE carried, diagnostics at fabrication)",
+      fab.status === "done" && fab.snapshot.quality === "fabrication" && codes(fab.snapshot.diagnostics).includes("FAB_EXCEEDS_SOURCE") &&
+      fab.snapshot.diagnostics.every((d) => d.quality === "fabrication"));
+  })();
+
+  // ---- §9.3 handshake, cancel, arguments
+  const flat = (w, h, v) => new Uint8Array(w * h).fill(v);
+  { const p = proj("plywood", 20, 10);
+    const r = E.generate(req(p, flat(20, 10, 200), 20, 10, { engineVersion: "0.0.0-other" }));
+    check("§9.3 engineVersion mismatch → status error ENGINE_MISMATCH", r.status === "error" && r.error.code === "ENGINE_MISMATCH" && !r.snapshot && !r.validatedLayers &&
+      r.requestId === "r1" && r.revision === p.revision);
+    let polls = 0; const c = E.generate(req(p, flat(20, 10, 200), 20, 10), { isCanceled: () => ++polls > 2 });
+    check("§9.3 isCanceled → status canceled", c.status === "canceled" && !c.snapshot && !c.validatedLayers && polls === 3);
+    const prog = []; E.generate(req(p, flat(20, 10, 200), 20, 10), { onProgress: (st, f) => prog.push([st, f]) });
+    check("§9.3 onProgress(stage, frac) reports stages with a non-decreasing fraction in [0, 1], ending at 1",
+      prog.length >= 5 && prog.every(([st, f], i) => typeof st === "string" && f >= 0 && f <= 1 && (i === 0 || f >= prog[i - 1][1])) && prog[prog.length - 1][1] === 1);
+    const noHook = (() => { E.TEST_HOOKS = false; try { return E.generate(req(p, flat(20, 10, 200), 20, 10, { debug: { smoothBonded: true } })); } finally { E.TEST_HOOKS = true; } })();
+    check("AT-09 the smoothBonded hook is refused unless SBEngine.TEST_HOOKS is set", noHook.status === "error" && noHook.error.code === "ENGINE_DEBUG_DISABLED");
+    const bad = E.generate(req(p, flat(20, 10, 200), 20, 10, { normalizedSource: { pixels: flat(20, 10, 1), channels: 1, w: 21, h: 10, alpha: null } }));
+    check("§9.3 malformed request → status error with a code, never a throw", bad.status === "error" && typeof bad.error.code === "string");
+    const nos = E.generate(req(Object.assign(proj("plywood", 20, 10), { source: null }), flat(20, 10, 1), 20, 10));
+    check("PRJ-01 no source → status error NO_SOURCE", nos.status === "error" && nos.error.code === "NO_SOURCE"); }
+
+  // ---- GEO-02 stage order: frame union after smoothing; frame and base rings stay exact rectangles
+  { const w = 90, h = 60, s = F.heightMap(2, w, h, 25);
+    const p = proj("acrylic", w, h, (q) => { q.interpretation = { mode: "height", polarity: "white-high", thresholdRule: "balanced", manual: [], smoothing: { radius: 0, passes: 0 }, heightFilter: null };
+      // 2 mm frame, art 2 mm high on 60 px (33 µm/px), so some art loops round within the 50 µm tolerance
+      q.construction.registration.enabled = false; q.construction.registration.diaMM = 1; q.construction.frame.widthMM = 2; q.geometry.sizeBy = "height"; q.geometry.targetMM = 6; });
+    const r = E.generate(req(p, s, w, h)), S = r.snapshot;
+    const W = Math.round(S.page.wMM * 1000), H = Math.round(S.page.hMM * 1000), rect = [0, 0, W, 0, W, H, 0, H].join();
+    check("GEO-02 stage order: frame and base rings are exact rectangles after smoothing (cornerStyle smooth)", r.status === "done" &&
+      p.construction.cleanup.cornerStyle === "smooth" &&
+      S.layers[0].material.length === 1 && S.layers[0].material[0].outer.join() === rect && S.layers[0].material[0].holes.length === 0 &&
+      S.layers.every((L) => L.material.length === 0 || L.material.some((poly) => poly.outer.join() === rect)) &&
+      // smoothing really ran on the art loops (a non-axis-parallel edge in some sheet's art boundary)
+      S.layers.slice(1).some((L) => L.material.some((poly) => poly.holes.some((r) => r.some((v, i) => i % 2 === 0 && v !== r[(i + 2) % r.length] && r[i + 1] !== r[(i + 3) % r.length])))));
+    check("§12.3 connected mode: one part per non-empty sheet or CONNECTED_SPLIT (frame-anchored islands bridged)",
+      S.layers.every((L) => L.material.length <= 1) || codes(S.diagnostics).includes("CONNECTED_SPLIT"));
+    const p2 = JSON.parse(JSON.stringify(p)); p2.construction.registration.enabled = true;
+    const r2 = E.generate(req(p2, s, w, h));
+    check("G1.7 legacy connected corner holes until G3.1: four holes on every layer at frame/2", r2.status === "done" &&
+      r2.snapshot.layers.every((L) => L.holes.length === 4 && L.holes[0].cxUm === 1000 && L.holes[0].cyUm === 1000 && L.holes[0].rUm === 500)); }
+
+  // ---- AT-09 / D1: smoothing overhang caught end to end by final validation (test-only hook)
+  // The 2-layer crescentInterior cannot overhang under smoothing (its base is the full rectangle and is never smoothed;
+  // spike S2 checked "crescentInterior has no overhang"). The fixture is the 3-sheet derivative: sheet 1 = the crescent plus
+  // one pixel below its lower arm, sheet 2 = the crescent, set at 25 µm/px in a 40 × 40 px canvas (art 1 × 1 mm). Chaikin on
+  // sheet 1 rounds the corner the extra pixel creates, so sheet 2's corner bulges past it although the masks nest.
+  const ci = F.MASKS.crescentInterior, CW = 40, CH = 40, ox = 14, oy = 15, hs = new Uint8Array(CW * CH);
+  for (let y = 0; y < ci.h; y++) for (let x = 0; x < ci.w; x++) if (ci.layers[1][y * ci.w + x]) hs[(y + oy) * CW + x + ox] = 255;
+  hs[(8 + oy) * CW + 4 + ox] = 128;
+  const at9 = (edit) => proj("plywood", CW, CH, (q) => { bondedRaw(q); q.construction.sheets = 3; q.construction.cleanup.cornerStyle = "smooth"; q.geometry.targetMM = 1; if (edit) edit(q); });
+  { const p = at9();
+    const raw = E.generate(req(p, hs, CW, CH)), hooked = E.generate(req(p, hs, CW, CH, { debug: { smoothBonded: true } }));
+    const masks = SBHeight.cumulativeMasks(SBHeight.addedFromSamples(hs, 3, "white-high"), null, 3, CW, CH);
+    let nested = true; for (let k = 1; k < 3; k++) for (let i = 0; i < masks[k].length; i++) if (masks[k][i] && !masks[k - 1][i]) nested = false;
+    const bu = hooked.snapshot.diagnostics.filter((d) => d.code === "BOND_UNSUPPORTED");
+    check("AT-09 crescentInterior, bonded, cornerStyle smooth, smoothBonded hook → final validation reports BOND_UNSUPPORTED although masks nested",
+      hooked.status === "done" && nested && bu.length === 1 && bu[0].layer === 2 && bu[0].areaMM2 > 0);
+    const lattice = SBMaterial.fromMasks(masks, CW, CH, { artWMM: 1, artHMM: 1, frameMM: 0 }, {});
+    check("AT-09/D1 same without the hook → bonded layers are raw lattice contours, no BOND_UNSUPPORTED, no SMOOTH_FALLBACK",
+      raw.status === "done" && JSON.stringify(raw.snapshot.layers.map((L) => L.material)) === JSON.stringify(lattice.map((L) => L.material)) &&
+      !codes(raw.snapshot.diagnostics).some((c) => c === "BOND_UNSUPPORTED" || c === "SMOOTH_FALLBACK"));
+    const prop = SBSupport.proposeClip(hooked.snapshot, 2), L2 = hooked.snapshot.layers;
+    const P1 = SBSupport.applyClip(p, prop), again = E.generate(req(P1, hs, CW, CH, { debug: { smoothBonded: true } }));
+    check("AT-09 proposeClip on the hooked result removes exactly the overhang, then rerun reports none",
+      JSON.stringify(G.normalize(prop.removed)) === JSON.stringify(G.normalize(G.difference(L2[2].material, L2[1].material))) &&
+      Math.abs(prop.removedAreaMM2 - bu[0].areaMM2) < 1e-12 && again.status === "done" &&
+      !codes(again.snapshot.diagnostics).some((c) => c === "BOND_UNSUPPORTED" || c === "REPAIR_STALE") && again.snapshot.layers[2].canonicalHash === prop.afterHash);
+    check("D-4.6 no clip without a repairs[] entry: the engine output still reports BOND_UNSUPPORTED", p.construction.repairs.length === 0 && bu.length === 1);
+    const P2 = JSON.parse(JSON.stringify(P1)); P2.material.minFeatureMM = 1.6;
+    const st = E.generate(req(P2, hs, CW, CH, { debug: { smoothBonded: true } }));
+    check("SUP-04 stage 9 replays repairs: a settings change → REPAIR_STALE and the overhang is back", st.status === "done" &&
+      codes(st.snapshot.diagnostics).includes("REPAIR_STALE") && codes(st.snapshot.diagnostics).includes("BOND_UNSUPPORTED")); }
+
+  // ---- IMG-03: height mode does not smooth unless heightFilter is set
+  { const R = SBRaster, Hh = SBHeight, orig = { k: R.kuwahara, t: R.thresholds, f: Hh.applyFilter }, n = { k: 0, t: 0, f: 0 };
+    R.kuwahara = (...a) => (n.k++, orig.k(...a)); R.thresholds = (...a) => (n.t++, orig.t(...a)); Hh.applyFilter = (...a) => (n.f++, orig.f(...a));
+    try {
+      const w = 60, h = 40, s = F.heightMap(5, w, h, 12), p = proj("plywood", w, h);
+      const a = E.generate(req(p, s, w, h)), n0 = Object.assign({}, n);
+      const pf = proj("plywood", w, h, (q) => { q.interpretation.heightFilter = { op: "median", radius: 1 }; });
+      const b = E.generate(req(pf, s, w, h));
+      const nb = Object.assign({}, n), pt = proj("acrylic", w, h);
+      const c = E.generate(req(pt, s, w, h));
+      check("IMG-03 height mode does not smooth unless heightFilter is set (spy on kuwahara, thresholds and applyFilter)",
+        a.status === "done" && n0.k === 0 && n0.t === 0 && n0.f === 0 && !codes(a.snapshot.diagnostics).includes("HEIGHT_FILTERED") &&
+        b.status === "done" && nb.f === 1 && nb.k === 0 && nb.t === 0 && codes(b.snapshot.diagnostics).includes("HEIGHT_FILTERED"));
+      check("IMG-03 tonal mode runs Kuwahara and thresholds (domain-aware) on luminance", c.status === "done" && n.k === 1 && n.t === 1 && n.f === 1);
+    } finally { R.kuwahara = orig.k; R.thresholds = orig.t; Hh.applyFilter = orig.f; } }
+
+  // ---- §12.3 complexity caps before trace
+  { const w = 360, h = 340, s = new Uint8Array(w * h);
+    for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) s[y * w + x] = 255;   // 180 × 170 = 30,600 isolated dots
+    const p = proj("plywood", w, h, (q) => { bondedRaw(q); q.construction.sheets = 2; });
+    const tr = SBTrace.trace; let traced = 0; SBTrace.trace = (...a) => (traced++, tr(...a));
+    let r; try { r = E.generate(req(p, s, w, h)); } finally { SBTrace.trace = tr; }
+    const cl = (r.diagnostics || []).filter((d) => d.code === "COMPLEXITY_LIMIT");
+    check("§12.3 30k-part noise input → COMPLEXITY_LIMIT, no layers returned", r.status === "error" && r.error.code === "COMPLEXITY_LIMIT" &&
+      !r.snapshot && !r.validatedLayers && cl.length === 1 && cl[0].severity === "blocking" && cl[0].layer === 1 && cl[0].measured.value === 30600 &&
+      cl[0].limit.value === SBSchema.limits("desktop").maxPartsPerLayer && cl[0].deviceClass === "desktop" && traced === 0);
+    // one part with many vertices: 2-px diagonal staircase stripes joined by a spine column and row (passes the 100-part mobile cap)
+    const n = 160, zig = new Uint8Array(n * n); for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) zig[y * n + x] = x === 0 || y === n - 1 || (x + y) % 4 < 2 ? 255 : 0;
+    const pm = proj("plywood", n, n, (q) => { bondedRaw(q); q.construction.sheets = 2; q.geometry.targetMM = 160; });
+    const desk = E.generate(req(pm, zig, n, n)), mv = E.generate(req(pm, zig, n, n, { deviceClass: "mobile" }));
+    const v1 = desk.status === "done" ? desk.snapshot.layers[1].stats.vertices : -1;
+    check("§12.3 vertex caps after fromMasks: one 1-part layer over the mobile vertex cap → COMPLEXITY_LIMIT (vertices), no layers; desktop passes",
+      desk.status === "done" && desk.snapshot.layers[1].parts.length === 1 && v1 > SBSchema.limits("mobile").maxVerticesPerLayer &&
+      mv.status === "error" && mv.error.code === "COMPLEXITY_LIMIT" && !mv.snapshot && !mv.validatedLayers &&
+      mv.diagnostics.some((d) => d.code === "COMPLEXITY_LIMIT" && d.measured.unit === "vertices" && d.deviceClass === "mobile")); }
+
+  // ---- bonded-gated performance: SBMorph dilate/erode are O(w·h) separable passes, exactly equal to the iterated 3×3
+  check("NFR-03 SBMorph.dilate/erode (separable, O(w·h)) equal the iterated 3×3 reference, borders included (random masks, r 0–12, sizes 1–40)", (() => {
+    if (typeof SBMorph._dilateIter !== "function" || typeof SBMorph._erodeIter !== "function") return false;
+    const rng = F.lcg(31);
+    for (let t = 0; t < 120; t++) { const w = 1 + Math.floor(rng() * 40), h = 1 + Math.floor(rng() * 40), r = t % 13, dens = 0.2 + 0.6 * rng(), m = new Uint8Array(w * h);
+      for (let i = 0; i < m.length; i++) m[i] = rng() < dens ? 1 : 0;
+      const a = SBMorph.dilate(m, w, h, r), b = SBMorph._dilateIter(m, w, h, r), c = SBMorph.erode(m, w, h, r), d = SBMorph._erodeIter(m, w, h, r);
+      if (a.join() !== b.join() || c.join() !== d.join() || a === m || c === m) return false; }
+    return true; })());
+  { const n = 1000, st = SBHeight.cumulativeMasks(SBHeight.addedFromSamples(F.heightMap(1, n, n), 8, "white-high"), null, 8, n, n);
+    const t0 = Date.now(); SBConstruct.bonded(st, n, n, { featR: 8, bridgeR: 8, cullPx: 0, maxBridgePx: 0, speckPx: 0, holePx: 2500, frameAnchored: false, cullEnabled: false });
+    const ms = Date.now() - t0;
+    check("NFR-03 bonded construction at fabrication radius (featR 8, 1 Mpx × 8 layers) runs in O(w·h): under 2.5 s (was 5.3 s iterated) — " + ms + " ms", ms < 2500); }
+
+  // ---- PO-LASER-2 / GEO-10: the machine envelope (SBSupport.checkEnvelope and end to end)
+  { const env = (wMM, hMM, edit) => { const p = SBSchema.defaults("plywood"); if (edit) edit(p); return SBSupport.checkEnvelope({ wMM, hMM }, p.machine, p.material, { revision: 0, quality: "draft" }); };
+    check("PO-LASER-2/GEO-10 page 480 × 300 mm on xTool S1 + feeder → fits (rotated: 300 ≤ 470, 480 ≤ 3000)", env(480, 300).length === 0 && env(300, 480).length === 0);
+    const of = env(480, 480);
+    check("PO-LASER-2/GEO-10 page 480 × 480 mm → PAGE_OVERFLOW blocking (measured page vs limit)", codes(of).join() === "PAGE_OVERFLOW" && of[0].severity === "blocking" &&
+      of[0].measured.value === 480 && of[0].limit.value === 470 && /machine profile/.test(of[0].fix));
+    check("PO-LASER-2 the boundary is inclusive and compared in µm (470 × 3000 fits; 470.001 × 470.001 overflows)", env(470, 3000).length === 0 && env(3000, 470).length === 0 &&
+      codes(env(470.001, 470.001)).join() === "PAGE_OVERFLOW" && codes(env(3000.001, 10)).join() === "PAGE_OVERFLOW");
+    const th = env(100, 100, (p) => { p.material.thicknessMM = 15; });
+    check("PO-LASER-2 thickness 15 mm → MACHINE_THICKNESS", codes(th).join() === "MACHINE_THICKNESS" && th[0].severity === "blocking" && SBDiag.CODES.MACHINE_THICKNESS &&
+      th[0].measured.value === 15 && th[0].limit.value === 14 && env(100, 100, (p) => { p.material.thicknessMM = 14; }).length === 0);
+    check("GEO-10 machine null → no envelope diagnostics", SBSupport.checkEnvelope({ wMM: 5000, hMM: 5000 }, null, { thicknessMM: 25 }, {}).length === 0);
+    // end to end: the page is the shared extent of every sheet, frame included; geometry is never rescaled
+    const run = (artMM, frameMM) => { const p = proj("plywood", 46, 46, (q) => { q.construction.sheets = 2; q.geometry.targetMM = artMM + 2 * frameMM;
+      q.construction.frame = { enabled: frameMM > 0, widthMM: frameMM }; }); return E.generate(req(p, flat(46, 46, 255), 46, 46)); };
+    const fit = run(460, 0), over = run(460, 10);
+    const ext = (S) => { const b = S.layers[0].material.map((poly) => G.bbox(poly)); return [Math.max(...b.map((x) => x[2])), Math.max(...b.map((x) => x[3]))]; };
+    check("PO-LASER-2 frame counts: art 460 × 460 fits, the same art with a 10 mm frame (page 480 × 480) → PAGE_OVERFLOW",
+      fit.status === "done" && !codes(fit.snapshot.diagnostics).includes("PAGE_OVERFLOW") &&
+      over.status === "done" && codes(over.snapshot.diagnostics).includes("PAGE_OVERFLOW") && over.snapshot.geometry.artWMM === 460);
+    check("PO-LASER-2/GEO-10 page 480 × 480 mm → PAGE_OVERFLOW blocking, geometry not rescaled",
+      over.snapshot.page.wMM === 480 && over.snapshot.page.hMM === 480 && ext(over.snapshot).join() === "480000,480000");
+    const nm = (() => { const p = proj("plywood", 46, 46, (q) => { q.construction.sheets = 2; q.geometry.targetMM = 2000; q.machine = null; q.material.thicknessMM = 20; });
+      return E.generate(req(p, flat(46, 46, 255), 46, 46)); })();
+    check("GEO-10 machine null → no envelope diagnostics (end to end)", nm.status === "done" && !codes(nm.snapshot.diagnostics).some((c) => c === "PAGE_OVERFLOW" || c === "MACHINE_THICKNESS")); }
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

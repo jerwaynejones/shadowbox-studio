@@ -65,6 +65,13 @@
  *     cfg = {minFeatureMM > 0, advisoryFeatureMM? (≥ minFeatureMM; absent = no advisory tier), minPartMM2 ≥ 0 (absent
  *       = 0), mmPerPxMax > 0 (the coarser real axis pitch), calibrated: boolean, revision = 0, quality = "draft"}.
  *
+ *   checkEnvelope(page, machine, material, {revision, quality}) → Diagnostic[] (plan G2.10a, moved forward from G3.10;
+ *     GEO-10, PO-LASER-1/2). page = {wMM, hMM}: the shared extent of every layer sheet, frame included. With machine set
+ *     (P = maxProcessingHeightMM, L = maxLengthMM) the page fits iff (W ≤ L ∧ H ≤ P) ∨ (W ≤ P ∧ H ≤ L), compared in integer
+ *     µm; otherwise PAGE_OVERFLOW (blocking; measured = the page side that does not fit the processing height in the better
+ *     orientation, limit = that height, detail names both sides). material.thicknessMM > maxThicknessMM → MACHINE_THICKNESS
+ *     (blocking). machine null → [] (GEO-10's optional bed). Never rescales anything.
+ *
  *   Reviewed clip repair (plan G2.9; SUP-04, D-4.6, PRJ-04, LYR-06). Clip-to-lower is never automatic: it exists only as a
  *   reviewed construction.repairs[] entry.
  *   proposeClip(snapshot, k) → {layer, removed = difference(Final[k], Final[k−1]), removedAreaMM2, partCountBefore,
@@ -361,6 +368,33 @@
     if (!Array.isArray(layers) || !graph || !Array.isArray(graph.edges)) throw sfail("annotate needs layers and a supportGraph");
     const by = new Map(graph.edges.map((e) => [e.layer + "|" + e.part, e.supports.map((s) => s.part)]));
     return layers.map((L) => Object.assign({}, L, { parts: L.parts.map((p) => Object.assign({}, p, { supports: (by.get(L.index + "|" + p.id) || []).slice() })) }));
+  };
+
+  // ------------------------------------------------------------ machine envelope (G2.10a; GEO-10, PO-LASER-1/2)
+  const umOf = (mm) => Math.round(mm * 1000);
+  S.checkEnvelope = function (page, machine, material, opts) {
+    if (!page || !posNum(page.wMM) || !posNum(page.hMM)) throw sfail("checkEnvelope needs page {wMM, hMM} > 0");
+    if (machine === null || machine === undefined) return [];
+    if (typeof machine !== "object" || !posNum(machine.maxProcessingHeightMM) || !posNum(machine.maxLengthMM) || !posNum(machine.maxThicknessMM))
+      throw sfail("checkEnvelope needs a machine profile {maxProcessingHeightMM, maxLengthMM, maxThicknessMM} or null");
+    const o = opts || {}, dOpts = { revision: o.revision === undefined ? 0 : o.revision, quality: o.quality || "draft" };
+    const D = global.SBDiag, out = [], name = machine.name || machine.id || "the machine";
+    const W = umOf(page.wMM), H = umOf(page.hMM), P = umOf(machine.maxProcessingHeightMM), L = umOf(machine.maxLengthMM);
+    if (!((W <= L && H <= P) || (W <= P && H <= L))) {
+      // the side that must pass under the processing height: the shorter one (the better orientation); if that already
+      // fits, the overflow is the length
+      const short = Math.min(W, H), long = Math.max(W, H), byHeight = short > P;
+      out.push(D.make("PAGE_OVERFLOW", Object.assign({}, dOpts, {
+        measured: { value: (byHeight ? short : long) / 1000, unit: "mm" }, limit: { value: (byHeight ? P : L) / 1000, unit: "mm" },
+        detail: "page " + W / 1000 + " × " + H / 1000 + " mm does not fit " + name + " (" + P / 1000 + " mm processing height × " + L / 1000 +
+          " mm length, either orientation)" })));
+    }
+    if (material && Number.isFinite(material.thicknessMM) && umOf(material.thicknessMM) > umOf(machine.maxThicknessMM)) {
+      out.push(D.make("MACHINE_THICKNESS", Object.assign({}, dOpts, {
+        measured: { value: umOf(material.thicknessMM) / 1000, unit: "mm" }, limit: { value: umOf(machine.maxThicknessMM) / 1000, unit: "mm" },
+        detail: "stock " + umOf(material.thicknessMM) / 1000 + " mm is thicker than the " + umOf(machine.maxThicknessMM) / 1000 + " mm " + name + " accepts" })));
+    }
+    return out;
   };
 
   // ------------------------------------------------------------ reviewed clip repair (G2.9; SUP-04, D-4.6, PRJ-04)

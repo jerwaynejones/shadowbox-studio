@@ -42,6 +42,9 @@
  * deviceClass ("desktop"|"mobile", COMPLEXITY_LIMIT) and counts
  * ({before, after} part counts per layer, BUSY_SIMPLIFIED). Neither enters the id.
  *
+ * G2.10a (PO-LASER-1/2, GEO-10): PAGE_OVERFLOW now comes from the machine
+ * profile (SBSupport.checkEnvelope); MACHINE_THICKNESS (blocking) is new.
+ *
  * D1: SMOOTH_FALLBACK is only ever raised in connected mode; bonded mode is
  * unsmoothed and never reports it.
  *
@@ -75,8 +78,10 @@
       "Check the artwork size, frame, gap and material thickness for empty or invalid values."],
     ["REG_HOLE_INVALID", B, F, "Registration hole does not fit",
       "Move the hole, reduce its diameter or edge clearance, or disable registration on this layer."],
-    ["PAGE_OVERFLOW", B, F, "Page is larger than the laser bed",
-      "Reduce the artwork or frame size, or set the correct bed size; output is never rescaled."],
+    ["PAGE_OVERFLOW", B, F, "Page does not fit the machine's processing area",
+      "Reduce the target size (artwork or frame), or edit the machine profile; output is never rescaled."],
+    ["MACHINE_THICKNESS", B, F, "Material is thicker than the machine accepts",
+      "Use thinner stock, correct the measured thickness, or edit the machine profile."],
     ["CONNECTED_SPLIT", B, G, "Connected sheet falls apart into separate pieces",
       "Add bridges, enable the frame, or adjust the thresholds so the sheet stays in one piece."],
     ["STALE", B, P, "Result is out of date",
