@@ -30,6 +30,7 @@ const SHELL = [
   "./js/hash.js",
   "./js/vendor/clipper2.js",
   "./js/geom.js",
+  "./js/diag.js",
   "./js/png.js",
   "./js/jpeg.js",
   "./js/raster.js",

@@ -1407,6 +1407,84 @@ suite("spike S4b — unsupported(), scanEnd() and mini-fuzz (G2.14 preflight, AT
   check("AT-22 mini-fuzz 1200 mutations: scanEnd never throws", threwScan === 0);
 });
 
+suite("diag.js — SBDiag registry, make() and aggregate() (§9.1, §9.5, UI-04; G1.0)", () => {
+  const D = globalThis.SBDiag;
+  check("G1.0 SBDiag is loaded", !!D && typeof D.make === "function" && typeof D.aggregate === "function");
+  if (!D) return;
+  check("§4 module order: diag.js directly after geom.js", (() => { const L = require("./modules.js").NODE_MODULES; return L.indexOf("diag.js") === L.indexOf("geom.js") + 1; })());
+  const C = D.CODES;
+  const PLAN = {
+    blocking: ["BOND_UNSUPPORTED", "BOND_EMPTY_UNDER", "GEO_SELF_INTERSECT", "GEO_ZERO_AREA", "GEO_DUPLICATE", "GEO_OPEN",
+      "SAMPLING_LOW", "NONFINITE", "REG_HOLE_INVALID", "PAGE_OVERFLOW", "CONNECTED_SPLIT", "STALE",
+      "REPAIR_STALE", "COMPLEXITY_LIMIT", "LEGACY_NEEDS_SOURCE", "GUIDE_UNCONTAINED"],
+    warning: ["MAT_UNCALIBRATED", "PART_SMALL", "PART_THIN", "NECK_NARROW", "SUPPORT_NARROW",
+      "GUIDE_OMITTED", "CLEANUP_ALTERED", "SMOOTH_FALLBACK", "TRAILING_OMITTED",
+      "ALIGN_CLEARANCE_ZERO", "REPAIR_REVIEW_FAB", "FAB_EXCEEDS_SOURCE"],
+    info: ["KERF_EXTERNAL", "PALETTE_ONLY", "IDENTICAL_LAYERS", "EMPTY_BAND", "DISPLAY_ONLY_IGNORED", "HEIGHT_FILTERED", "RESAMPLED"],
+  };
+  for (const sev of Object.keys(PLAN)) {
+    const wrong = PLAN[sev].filter((c) => !C[c] || C[c].severity !== sev);
+    check("§9.5 every plan " + sev + " code registered with severity " + sev + (wrong.length ? " — " + wrong.join(",") : ""), wrong.length === 0);
+  }
+  const imports = [...SBPng.CODES, ...SBJpeg.CODES, "JPEG_UNSUPPORTED"];
+  const missImp = imports.filter((c) => !C[c] || C[c].severity !== "blocking" || C[c].kind !== "process");
+  check("Appendix C S4/S4b: every SBPng.CODES, SBJpeg.CODES and JPEG_UNSUPPORTED registered (blocking, process)" + (missImp.length ? " — " + missImp.join(",") : ""), missImp.length === 0);
+  const geoValidate = ["GEO_OPEN", "GEO_ZERO_AREA", "GEO_DUPLICATE", "GEO_SELF_INTERSECT", "GEO_MULTIPART"];
+  check("G1.1 every SBGeom.validate code is a registered blocking geometry code (D3 GEO_MULTIPART included)",
+    geoValidate.every((c) => C[c] && C[c].severity === "blocking" && C[c].kind === "geometry"));
+  const all = Object.keys(C);
+  check("UI-04 every code has non-empty title and fix text",
+    all.length > 0 && all.every((c) => typeof C[c].title === "string" && C[c].title.trim().length > 0 && typeof C[c].fix === "string" && C[c].fix.trim().length > 0));
+  check("§9.5 every code has a valid severity and kind",
+    all.every((c) => ["blocking", "warning", "info"].includes(C[c].severity) && ["geometry", "fabrication", "process"].includes(C[c].kind)));
+  check("§9.5 CODES and its entries are frozen", Object.isFrozen(C) && all.every((c) => Object.isFrozen(C[c])));
+  check("§9.5 information codes include palette-only, identical layers and display-only",
+    ["PALETTE_ONLY", "IDENTICAL_LAYERS", "DISPLAY_ONLY_IGNORED"].every((c) => C[c] && C[c].severity === "info"));
+  check("D1 SMOOTH_FALLBACK is a warning (connected mode only)", C.SMOOTH_FALLBACK && C.SMOOTH_FALLBACK.severity === "warning");
+
+  const b = D.make("BOND_UNSUPPORTED", { severity: "warning", revision: 3, quality: "fabrication", layer: 2 });
+  check("§9.5 make() ignores attempted severity override", b.severity === "blocking" && b.ackState === "n/a");
+  const w = D.make("PART_SMALL", { revision: 7, quality: "draft", layer: 1, part: "L01-P003", areaMM2: 4.5,
+    region: [0, 0, 10, 10], measured: { value: 4.5, unit: "mm2" }, limit: { value: 25, unit: "mm2" }, detail: "4.5 mm² < 25 mm²" });
+  const FIELDS = ["id", "code", "severity", "revision", "quality", "layer", "part", "areaMM2", "region", "measured", "limit", "message", "fix", "ackState"];
+  check("§9.1 diagnostic carries revision, quality, measured, limit, ackState",
+    w.revision === 7 && w.quality === "draft" && w.measured.value === 4.5 && w.measured.unit === "mm2" && w.limit.value === 25 && w.ackState === "unacked");
+  check("§9.1 make() fills every Diagnostic field", FIELDS.every((f) => Object.prototype.hasOwnProperty.call(w, f)) && FIELDS.every((f) => Object.prototype.hasOwnProperty.call(b, f)));
+  check("§9.1 message and fix come from the registry (detail appended to message)",
+    w.message.startsWith(C.PART_SMALL.title) && w.message.includes("4.5 mm² < 25 mm²") && w.fix === C.PART_SMALL.fix && b.message === C.BOND_UNSUPPORTED.title);
+  check("§9.1 unset references are null, not undefined", b.part === null && b.region === null && b.measured === null && b.limit === null && b.areaMM2 === null);
+  check("§9.5 info ackState is n/a", D.make("KERF_EXTERNAL", { revision: 1, quality: "draft" }).ackState === "n/a");
+  check("§9.1 id is deterministic", D.make("PART_SMALL", { revision: 7, quality: "draft", layer: 1, part: "L01-P003", region: [0, 0, 10, 10] }).id ===
+    D.make("PART_SMALL", { revision: 7, quality: "draft", layer: 1, part: "L01-P003", region: [0, 0, 10, 10] }).id);
+  check("§9.1 id distinguishes parts", D.make("PART_SMALL", { revision: 1, quality: "draft", layer: 1, part: "L01-P001" }).id !==
+    D.make("PART_SMALL", { revision: 1, quality: "draft", layer: 1, part: "L01-P002" }).id);
+  const throws = (f) => { try { f(); return false; } catch { return true; } };
+  check("§9.5 make() rejects unknown codes", throws(() => D.make("NOT_A_CODE", { revision: 1, quality: "draft" })));
+  check("§9.1 make() rejects an invalid quality", throws(() => D.make("STALE", { revision: 1, quality: "final" })));
+  check("§9.1 make() rejects a nonfinite measured value", throws(() => D.make("PART_THIN", { revision: 1, quality: "draft", measured: { value: NaN, unit: "mm" } })));
+
+  const many = [];
+  for (let i = 0; i < 500; i++) many.push(D.make("PART_SMALL", { revision: 2, quality: "draft", layer: 3, part: "L03-P" + String(i + 1).padStart(3, "0"),
+    areaMM2: 1 + (i % 7), region: [i, 0, i + 1, 1], measured: { value: 1 + (i % 7), unit: "mm2" }, limit: { value: 25, unit: "mm2" } }));
+  const agg = D.aggregate(many);
+  check("§9.5 aggregate: 500 PART_SMALL on one layer → 1 diagnostic, count 500", agg.length === 1 && agg[0].count === 500);
+  check("§9.5 aggregate keeps parts[] and the region list", agg[0].parts.length === 500 && agg[0].parts[0] === "L03-P001" && Array.isArray(agg[0].region) && agg[0].region.length === 500 && agg[0].part === null);
+  check("§9.5 aggregate reports worst measured value and keeps severity/ackState", agg[0].measured.value === 1 && agg[0].severity === "warning" && agg[0].ackState === "unacked" && agg[0].limit.value === 25);
+  const mixed = [D.make("STALE", { revision: 2, quality: "draft" }),
+    D.make("PART_THIN", { revision: 2, quality: "draft", layer: 1, part: "L01-P001" }),
+    D.make("PART_THIN", { revision: 2, quality: "draft", layer: 2, part: "L02-P001" }),
+    D.make("NECK_NARROW", { revision: 2, quality: "draft", layer: 1, part: "L01-P002" }),
+    D.make("PART_THIN", { revision: 2, quality: "draft", layer: 1, part: "L01-P004" }),
+    D.make("GEO_OPEN", { revision: 2, quality: "draft", layer: 1 }),
+    D.make("GEO_OPEN", { revision: 2, quality: "draft", layer: 1 })];
+  const am = D.aggregate(mixed);
+  check("§9.5 aggregate groups per (code, layer), leaves other codes alone, order by first occurrence",
+    JSON.stringify(am.map((d) => d.code + ":" + d.layer + ":" + (d.count || 1))) ===
+    JSON.stringify(["STALE:null:1", "PART_THIN:1:2", "PART_THIN:2:1", "NECK_NARROW:1:1", "GEO_OPEN:1:1", "GEO_OPEN:1:1"]));
+  check("§9.5 aggregate is idempotent", JSON.stringify(D.aggregate(am)) === JSON.stringify(am));
+  check("§9.5 aggregate does not mutate its input", mixed.length === 7 && mixed[1].count === undefined && mixed[1].part === "L01-P001");
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {
