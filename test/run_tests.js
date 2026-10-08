@@ -532,6 +532,93 @@ suite("support.js — G2.7 extended (graph, advisory tier, reuse, determinism)",
 });
 
 // ------------------------------------------------ engine seam (T0.5)
+// ------------------------------------------------ feature and sampling checks (G2.8)
+suite("support.js — G2.8 feature and sampling checks (GEO-05/06, MAT-03, AT-10, PO-LASER-6)", () => {
+  const F = require("./fixtures.js");
+  const mk = (st) => SBMaterial.assignParts(SBMaterial.fromMasks(st.layers, st.w, st.h, { artWMM: st.w * (st.mmPerPx || 1), artHMM: st.h * (st.mmPerPx || 1), frameMM: 0 }, {}));
+  const base = { minFeatureMM: 3, minPartMM2: 0, mmPerPxMax: 0.1, calibrated: true };
+  const fc = (st, cfg) => SBSupport.featureChecks(mk(st), Object.assign({}, base, cfg));
+  const codes = (ds) => ds.map((d) => d.code);
+  const only = (ds, c) => codes(ds).join() === c;
+  const noLayers = [mk(F.MASKS.isolatedStrip(40))[0]];
+  check("AT-10 1mm feature @0.4mm/px → SAMPLING_LOW", codes(SBSupport.featureChecks(noLayers, { ...base, minFeatureMM: 1, mmPerPxMax: 0.4 })).includes("SAMPLING_LOW"));
+  check("AT-10 1mm feature @0.25mm/px → no SAMPLING_LOW", !codes(SBSupport.featureChecks(noLayers, { ...base, minFeatureMM: 1, mmPerPxMax: 0.25 })).includes("SAMPLING_LOW"));
+  const sl = SBSupport.featureChecks(noLayers, { ...base, minFeatureMM: 1, mmPerPxMax: 0.4 }).find((d) => d.code === "SAMPLING_LOW");
+  check("GEO-06 SAMPLING_LOW is blocking with measured = samples across the feature and limit = 3", sl.severity === "blocking" &&
+    Math.abs(sl.measured.value - 2.5) < 1e-9 && sl.limit.value === 3 && sl.layer === null);
+  check("AT-10/GEO-05 neck 2.9 mm with min 3 mm → NECK_NARROW", only(fc(F.MASKS.dumbbell(29)), "NECK_NARROW"));
+  check("AT-10/GEO-05 neck 3.1 mm with min 3 mm → none", fc(F.MASKS.dumbbell(31)).length === 0);
+  check("D3 featureChecks with minFeatureMM 2.999 (odd µm) uses integer halfUm 1499 and does not throw",
+    (() => { try { return only(fc(F.MASKS.dumbbell(29), { minFeatureMM: 2.999 }), "NECK_NARROW") && fc(F.MASKS.dumbbell(30), { minFeatureMM: 2.999 }).length === 0; } catch (e) { return false; } })());
+  check("GEO-05 2.9 mm-wide isolated strip → PART_THIN", only(fc(F.MASKS.isolatedStrip(29)), "PART_THIN"));
+  check("GEO-05 3.1 mm-wide isolated strip → none", fc(F.MASKS.isolatedStrip(31)).length === 0);
+  const small = (n) => codes(fc(F.MASKS.areaPart(n), { minFeatureMM: 0.3, minPartMM2: 25 }));
+  check("AT-10 part 24.9 mm² → PART_SMALL; 25.1 mm² → none", small(2490).includes("PART_SMALL") && !small(2510).includes("PART_SMALL"));
+  const ply = { minFeatureMM: 1.5, advisoryFeatureMM: 2 };
+  check("PO-LASER-6 neck 1.4 mm with min 1.5 mm → NECK_NARROW", only(fc(F.MASKS.dumbbell(14), ply), "NECK_NARROW"));
+  const m18 = fc(F.MASKS.dumbbell(18), ply);
+  check("PO-LASER-6 neck 1.8 mm with min 1.5 / advisory 2.0 → FEATURE_MARGINAL only", only(m18, "FEATURE_MARGINAL") && m18[0].detail.kind === "neck");
+  check("PO-LASER-6 neck 2.1 mm → none", fc(F.MASKS.dumbbell(21), ply).length === 0);
+  check("PO-LASER-6 strip 1.8 mm with min 1.5 / advisory 2.0 → FEATURE_MARGINAL kind part", (() => { const r = fc(F.MASKS.isolatedStrip(18), ply);
+    return only(r, "FEATURE_MARGINAL") && r[0].detail.kind === "part" && r[0].limit.value === 2 && r[0].layer === 1; })());
+  check("PO-LASER-6 no advisoryFeatureMM → no advisory tier", fc(F.MASKS.dumbbell(18), { minFeatureMM: 1.5 }).length === 0);
+  const samp = (p, mf = 1.5) => codes(SBSupport.featureChecks(noLayers, { ...base, minFeatureMM: mf, mmPerPxMax: p })).includes("SAMPLING_LOW");
+  check("PO-LASER-6/GEO-06 1.5 mm feature at 0.5 mm/px → no SAMPLING_LOW; at 0.6 mm/px → SAMPLING_LOW", !samp(0.5) && samp(0.6));
+  check("GEO-06 0.3 mm feature at 0.1 mm/px is exactly 3 samples (no float shortfall) → no SAMPLING_LOW", !samp(0.1, 0.3));
+  const NOTE = "Conservative fabrication warning — not a structural simulation";
+  const geo05 = [].concat(fc(F.MASKS.dumbbell(29)), fc(F.MASKS.isolatedStrip(29)), fc(F.MASKS.areaPart(2490), { minFeatureMM: 0.3, minPartMM2: 25 }),
+    fc(F.MASKS.dumbbell(18), ply), fc(F.MASKS.isolatedStrip(18), ply));
+  check("GEO-05 message labelled conservative, not structural", geo05.length === 5 && geo05.every((d) => ["PART_SMALL", "PART_THIN", "NECK_NARROW", "FEATURE_MARGINAL"].includes(d.code) && d.message.includes(NOTE)));
+  check("GEO-05 the note survives aggregation (two thin parts on one layer → one diagnostic, count 2)", (() => {
+    const st = F.MASKS.isolatedStrip(29), up = st.layers[1].slice(); for (let y = 45; y < 50; y++) for (let x = 10; x < 90; x++) up[y * st.w + x] = 1;
+    const r = fc({ ...st, layers: [st.layers[0], up] }); return only(r, "PART_THIN") && r[0].count === 2 && r[0].parts.length === 2 && r[0].message.includes(NOTE); })());
+  check("GEO-05 contact FEATURE_MARGINAL (G2.7) does not carry the GEO-05 note", !SBDiag.make("FEATURE_MARGINAL", { detail: { kind: "contact" } }).message.includes(NOTE));
+  const unc = SBSupport.featureChecks(noLayers, { ...base, calibrated: false });
+  check("MAT-03 uncalibrated warning present", only(unc, "MAT_UNCALIBRATED") && unc[0].severity === "warning");
+  check("MAT-03 calibrated → no MAT_UNCALIBRATED", SBSupport.featureChecks(noLayers, base).length === 0);
+  // diagnostics carry layer, part, region and limit; the full base is never flagged
+  const nk = fc(F.MASKS.dumbbell(29))[0];
+  check("GEO-05 NECK_NARROW names layer 1 and its part, region (mm) and limit = minFeature", nk.layer === 1 && nk.parts.join() === "L01-P001" &&
+    Array.isArray(nk.region) && nk.limit.value === 3 && nk.limit.unit === "mm");
+  // layer-level erosion (one offset per layer and width, Appendix C) == per-part oracle
+  let agree = true;
+  for (let s = 1; s <= 10; s++) {
+    const S = mk({ layers: F.randomNestedStack(F.lcg(200 + s), 40, 30, 5), w: 40, h: 30, mmPerPx: 0.1 });
+    const cfg = { minFeatureMM: 0.4, advisoryFeatureMM: 0.7, minPartMM2: 0, mmPerPxMax: 0.1, calibrated: true };
+    const got = new Set(); for (const d of SBSupport.featureChecks(S, cfg)) for (const p of d.parts || [d.part]) got.add(d.code + (d.detail ? ":" + d.detail.kind : "") + "|" + p);
+    const want = new Set();
+    for (const L of S) for (const p of L.parts) {
+      const n = (h) => SBGeom.components(SBGeom.offset([p.polygon], -h, "miter")).length, a = n(200), b = n(350);
+      if (a === 0) want.add("PART_THIN|" + p.id); else if (a > 1) want.add("NECK_NARROW|" + p.id);
+      else if (b === 0) want.add("FEATURE_MARGINAL:part|" + p.id); else if (b > 1) want.add("FEATURE_MARGINAL:neck|" + p.id);
+    }
+    if ([...got].sort().join() !== [...want].sort().join()) agree = false;
+  }
+  check("Appendix C layer-level erosion == per-part offset oracle (10 seeds)", agree);
+  // Appendix C: on orthogonal (bonded, unsmoothed D1) layers the advisory erosion is composed from the first residual
+  // (square erosions compose exactly on the lattice); a layer with a diagonal edge is eroded directly
+  const deltas = (Ls, cfg) => { const o = SBGeom.offset, seen = []; SBGeom.offset = (p, d, j) => (seen.push(d), o(p, d, j));
+    try { SBSupport.featureChecks(Ls, { ...base, ...cfg }); } finally { SBGeom.offset = o; } return seen; };
+  check("Appendix C orthogonal layer: advisory erosion composed from the first residual (−750 then −250 µm)",
+    deltas([mk(F.MASKS.dumbbell(25))[1]], ply).join() === "-750,-250");
+  const diamond = { outer: [10000, 2000, 18000, 10000, 10000, 18000, 2000, 10000], holes: [] };
+  const neckDiag = SBGeom.union([diamond, { outer: [30000, 2000, 38000, 10000, 30000, 18000, 22000, 10000], holes: [] },
+    { outer: [17000, 9100, 23000, 9100, 23000, 10900, 17000, 10900], holes: [] }], []);
+  const diagL = [{ index: 0, material: neckDiag, parts: [{ id: "L00-P001", polygon: neckDiag[0], bbox: SBGeom.bbox(neckDiag[0]) }] }];
+  check("Appendix C non-orthogonal layer: both erosions direct (−750 and −1000 µm); 1.8 mm diagonal-shouldered neck → FEATURE_MARGINAL neck",
+    neckDiag.length === 1 && deltas(diagL, ply).join() === "-750,-1000" &&
+    (() => { const r = SBSupport.featureChecks(diagL, { ...base, ...ply }); return only(r, "FEATURE_MARGINAL") && r[0].detail.kind === "neck"; })());
+  // determinism, purity, arguments
+  const L = mk(F.MASKS.dumbbell(18)), before = JSON.stringify(L);
+  check("NFR-05 featureChecks deterministic and does not mutate its input",
+    JSON.stringify(SBSupport.featureChecks(L, { ...base, ...ply })) === JSON.stringify(SBSupport.featureChecks(L, { ...base, ...ply })) && JSON.stringify(L) === before);
+  check("§9.1 revision and quality are passed through", (() => { const d = SBSupport.featureChecks(L, { ...base, ...ply, revision: 4, quality: "fabrication" })[0];
+    return d.revision === 4 && d.quality === "fabrication"; })());
+  const bad = (cfg) => { try { SBSupport.featureChecks(L, cfg); return false; } catch (e) { return e.code === "SUPPORT_ARG"; } };
+  check("G2.8 bad arguments are SUPPORT_ARG", bad({ ...base, minFeatureMM: 0 }) && bad({ ...base, mmPerPxMax: -1 }) && bad({ ...base, advisoryFeatureMM: 1 }) &&
+    bad({ ...base, minPartMM2: -1 }) && bad({ ...base, calibrated: "no" }) && bad(null) && (() => { try { SBSupport.featureChecks("x", base); return false; } catch (e) { return e.code === "SUPPORT_ARG"; } })());
+});
+
 suite("engine.js — legacyRun seam (NFR-10, DEP-04)", () => {
   const G = require("./golden/oldrun.json"), H = (u8) => require("crypto").createHash("sha256").update(Buffer.from(u8)).digest("hex");
   const w = 40, h = 30, rgba = new Uint8ClampedArray(w * h * 4);

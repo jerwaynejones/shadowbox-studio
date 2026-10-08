@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **G2.8, feature and sampling checks (engine; the app path is unchanged):**
+  `SBSupport.featureChecks(layers, cfg)` reports `SAMPLING_LOW` (blocking) when the minimum
+  feature gets fewer than 3 samples at the coarser real pitch (GEO-06; with the plywood 1.5 mm
+  this needs ≤ 0.5 mm/px). It erodes each part by the integer half of the minimum feature (D3) and
+  reports `PART_THIN` when the part disappears or `NECK_NARROW` when it splits (GEO-05). A part
+  that passes at the minimum but disappears or splits at the advisory width gives
+  `FEATURE_MARGINAL` with `detail.kind` `"part"` or `"neck"` (PO-LASER-6). It also reports
+  `PART_SMALL` below the minimum part area and `MAT_UNCALIBRATED` (MAT-03). Each layer gets one
+  erosion per width. Every GEO-05 message (`PART_SMALL`, `PART_THIN`, `NECK_NARROW`, and
+  `FEATURE_MARGINAL` of kind part or neck) now ends with "Conservative fabrication warning — not a
+  structural simulation". The text survives aggregation. `test/bench.js support` reports a B4 row,
+  p95 2.95 s on the dense stress stack (`docs/perf/SUPPORT.md`).
+
 - **G2.7b, complexity caps and busy-art simplification (engine; the app path is unchanged):**
   `SBSchema.limits(deviceClass)` now returns the SRS §12.3 complexity caps. On desktop these are
   258 parts per layer, 132,000 vertices per layer and 356,000 vertices in total, measured at the

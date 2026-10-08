@@ -54,6 +54,7 @@
  * boolean per adjacent pair (never per part pair), each piece classified on its D3
  * contact width (SBGeom.insetStatus) and attributed to its parts by a bbox sweep. B3b
  * reuses the B1 differences (L_k − L_(k−1)); B3b_full, without reuse, is reported.
+ * B4 (G2.8, reported only): SBSupport.featureChecks on the dense stack (1.5 / 2.0 mm, 25 mm², uncalibrated).
  *
  *     node test/bench.js support [--runs N] [--json out.json] [--no-fail] [--quick]
  * runs B3 and B3b only (G2.7 Step 3).
@@ -173,6 +174,12 @@ function supportStage(W, H, SX, denseMasks, denseL) {
     summary(r), { reuse: "B1 differences (cfg.unsupported)" });
   out.B3b_supportPass_dense_full = Object.assign(timeRuns(() => { r = SBSupport.validate(D, "bonded-relief", SUPPORT_CFG); }, QUICK ? 1 : 3, 0),
     summary(r), { reuse: "none (containment differences inside)", gated: false });
+  // G2.8 feature checks (SBSupport.featureChecks, plywood 1.5 / 2.0 mm, 25 mm²) on the dense stack: one miter erosion per
+  // layer and width on the parts that still need it (Appendix C). Reported only (no budget in the plan).
+  let fcr = null;
+  const fcCfg = { minFeatureMM: 1.5, advisoryFeatureMM: 2, minPartMM2: 25, mmPerPxMax: SX / 1000, calibrated: false };
+  out.B4_featureChecks_dense = Object.assign(timeRuns(() => { fcr = SBSupport.featureChecks(D, fcCfg); }, b3bRuns, QUICK ? 0 : 1),
+    { cfg: fcCfg, gated: false, diagnostics: fcr.reduce((a, d) => ((a[d.code + (d.detail ? ":" + d.detail.kind : "")] = (a[d.code + (d.detail ? ":" + d.detail.kind : "")] || 0) + (d.count || 1)), a), {}) });
   return out;
 }
 

@@ -178,6 +178,9 @@
 
   const QUALITIES = ["draft", "fabrication"];
   const AGGREGATED = new Set(["PART_SMALL", "PART_THIN", "NECK_NARROW", "FEATURE_MARGINAL"]);
+  // G2.8 (GEO-05): small-part, thin-part and neck warnings (and FEATURE_MARGINAL of kind part|neck) are labelled.
+  const GEO05 = new Set(["PART_SMALL", "PART_THIN", "NECK_NARROW", "FEATURE_MARGINAL"]);
+  const GEO05_NOTE = "Conservative fabrication warning — not a structural simulation";
 
   function measure(m, name) {
     if (m === undefined || m === null) return null;
@@ -209,7 +212,7 @@
       layer: orNull(f.layer), part: orNull(f.part),
       areaMM2, region: orNull(f.region),
       measured: measure(f.measured, "measured"), limit: measure(f.limit, "limit"),
-      message: detailText ? c.title + ": " + detailText : c.title,
+      message: (detailText ? c.title + ": " + detailText : c.title) + (GEO05.has(code) && (code !== "FEATURE_MARGINAL" || detailKind === "part" || detailKind === "neck") ? " (" + GEO05_NOTE + ")" : ""),
       fix: c.fix,
       ackState: c.severity === W ? "unacked" : "n/a",
     };

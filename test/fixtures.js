@@ -30,6 +30,18 @@ MASKS.narrowBridge = (px) => { const rows = ["#####" + ".".repeat(5) + "#####"];
 MASKS.stripOnBase = (widthMM) => { const w = 60, h = 40, px = Math.round(widthMM * 10), up = new Uint8Array(w * h);
   for (let y = 10; y < 10 + px; y++) for (let x = 10; x < 50; x++) up[y * w + x] = 1;
   return { w, h, mmPerPx: 0.1, layers: [new Uint8Array(w * h).fill(1), up] }; };
+/** G2.8 (GEO-05, PO-LASER-6): 2-layer stacks at 0.1 mm/px on a full base. dumbbell: two 6 mm squares joined by a 6 mm long
+ *  neck neckPx px (0.1 mm steps) high; isolatedStrip: an 8 mm long strip widthPx px wide; areaPart: one part of exactly n px
+ *  (0.01 mm² each), filled row by row 50 px wide. */
+MASKS.dumbbell = (neckPx) => { const w = 200, h = 100, up = new Uint8Array(w * h), y0 = 50 - (neckPx >> 1);
+  for (let y = 20; y < 80; y++) for (let x = 10; x < 190; x++) if (x < 70 || x >= 130 || (y >= y0 && y < y0 + neckPx)) up[y * w + x] = 1;
+  return { w, h, mmPerPx: 0.1, layers: [new Uint8Array(w * h).fill(1), up] }; };
+MASKS.isolatedStrip = (widthPx) => { const w = 100, h = 60, up = new Uint8Array(w * h);
+  for (let y = 10; y < 10 + widthPx; y++) for (let x = 10; x < 90; x++) up[y * w + x] = 1;
+  return { w, h, mmPerPx: 0.1, layers: [new Uint8Array(w * h).fill(1), up] }; };
+MASKS.areaPart = (n) => { const w = 80, h = 80, up = new Uint8Array(w * h);
+  for (let i = 0; i < n; i++) up[(10 + Math.floor(i / 50)) * w + 10 + (i % 50)] = 1;
+  return { w, h, mmPerPx: 0.1, layers: [new Uint8Array(w * h).fill(1), up] }; };
 function randomNestedStack(rng, w, h, N) {
   const out = [new Uint8Array(w * h).fill(1)];
   for (let k = 1; k < N; k++) { const m = new Uint8Array(w * h);

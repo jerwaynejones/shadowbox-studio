@@ -2218,7 +2218,7 @@ Runs right after G2.7 (Appendix D.4, D.9). **Why:** G2.2b showed that the pixel 
 - With the plywood defaults (1.5 mm), `SAMPLING_LOW` needs mm/px ≤ 0.5. The 0.1 mm/px target gives 15 samples; a budget-capped pitch still passes unless it is coarser than 0.5 mm/px, and then export is refused as GEO-06 requires.
 - Every GEO-05 message contains the text "Conservative fabrication warning — not a structural simulation".
 
-- [ ] **Tests:** these run on vectorized geometry from `fromMasks` at 0.1 mm/px.
+- [x] **Tests:** these run on vectorized geometry from `fromMasks` at 0.1 mm/px.
   - `AT-10 1mm feature @0.4mm/px → SAMPLING_LOW`
   - `AT-10 1mm feature @0.25mm/px → no SAMPLING_LOW` (1/0.25 = 4 ≥ 3)
   - `AT-10/GEO-05 neck 2.9 mm with min 3 mm → NECK_NARROW` (narrowBridge, 29 px)
@@ -2232,7 +2232,12 @@ Runs right after G2.7 (Appendix D.4, D.9). **Why:** G2.2b showed that the pixel 
   - `PO-LASER-6/GEO-06 1.5 mm feature at 0.5 mm/px → no SAMPLING_LOW; at 0.6 mm/px → SAMPLING_LOW`
   - `GEO-05 message labelled conservative, not structural`
   - `MAT-03 uncalibrated warning present`
-- **Commit.**
+- [x] **Commit.**
+
+**Result (2026-10-08):**
+- **API.** As specified. `cfg` also takes `revision` and `quality`; `minPartMM2` defaults to 0 when absent, and with no `advisoryFeatureMM` there is no advisory tier. Bad arguments throw `SUPPORT_ARG`.
+- **Appendix C.** Each layer gets ONE miter erosion per width, on the union of the parts that still need it. Residual components are attributed to their parts by the G2.7 bbox sweep. A part whose bbox is ≤ 2·halfUm in some direction disappears without an offset. On orthogonal (bonded, D1) layers, the advisory erosion is the first residual eroded by `halfAdv − halfMin`, because square erosions compose exactly on the lattice. Other layers are eroded directly. A 10-seed test checks the result against a per-part offset oracle. B4 (`bench support`, dense stress stack, about 3,500 parts): p95 **2.95 s**, reported only (3.26 s without the composition; `docs/perf/SUPPORT.md`).
+- **Deviations.** (1) The plan's test neck (`narrowBridge`, 29 px) does not fit that 5-row fixture. New 0.1 mm/px fixtures replace it: `F.MASKS.dumbbell(neckPx)`, `isolatedStrip(widthPx)` and `areaPart(n)`. (2) `SBDiag.aggregate` replaces the per-part detail text. So the GEO-05 note is appended by `SBDiag.make` for `PART_SMALL`, `PART_THIN`, `NECK_NARROW`, and `FEATURE_MARGINAL` of kind part or neck, never kind contact (`js/diag.js`). (3) The sample count is taken on values rounded to 1e-9, so 0.3 mm at 0.1 mm/px counts as 3 samples, not 2.9999999999999996. (4) The tie is conservative, as the erosion rule states: with an even `minFeatureUm`, a width exactly equal to the minimum feature disappears (w ≤ 2·halfUm). D3 contacts pass at the tie.
 
 ### Task G2.9: Reviewed clip repair with stale detection (SUP-04, D-4.6, PRJ-04)
 

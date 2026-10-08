@@ -38,3 +38,15 @@ changes that brought it under budget are recorded in `docs/ARCHITECTURE.md` D3 (
 rows in `large-image.json` predate that change and were not re-run in G2.7: the long large-image benchmark
 was out of scope, and only `large --quick` was run as a smoke check. The support p95 at the PO-LASER-9
 workloads is recorded with the G2.7b `large --only b4,b9,r25 …` run.
+
+## G2.8 feature checks (B4, reported only)
+
+`SBSupport.featureChecks` (plywood 1.5 / 2.0 mm, 25 mm², uncalibrated) on the same dense B1 stack
+(`node test/bench.js support`, 2026-10-08, 5 runs, 1-minute load 8–9 from other processes): p50 2867 ms,
+**p95 2948 ms**; 2,795 `PART_THIN`, 279 `NECK_NARROW`, 3,100 `PART_SMALL`, 118 `FEATURE_MARGINAL` (part)
+and 49 (neck). The plan gives no budget for this check. It uses one miter erosion per layer and width
+(Appendix C), skips parts whose bbox cannot survive, and on orthogonal (bonded, D1) layers composes the
+advisory erosion from the first residual. Without the composition the p95 was 3258 ms. The first erosion
+(−750 µm on about 50k vertices per layer) is most of the time. This stress stack has about 3,500 parts,
+which is above the G2.7b desktop cap of 258 parts per layer, so realistic art costs much less. Moving the
+work to the G4.1 worker is the planned mitigation.

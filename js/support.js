@@ -46,6 +46,24 @@
  *       empty-layer checks (support graph and contact diagnostics only)}.
  *     Diagnostics are in layer order and pass through SBDiag.aggregate.
  *   annotate(layers, supportGraph) → layers' with Part.supports[] rewritten to part IDs (§3).
+ *   featureChecks(layers, cfg) → Diagnostic[] (plan G2.8; GEO-05/06, MAT-03, AT-10, PO-LASER-6), aggregated per
+ *     (code, layer[, kind]) through SBDiag.aggregate:
+ *       · SAMPLING_LOW (blocking) when minFeatureMM / mmPerPxMax < 3 (measured = samples across the feature, limit 3;
+ *         the ratio is taken on values rounded to 1e-9 mm and rounded to 1e-9, so 0.3 mm at 0.1 mm/px is 3 samples).
+ *       · Per part, the miter erosion by the INTEGER halfUm = Math.floor(minFeatureUm / 2), minFeatureUm =
+ *         Math.round(minFeatureMM·1000) (D3: SBGeom.offset refuses non-integer deltas; on integer-µm geometry a width
+ *         w ≤ 2·halfUm vanishes): empty → PART_THIN, more than one component → NECK_NARROW (warnings).
+ *       · Advisory tier (PO-LASER-6): a part that passes both at minFeatureMM but vanishes or splits under the same
+ *         erosion at advisoryFeatureMM → FEATURE_MARGINAL (warning, detail.kind "part" | "neck").
+ *       · PART_SMALL (warning) when a part's area < minPartMM2; MAT_UNCALIBRATED (warning) when !calibrated.
+ *     Appendix C (offsets are the slowest primitive): ONE offset per layer and width, on the union of the parts that
+ *     still need it (never per part); a part whose bbox is ≤ 2·halfUm in some direction vanishes without an offset.
+ *     On orthogonal layers (bonded, unsmoothed, D1) the advisory erosion is the first residual eroded by the
+ *     difference of the half-widths (square erosions compose exactly); other layers are eroded directly.
+ *     The residual components are attributed to their parts by the same bbox sweep as the support graph (witness: a
+ *     residual vertex, halfUm inside its part). The GEO-05 messages carry SBDiag's conservative-warning note.
+ *     cfg = {minFeatureMM > 0, advisoryFeatureMM? (≥ minFeatureMM; absent = no advisory tier), minPartMM2 ≥ 0 (absent
+ *       = 0), mmPerPxMax > 0 (the coarser real axis pitch), calibrated: boolean, revision = 0, quality = "draft"}.
  *
  * Bad arguments throw SUPPORT_ARG. Inputs are never mutated. Looks up SBGeom and SBDiag at
  * call time.
@@ -242,6 +260,85 @@
     checkArgs(layers, mode, cfg);
     const dOpts = { revision: cfg.revision === undefined ? 0 : cfg.revision, quality: cfg.quality || "draft" };
     return mode === "bonded-relief" ? validateBonded(layers, cfg, dOpts) : validateConnected(layers, dOpts);
+  };
+
+  /**
+   * Miter erosion by halfUm (integer µm) of src(i) for each part i in idx: {count: Map(i → residual components),
+   * residual: Map(i → PolygonWithHoles[])}. src(i) is the part polygon, or (composition, orthogonal layers) its earlier
+   * residual. One offset on the union of every src that can survive (Appendix C); a src whose bbox is ≤ 2·halfUm in
+   * some direction vanishes without it. Residual components are attributed to their parts by the bbox sweep.
+   */
+  function erode(parts, idx, halfUm, src) {
+    const G = global.SBGeom, count = new Map(), residual = new Map(), need = [];
+    for (const i of idx) {
+      const polys = src(i);
+      count.set(i, 0); residual.set(i, []);
+      if (halfUm <= 0) { count.set(i, polys.length); residual.set(i, polys); continue; }
+      const b = bboxOf(polys);
+      if (b && b[2] - b[0] > 2 * halfUm && b[3] - b[1] > 2 * halfUm) need.push(i);
+    }
+    if (!need.length) return { count, residual };
+    const comps = G.components(G.offset([].concat(...need.map(src)), -halfUm, "miter"));
+    const items = comps.map((c) => ({ b: G.bbox(c[0]), witness: { x: c[0].outer[0], y: c[0].outer[1] } }));
+    const owner = attribute(items, need.map((i) => parts[i]));
+    owner.forEach((j, c) => { if (j === null) return; const i = need[j]; count.set(i, count.get(i) + 1); residual.get(i).push(comps[c][0]); });
+    return { count, residual };
+  }
+
+  /** True when every edge of every part is axis-parallel (bonded, unsmoothed D1 geometry). */
+  function orthogonal(parts) {
+    const ringOk = (r) => { const n = r.length / 2;
+      for (let i = 0, j = n - 1; i < n; j = i++) if (r[2 * i] !== r[2 * j] && r[2 * i + 1] !== r[2 * j + 1]) return false;
+      return true; };
+    return parts.every((p) => ringOk(p.polygon.outer) && (p.polygon.holes || []).every(ringOk));
+  }
+
+  S.featureChecks = function (layers, cfg) {
+    if (!Array.isArray(layers)) throw sfail("layers must be a MaterialLayer array");
+    layers.forEach((L, k) => { if (!L || !Array.isArray(L.parts)) throw sfail("layer " + k + " must carry parts[]"); });
+    if (!cfg || typeof cfg !== "object") throw sfail("cfg must be an object");
+    if (!posNum(cfg.minFeatureMM)) throw sfail("minFeatureMM must be a finite number > 0 (got " + cfg.minFeatureMM + ")");
+    const hasAdv = cfg.advisoryFeatureMM !== undefined && cfg.advisoryFeatureMM !== null;
+    if (hasAdv && !(posNum(cfg.advisoryFeatureMM) && cfg.advisoryFeatureMM >= cfg.minFeatureMM))
+      throw sfail("advisoryFeatureMM must be finite and ≥ minFeatureMM (got " + cfg.advisoryFeatureMM + ")");
+    const minPart = cfg.minPartMM2 === undefined || cfg.minPartMM2 === null ? 0 : cfg.minPartMM2;
+    if (typeof minPart !== "number" || !Number.isFinite(minPart) || minPart < 0) throw sfail("minPartMM2 must be a finite number ≥ 0 (got " + cfg.minPartMM2 + ")");
+    if (!posNum(cfg.mmPerPxMax)) throw sfail("mmPerPxMax must be a finite number > 0 (got " + cfg.mmPerPxMax + ")");
+    if (typeof cfg.calibrated !== "boolean") throw sfail("calibrated must be a boolean");
+    const G = global.SBGeom, D = global.SBDiag;
+    const dOpts = { revision: cfg.revision === undefined ? 0 : cfg.revision, quality: cfg.quality || "draft" };
+    const make = (code, f) => D.make(code, Object.assign({}, dOpts, f));
+    const diags = [];
+    if (!cfg.calibrated) diags.push(make("MAT_UNCALIBRATED", { detail: "the minimum feature and part area are provisional" }));
+    // in µm, rounded to 1e-9 so that binary-float noise (0.3 / 0.1 = 2.9999999999999996) never creates a shortfall
+    const samples = Math.round((Math.round(cfg.minFeatureMM * 1e9) / Math.round(cfg.mmPerPxMax * 1e9)) * 1e9) / 1e9;
+    if (samples < 3) diags.push(make("SAMPLING_LOW", { measured: { value: samples, unit: "samples" }, limit: { value: 3, unit: "samples" },
+      detail: cfg.mmPerPxMax + " mm/px gives " + Math.round(samples * 100) / 100 + " samples across the " + cfg.minFeatureMM + " mm minimum feature (3 needed)" }));
+    const mfUm = Math.round(cfg.minFeatureMM * 1000), halfMin = Math.floor(mfUm / 2);
+    const advUm = hasAdv ? Math.round(cfg.advisoryFeatureMM * 1000) : mfUm, halfAdv = Math.floor(advUm / 2);
+    layers.forEach((L, k) => {
+      const parts = L.parts, all = parts.map((p, i) => i);
+      const e1 = erode(parts, all, halfMin, (i) => [parts[i].polygon]), c1 = e1.count;
+      const pass = all.filter((i) => c1.get(i) === 1);
+      // Square (miter) erosions compose exactly on orthogonal lattice geometry: erode the first residual by the
+      // difference (smaller input, Appendix C). Any other geometry is eroded directly.
+      const c2 = halfAdv <= halfMin ? null : orthogonal(parts) ? erode(parts, pass, halfAdv - halfMin, (i) => e1.residual.get(i)).count
+        : erode(parts, pass, halfAdv, (i) => [parts[i].polygon]).count;
+      parts.forEach((p, i) => {
+        const region = regionMM(p.bbox || G.bbox(p.polygon)), areaMM2 = G.area([p.polygon]) / 1e6, base = { layer: k, part: p.id, areaMM2, region };
+        if (areaMM2 < minPart) diags.push(make("PART_SMALL", Object.assign({}, base, { measured: { value: areaMM2, unit: "mm2" }, limit: { value: minPart, unit: "mm2" },
+          detail: "area " + Math.round(areaMM2 * 100) / 100 + " mm² is below " + minPart + " mm²" })));
+        const lim = { value: mfUm / 1000, unit: "mm" }, n1 = c1.get(i);
+        if (n1 === 0) diags.push(make("PART_THIN", Object.assign({}, base, { limit: lim, detail: "the part disappears when eroded by half of " + mfUm / 1000 + " mm" })));
+        else if (n1 > 1) diags.push(make("NECK_NARROW", Object.assign({}, base, { limit: lim, detail: "the part splits into " + n1 + " pieces when eroded by half of " + mfUm / 1000 + " mm" })));
+        else if (c2) {
+          const n2 = c2.get(i), alim = { value: advUm / 1000, unit: "mm" };
+          if (n2 === 0) diags.push(make("FEATURE_MARGINAL", Object.assign({}, base, { limit: alim, detail: { kind: "part", text: "the part is narrower than the advisory " + advUm / 1000 + " mm" } })));
+          else if (n2 > 1) diags.push(make("FEATURE_MARGINAL", Object.assign({}, base, { limit: alim, detail: { kind: "neck", text: "a neck is narrower than the advisory " + advUm / 1000 + " mm" } })));
+        }
+      });
+    });
+    return D.aggregate(diags);
   };
 
   S.annotate = function (layers, graph) {
