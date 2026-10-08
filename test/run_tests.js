@@ -1940,6 +1940,104 @@ suite("svgout.js — layerSVG: CUT/SCORE groups, mm units, shared viewBox, no pa
   check("G1.4 legacy shims unchanged (sheetSVG/proofSVG still exported)", typeof S.sheetSVG === "function" && typeof S.proofSVG === "function");
 });
 
+// ------------------------------------------------ SVG reader and round trip (G1.5)
+suite("svgread.js — SBSvgRead parse and round trip (GEO-09, AT-11/12/13, AT-05; G1.5)", () => {
+  const F = require("./fixtures.js"), M = SBMaterial, S = SBSvg, G = SBGeom, R = globalThis.SBSvgRead;
+  check("G1.5 API present", !!R && typeof R.parse === "function" && typeof R.toMaterial === "function");
+  if (!R || typeof R.parse !== "function" || typeof R.toMaterial !== "function") return;
+  check("§4 module order: svgread.js directly after svgout.js", (() => { const L = require("./modules.js").NODE_MODULES; return L.indexOf("svgread.js") === L.indexOf("svgout.js") + 1; })());
+  const throws = (f, re) => { try { f(); return false; } catch (x) { return !re || re.test(x.message); } };
+  const ringsOf = (polys) => { const o = []; for (const p of polys) o.push(p.outer, ...p.holes); return o; };
+  /** GEO-09: same part count, same ringTopology, ring-by-ring maxDeviationUm ≤ tol (rings of normalized sets pair up in order). */
+  const within = (A, B, tol) => A.length === B.length && G.ringTopology(A) === G.ringTopology(B) &&
+    A.every((p, i) => p.holes.length === B[i].holes.length) && (() => { const a = ringsOf(A), b = ringsOf(B);
+      return a.length === b.length && a.every((r, i) => G.maxDeviationUm(r, b[i], 1) <= tol); })();
+  const rebuild = (svg) => R.toMaterial(R.parse(svg).cut);
+
+  // ---- every fixture × {bonded raw, connected smoothed + frame + holes} × {10 mm/px, odd pitch}
+  const names = Object.keys(F.MASKS);
+  const variants = [];
+  for (const name of names) {
+    const fx = typeof F.MASKS[name] === "function" ? F.MASKS[name](1) : F.MASKS[name];
+    for (const [pw, ph] of [[10, 10], [3.217, 4.093]]) {
+      const art = { artWMM: Math.round(fx.w * pw * 1000) / 1000, artHMM: Math.round(fx.h * ph * 1000) / 1000 };
+      const pgB = M.page({ ...art, frameMM: 0 }), pgC = M.page({ ...art, frameMM: 5 });
+      variants.push({ name, pw, mode: "bonded", pg: pgB, layers: M.fromMasks(fx.layers, fx.w, fx.h, pgB, { smooth: { mode: "bonded", tolUm: 50 } }) });
+      variants.push({ name, pw, mode: "connected", pg: pgC, layers: M.fromMasks(fx.layers, fx.w, fx.h, pgC,
+        { smooth: { mode: "connected", tolUm: 50 }, frame: true, holes: [{ cxUm: 2500, cyUm: 2500, rUm: 1500 }] }) });
+    }
+  }
+  const failsRT = [], failsExact = [], failsClean = [];
+  for (const v of variants) for (const l of v.layers) {
+    const svg = S.layerSVG(l, v.pg, { construction: v.mode }), p = R.parse(svg), back = R.toMaterial(p.cut), tag = v.name + "/" + v.mode + "/" + v.pw + "/L" + l.index;
+    if (!within(back, l.material, 5)) failsRT.push(tag);
+    if (JSON.stringify(back) !== JSON.stringify(l.material)) failsExact.push(tag);
+    if (p.unsupported.length || p.score.length || p.cut.length !== ringsOf(l.material).length) failsClean.push(tag + ":" + p.unsupported.join("|"));
+  }
+  check("GEO-09/AT-11 parse(layerSVG(L)) rebuilt via SBGeom.union equals L.material within 5µm (maxDeviationUm) and same ringTopology, every fixture (" +
+    variants.length + " stacks)" + (failsRT.length ? " — " + failsRT.slice(0, 4).join(", ") : ""), failsRT.length === 0);
+  check("GEO-09 round trip is exact on the 1 µm grid (rebuilt material deep-equals L.material)" + (failsExact.length ? " — " + failsExact.slice(0, 4).join(", ") : ""), failsExact.length === 0);
+  check("AT-13 our own cut files parse clean: no unsupported items, one closed ring per material ring, empty SCORE" + (failsClean.length ? " — " + failsClean.slice(0, 3).join(", ") : ""), failsClean.length === 0);
+  check("GEO-09 written winding is the documented one (outer rings positive, holes negative)", (() => {
+    const l = variants.find((v) => v.name === "donutIsland" && v.mode === "bonded").layers[1], cut = R.parse(S.layerSVG(l, variants[0].pg, {})).cut;
+    const a2 = (r) => { let a = 0; for (let i = 0; i < r.length; i += 2) { const j = (i + 2) % r.length; a += r[i] * r[j + 1] - r[j] * r[i + 1]; } return a; };
+    const signs = ringsOf(l.material).map((r) => Math.sign(a2(r)));
+    return cut.length === signs.length && cut.every((r, i) => Math.sign(a2(r)) === signs[i]) && signs.includes(-1) && signs.includes(1); })());
+  // ---- SCORE polylines
+  check("AT-13 SCORE paths parse as open polylines in µm, separate from CUT", (() => {
+    const l = variants[0].layers[1], sp = [[10000, 10000, 20000, 10000, 20000, 15500], [0, 0, 1, 1]];
+    const p = R.parse(S.layerSVG(l, variants[0].pg, { scorePaths: sp }));
+    return JSON.stringify(p.score) === JSON.stringify(sp) && p.cut.length === ringsOf(l.material).length && p.unsupported.length === 0; })());
+  // ---- AT-12 dimensions
+  check("AT-12 304.8mm asymmetric artwork dims exact (304.8 × 203.2, viewBox and coordinates unscaled)", (() => {
+    const fx = F.MASKS.orientationF, pg = M.page({ artWMM: 304.8, artHMM: 203.2, frameMM: 0 }), L = M.fromMasks(fx.layers, fx.w, fx.h, pg, {});
+    const p0 = R.parse(S.layerSVG(L[0], pg, {})), p1 = R.parse(S.layerSVG(L[1], pg, {}));
+    const xs = p0.cut.flatMap((r) => r.filter((_, i) => i % 2 === 0)), ys = p0.cut.flatMap((r) => r.filter((_, i) => i % 2 === 1));
+    return p0.widthMM === 304.8 && p0.heightMM === 203.2 && JSON.stringify(p0.viewBox) === "[0,0,304.8,203.2]" &&
+      Math.min(...xs) === 0 && Math.max(...xs) === 304800 && Math.min(...ys) === 0 && Math.max(...ys) === 203200 &&
+      JSON.stringify(R.toMaterial(p1.cut)) === JSON.stringify(L[1].material); })());
+  check("AT-12 100 mm calibration square parses to exactly 100 × 100 mm", (() => {
+    const pg = M.page({ artWMM: 100, artHMM: 100, frameMM: 0 }), L = M.fromMasks([new Uint8Array(4).fill(1)], 2, 2, pg, {}), p = R.parse(S.layerSVG(L[0], pg, {}));
+    return p.widthMM === 100 && p.heightMM === 100 && JSON.stringify(p.cut) === JSON.stringify([[0, 0, 100000, 0, 100000, 100000, 0, 100000]]); })());
+  // ---- AT-05 orientation
+  check("AT-05 orientationF top-left corner preserved (no mirror)", (() => {
+    const fx = F.MASKS.orientationF, pg = M.page({ artWMM: 70, artHMM: 70, frameMM: 0 }), L = M.fromMasks(fx.layers, fx.w, fx.h, pg, {});
+    const back = rebuild(S.layerSVG(L[1], pg, {})), at = (px, py) => G.containsPoint(back, [px * 10000 + 5000, py * 10000 + 5000]);
+    // F: row 0 = "#####..", column 0 rows 0..5 material, (0,6) void
+    return at(0, 0) && at(4, 0) && !at(6, 0) && at(0, 5) && !at(0, 6) && !at(6, 6) && at(3, 2) && !at(4, 2) &&
+      G.bbox(back[0])[0] === 0 && G.bbox(back[0])[1] === 0; })());
+  // ---- AT-13 unsupported constructs
+  const doc = (body, attrs) => '<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" ' + (attrs || 'width="10mm" height="10mm" viewBox="0 0 10 10"') + ">\n" + body + "\n</svg>\n";
+  const cutG = (inner, gAttrs) => '<g id="CUT" fill="none" stroke="#FF0000" stroke-width="0.1"' + (gAttrs || "") + ">" + inner + '</g><g id="SCORE" fill="none" stroke="#0000FF" stroke-width="0.1"></g>';
+  const ok = R.parse(doc(cutG('<path d="M 0 0 L 1 0 L 1 1 Z"/>')));
+  check("AT-13 minimal absolute M/L/Z cut file parses clean", ok.unsupported.length === 0 && JSON.stringify(ok.cut) === "[[0,0,1000,0,1000,1000]]" && ok.widthMM === 10);
+  const rel = R.parse(doc(cutG('<path d="m 0 0 l 1 0 l 0 1 z"/><path d="M 2 2 C 3 3 4 4 5 2 Z"/><path d="M 0 0 H 3 V 3 Z"/><path d="M 0 0 Q 1 1 2 0 A 1 1 0 0 1 3 3 Z"/>')));
+  check("AT-13 relative/curve commands reported unsupported", rel.cut.length === 0 &&
+    ["m", "l", "z", "C", "H", "V", "Q", "A"].every((c) => rel.unsupported.some((u) => u.includes("command " + c))));
+  const open = R.parse(doc(cutG('<path d="M 0 0 L 5 0 L 5 5"/><path d="M 1 1 L 2 1 L 2 2 Z"/>')));
+  check("AT-13 open path (no Z) flagged", open.unsupported.some((u) => /OPEN/.test(u)) && open.cut.length === 1 && JSON.stringify(open.cut[0]) === "[1000,1000,2000,1000,2000,2000]");
+  const deps = R.parse(doc(cutG('<path d="M 0 0 L 1 0 L 1 1 Z" transform="translate(1 1)"/><rect x="0" y="0" width="1" height="1"/>', ' style="stroke:red"') +
+    '<image href="x.png"/><text x="1" y="1">A</text><clipPath id="c"><path d="M 0 0 L 1 0 L 1 1 Z"/></clipPath><path d="M 0 0 L 1 0 L 1 1 Z"/>'));
+  check("AT-13 <text>, transform, <rect>, <image>, <clipPath>, style and paths outside CUT/SCORE are reported unsupported",
+    [/<text>/, /transform/, /<rect>/, /<image>/, /<clipPath>/, /style/, /outside CUT\/SCORE/].every((re) => deps.unsupported.some((u) => re.test(u))) &&
+    deps.cut.length === 0);
+  check("AT-13 legacyTextLabel output is flagged (<text> defines a score operation)", (() => {
+    const v = variants.find((x) => x.mode === "connected"), p = R.parse(S.layerSVG(v.layers[1], v.pg, { legacyTextLabel: "t 1/2" }));
+    return p.unsupported.some((u) => /<text>/.test(u)); })());
+  check("AT-13 a closed SCORE path is flagged (score paths are open)", R.parse(doc('<g id="CUT"></g><g id="SCORE"><path d="M 0 0 L 1 0 L 1 1 Z"/></g>')).unsupported.some((u) => /SCORE.*closed/i.test(u)));
+  check("D-4.2 units other than mm and a scaled or offset viewBox are flagged",
+    R.parse(doc(cutG(""), 'width="10in" height="10in" viewBox="0 0 10 10"')).unsupported.some((u) => /units/.test(u)) &&
+    R.parse(doc(cutG(""), 'width="10mm" height="10mm" viewBox="0 0 20 20"')).unsupported.some((u) => /viewBox/.test(u)) &&
+    R.parse(doc(cutG(""), 'width="10mm" height="10mm" viewBox="1 0 10 10"')).unsupported.some((u) => /viewBox/.test(u)));
+  check("AT-13 degenerate ring (< 3 vertices) and non-finite numbers are flagged",
+    R.parse(doc(cutG('<path d="M 0 0 L 1 0 Z"/>'))).unsupported.some((u) => /degenerate/i.test(u)) &&
+    R.parse(doc(cutG('<path d="M 0 0 L 1e999 0 L 1 1 Z"/>'))).unsupported.some((u) => /finite/i.test(u)));
+  check("GEO-09 implicit lineto after M and a repeated closing vertex are accepted", (() => {
+    const p = R.parse(doc(cutG('<path d="M 0,0 1,0 1,1 0,0 Z"/>'))); return p.unsupported.length === 0 && JSON.stringify(p.cut) === "[[0,0,1000,0,1000,1000]]"; })());
+  check("parse refuses a document with no <svg> root", throws(() => R.parse("<html></html>"), /SVGREAD_NOT_SVG/));
+  check("G1.5 parse is pure and deterministic", (() => { const s = S.layerSVG(variants[1].layers[1], variants[1].pg, {}); return JSON.stringify(R.parse(s)) === JSON.stringify(R.parse(s)); })());
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {
