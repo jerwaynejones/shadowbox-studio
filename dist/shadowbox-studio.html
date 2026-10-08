@@ -3280,7 +3280,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
 </script>
 <script>
 /* ============================================================================
- * Shadowbox Studio — material.js  (SBMaterial, plan G1.1)
+ * Shadowbox Studio — material.js  (SBMaterial, plan G1.1–G1.3)
  * ----------------------------------------------------------------------------
  * Final layer masks → canonical MaterialLayer[] (plan §3, SRS §9.2): integer µm
  * polygons with holes, one polygon per part, deterministic part IDs.
@@ -3312,16 +3312,32 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *       coordinates (it plays the plan's "ringHash" role with no collisions), so
  *       IDs depend only on the material: equal materialHash ⇒ equal IDs (SUP-05).
  *       fromMasks already calls it; it is idempotent and does not mutate input.
- *   SBMaterial.smoothStack(loopsByLayer, {tolUm, sxUm, syUm, mode, w?, h?})
+ *   SBMaterial.smoothStack(loopsByLayer, {tolUm, sxUm, syUm, mode, w?, h?, frameUm?})
  *       → {loopsByLayer, levels, fallbacks} (G1.2, D1): bonded = identity; connected =
  *       per-loop deviation-bounded fallback chaikin → rdp → raw (Chaikin(2)∘RDP(ε),
  *       ε = tolUm / max pitch) with lone-ring and layer topology checks. No
  *       containment fixpoint, no conform, no automatic clip.
+ *   SBMaterial.page(cfg) → {wMM, hMM, artWMM, artHMM, frameMM}   (G1.3)
+ *       cfg = {artWMM, artHMM, frameMM} or {artWMM, artHMM, frame: {enabled, widthMM}}; finished size =
+ *       art + 2·frame on the 1 µm grid; one page shared by every layer and the proof. A disabled frame is
+ *       frameMM 0 (LYR-04: bonded default has no frame).
+ *   SBMaterial.applyFrame(layer, page, opts?) → layer'   (G1.3, GEO-02, LYR-04) [UP]
+ *       Unions the exact ring rect(page) − rect(art) into the material, after smoothing (art loops only,
+ *       art rectangle pinned) and before holes and validation; edge-touching art becomes one polygon with
+ *       the frame. frameMM 0 → unchanged. Recomputes parts/IDs, stats, cutPaths, geometry diagnostics and
+ *       canonicalHash; keeps other diagnostics (SMOOTH_FALLBACK).
+ *   SBMaterial.subtractHoles(layer, holes: {cxUm, cyUm, rUm}[], opts?) → layer'   (G1.3, ASM-04)
+ *       Subtracts SBGeom.circle polygons after the frame union, before validation; records the holes in
+ *       layer.holes (sorted cy, cx, r), so they enter canonicalHash even where they miss material (D4-A).
+ *   fromMasks opts.frame (bool) and opts.holes / opts.holeLayers ("all" | number[]) run the GEO-02 order
+ *       in one pass: smoothing → frame union → hole subtraction → normalize → validate → parts. With
+ *       opts.frame the connected-mode layer-topology check sees the frame ring (smoothStack frameUm), so
+ *       smoothing never merges frame-edge holes or leaves frame-edge slivers (S5 F3).
  *   SBMaterial.diagnosticsFor(material, layer, {revision, quality}) → Diagnostic[]
  *       SBGeom.validate codes as blocking diagnostics; region = bbox in mm.
  *
- * zBottomMM/zTopMM are null until the Z model (G2.10b); scorePaths and holes are
- * empty until G3; carriers is always [] in v1.0 (GEO-01).
+ * zBottomMM/zTopMM are null until the Z model (G2.10b); scorePaths are empty until G3; holes
+ * are empty unless subtractHoles / opts.holes ran; carriers is always [] in v1.0 (GEO-01).
  * Looks up SBTrace, SBGeom and SBDiag at call time.
  * ==========================================================================*/
 (function (global) {
@@ -3389,7 +3405,13 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   const sameLoop = (a, b) => { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i][0] !== b[i][0] || a[i][1] !== b[i][1]) return false; return true; };
   /** Topology of one ring on its own (role-free: forced positive): a self-crossing or collapsed ring changes it. */
   function loneTopology(G, r) { return G.ringTopology(G.normalize(G.union([{ outer: r, holes: [] }], []))); }
-  function layerTopology(G, loops, sx, sy) { return G.ringTopology(G.normalize(G.union(G.fromPixelLoops(loops, sx, sy, 0, 0), []))); }
+  /** Layer topology of the art loops; with a frame (fr = {f, aw, ah} µm) the exact frame ring is unioned first (G1.3). */
+  function layerTopology(G, loops, sx, sy, fr) {
+    if (!fr) return G.ringTopology(G.normalize(G.union(G.fromPixelLoops(loops, sx, sy, 0, 0), [])));
+    const f = fr.f, W = fr.aw + 2 * f, H = fr.ah + 2 * f;
+    const ring = { outer: [0, 0, W, 0, W, H, 0, H], holes: [[f, f, f, f + fr.ah, f + fr.aw, f + fr.ah, f + fr.aw, f]] };
+    return G.ringTopology(G.normalize(G.union(G.fromPixelLoops(loops, sx, sy, f, f), [ring])));
+  }
   /** Exact segment contact (crossing or touching) between two flat integer rings, bbox-filtered. */
   function ringsTouch(A, B) {
     const bA = global.SBGeom.bbox({ outer: A }), bB = global.SBGeom.bbox({ outer: B });
@@ -3417,7 +3439,10 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    *                      topology is unchanged; then per layer, while the layer topology differs from the raw
    *                      layer's, loops whose smoothed rings touch another loop's ring drop one level (all
    *                      smoothed loops when none touch). All-raw reproduces the raw layer, so this terminates.
-   * opts = {tolUm, sxUm, syUm, mode, w?, h?}: with w, h the art-rectangle boundary (x = 0|w, y = 0|h) is pinned.
+   * opts = {tolUm, sxUm, syUm, mode, w?, h?, frameUm?}: with w, h the art-rectangle boundary (x = 0|w, y = 0|h) is pinned.
+   * With frameUm > 0 (and w, h) the layer topology is compared with the frame ring unioned in (G1.3, S5 F3): smoothing a
+   * corner that met the art boundary at a point must not merge frame-edge holes after the frame union; loops that touch
+   * the art rectangle count as culprits for the demotion.
    * ε = tolUm / max(sxUm, syUm) px. No containment fixpoint, no conform, no clip (Appendix C, S2 → D1).
    * Returns {loopsByLayer, levels, fallbacks: [{layer, loopIndex, from, to, reason, devUm}]}; one record per
    * demotion step (devUm is the measured deviation of the level left, null when it was not measured).
@@ -3431,7 +3456,10 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       return { loopsByLayer: loopsByLayer.map((ls) => ls.slice()), levels: loopsByLayer.map((ls) => ls.map(() => "raw")), fallbacks: [] };
     const G = global.SBGeom, T = global.SBTrace, sx = o.sxUm, sy = o.syUm, tol = o.tolUm;
     const eps = tol / Math.max(sx, sy);
-    const W = o.w, H = o.h, pinned = Number.isFinite(W) && Number.isFinite(H) ? (p) => p[0] === 0 || p[1] === 0 || p[0] === W || p[1] === H : () => false;
+    const W = o.w, H = o.h, hasWH = Number.isFinite(W) && Number.isFinite(H), pinned = hasWH ? (p) => p[0] === 0 || p[1] === 0 || p[0] === W || p[1] === H : () => false;
+    if (o.frameUm !== undefined && !(Number.isInteger(o.frameUm) && o.frameUm >= 0)) throw new Error("SBMaterial.smoothStack: frameUm must be an integer µm ≥ 0");
+    const fr = hasWH && o.frameUm > 0 ? { f: o.frameUm, aw: Math.round(W * sx), ah: Math.round(H * sy) } : null;
+    const artRect = fr ? [0, 0, fr.aw, 0, fr.aw, fr.ah, 0, fr.ah] : null;
     const ORDER = ["chaikin", "rdp", "raw"], fallbacks = [], levels = [], out = [];
     loopsByLayer.forEach((loops, k) => {
       const lv = [], sm = [], rawUm = loops.map((lp) => ringUm(lp, sx, sy));
@@ -3451,12 +3479,12 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       });
       // layer-level topology: smoothing must not weld, split or re-nest rings (GEO-04)
       if (lv.some((l) => l !== "raw")) {
-        const rawTopo = layerTopology(G, loops, sx, sy);
-        for (let guard = 0; guard < 2 * loops.length + 2 && layerTopology(G, sm, sx, sy) !== rawTopo; guard++) {
+        const rawTopo = layerTopology(G, loops, sx, sy, fr);
+        for (let guard = 0; guard < 2 * loops.length + 2 && layerTopology(G, sm, sx, sy, fr) !== rawTopo; guard++) {
           const smUm = sm.map((s, i) => (lv[i] === "raw" ? rawUm[i] : ringUm(s, sx, sy)));
           let culprits = [];
           for (let i = 0; i < sm.length; i++) if (lv[i] !== "raw")
-            for (let j = 0; j < sm.length; j++) if (j !== i && ringsTouch(smUm[i], smUm[j])) { culprits.push(i); break; }
+            for (let j = -1; j < sm.length; j++) if (j !== i && (j < 0 ? artRect && ringsTouch(smUm[i], artRect) : ringsTouch(smUm[i], smUm[j]))) { culprits.push(i); break; }
           if (!culprits.length) culprits = lv.map((l, i) => (l !== "raw" ? i : -1)).filter((i) => i >= 0);
           for (const i of culprits) {
             const to = ORDER[ORDER.indexOf(lv[i]) + 1];
@@ -3484,12 +3512,12 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   M.fromMasks = function (final, w, h, page, opts) {
     opts = opts || {};
     const G = global.SBGeom, T = global.SBTrace;
-    if (!page || !finitePos(page.artWMM) || !finitePos(page.artHMM) || !(Number.isFinite(page.frameMM) && page.frameMM >= 0))
-      throw new Error("SBMaterial.fromMasks: NONFINITE — page needs finite artWMM, artHMM > 0 and frameMM ≥ 0");
-    const { sxUm, syUm } = M.scale({ w, h, artWMM: page.artWMM, artHMM: page.artHMM });
-    const fUm = Math.round(page.frameMM * 1000), aw = Math.round(page.artWMM * 1000), ah = Math.round(page.artHMM * 1000);
-    if (2 * fUm + Math.max(aw, ah) > G.COORD_LIMIT)
-      throw new Error("SBMaterial.fromMasks: COORD_LIMIT — page exceeds ±2^25 µm (" + G.COORD_LIMIT / 1000 + " mm); geometry is never truncated");
+    const P = pageUm(page, "fromMasks");
+    const { sxUm, syUm } = M.scale({ w, h, artWMM: P.page.artWMM, artHMM: P.page.artHMM });
+    const fUm = P.fUm, aw = P.aw, ah = P.ah;
+    const holes = holeList(opts.holes || [], "fromMasks"), holeLayers = opts.holeLayers === undefined ? "all" : opts.holeLayers;
+    if (holeLayers !== "all" && !(Array.isArray(holeLayers) && holeLayers.every((k) => Number.isInteger(k) && k >= 0)))
+      throw new Error("SBMaterial.fromMasks: holeLayers must be \"all\" or an array of layer indices");
     const smooth = opts.smooth || null;
     if (smooth && smooth.mode !== "bonded" && smooth.mode !== "connected")
       throw new Error("SBMaterial.fromMasks: smooth.mode must be connected|bonded (got " + smooth.mode + ")");
@@ -3505,38 +3533,130 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     // 3: smoothing on the pixel loops, never after conversion. D1: bonded is the identity (raw contours).
     let smoothDiags = new Map();
     if (smooth && smooth.mode === "connected") {
-      const S = M.smoothStack(traced.map((t) => t.loops || []), { tolUm: smooth.tolUm, sxUm, syUm, mode: "connected", w, h });
+      const S = M.smoothStack(traced.map((t) => t.loops || []), { tolUm: smooth.tolUm, sxUm, syUm, mode: "connected", w, h, frameUm: opts.frame ? fUm : 0 });
       traced.forEach((t, k) => { if (t.loops) t.loops = S.loopsByLayer[k]; });
       smoothDiags = smoothDiagnostics(S.fallbacks, smooth.tolUm, dOpts);
     } else if (smooth && !(Number.isFinite(smooth.tolUm) && smooth.tolUm >= 0)) {
       throw new Error("SBMaterial.fromMasks: NONFINITE — smooth.tolUm must be finite and ≥ 0");
     }
 
+    // 4–6: µm polygons; then (GEO-02 order) frame union → hole subtraction → normalize → validate → parts
+    const frame = opts.frame && fUm > 0 ? frameRing(P) : null;
     const layers = traced.map((t, k) => {
       let material;
       if (!t.any) material = [];
       else if (t.base) material = [{ outer: [fUm, fUm, fUm + aw, fUm, fUm + aw, fUm + ah, fUm, fUm + ah], holes: [] }];
       else material = G.normalize(G.union(G.fromPixelLoops(t.loops, sxUm, syUm, fUm, fUm), []));
-      const diagnostics = M.diagnosticsFor(material, k, dOpts);
-      if (smoothDiags.has(k)) diagnostics.push(smoothDiags.get(k));
-      const parts = [], cutPaths = [];
-      let area = 0, cut = 0, vertices = 0;
-      for (const p of material) {
-        const a = polyAreaUm2(p);
-        area += a;
-        for (const r of ringsOf(p)) { cutPaths.push(r); cut += ringLength(r); vertices += r.length >> 1; }
-        parts.push({ id: null, layer: k, polygon: p, bbox: G.bbox(p), areaMM2: a / 1e6, supports: [], guideRefs: [], warnings: [] });
-      }
-      const L = {
-        index: k, zBottomMM: null, zTopMM: null, status: material.length ? "ok" : "empty",
-        material, carriers: [], parts, cutPaths, scorePaths: [], holes: [],
-        stats: { areaMM2: area / 1e6, cutMM: cut / 1000, vertices }, diagnostics, canonicalHash: null,
-      };
-      L.canonicalHash = G.materialHash(L);
-      return L;
+      if (frame) material = G.normalize(G.union(material, [frame]));
+      const lh = holeLayers === "all" || holeLayers.includes(k) ? holes : [];
+      if (lh.length) material = G.normalize(G.difference(material, lh.map(circleOf)));
+      return buildLayer(k, material, lh, dOpts, smoothDiags.has(k) ? [smoothDiags.get(k)] : []);
     });
     return M.assignParts(layers);
   };
+
+  // ------------------------------------------- the page model, frame and holes (G1.3, GEO-02, LYR-04)
+  /** Validated page in integer µm: {page, fUm, aw, ah, W, H}. Accepts {frameMM} or the construction.frame shape. */
+  function pageUm(cfg, who) {
+    const G = global.SBGeom;
+    if (!cfg || typeof cfg !== "object") throw new Error("SBMaterial." + who + ": NONFINITE — page config required");
+    let frameMM = cfg.frameMM;
+    if (frameMM === undefined && cfg.frame && typeof cfg.frame === "object") frameMM = cfg.frame.enabled ? cfg.frame.widthMM : 0;
+    if (!finitePos(cfg.artWMM) || !finitePos(cfg.artHMM) || !(Number.isFinite(frameMM) && frameMM >= 0))
+      throw new Error("SBMaterial." + who + ": NONFINITE — page needs finite artWMM, artHMM > 0 and frameMM ≥ 0");
+    const fUm = Math.round(frameMM * 1000), aw = Math.round(cfg.artWMM * 1000), ah = Math.round(cfg.artHMM * 1000);
+    if (aw < 1 || ah < 1) throw new Error("SBMaterial." + who + ": NONFINITE — art size rounds to 0 µm");
+    const W = aw + 2 * fUm, H = ah + 2 * fUm;
+    if (Math.max(W, H) > G.COORD_LIMIT)
+      throw new Error("SBMaterial." + who + ": COORD_LIMIT — page exceeds ±2^25 µm (" + G.COORD_LIMIT / 1000 + " mm); geometry is never truncated");
+    return { page: { wMM: W / 1000, hMM: H / 1000, artWMM: aw / 1000, artHMM: ah / 1000, frameMM: fUm / 1000 }, fUm, aw, ah, W, H };
+  }
+
+  /**
+   * SBMaterial.page(cfg) → {wMM, hMM, artWMM, artHMM, frameMM}. cfg = {artWMM, artHMM, frameMM} or
+   * {artWMM, artHMM, frame: {enabled, widthMM}} (a disabled frame is frameMM 0: LYR-04 bonded default).
+   * Finished size = art + 2·frame, every dimension on the 1 µm grid. One page is shared by every layer and the proof.
+   */
+  M.page = (cfg) => pageUm(cfg, "page").page;
+
+  /** The exact frame ring rect(page) − rect(art), as one polygon with one hole. */
+  function frameRing(P) {
+    const f = P.fUm;
+    return { outer: [0, 0, P.W, 0, P.W, P.H, 0, P.H], holes: [[f, f, f, f + P.ah, f + P.aw, f + P.ah, f + P.aw, f]] };
+  }
+
+  /** Validated, canonically sorted (cy, cx, r) copy of {cxUm, cyUm, rUm}[] (D4 amendment A order). */
+  function holeList(holes, who) {
+    if (!Array.isArray(holes)) throw new Error("SBMaterial." + who + ": holes must be an array of {cxUm, cyUm, rUm}");
+    const out = holes.map((h) => {
+      if (!h || !Number.isInteger(h.cxUm) || !Number.isInteger(h.cyUm) || !Number.isInteger(h.rUm) || h.rUm < 1)
+        throw new Error("SBMaterial." + who + ": REG_HOLE_INVALID — hole centre and radius must be integer µm, r ≥ 1");
+      return { cxUm: h.cxUm, cyUm: h.cyUm, rUm: h.rUm };
+    });
+    return out.sort((a, b) => (a.cyUm - b.cyUm) || (a.cxUm - b.cxUm) || (a.rUm - b.rUm));
+  }
+  const circleOf = (h) => global.SBGeom.circle(h.cxUm, h.cyUm, h.rUm);
+
+  const VALIDATE_CODES = new Set(["GEO_SELF_INTERSECT", "GEO_ZERO_AREA", "GEO_DUPLICATE", "GEO_OPEN", "GEO_MULTIPART"]);
+  /** Rebuild options for a derived layer: geometry diagnostics are recomputed, all others carried over. */
+  function rebuildOpts(layer, opts) {
+    opts = opts || {};
+    const prev = layer.diagnostics || [], first = prev[0] || {};
+    return {
+      dOpts: { revision: opts.revision !== undefined ? opts.revision : first.revision !== undefined ? first.revision : 0, quality: opts.quality || first.quality || "draft" },
+      keep: prev.filter((d) => !VALIDATE_CODES.has(d.code)),
+    };
+  }
+
+  /**
+   * applyFrame(layer, page, opts?) → new MaterialLayer with the exact frame ring unioned into its material
+   * (GEO-02, LYR-04). Runs after bounded smoothing (which only touched art loops, art rectangle pinned) and
+   * before hole subtraction and validation. frameMM 0 → the layer is returned unchanged. Idempotent; the input
+   * is not mutated. Parts, stats, cutPaths, geometry diagnostics and canonicalHash are recomputed.
+   */
+  M.applyFrame = function (layer, page, opts) {
+    const P = pageUm(page, "applyFrame");
+    if (P.fUm === 0) return layer;
+    const G = global.SBGeom, r = rebuildOpts(layer, opts);
+    const material = G.normalize(G.union(layer.material || [], [frameRing(P)]));
+    return M.assignParts([buildLayer(layer.index, material, layer.holes || [], r.dOpts, r.keep, layer)])[0];
+  };
+
+  /**
+   * subtractHoles(layer, holes: {cxUm, cyUm, rUm}[], opts?) → new MaterialLayer with SBGeom.circle polygons
+   * subtracted (after the frame union, before validation: GEO-02 order). The holes are recorded in layer.holes
+   * (sorted by cy, cx, r) and so enter canonicalHash even where they miss material (D4 amendment A).
+   */
+  M.subtractHoles = function (layer, holes, opts) {
+    const hs = holeList(holes, "subtractHoles");
+    if (!hs.length) return layer;
+    const G = global.SBGeom, r = rebuildOpts(layer, opts);
+    const material = G.normalize(G.difference(layer.material || [], hs.map(circleOf)));
+    const all = holeList((layer.holes || []).concat(hs), "subtractHoles");
+    return M.assignParts([buildLayer(layer.index, material, all, r.dOpts, r.keep, layer)])[0];
+  };
+
+  /** MaterialLayer from normalized material (§3, §9.2); `from` carries zBottomMM/zTopMM/carriers/scorePaths over. */
+  function buildLayer(k, material, holes, dOpts, extraDiags, from) {
+    const G = global.SBGeom;
+    const diagnostics = M.diagnosticsFor(material, k, dOpts).concat(extraDiags || []);
+    const parts = [], cutPaths = [];
+    let area = 0, cut = 0, vertices = 0;
+    for (const p of material) {
+      const a = polyAreaUm2(p);
+      area += a;
+      for (const r of ringsOf(p)) { cutPaths.push(r); cut += ringLength(r); vertices += r.length >> 1; }
+      parts.push({ id: null, layer: k, polygon: p, bbox: G.bbox(p), areaMM2: a / 1e6, supports: [], guideRefs: [], warnings: [] });
+    }
+    const L = {
+      index: k, zBottomMM: from ? from.zBottomMM : null, zTopMM: from ? from.zTopMM : null, status: material.length ? "ok" : "empty",
+      material, carriers: from && from.carriers ? from.carriers : [], parts, cutPaths, scorePaths: from && from.scorePaths ? from.scorePaths : [],
+      holes: holes.map((h) => ({ cxUm: h.cxUm, cyUm: h.cyUm, rUm: h.rUm })),
+      stats: { areaMM2: area / 1e6, cutMM: cut / 1000, vertices }, diagnostics, canonicalHash: null,
+    };
+    L.canonicalHash = G.materialHash(L);
+    return L;
+  }
 
   global.SBMaterial = M;
 })(typeof window !== "undefined" ? window : globalThis);

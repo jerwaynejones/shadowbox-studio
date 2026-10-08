@@ -322,8 +322,8 @@ suite("baseline — characterization (KNOWN-DEFECT checks invert when fixed)", (
   const svgUp = SBSvg.sheetSVG({ ...base, loops: SBTrace.trace(F.MASKS.borderTouch.layers[1], 8, 5), isBacking: false });
   const svgBack = SBSvg.sheetSVG({ ...base, loops: [], isBacking: true });
   check("KNOWN-DEFECT EXP-01: sheetSVG always emits the page <rect>", /<rect /.test(svgUp));
-  // 10 mm/px, margin 10: art rows 0..1 are y 10..30; the left art edge x=10 is cut although it touches the frame.
-  check("KNOWN-DEFECT GEO-02: edge art cut separately from frame (segment x=10, y 10→30)", svgUp.includes("M 10 10 L 10 30"));
+  // KNOWN-DEFECT GEO-02 was fixed in G1.3: the check now lives on SBMaterial.applyFrame (suite "material.js — frame and holes …");
+  // the shim version was deleted, not edited, because T0.7 freezes sheetSVG.
   check("KNOWN-DEFECT EXP-02: cut group has no id", !/<g id="CUT"/.test(svgUp));
   check("KNOWN-DEFECT EXP-03: label is live <text>", /<text /.test(svgUp));
   check("G0 backing sheet emits only rect (+label), no paths", !/<path /.test(svgBack) && /<rect /.test(svgBack));
@@ -1739,6 +1739,117 @@ suite("smoothing — bounded, connected mode; bonded unsmoothed (GEO-04, D1, AT-
   const tp = F.art(["#.###..#", "##.####.", "#.....##", "...#.###", ".#.##.#.", "##.####.", "..##.#.."]);
   const TP = M.smoothStack([[], T.trace(tp.m, tp.w, tp.h)], { tolUm: 1000, sxUm: 1000, syUm: 1000, mode: "connected", w: tp.w, h: tp.h });
   check("GEO-04 lone-ring topology fallback recorded (reason topology, deviation within tolerance)", TP.fallbacks.some((f) => f.reason === "topology" && f.devUm !== null && f.devUm <= 1000));
+});
+
+suite("material.js — frame and holes as canonical material; the page model (GEO-02, LYR-04, ASM-04, AT-07/12; G1.3)", () => {
+  const F = require("./fixtures.js"), G = SBGeom, M = SBMaterial;
+  check("G1.3 API present", typeof M.page === "function" && typeof M.applyFrame === "function" && typeof M.subtractHoles === "function");
+  if (typeof M.page !== "function" || typeof M.applyFrame !== "function" || typeof M.subtractHoles !== "function") return;
+  const throws = (f, re) => { try { f(); return false; } catch (x) { return !re || re.test(x.message); } };
+  const rect = (x0, y0, x1, y1) => [x0, y0, x1, y0, x1, y1, x0, y1];
+  // ---- the page model: finished size = art + 2·frame, shared by every layer and the proof
+  const pg = M.page({ artWMM: 80, artHMM: 50, frameMM: 10 });
+  check("G1.3 page(): finished size = art + 2·frame", pg.wMM === 100 && pg.hMM === 70 && pg.artWMM === 80 && pg.artHMM === 50 && pg.frameMM === 10);
+  check("G1.3 page() accepts the construction.frame shape {enabled, widthMM}",
+    JSON.stringify(M.page({ artWMM: 80, artHMM: 50, frame: { enabled: true, widthMM: 10 } })) === JSON.stringify(pg));
+  check("G1.3 page() quantizes every dimension to the 1 µm grid", (() => { const q = M.page({ artWMM: 304.80004, artHMM: 200.0004, frameMM: 12.7000004 });
+    return q.artWMM === 304.8 && q.artHMM === 200 && q.frameMM === 12.7 && q.wMM === 330.2 && q.hMM === 225.4; })());
+  check("NONFINITE page() refuses non-finite/non-positive art and a negative frame",
+    throws(() => M.page({ artWMM: NaN, artHMM: 5, frameMM: 0 }), /NONFINITE/) && throws(() => M.page({ artWMM: 5, artHMM: 0, frameMM: 0 }), /NONFINITE/) &&
+    throws(() => M.page({ artWMM: 5, artHMM: 5, frameMM: -1 }), /NONFINITE/));
+  check("D4/amendment C page() beyond COORD_LIMIT throws a coded error", throws(() => M.page({ artWMM: 30000, artHMM: 5, frameMM: 2000 }), /COORD_LIMIT/));
+  // ---- LYR-04 bonded default: no frame
+  const nf = M.page({ artWMM: 80, artHMM: 50, frame: { enabled: false, widthMM: 10 } });
+  check("LYR-04 bonded default has no frame (frame disabled → frameMM 0, page = art)", nf.frameMM === 0 && nf.wMM === 80 && nf.hMM === 50);
+  const bt = F.MASKS.borderTouch, raw0 = M.fromMasks(bt.layers, 8, 5, nf, {});
+  check("LYR-04 applyFrame at frameMM 0 leaves material and canonicalHash unchanged",
+    raw0.every((l) => { const a = M.applyFrame(l, nf); return JSON.stringify(a.material) === JSON.stringify(l.material) && a.canonicalHash === l.canonicalHash; }));
+  check("LYR-04 fromMasks without opts.frame adds no frame material (art only)", G.bbox(M.fromMasks(bt.layers, 8, 5, pg, {})[1].material[0]).join() === "10000,10000,60000,30000");
+  // ---- GEO-02 / LYR-04 / AT-12: the frame is unioned material
+  const raw = M.fromMasks(bt.layers, 8, 5, pg, {}), Lf = raw.map((l) => M.applyFrame(l, pg));
+  check("LYR-04 frame ring ∪ edge-touching art is one material polygon", Lf[1].material.length === 1 && Lf[1].parts.length === 1 && Lf[1].parts[0].id === "L01-P001");
+  let seg = false;
+  for (const l of Lf) for (const p of l.material) for (const r of [p.outer, ...p.holes]) for (let i = 0, n = r.length / 2; i < n; i++) { const j = (i + 1) % n;
+    if (r[2 * i] === 10000 && r[2 * j] === 10000 && Math.min(r[2 * i + 1], r[2 * j + 1]) < 30000 && Math.max(r[2 * i + 1], r[2 * j + 1]) > 10000) seg = true; }
+  // Replaces KNOWN-DEFECT GEO-02 (the legacy sheetSVG shim is frozen by T0.7; its check was deleted, not edited).
+  check("GEO-02 FIXED: no material ring has consecutive vertices with x = frame edge (10000 µm) and y within art rows 0..1 (10000..30000 µm)", !seg);
+  check("AT-12 frame outer ring is an exact rectangle with page dimensions", Lf.every((l) => JSON.stringify(l.material[0].outer) === "[0,0,100000,0,100000,70000,0,70000]"));
+  // page 100×70 minus (art 80×50 minus the 50×20 block) = 7000 − 3000 mm²
+  check("GEO-02 framed layer: one hole (art window minus the attached block), area 4000 mm², stats recomputed",
+    Lf[1].material[0].holes.length === 1 && Lf[1].stats.areaMM2 === 4000 && Lf[1].stats.vertices === 4 + 6 && Lf[1].cutPaths.length === 2 &&
+    Lf[1].stats.cutMM === 340 + (2 * 80 + 2 * 50));
+  check("D4 framed canonicalHash = SBGeom.materialHash and differs from the unframed layer", Lf.every((l, k) => l.canonicalHash === G.materialHash(l) && l.canonicalHash !== raw[k].canonicalHash));
+  check("GEO-03 framed layers raise no validation diagnostics, material normalized", Lf.every((l) => l.diagnostics.length === 0 && JSON.stringify(G.normalize(l.material)) === JSON.stringify(l.material)));
+  check("G1.3 applyFrame is idempotent and does not mutate its input",
+    JSON.stringify(M.applyFrame(Lf[1], pg).material) === JSON.stringify(Lf[1].material) && JSON.stringify(raw[1].material) === JSON.stringify(M.fromMasks(bt.layers, 8, 5, pg, {})[1].material));
+  const e = F.MASKS.emptyIntermediate, pe = M.page({ artWMM: 5, artHMM: 5, frameMM: 1 }), Le = M.fromMasks(e.layers, 5, 5, pe, { frame: true });
+  check("LYR-04 frame applies to every layer: an empty art layer becomes the frame ring alone",
+    JSON.stringify(Le[1].material) === JSON.stringify(G.normalize([{ outer: rect(0, 0, 7000, 7000), holes: [rect(1000, 1000, 6000, 6000)] }])) && Le[1].status === "ok");
+  check("G1.3 applyFrame keeps non-geometry diagnostics (SMOOTH_FALLBACK) and recomputes the geometry ones", (() => {
+    const s = M.fromMasks(bt.layers, 8, 5, pg, { smooth: { tolUm: 50, mode: "connected" } })[1];
+    const a = M.applyFrame(s, pg); return s.diagnostics.some((x) => x.code === "SMOOTH_FALLBACK") && a.diagnostics.map((x) => x.code).join() === "SMOOTH_FALLBACK"; })());
+  check("NONFINITE applyFrame refuses an invalid page", throws(() => M.applyFrame({ ...raw[1], material: [] }, { artWMM: 0, artHMM: 5, frameMM: 1 }), /NONFINITE/));
+  // ---- AT-07 / ASM-04: holes are subtracted after the frame union, before validation (GEO-02 order)
+  const holes = [{ cxUm: 95000, cyUm: 65000, rUm: 1500 }, { cxUm: 5000, cyUm: 5000, rUm: 1500 }];
+  const Lb = M.subtractHoles(Lf[0], holes);
+  check("AT-07 base = exactly outer rect (4 vertices, page corners) + explicit holes",
+    Lb.material.length === 1 && JSON.stringify(Lb.material[0].outer) === "[0,0,100000,0,100000,70000,0,70000]" && Lb.material[0].holes.length === 2);
+  check("ASM-04 subtractHoles leaves hole rings equal to SBGeom.circle",
+    JSON.stringify(Lb.material) === JSON.stringify(G.normalize([{ outer: rect(0, 0, 100000, 70000), holes: holes.map((h) => G.circle(h.cxUm, h.cyUm, h.rUm).outer) }])) &&
+    Lb.material[0].holes.every((r) => holes.some((h) => { const c = G.circle(h.cxUm, h.cyUm, h.rUm).outer; const pts = (q) => { const o = []; for (let i = 0; i < q.length; i += 2) o.push(q[i] + "," + q[i + 1]); return o.sort().join(" "); };
+      return r.length === c.length && pts(r) === pts(c); })));
+  check("D4-A subtractHoles records the holes in layer.holes (sorted by cy, cx, r) and they enter canonicalHash",
+    JSON.stringify(Lb.holes) === JSON.stringify([holes[1], holes[0]]) && Lb.canonicalHash === G.materialHash(Lb) && Lb.canonicalHash !== Lf[0].canonicalHash);
+  check("D4-A a hole that misses material is still recorded and still changes the hash", (() => {
+    const off = M.subtractHoles(Lf[1], [{ cxUm: 30000, cyUm: 40000, rUm: 1000 }]);
+    return off.holes.length === 1 && JSON.stringify(off.material) === JSON.stringify(Lf[1].material) && off.canonicalHash !== Lf[1].canonicalHash; })());
+  check("GEO-03 holes through the frame/art seam stay valid (no diagnostics)", M.subtractHoles(Lf[1], [{ cxUm: 10000, cyUm: 20000, rUm: 1500 }]).diagnostics.length === 0);
+  check("ASM-04 subtractHoles with no holes is the identity", (() => { const z = M.subtractHoles(Lf[1], []); return JSON.stringify(z.material) === JSON.stringify(Lf[1].material) && z.canonicalHash === Lf[1].canonicalHash; })());
+  check("ASM-04 subtractHoles refuses non-integer or non-positive circles",
+    throws(() => M.subtractHoles(Lf[0], [{ cxUm: 0.5, cyUm: 0, rUm: 10 }])) && throws(() => M.subtractHoles(Lf[0], [{ cxUm: 0, cyUm: 0, rUm: 0 }])));
+  const viaOpts = M.fromMasks(bt.layers, 8, 5, pg, { frame: true, holes });
+  check("GEO-02 order: fromMasks({frame, holes}) = smoothing → frame union → hole subtraction → validation (equals the manual chain)",
+    viaOpts.every((l, k) => { const m = M.subtractHoles(M.applyFrame(raw[k], pg), holes); return JSON.stringify(l.material) === JSON.stringify(m.material) && l.canonicalHash === m.canonicalHash; }));
+  check("ASM-04 fromMasks holeLayers selects the layers that get the holes", (() => {
+    const s = M.fromMasks(bt.layers, 8, 5, pg, { frame: true, holes, holeLayers: [0] });
+    return s[0].holes.length === 2 && s[1].holes.length === 0 && JSON.stringify(s[1].material) === JSON.stringify(Lf[1].material); })());
+  // ---- S5 F3: connected smoothing pins the art rectangle, so the frame union leaves no sliver holes at the frame edge
+  const onArt = (x, y, f, aw, ah) => ((x === f || x === f + aw) && y >= f && y <= f + ah) || ((y === f || y === f + ah) && x >= f && x <= f + aw);
+  // S5 F3 (frame-edge micro-holes): a frame-edge hole is a hole ring with a vertex on the art rectangle. Raw (lattice) frame-edge
+  // holes are ≥ 1 px². Pinned connected smoothing may round the free corners of a raw 1-px notch (S5 measured ≥ 57,299 µm² at
+  // 62,500 µm²/px), but GEO-04 bounds that loss by perimeter × tol; an unpinned sliver (S5: down to 2,480 µm²) is far below it.
+  const frameEdgeHoles = (layer, f, aw, ah) => { const o = []; for (const p of layer.material) for (const hr of p.holes) {
+    let touches = false; for (let i = 0; i < hr.length; i += 2) if (onArt(hr[i], hr[i + 1], f, aw, ah)) { touches = true; break; }
+    if (!touches) continue;
+    let a2 = 0, per = 0; for (let i = 0; i < hr.length; i += 2) { const j = (i + 2) % hr.length, dx = hr[j] - hr[i], dy = hr[j + 1] - hr[i + 1];
+      a2 += hr[i] * hr[j + 1] - hr[j] * hr[i + 1]; per += Math.sqrt(dx * dx + dy * dy); }
+    o.push({ area: Math.abs(a2) / 2, per }); } return o; };
+  const btS = M.fromMasks(bt.layers, 8, 5, M.page({ artWMM: 2, artHMM: 1.25, frameMM: 10 }), { frame: true, smooth: { tolUm: 50, mode: "connected" } });
+  check("GEO-02 connected smoothing + frame on borderTouch (0.25 mm/px): one hole, as raw", btS[1].material.length === 1 && btS[1].material[0].holes.length === 1);
+  let sliver = 0, countMismatch = 0, frameHoles = 0, minArea = Infinity, smoothedAny = false, okV = true, topoDiff = 0, frameFb = 0;
+  for (let sd = 1; sd <= 24; sd++) {
+    const rr = F.lcg(sd * 11 + 3), w = 32, h = 24, mm = new Uint8Array(w * h); for (let i = 0; i < mm.length; i++) mm[i] = rr() < 0.55 ? 1 : 0;
+    const P = M.page({ artWMM: w * 0.25, artHMM: h * 0.25, frameMM: 10 }), full = new Uint8Array(w * h).fill(1);
+    const Ls = M.fromMasks([full, mm], w, h, P, { frame: true, smooth: { tolUm: 50, mode: "connected" } });
+    const Lr = M.fromMasks([full, mm], w, h, P, { frame: true });
+    const hs = frameEdgeHoles(Ls[1], 10000, w * 250, h * 250), hr = frameEdgeHoles(Lr[1], 10000, w * 250, h * 250);
+    if (hs.length !== hr.length || hr.some((x) => x.area < 62500)) countMismatch++;
+    if (G.ringTopology(Ls[1].material) !== G.ringTopology(Lr[1].material) || Ls[1].parts.length !== Lr[1].parts.length) topoDiff++;
+    const S0 = M.smoothStack([[], SBTrace.trace(mm, w, h)], { tolUm: 50, sxUm: 250, syUm: 250, mode: "connected", w, h });
+    const S1 = M.smoothStack([[], SBTrace.trace(mm, w, h)], { tolUm: 50, sxUm: 250, syUm: 250, mode: "connected", w, h, frameUm: 10000 });
+    if (S1.fallbacks.filter((f) => f.reason === "topology").length > S0.fallbacks.filter((f) => f.reason === "topology").length) frameFb++;
+    for (const x of hs) { frameHoles++; if (x.area < minArea) minArea = x.area; if (x.area < 62500 - x.per * 50) sliver++; }
+    if (Ls[1].material.some((p) => [p.outer, ...p.holes].some((r) => { for (let i = 0; i < r.length; i += 2) if (r[i] % 250 || r[i + 1] % 250) return true; return false; }))) smoothedAny = true;
+    if (Ls.some((l) => l.diagnostics.some((x) => x.severity === "blocking"))) okV = false;
+  }
+  check(`GEO-02 connected smoothing leaves no frame-edge hole below 1 px² beyond the GEO-04 bound (24 framed noise masks @250 µm/px, tol 50: ${frameHoles} frame-edge holes, min ${Math.round(minArea)} µm²)`,
+    sliver === 0 && smoothedAny && frameHoles > 0);
+  check("GEO-02 every smoothed frame-edge hole is a smoothed raw notch (same count as the raw framed layer, raw ones ≥ 1 px²)", countMismatch === 0);
+  check("GEO-04 framed layer topology and part count unchanged by connected smoothing (topology checked with the frame ring unioned)", topoDiff === 0);
+  check(`GEO-04 smoothStack {frameUm}: the frame-aware layer check adds topology fallbacks where art-only smoothing would merge frame-edge holes (${frameFb}/24 masks)`, frameFb > 0);
+  check("smoothStack refuses a non-integer or negative frameUm", throws(() => M.smoothStack([[]], { tolUm: 50, sxUm: 1, syUm: 1, mode: "connected", w: 1, h: 1, frameUm: 0.5 })) &&
+    throws(() => M.smoothStack([[]], { tolUm: 50, sxUm: 1, syUm: 1, mode: "connected", w: 1, h: 1, frameUm: -1 })));
+  check("GEO-03 framed + smoothed noise layers raise no blocking diagnostics", okV);
 });
 
 // ------------------------------------------------------------------ report

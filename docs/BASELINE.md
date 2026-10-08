@@ -59,7 +59,7 @@ fixes it retargets the check to the new function and inverts it.
 | Check | Fixture | Observed | Inverted by |
 |---|---|---|---|
 | `KNOWN-DEFECT EXP-01` | `borderTouch` layer 1, `sheetSVG` | page `<rect>` always emitted in the cut group | G1.4 (`layerSVG`) |
-| `KNOWN-DEFECT GEO-02` | `borderTouch` layer 1, 10 mm/px, margin 10 | art edge cut separately from frame: segment `M 10 10 L 10 30` | G1.3 (`SBMaterial`) |
+| `KNOWN-DEFECT GEO-02` | `borderTouch` layer 1, 10 mm/px, margin 10 | art edge cut separately from frame: segment `M 10 10 L 10 30` | G1.3 (`SBMaterial`) — **fixed**: `SBMaterial.applyFrame`; shim check deleted |
 | `KNOWN-DEFECT EXP-02` | `borderTouch` layer 1, `sheetSVG` | cut group has no `id` | G1.4 (`layerSVG`) |
 | `KNOWN-DEFECT EXP-03` | `borderTouch` layer 1, `sheetSVG` | label is live `<text>` | G3.2 (vector labels) |
 | `KNOWN-DEFECT GEO-01 proof extent` | `proofSVG` of 2 empty layers vs `borderTouch` sheet | proof viewBox excludes the frame margin | G1.6 (`assemblySVG`) |
