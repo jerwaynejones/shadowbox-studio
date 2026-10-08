@@ -34,6 +34,7 @@ const SHELL = [
   "./js/schema.js",
   "./js/png.js",
   "./js/jpeg.js",
+  "./js/height.js",
   "./js/raster.js",
   "./js/morph.js",
   "./js/islands.js",

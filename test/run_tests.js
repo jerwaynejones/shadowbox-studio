@@ -2291,6 +2291,58 @@ suite("engine.js — connected export through the canonical path (DEP-04, GEO-02
     /frame/i.test(sec) && /CUT/.test(sec) && /SCORE/.test(sec) && /proof/i.test(sec) && /0\.05 mm/.test(sec) && /holes/i.test(sec) && /label/i.test(sec));
 });
 
+// ------------------------------------------------ height.js (G2.3)
+suite("height.js — quantization (D-4.3, AT-03/04)", () => {
+  check("AT-03 N=5 h∈{0,.25,.5,.75,1} → added {0..4}", [0, .25, .5, .75, 1].map((h) => SBHeight.addedFromNorm(h, 5)).join() === "0,1,2,3,4");
+  check("AT-03 ties .125/.375/.625/.875 go to the higher layer", [.125, .375, .625, .875].map((h) => SBHeight.addedFromNorm(h, 5)).join() === "1,2,3,4");
+  check("AT-03 N=1 base only", SBHeight.addedFromNorm(1, 1) === 0);
+  check("D-4.3 boundaries exposed", SBHeight.boundaries(5, 6.35).map((b) => b.norm).join() === "0.125,0.375,0.625,0.875");
+  const s = Uint8Array.from({ length: 256 }, (_, i) => i);
+  let ok = true; for (let N = 1; N <= 16; N++) { const a = SBHeight.addedFromSamples(s, N, "white-high");
+    for (let i = 0; i < 256; i++) if (a[i] !== (N === 1 ? 0 : Math.min(N - 1, Math.floor((N - 1) * (i / 255) + 0.5)))) ok = false; }
+  check("D-4.3 integer formula == float definition for all N, all samples", ok);
+  check("D-4.3 black-high inverts", SBHeight.addedFromSamples(Uint8Array.of(0), 5, "black-high")[0] === 4);
+  const w16 = SBHeight.cumulativeMasks(SBHeight.addedFromSamples(new Uint8Array(12).fill(255), 16, "white-high"), null, 16, 4, 3);
+  check("AT-04 white N=16 → 16 identical layers, no NaN", w16.length === 16 && w16.every((m) => m.every((v) => v === 1)));
+  const b = SBHeight.cumulativeMasks(SBHeight.addedFromSamples(new Uint8Array(12), 5, "white-high"), null, 5, 4, 3);
+  check("AT-04 black → base only", b[0].every((v) => v) && b.slice(1).every((m) => m.every((v) => !v)));
+  const mid = SBHeight.addedFromSamples(new Uint8Array(12).fill(128), 5, "white-high");
+  check("AT-04 constant midpoint map stays constant", mid.every((v) => v === mid[0]));
+  const dom = Uint8Array.from([1, 0, 1, 0]);
+  const dm = SBHeight.cumulativeMasks(Uint8Array.from([4, 4, 4, 4]), dom, 5, 4, 1);
+  check("IMG-04/AT-05 outside A only base", dm[0].every((v) => v) && dm[4].join() === "1,0,1,0");
+});
+
+suite("height.js — G2.3 extended (module order, boundaries in mm, tonal equivalence, nesting)", () => {
+  const L = require("./modules.js").NODE_MODULES;
+  check("§4 module order: height.js after jpeg.js, before raster.js", L.indexOf("height.js") === L.indexOf("jpeg.js") + 1 && L.indexOf("raster.js") === L.indexOf("height.js") + 1);
+  const bd = SBHeight.boundaries(5, 6.35);
+  check("LYR-02 boundaries carry k and mm = k·t", bd.map((x) => x.k).join() === "1,2,3,4" && bd.every((x) => Math.abs(x.mm - x.k * 6.35) < 1e-12));
+  check("D-4.3 N=1 has no boundaries; N=2 boundary at 0.5", SBHeight.boundaries(1, 3).length === 0 && SBHeight.boundaries(2, 3)[0].norm === 0.5);
+  check("D-4.3 N=1 samples → all zero", SBHeight.addedFromSamples(Uint8Array.of(0, 128, 255), 1, "white-high").every((v) => v === 0));
+  check("D-4.3 addedFromSamples output length and type", (() => { const a = SBHeight.addedFromSamples(new Uint8Array(7), 4, "white-high"); return a instanceof Uint8Array && a.length === 7; })());
+  check("D-4.3 black-high == white-high on 255-s, every N", (() => { const s2 = Uint8Array.from({ length: 256 }, (_, i) => i), r = s2.map((v) => 255 - v);
+    for (let N = 1; N <= 16; N++) if (SBHeight.addedFromSamples(s2, N, "black-high").join() !== SBHeight.addedFromSamples(r, N, "white-high").join()) return false; return true; })());
+  check("D-4.3 midpoint 127.5 (norm .5) at N=2: 127→0, 128→1", SBHeight.addedFromSamples(Uint8Array.of(127, 128), 2, "white-high").join() === "0,1");
+  check("D-4.3 samples agree with addedFromNorm(s/255) for N 1..16", (() => { for (let N = 1; N <= 16; N++) for (let v = 0; v < 256; v++)
+    if (SBHeight.addedFromSamples(Uint8Array.of(v), N, "white-high")[0] !== SBHeight.addedFromNorm(v / 255, N)) return false; return true; })());
+  // masks are nested (D-4.5 containment by construction) and there are always N of them (D-4.7: no dedup)
+  const rnd = (() => { let x = 12345; return () => (x = (x * 1103515245 + 12345) >>> 0) / 4294967296; })();
+  const W = 9, Hh = 7, sm = Uint8Array.from({ length: W * Hh }, () => Math.floor(rnd() * 256));
+  const ms = SBHeight.cumulativeMasks(SBHeight.addedFromSamples(sm, 6, "white-high"), null, 6, W, Hh);
+  check("D-4.5 cumulative masks nest: m[k] ⊆ m[k-1]", ms.length === 6 && ms.every((m, k) => k === 0 || m.every((v, i) => !v || ms[k - 1][i])));
+  check("D-4.7 masks are 0/1 Uint8Array of w·h", ms.every((m) => m instanceof Uint8Array && m.length === W * Hh && m.every((v) => v === 0 || v === 1)));
+  check("IMG-04 domain null == all-ones domain", (() => { const a = SBHeight.addedFromSamples(sm, 6, "white-high"), one = new Uint8Array(W * Hh).fill(1);
+    const x = SBHeight.cumulativeMasks(a, null, 6, W, Hh), y = SBHeight.cumulativeMasks(a, one, 6, W, Hh); return x.every((m, k) => m.join() === y[k].join()); })());
+  // tonalAdded + cumulativeMasks reproduces SBRaster.sheetMasks byte for byte (the G2.4 rewiring contract)
+  check("D-4.4 tonalAdded+cumulativeMasks == SBRaster.sheetMasks (both fronts, N 1..16)", (() => {
+    for (let N = 1; N <= 16; N++) for (const dark of [false, true]) {
+      const bm = Uint8Array.from(sm, (v) => Math.floor((v * N) / 256));
+      const a = SBHeight.cumulativeMasks(SBHeight.tonalAdded(bm, N, dark), null, N, W, Hh), r = SBRaster.sheetMasks(bm, N, W, Hh, dark);
+      if (a.length !== r.length || a.some((m, k) => m.join() !== Array.from(r[k]).join())) return false;
+    } return true; })());
+});
+
 suite("raster.js — G2.0 deterministic resampling and the raster contract, fabRaster (IMG-02/03, GEO-06, NFR-05, PO-LASER-4/5)", () => {
   const R = SBRaster, F = require("./fixtures.js");
   const codeOf = (fn) => { try { fn(); return null; } catch (e) { return e.code || "UNCODED:" + e.message; } };

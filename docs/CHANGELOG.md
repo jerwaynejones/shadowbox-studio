@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **G2.3, height quantization (engine only; not yet wired into the app):** new module
+  `js/height.js` (`SBHeight`), loaded after `jpeg.js` and before `raster.js`. Nearest-layer rule
+  `addedFromNorm` / exact integer `addedFromSamples` (white-high or black-high; ties at the
+  midpoints (k−0.5)/(N−1) go to the higher layer; N = 1 is base only), `cumulativeMasks` (base
+  all ones, `[k] = domain ∧ added ≥ k`, identical layers kept), `boundaries` (normalized and mm,
+  LYR-02) and `tonalAdded`, which with `cumulativeMasks` reproduces `SBRaster.sheetMasks` byte
+  for byte (rewired in G2.4). The large-image benchmark now builds its height masks with
+  `SBHeight` instead of an inline rule (same masks).
+
 - **G2.2b, measured pixel budgets (engine only; not yet wired into the app):** the large-image
   benchmark sets `SBSchema.limits` to **25 Mpx on desktop** (was a provisional 16 Mpx) and
   **1 Mpx on mobile** (was 4 Mpx), in bonded mode. Desktop keeps the 10 s target: 25 Mpx

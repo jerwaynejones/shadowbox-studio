@@ -266,18 +266,13 @@ function largePass(wl, samples, src, mem) {
     t0 = now(); R.resample(src.px, 1, src.w, src.h, w, h, "area"); t.resampleArea = now() - t0; sample();
     t0 = now(); R.resample(src.px, 1, src.w, src.h, w, h, "nearest"); t.resampleNearest = now() - t0; sample();
   }
-  // 2. masks: the existing tonal path, and the height threshold inline (until G2.3 ships SBHeight)
+  // 2. masks: the existing tonal path, and the height path (SBHeight, G2.3)
   t0 = now();
   const bandMap = R.bands(samples, R.thresholds(samples, N, "balanced"));
   const tonal = R.sheetMasks(bandMap, N, w, h, false);
   t.masksTonal = now() - t0; sample();
   t0 = now();
-  const masks = [new Uint8Array(w * h).fill(1)];
-  for (let k = 1; k < N; k++) masks.push(new Uint8Array(w * h));
-  for (let i = 0; i < samples.length; i++) {
-    const a = Math.min(N - 1, Math.floor((2 * (N - 1) * samples[i] + 255) / 510));
-    for (let k = 1; k <= a; k++) masks[k][i] = 1;
-  }
+  const masks = SBHeight.cumulativeMasks(SBHeight.addedFromSamples(samples, N, "white-high"), null, N, w, h);
   t.masksHeight = now() - t0; sample();
   void tonal;
   // 3. trace + fromMasks: bonded (D1: unsmoothed) and connected (G1.2 smoothing)
@@ -400,7 +395,7 @@ const LARGE_METHOD = {
   desktopRule: "largest of 16/20/25 Mpx (realistic) with working set ≤ 512 MiB and bonded final p95 ≤ target; target 10 s if 16 Mpx meets it, else 16 Mpx p95 rounded up to 5 s (≤ 60 s, else escalate)",
   mobileRule: "largest of 1/1.25/1.5/2/4/6/8 Mpx (realistic) with working set ≤ 192 MiB and desktop bonded final p95 × k ≤ 8 s; k = 4 provisional until the ≥ 4 GB reference device (G4.4); if none qualifies, mobile fabrication is draft-only (FAB_DEVICE_DRAFT_ONLY), recorded, not escalated",
   machine: "budgets are measured on the Linux i7-11800H (16 threads) development machine and are conservative for the owner's MacBook Air M5; Safari/JavaScriptCore coverage is G4.8",
-  stages: "1 resample area/nearest from a 16 MP source (realistic rows smaller than it); 2 masks tonal (R.thresholds/bands/sheetMasks) and height (inline nearest-layer rule); 3 material bonded/connected; 4 difference + support; 5 layerSVG + layerHashes",
+  stages: "1 resample area/nearest from a 16 MP source (realistic rows smaller than it); 2 masks tonal (R.thresholds/bands/sheetMasks) and height (SBHeight.addedFromSamples/cumulativeMasks); 3 material bonded/connected; 4 difference + support; 5 layerSVG + layerHashes",
 };
 
 function decideLarge(byId) {

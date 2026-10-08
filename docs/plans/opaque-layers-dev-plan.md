@@ -1883,7 +1883,7 @@ Runs: 5 warm-ups and 30 runs at the candidate budget points (16 Mpx desktop; the
   - `SBHeight.boundaries(N, tMM) → [{k, norm: (k-0.5)/(N-1), mm: k*tMM}]`;
   - `SBHeight.tonalAdded(bandMap, N, darkFront) → Uint8Array` (`N-1-b'`; used by G2.4).
 
-- [ ] **Step 1: Tests**
+- [x] **Step 1: Tests**
 
 ```js
 suite("height.js — quantization (D-4.3, AT-03/04)", () => {
@@ -1908,8 +1908,8 @@ suite("height.js — quantization (D-4.3, AT-03/04)", () => {
 });
 ```
 
-- [ ] **Step 2: Run** and confirm it fails.
-- [ ] **Step 3: Implement**
+- [x] **Step 2: Run** and confirm it fails.
+- [x] **Step 3: Implement**
 
 The integer rule was verified against the float definition for every N in 1..16 and every s in 0..255 while writing this plan.
 
@@ -1943,7 +1943,7 @@ The integer rule was verified against the float definition for every N in 1..16 
 })(typeof window !== "undefined" ? window : globalThis);
 ```
 
-- [ ] **Step 4: Run** and confirm the tests pass. **Commit.**
+- [x] **Step 4: Run** and confirm the tests pass. **Commit.**
 
 ### Task G2.4: Tonal path behind the same interface; manual thresholds; domain-aware statistics
 
