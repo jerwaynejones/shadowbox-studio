@@ -34,6 +34,8 @@ Interpretation, construction and appearance are independent schema fields:
 
 **Revision:** rev 2 (2026-10-07). It applies the coverage, code-accuracy and execution reviews. Rejected or modified critiques are listed in Appendix A, "Review notes".
 
+**Amendment (2026-10-07, laser target):** product-owner requirements for the xTool S1 with conveyor feeder (40 W diode, 1/4" basswood or poplar plywood) are in **Appendix D** and decision **D6** (`docs/ARCHITECTURE.md`). They add a machine profile, size-by-height, a physical fabrication pitch with a per-device pixel budget, and 6 mm ply feature defaults, and they fix the G2 execution order (Appendix D.4). Requirements the SRS does not state carry `PO-LASER-n` IDs.
+
 **Repo state (verified 2026-10-07):**
 - `/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked` holds one commit, `f0552c7 Init commit`.
 - `origin` is `jerwaynejones/shadowbox-studio` (the fork already exists); `upstream` is `strondcode/shadowbox-studio`.
@@ -164,23 +166,23 @@ Every opaque-layer requirement in the SRS maps to the task IDs defined in §5–
 | LYR-03 | Balanced, linear and manual thresholds; reject bad order; legacy tonal kept | G2.4, G2.4b | AT-04, AT-21 |
 | LYR-04 | Bonded: rect base, no frame by default; frame is canonical material | G1.3 | AT-06, AT-07 |
 | LYR-05 | Identical masks kept; trailing empties; empty predecessor blocks | G2.7, G2.10b | AT-04, AT-08 |
-| LYR-06 | Draft vs fabrication resolution; export regenerates; diagnostics and acks never reused across quality | G2.2, G2.10b, G3.10, G4.2 | AT-10, AT-15, AT-24 |
+| LYR-06 | Draft vs fabrication resolution; export regenerates; diagnostics and acks never reused across quality. Fabrication resolution is a physical pitch (PO-LASER-4) instead of the SRS "1536, up to 4096" long side | G2.0, G2.1b, G2.2, G2.10b, G3.10, G4.2 | AT-10, AT-15, AT-24 |
 | MAT-01 | One thickness, nominal vs measured; adhesive and finishes excluded (stated) | G2.1, G2.10b, G2.11c | AT-01, AT-03 |
-| MAT-02 | 1–2000 mm per axis, 0.1–25 mm thickness; lossless units | G2.1 | AT-01, AT-12 |
-| MAT-03 | Plywood profile uncalibrated; 3 mm feature and 25 mm² part, provisional | G2.1, G2.8 | AT-10, AT-19 |
+| MAT-02 | 1–2000 mm per axis, 0.1–25 mm thickness; lossless units; size by height (default) or width (PO-LASER-3) | G2.1, G2.11c | AT-01, AT-12 |
+| MAT-03 | Plywood profile uncalibrated; 25 mm² part, provisional; feature default **1.5 mm with a 2.0 mm advisory tier** (PO-LASER-6; SRS starting value 3 mm) | G2.1, G2.7, G2.8 | AT-10, AT-19 |
 | MAT-04 | Uniform opaque color and palette proofs; disclaimer; no geometry effect | G2.11c, G2.12, G3.5 | AT-01, AT-11 |
-| MAT-05 | `kerfMode=external` stated in manifest and guide | G3.5, G3.9 | AT-12, AT-19 |
+| MAT-05 | `kerfMode=external` stated in manifest and guide; the machine kerf (0.15 mm) is recorded, never applied (PO-LASER-7) | G2.1, G3.5, G3.9 | AT-12, AT-19 |
 | MAT-06 | Optional calibration coupon (holes, narrow webs, score marks) with no laser settings; calibration record | G2.1, G5.1 | AT-19, AT-25 |
 | GEO-01 | Polygons with holes are the single source for every consumer; carrier boundaries representable | S1, G1.1, G1.6, G2.12 | AT-06, AT-07, AT-11 |
 | GEO-02 | Bounded smoothing, then frame union, then hole subtraction, before checks; finite-width attachment | S5, G1.3, G2.7, G2.10a | AT-06, AT-09 |
 | GEO-03 | Closed, simple, hierarchical rings; saddles split; degenerate loops block export | S1, G1.1 | AT-07, AT-09, AT-13 |
 | GEO-04 | 0.05 mm measured (densified Hausdorff) smoothing tolerance; topology fallback; bonded unsmoothed (D1) | S2, G1.2 | AT-09, AT-10 |
 | GEO-05 | Small-part and narrow-neck warnings via erosion by half the width (disappear or split) | G2.8 | AT-10 |
-| GEO-06 | ≥3 samples across the minimum feature, from real (not upsampled) samples; show mm/px; refuse export | G1.1, G2.8, G2.14 | AT-10, AT-24 |
+| GEO-06 | ≥3 samples across the minimum feature, from real (not upsampled) samples; show mm/px; refuse export; source shortfall reported in px (PO-LASER-5) | G1.1, G2.0, G2.1b, G2.8, G2.14 | AT-10, AT-24 |
 | GEO-07 | Final-polygon validation (support, holes, guides) after every change | G2.7, G2.9, G3.1 | AT-08, AT-09, AT-14 |
 | GEO-08 | Cleanup report (mm²) with overlays, kept in `validation.json` | G1.2, G2.6, G2.13b, G3.9 | AT-10, AT-15 |
 | GEO-09 | 0.001 mm grid, documented winding, round trip ≤ 0.005 mm | T0.6, S1, S6, G1.4, G1.5 | AT-11, AT-12, AT-13 |
-| GEO-10 | Footprint inside page; optional bed check (w × h); never rescale | G3.10 | AT-12, AT-22 |
+| GEO-10 | Footprint inside page; bed check (w × h) against the machine profile, on by default (PO-LASER-2); never rescale | G2.1, G2.10a, G3.10 | AT-12, AT-22 |
 | SUP-01 | Bonded keeps disconnected parts; no bridge resolver | G2.6 | AT-08, AT-21 |
 | SUP-02 | Exact containment; unsupported area reported; blocking with no bypass | G2.7 | AT-08, AT-09 |
 | SUP-03 | Support graph to base; lower holes absent; in the manifest | G2.7, G3.9 | AT-08, AT-14 |
@@ -215,8 +217,8 @@ Every opaque-layer requirement in the SRS maps to the task IDs defined in §5–
 | §12.3 | Complexity caps fail explicitly | G2.7, G2.10a | AT-24 |
 | NFR-01 | Fully local; no remote URLs (XML namespaces allow-listed) | G4.7 | AT-23 |
 | NFR-02 | Off the main thread; 100 ms acknowledgement; 500 ms cancel | G4.1 | AT-24 |
-| NFR-03 | Desktop p95: 1.5 s draft, 10 s final, 5 s package; mobile 768² × 6 final ≤ 8 s | G4.4 | AT-24 |
-| NFR-04 | Memory budget; estimate first; never silently lower resolution | G2.14, G4.3 | AT-22, AT-24 |
+| NFR-03 | Desktop p95: 1.5 s draft, 10 s final, 5 s package on the SRS §12.3 workload (1536², 8 layers); mobile 768² × 6 final ≤ 8 s. Laser-detail workloads at the pixel budget have their own recorded targets (PO-LASER-9) | G2.2b, G2.7, G4.4 | AT-24 |
+| NFR-04 | Memory budget; estimate first; never silently lower resolution; per-device pixel budget, cap reported (PO-LASER-4) | G2.1b, G2.2b, G2.14, G4.3 | AT-22, AT-24 |
 | NFR-05 | Deterministic across engines; no unseeded randomness; no transcendental math in hashed paths | T0.6, S1, S4, S6, G2.10b, G4.8 | AT-16, AT-17, AT-23 |
 | NFR-06 | Escape user strings; safe imports | G3.7, G3.8, G3.9 | AT-22 |
 | NFR-07 | WCAG 2.2 AA target; keyboard; 200% zoom; documented audit | G2.13c, G4.5 | AT-20 |
@@ -230,6 +232,16 @@ Every opaque-layer requirement in the SRS maps to the task IDs defined in §5–
 | DEP-03 | Reproducible build | G4.7 | AT-26 |
 | DEP-04 | Legacy adapter keeps tonal/connected semantics; fixes documented | T0.4, G2.4, G2.4b, G3.8, G5.3 | AT-21, AT-26 |
 | DEP-05 | Rollback without silent schema downgrade | G3.8, G5.3 | AT-17, AT-23 |
+| PO-LASER-1 | Machine profile persisted in the project, editable; default "xTool S1 + feeder" (470 / 3000 / 545 / 14 mm, kerf 0.15 mm) | G2.1, G2.11c, G3.5, G3.9 | Appendix D |
+| PO-LASER-2 | Every layer sheet incl. frame fits the machine processing area; stock within max thickness; blocking otherwise (extends GEO-10) | G2.10a, G3.10 | AT-12, AT-22 |
+| PO-LASER-3 | Size by height (art + frame to a target height) is the default; width mode stays available (extends MAT-02) | G2.1, G2.11c | AT-01 |
+| PO-LASER-4 | Fabrication pitch from physical size, target 0.1 mm/px, capped by a per-device pixel budget; cap reported as info with actual mm/px; draft 720 px (amends LYR-06) | G2.0, G2.1, G2.1b, G2.2b, G2.11b, G2.11c, G2.14, G4.3 | AT-24 |
+| PO-LASER-5 | Never upsample; warn with the pixel shortfall when source pixels < target fabrication pixels (extends GEO-06) | G2.0, G2.1b, G2.14 | AT-10, AT-24 |
+| PO-LASER-6 | 6 mm ply defaults: min feature 1.5 mm (D3 rules), advisory warning below 2.0 mm (amends MAT-03 starting value) | G2.1, G2.7, G2.8, G5.1 | AT-10 |
+| PO-LASER-7 | Kerf 0.15 mm recorded in the profile and package; export stays nominal, `kerfMode=external` (MAT-05) | G2.1, G3.5, G3.9, G5.1 | AT-19 |
+| PO-LASER-8 | Layer thickness 6.35 mm nominal, editable; UI hints that 1/4" ply is often 5.5–6 mm actual (with PRJ-01, MAT-02) | G2.1, G2.11c | AT-03 |
+| PO-LASER-9 | Large-image benchmark sets the pixel budgets and the recorded laser-detail performance targets (with NFR-03/04) | G2.2b, G2.7, G4.4 | AT-24 |
+| PO-LASER-10 | G2 execution order: G2.0 → G2.1 → G2.1b → G2.2b → rest of G2 in plan order | Appendix D.4 | — |
 
 ---
 
@@ -269,6 +281,8 @@ Questions marked ● block the task named in brackets. Each has a proposed defau
     - Height mode samples nearest-neighbour, which picks existing values only. An area-average downsample is an explicit, history-recorded filter.
     - Tonal mode uses a pure integer area-average.
     - The `#in-res` slider (`index.html:62`, max 1280) becomes the fabrication setting (`min=360 max=4096`).
+
+    **Superseded 2026-10-07 (Appendix D, PO-LASER-4):** fabrication resolution is a physical pitch (target 0.1 mm/px) capped by a per-device pixel budget; the 1536/4096 long-side caps are dropped and `#in-res` becomes a pitch control (G2.11b). The draft long side (720 px), the never-upsample rule and the resampling methods are unchanged.
 13. **Default preset for new projects.** *Default:* a preset picker with **Plywood relief (bonded)** preselected, as PRJ-01 suggests, and Acrylic shadowbox (connected, today's defaults) one click away. The app opens with no source; Demo is an explicit source choice. Alternative: keep connected as the default until v2.0.0 final.
 14. **JPEG in tonal mode.** *Default:*
     - `SBJpeg.inspect` reads the header first: SOF dimensions, EXIF orientation, and corrupt or truncated markers.
@@ -306,7 +320,9 @@ These come from the SRS and repo conventions. Every task implicitly includes the
 - **No automatic bridging, clipping or deletion in bonded mode.** Culling is explicit opt-in. Smoothing falls back toward raw contours rather than altering material outside the tolerance. Clip-to-lower is the only repair; it is shown (removed area, part-count change) before it is applied, it is reversible, and it is never replayed against geometry the user did not review. (SRS:L180-182, SUP-04)
 - No deduplication of identical layers. Trailing empties may be omitted, but their indices are kept. **An empty layer under a non-empty one blocks in bonded mode.** (SRS:L186)
 - Blocking diagnostics are **never** downgraded. Acknowledgements are scoped to the exact snapshot (`geometryHash`, which includes quality) and are invalidated by any relevant change. (SRS §9.5)
-- Smoothing tolerance is **0.05 mm**. SVG round trip within **0.005 mm** with the same topology. Plywood preset: bonded, white-high, 8 sheets, gap 0, **6.35 mm**, min feature **3 mm**, min part **25 mm²**, uncalibrated.
+- Smoothing tolerance is **0.05 mm**. SVG round trip within **0.005 mm** with the same topology. Plywood preset: bonded, white-high, 8 sheets, gap 0, **6.35 mm** nominal (editable; 1/4" ply often measures 5.5–6 mm), min feature **1.5 mm** with a **2.0 mm** advisory tier (PO-LASER-6; the SRS MAT-03 starting value is 3 mm), min part **25 mm²**, uncalibrated.
+- **Machine envelope (GEO-10, PO-LASER-1/2):** the project carries an editable machine profile, default **xTool S1 + feeder** (processing height 470 mm, length 3000 mm, material width 545 mm, thickness 14 mm, kerf 0.15 mm). Every layer sheet, frame included, must fit its processing area (either orientation) and the stock must not exceed its thickness, otherwise a blocking diagnostic. Nothing is ever rescaled to fit. Kerf stays external (MAT-05).
+- **Fabrication pitch (PO-LASER-4/5):** fabrication resolution is derived from physical size at a target of **0.1 mm/px**, capped by a per-device total pixel budget; a cap is reported (info, actual mm/px), never silent. The engine never upsamples; a source with fewer pixels than the target warns with the shortfall. Draft stays 720 px on the long side.
 - Limits:
   - image input: desktop **25 MiB / 16 MP**, mobile **10 MiB / 8 MP**;
   - `.sbrproj`: **≤1024 entries**, **≤256 MiB** expanded on desktop, **≤64 MiB** on mobile;
@@ -347,7 +363,7 @@ These are inputs the SRS implies but no acceptance test exercises directly. Each
 4. **A project title containing `</svg><script>`, `../`, or Windows-reserved characters.** Expected: escaped in SVG, MD and JSON; filenames sanitized. *Pinned in G3.9:* `"NFR-06 hostile title escaped in SVG/MD/JSON/filenames"`.
 5. **The user changes a setting while an export is being packaged.** Expected: the package is built from the frozen snapshot of the revision that was current when export started, or is aborted. It never mixes revisions. *Pinned in G3.6:* `"EXP-05 snapshot immutable after later edits"`.
 6. **The user reviews a clip at draft resolution, then edits a setting or exports at fabrication resolution.** Expected: an unchanged-config clip is re-shown at fab resolution for review in the export panel; a changed-config clip is marked `REPAIR_STALE` and not applied. *Pinned in G2.9.*
-7. **A tiny 200 × 150 px source with fabrication set to 1536 px.** Expected: no upsampling; mm/px is reported from the real samples; `FAB_EXCEEDS_SOURCE` warns. *Pinned in G2.0.*
+7. **A tiny 200 × 150 px source sized to 300 mm high, no frame, at the 0.1 mm/px target (4000 × 3000 px).** Expected: no upsampling; the raster is 200 × 150 and mm/px (2.0) is reported from the real samples; `FAB_EXCEEDS_SOURCE` warns with the shortfall (3800 × 2850 px). *Pinned in G2.0.*
 
 ---
 
@@ -378,15 +394,24 @@ Project = {
                       markFootprintMM: 0.2, allowanceMM: 0.5, labelHeightMM: 3 },
             repairs: [] /* Repair, see below */ },
   material: { name, thicknessMM: 6.35, thicknessState: "nominal"|"measured", calibrated: false,
-            minFeatureMM: 3, minPartMM2: 25, kerfMode: "external",
+            minFeatureMM: 1.5, advisoryFeatureMM: 2.0,   // PO-LASER-6 (SRS MAT-03 starting value: 3)
+            minPartMM2: 25, kerfMode: "external",
             calibration: null /* | {date, machine, material, kerfMM, minFeatureOkMM, scoreOk, notes} user-recorded */ },
   appearance: { mode: "uniform"|"palette", color: "#C8A26B", palette: "dusk" },  // never in geometryKey
   view: { explodeMM: 0 },                                                          // never in geometryKey
-  geometry: { widthMM, heightMM, lockAspect: true, draftPx: 720, fabPx: 1536,
-              resample: { height: "nearest", tonal: "area" },
-              bedMM: null /* | {w, h} */ },
+  geometry: { sizeBy: "height"|"width", targetMM: 300,  // PO-LASER-3: finished page (art + 2·frame) along sizeBy
+              widthMM, heightMM, lockAspect: true,       // artwork; SBSchema.resolveSize derives the free axis from the aspect
+              draftPx: 720,                              // draft long side (unchanged)
+              fabPitchMM: 0.1,                           // PO-LASER-4: target fabrication pitch; budget-capped, never upsampled
+              resample: { height: "nearest", tonal: "area" } },
+  machine: MachineProfile | null,                        // PO-LASER-1; null = no envelope check; in geometryKey
   acks: [] /* {key, revision} */, extras: {}
 }
+
+MachineProfile = { id: "xtool-s1-feeder", name: "xTool S1 + feeder",          // SBSchema.MACHINES default; every field editable
+                   maxProcessingHeightMM: 470, maxLengthMM: 3000,               // processing area, either orientation
+                   maxMaterialWidthMM: 545, maxThicknessMM: 14,
+                   kerfMM: 0.15 }                                               // informational only (MAT-05, kerfMode external)
 
 Repair = { op: "clip-to-lower", layer, sourceRevision, resultRevision,
            keyHash,          // hashJSON(geometryKey(project with repairs truncated before this entry))
@@ -406,7 +431,10 @@ Diagnostic = { id, code, severity: "blocking"|"warning"|"info", revision, qualit
                measured: {value, unit}|null, limit: {value, unit}|null,
                message, fix, ackState: "n/a"|"unacked"|"acked" }
 GeometryConfig (Snapshot.geometry) = { artWMM, artHMM, pageWMM, pageHMM, srcW, srcH,
-               rasterW, rasterH, sxUm, syUm, mmPerPxMax, resample: "none"|"nearest"|"area", grid: "1um" }
+               rasterW, rasterH, sxUm, syUm, mmPerPxMax, resample: "none"|"nearest"|"area", grid: "1um",
+               // PO-LASER-4/5 (G2.0, G2.1b); draft quality uses the 720 px long side instead of the pitch
+               targetPitchUm, pitchUm, pxBudget, deviceClass: "desktop"|"mobile",
+               capped: "none"|"budget"|"source"|"budget+source", shortPx: [shortW, shortH] | null }
 Snapshot = { revision, engineVersion, geometryHash, quality: "draft"|"fabrication", layers, diagnostics,
              cleanupReport: [{layer, addedMM2, removedMM2, holesFilled, partsRemoved, bridges?: PolygonWithHoles[]}],
              supportGraph, guides, geometry: GeometryConfig, page: { wMM, hMM },
@@ -425,7 +453,7 @@ GenerateResponse = { requestId, revision, engineVersion,
 
 `geometryKey(p)` is everything except `appearance`, `view`, `acks`, `extras`, `title`, `units`, `id`, `app`, `createdAt`, `modifiedAt`, `revision` and `source.byteHash`.
 
-`geometryHash = hashJSON({ key: geometryKey(p), engine: engine.version, quality, raster: [rasterW, rasterH], layers: layerHashes, guides: guideHash })`. `engine.version` enters only here, so an app-only release does not invalidate saved hashes.
+`geometryHash = hashJSON({ key: geometryKey(p), engine: engine.version, quality, raster: [rasterW, rasterH], layers: layerHashes, guides: guideHash })`. `engine.version` enters only here, so an app-only release does not invalidate saved hashes. The device pixel budget (PO-LASER-4) reaches the hash only through the raster size: the same project gives the same `geometryHash` on any device that does not cap it, and a capped device reports `FAB_PITCH_CAPPED` with the pitch it used.
 
 **Winding convention** (documented once in `js/geom.js`):
 - In Y-down coordinates the outer ring has **positive** shoelace area and holes have **negative** area. `SBTrace.trace` emits the opposite, so `fromPixelLoops` reverses its rings.
@@ -1644,14 +1672,21 @@ Holes and labels are unchanged.
 
 ## 8. Phase G2: bonded relief engine and opaque review UI
 
-### Task G2.0: Deterministic resampling and the raster contract (IMG-02/03, GEO-06, NFR-05)
+**Execution order (PO-LASER-10, Appendix D.4):** G2.0 → G2.1 → **G2.1b** → **G2.2b** → G2.2 → G2.3 → … → G2.14 → checkpoint. Tasks keep their IDs; the list in Appendix D.4 is binding where it differs from the section order below.
+
+### Task G2.0: Deterministic resampling and the raster contract (IMG-02/03, GEO-06, NFR-05, PO-LASER-4/5)
 
 **Files:**
-- Modify: `js/raster.js` (add `resample`, `rasterSize`)
+- Modify: `js/raster.js` (add `resample`, `rasterSize`, `fabRaster`)
 
 **Interfaces:**
 - Produces:
-  - `SBRaster.rasterSize(srcW, srcH, targetLong) → {W, H, capped: boolean}`. The size is never larger than the source. `capped` is true when `targetLong` exceeded the source's long side.
+  - `SBRaster.rasterSize(srcW, srcH, targetLong) → {W, H, capped: boolean}`. The size is never larger than the source. `capped` is true when `targetLong` exceeded the source's long side. **Draft quality only** (720 px long side).
+  - `SBRaster.fabRaster({artWUm, artHUm, srcW, srcH, targetPitchUm, pxBudget}) → {W, H, pitchUm, capped: "none"|"budget"|"source"|"budget+source", shortPx: [shortW, shortH] | null}` (PO-LASER-4/5; replaces the fixed `fabPx` long side). Integer-only:
+    1. `W0 = ceil(artWUm / p)`, `H0 = ceil(artHUm / p)` with `p = targetPitchUm` (100 by default).
+    2. **Budget:** if `W0·H0 > pxBudget`, `p` becomes the smallest integer ≥ `targetPitchUm` with `ceil(artWUm/p)·ceil(artHUm/p) ≤ pxBudget` (start from `floor(sqrt(artWUm·artHUm/pxBudget))`, then step by 1 µm; `Math.sqrt` is allowed by the determinism rules), and `capped` includes `"budget"`.
+    3. **Source:** `W = min(W1, srcW)`, `H = min(H1, srcH)` per axis (never upsample). If either axis is clamped, `capped` includes `"source"` and `shortPx = [max(0, W1 − srcW), max(0, H1 − srcH)]`, where `W1 × H1` is the raster after step 2.
+    The real per-axis scales stay `sxUm = artWUm / W` and `syUm = artHUm / H` (G1.1), and mm/px is always reported from them.
   - `SBRaster.resample(pixels, channels, w, h, W, H, method: "none"|"nearest"|"area") → Uint8Array`. It is pure and integer-only, with no floats in the index math.
     - `nearest` uses `sx = floor((2x+1)*w / (2W))`.
     - `area` is an exact integer box average with half-up rounding.
@@ -1660,18 +1695,23 @@ Holes and labels are unchanged.
   - **Height mode:** `none` when the source fits; otherwise `nearest`, which only picks existing values. `area` is available only as an explicit, history-recorded filter (`HEIGHT_FILTERED` info).
   - **Tonal mode:** `area`.
   - The method is recorded in `Snapshot.geometry.resample` and in the manifest.
-  - `FAB_EXCEEDS_SOURCE` (warning) is raised when `fabPx` is above the source's long side. mm/px always comes from the real raster.
+  - `FAB_EXCEEDS_SOURCE` (warning, PO-LASER-5) is raised when the source has fewer pixels than the target fabrication raster on either axis. `measured` is the source size and `limit` the target size in px; the message states the shortfall (for example "3800 × 2850 px short of the 0.1 mm/px target") and that source detail cannot be recovered (GEO-06). mm/px always comes from the real raster.
+  - `FAB_PITCH_CAPPED` (info, PO-LASER-4; registered in `SBDiag.CODES` with this task) is raised when the budget coarsened the pitch. `measured` is the actual mm/px, `limit` the target mm/px, and the message names the device class and budget. It is never silent: the dimbar (G2.11c) shows it before generation.
 
 - [ ] **Tests:**
   - `IMG-03 height nearest: output values ⊆ input values` (on a ramp)
   - `IMG-02 none is the identity`
   - `NFR-05 area on gray is integer-exact and repeatable`
-  - `GEO-06 never upsamples: 200×150 source at fab 1536 → 200×150, capped`
-  - `GEO-06 mmPerPx uses the real raster after capping`
+  - `GEO-06/PO-LASER-5 never upsamples: 200×150 source, 400×300 mm at 0.1 mm/px → 200×150, capped "source", shortPx [3800, 2850]`
+  - `GEO-06 mmPerPx uses the real raster after capping` (2.0 mm/px in the case above)
+  - `PO-LASER-4 300×225 mm art at 0.1 mm/px, budget 16e6 → 3000×2250, pitch 100 µm, capped "none"`
+  - `PO-LASER-4 470×470 mm art, budget 16e6 → pitch 118 µm (first integer pitch with W·H ≤ budget), capped "budget"`
+  - `PO-LASER-4 budget and source caps combine: capped "budget+source"`
+  - `NFR-05 fabRaster is integer-only and repeatable` (same inputs ×3, every output an integer)
   - `RESAMPLE_UPSAMPLE thrown for W > w`
 - **Commit.**
 
-### Task G2.1: `SBSchema`, project v1, presets, strict keys and lossless units
+### Task G2.1: `SBSchema`, project v1, presets, machine profile, strict keys and lossless units (extended, PO-LASER-1/3/4/6/7/8)
 
 **Files:**
 - Create: `js/schema.js`
@@ -1684,10 +1724,16 @@ Holes and labels are unchanged.
     - enums and finite numbers;
     - the ranges N 1..16, axis 1..2000 mm, t 0.1..25, g 0..25;
     - manual thresholds strictly ascending within (0, 1);
-    - `bedMM` null or `{w, h}`;
+    - `geometry.sizeBy ∈ {"height", "width"}`, `targetMM` 1..2000, `fabPitchMM` 0.01..2 (quantized to 0.001 mm), `draftPx` 64..2000;
+    - `machine` null or a `MachineProfile` (§3) with strict keys, finite positive limits, `maxProcessingHeightMM ≤ maxMaterialWidthMM`, `maxThicknessMM` 0.1..25 and `kerfMM` 0..2;
+    - `material.advisoryFeatureMM ≥ minFeatureMM`;
     - `registration.layers` is `"all"` or a sorted unique index list.
   - `SBSchema.importLoose(obj) → {project, movedToExtras: string[]}`. Unknown **top-level** keys go to `extras`; unknown keys inside geometry sections are still rejected.
-  - `SBSchema.geometryKey(p) → object`, scoped as in §3.
+  - `SBSchema.geometryKey(p) → object`, scoped as in §3 (`machine` is included: a profile change re-runs validation and invalidates acks).
+  - `SBSchema.MACHINES` (frozen): `{"xtool-s1-feeder": {id, name: "xTool S1 + feeder", maxProcessingHeightMM: 470, maxLengthMM: 3000, maxMaterialWidthMM: 545, maxThicknessMM: 14, kerfMM: 0.15}}` (PO-LASER-1). `defaults()` copies it into `project.machine` for both presets; every field stays editable and is saved with the project.
+  - `SBSchema.resolveSize(project, srcW, srcH) → {artWMM, artHMM, pageWMM, pageHMM}` (PO-LASER-3), on the oriented source size, integer µm: with `sizeBy: "height"`, `pageH = targetMM`, `artH = pageH − 2·frame`, `artW = round(artH·srcW/srcH)`; with `"width"` the same on the other axis. With `lockAspect: false` both `widthMM`/`heightMM` are used as entered.
+  - `SBSchema.limits(deviceClass) → {fabPxBudget, …}`. G2.1 introduces it with the **provisional** budgets desktop 16,000,000 px and mobile 4,000,000 px; G2.2b replaces them with the measured values; G2.14 and G4.3 add the other limits.
+  - Plywood preset additions: `geometry.sizeBy = "height"`, `targetMM = 300`, `fabPitchMM = 0.1`, `material.minFeatureMM = 1.5`, `advisoryFeatureMM = 2.0`; `thicknessMM = 6.35` nominal stays (PRJ-01), and the thickness control carries the hint "1/4\" ply often measures 5.5–6 mm: measure and enter it" (PO-LASER-8, G2.11c).
   - `SBSchema.toMM(v, unit)` / `fromMM(mm, unit)` for `unit ∈ {"mm","in"}`. Both quantize: `toMM(v,"in") = Math.round(v*25400)/1000`.
   - `SBSchema.modeChangeDiff(p, patch) → [{path, from, to, reason}]`. It lists the settings that a change of `interpretation.mode` or `construction.mode` affects or makes inapplicable. G2.11e uses it.
 
@@ -1698,7 +1744,19 @@ suite("schema.js — project v1 (PRJ-01/02, MAT-02/03, §9.1)", () => {
   const p = SBSchema.defaults("plywood");
   check("PRJ-01 plywood preset fields", p.construction.mode === "bonded-relief" && p.interpretation.polarity === "white-high" &&
     p.construction.sheets === 8 && p.construction.gapMM === 0 && p.material.thicknessMM === 6.35 && p.material.calibrated === false);
-  check("MAT-03 provisional feature/part", p.material.minFeatureMM === 3 && p.material.minPartMM2 === 25);
+  check("MAT-03/PO-LASER-6 provisional feature/part", p.material.minFeatureMM === 1.5 && p.material.advisoryFeatureMM === 2 && p.material.minPartMM2 === 25);
+  check("PO-LASER-1 default machine xTool S1 + feeder", p.machine.id === "xtool-s1-feeder" && p.machine.maxProcessingHeightMM === 470 &&
+    p.machine.maxLengthMM === 3000 && p.machine.maxMaterialWidthMM === 545 && p.machine.maxThicknessMM === 14 && p.machine.kerfMM === 0.15);
+  check("PO-LASER-1 machine profile is editable and survives validate", SBSchema.validate({ ...p, machine: { ...p.machine, maxLengthMM: 1000 } }).ok);
+  check("PO-LASER-1 unknown machine key rejected", !SBSchema.validate({ ...p, machine: { ...p.machine, power: 40 } }).ok);
+  check("PO-LASER-3 default sizes by height", p.geometry.sizeBy === "height" && p.geometry.targetMM === 300);
+  const sz = SBSchema.resolveSize({ ...p, construction: { ...p.construction, frame: { enabled: true, widthMM: 10 } } }, 4000, 3000);
+  check("PO-LASER-3 height mode: page 300 high, art 280 × 373.333", sz.pageHMM === 300 && sz.artHMM === 280 && sz.artWMM === 373.333 && sz.pageWMM === 393.333);
+  check("PO-LASER-4 fab pitch 0.1 mm, draft 720", p.geometry.fabPitchMM === 0.1 && p.geometry.draftPx === 720 && !("fabPx" in p.geometry));
+  check("PO-LASER-4 provisional pixel budgets", SBSchema.limits("desktop").fabPxBudget === 16e6 && SBSchema.limits("mobile").fabPxBudget === 4e6);
+  check("PO-LASER-6 advisory below minFeature rejected", !SBSchema.validate({ ...p, material: { ...p.material, advisoryFeatureMM: 1 } }).ok);
+  check("PO-LASER-8 thickness 6.35 nominal, editable", p.material.thicknessMM === 6.35 && p.material.thicknessState === "nominal" &&
+    SBSchema.validate({ ...p, material: { ...p.material, thicknessMM: 5.7, thicknessState: "measured" } }).ok);
   check("AT-01 12 in → 304.8 mm exactly (quantized)", SBSchema.toMM(12, "in") === 304.8);
   check("AT-01 304.8 mm → 12 in → 304.8 mm", SBSchema.toMM(SBSchema.fromMM(304.8, "in"), "in") === 304.8);
   const q = JSON.parse(JSON.stringify(p)); q.appearance.color = "#000000"; q.view.explodeMM = 40; q.app.version = "9.9.9"; q.id = "other";
@@ -1709,13 +1767,79 @@ suite("schema.js — project v1 (PRJ-01/02, MAT-02/03, §9.1)", () => {
   check("AT-22 unknown enum rejected", !SBSchema.validate({ ...p, construction: { ...p.construction, mode: "glued" } }).ok);
   check("§9.1/AT-22 unknown key in construction rejected", !SBSchema.validate({ ...p, construction: { ...p.construction, autoPillars: true } }).ok);
   check("§9.1 unknown top-level metadata moved to extras", SBSchema.importLoose({ ...p, colorNotes: "x" }).project.extras.colorNotes === "x");
-  check("GEO-10 bedMM has w and h", SBSchema.validate({ ...p, geometry: { ...p.geometry, bedMM: { w: 600, h: 400 } } }).ok);
+  check("GEO-10 machine null is allowed (no envelope check)", SBSchema.validate({ ...p, machine: null }).ok);
+  check("GEO-10 machine with processing height above material width rejected", !SBSchema.validate({ ...p, machine: { ...p.machine, maxProcessingHeightMM: 600 } }).ok);
   check("PRJ-02 mode change lists affected settings",
     SBSchema.modeChangeDiff(p, { construction: { mode: "connected-sheet" } }).some((d) => d.path === "construction.gapMM"));
 });
 ```
 
 - [ ] **Step 2–5:** fail, implement, pass, commit.
+
+### Task G2.1b: Draft/fabrication raster snapshot (`SBEngine.rasterPlan`) (LYR-06, GEO-06, NFR-04, PO-LASER-4/5)
+
+Runs third in G2 (Appendix D.4). It pulls the quality-dependent raster part of the G2.10b draft/fabrication rule forward, so the pixel budget benchmark (G2.2b), the dimbar (G2.11c) and preflight (G2.14) all use one rule.
+
+**Files:**
+- Modify: `js/engine.js` (add `rasterPlan`, `qualityPair`)
+
+**Interfaces:**
+- Consumes: `SBSchema.resolveSize`, `SBSchema.limits` (G2.1); `SBRaster.rasterSize`, `SBRaster.fabRaster` (G2.0); `SBDiag.make`.
+- Produces:
+  - `SBEngine.rasterPlan(project, source: {w, h}, quality: "draft"|"fabrication", deviceClass) → {geometry: GeometryConfig, diagnostics: Diagnostic[]}`, deep-frozen. It takes dimensions only, so it runs before any decode (NFR-04).
+    - Sizes come from `resolveSize` on the oriented source (`rotate` 90/270 swaps `w` and `h`).
+    - **Draft:** `rasterSize(w, h, project.geometry.draftPx)` (720 px long side); no pitch diagnostics.
+    - **Fabrication:** `fabRaster({artWUm, artHUm, srcW: w, srcH: h, targetPitchUm: Math.round(fabPitchMM·1000), pxBudget: limits(deviceClass).fabPxBudget})`, plus `FAB_EXCEEDS_SOURCE` (with `shortPx`) and `FAB_PITCH_CAPPED` (with actual and target mm/px) as G2.0 defines them, made with `quality: "fabrication"`.
+    - Fills every `GeometryConfig` field of §3, including `resample` (G2.0 policy per mode), `targetPitchUm`, `pitchUm`, `pxBudget`, `deviceClass`, `capped` and `shortPx`.
+  - `SBEngine.qualityPair(project, source, deviceClass) → {draft, fabrication}`: both plans, for display before generation.
+- Rule (LYR-06): `generate` (G2.10a) takes its raster only from `rasterPlan` for the requested quality. Export always recomputes the fabrication plan for the current revision and device class; a draft plan or its diagnostics never stand in for it.
+
+- [ ] **Tests:**
+  - `LYR-06 6000×4000 source, sizeBy height 300 mm, no frame → draft 720×480, fabrication 4500×3000 at 100 µm`
+  - `LYR-06 draft and fabrication plans differ in quality and raster; both deep-frozen`
+  - `PO-LASER-4 same project on mobile (budget 4e6) → 2446×1631 at 184 µm, FAB_PITCH_CAPPED info with measured 0.184 / limit 0.1 mm/px`
+  - `PO-LASER-5 800×600 source, 300 mm high → raster 800×600, FAB_EXCEEDS_SOURCE shortPx [3200, 2400]; the draft plan carries no pitch diagnostics`
+  - `IMG-05 rotate 90 swaps the sizing axes`
+  - `NFR-04 rasterPlan needs only {w, h}` (no pixel buffer is passed or read)
+  - `NFR-05 rasterPlan repeatable ×3 and every size field an integer`
+- **Commit.**
+
+### Task G2.2b: Large-image benchmark and per-device pixel budgets (PO-LASER-4/9, NFR-03/04, AT-24)
+
+Runs fourth in G2 (Appendix D.4), **before** the rest of the engine, so that every later task is built against a measured pixel budget and not against the provisional one of G2.1.
+
+**Files:**
+- Modify: `test/bench.js` (add the `large` stage), `test/fixtures.js` (seeded scalable height fixtures if the existing generators are too small), `js/schema.js` (`limits(deviceClass).fabPxBudget` set to the measured values), `docs/ARCHITECTURE.md` (D6 performance table)
+- Create: `docs/perf/large-image.json` (raw results), `docs/perf/LARGE_IMAGE.md` (machine, method, table, decision)
+
+**Workloads** (seeded, 8 layers, 4:3 unless noted; the stages are those that exist after G2.1b):
+- pixel counts 4, 9, 12, 16, 20 and 25 Mpx (2309×1732, 3464×2598, 4000×3000, 4618×3464, 5164×3873, 5774×4330);
+- the concrete laser case: a 470 mm-high, 3:4 portrait page (352.5 mm wide) at 0.1 mm/px (3525×4700, 16.6 Mpx; the provisional 16 Mpx budget caps it to 102 µm);
+- two content families per size: a **realistic** height map (smooth ramps and blobs, tens to hundreds of parts per layer) and the **busy** worst case (`randomNestedStack`-style noise);
+- the SRS §12.3 workloads (1536², 8 layers; 768², 6 layers) as calibration rows, so every large result is also expressed as a multiple of the NFR-03 reference.
+
+**Stages measured** (p50/p95/max, plus parts, vertices and peak memory as `process.memoryUsage()` `arrayBuffers + heapUsed` delta, labelled algorithm-owned per SRS §12.3):
+1. resample (`area` and `nearest`) from a 16 MP source (G2.0);
+2. masks (the existing tonal path `R.sheetMasks`, and a height threshold inline in the bench until G2.3);
+3. trace + `SBMaterial.fromMasks` (G1.1), connected smoothing (G1.2);
+4. adjacent-pair `difference` (B1 shape) and the support pass (B3b shape: one layer-level `intersection` per adjacent pair, `survivesInset` per piece);
+5. `SBSvg.layerSVG` and layer hashing (packaging proxy).
+
+Runs: 5 warm-ups and 30 runs at the candidate budget points (16 Mpx desktop; the chosen mobile point), 1 + 5 runs at the exploration points.
+
+**Decision rule** (recorded in `docs/perf/LARGE_IMAGE.md` and D6):
+- **Desktop budget** = the largest candidate in {16, 20, 25} Mpx whose estimated working set is ≤ 512 MiB (NFR-04) and whose final-plus-validation p95 (stages 3–4, realistic family) is ≤ the laser-detail target. The target is **10 s** (the NFR-03 final budget) when 16 Mpx meets it. If 16 Mpx does not, the budget stays at 16 Mpx and a **relaxed laser-detail target** is recorded: the measured p95 rounded up to the next 5 s, applying only to fabrication generation of workloads larger than the SRS §12.3 reference (draft stays 1.5 s and the SRS workload keeps 10 s). The busy family is reported, not gated: it is bounded by `COMPLEXITY_LIMIT` (G4.3).
+- **Mobile budget** = the largest candidate in {2, 4, 6, 8} Mpx with working set ≤ 192 MiB and p95 ≤ 8 s after scaling by the desktop-to-mobile factor k measured on the SRS mobile workload. Until the recorded ≥ 4 GB device is available (G4.4, AT-24), k = 4 is used and marked provisional.
+- **Stop and ask the product owner** if 16 Mpx exceeds 512 MiB, if the relaxed desktop target would exceed 60 s, or if no mobile candidate ≥ 2 Mpx qualifies.
+- The measured part and vertex counts at each budget are recorded as the starting point for the G4.3 complexity caps.
+- Note (D6): IMG-07 limits sources to 16 MP (desktop) and 8 MP (mobile), and the engine never upsamples, so a desktop budget above 16 Mpx takes effect only if IMG-07 is raised.
+
+- [ ] **Tests (fast, in `node test/run_tests.js`):**
+  - `PO-LASER-4 SBSchema.limits budgets equal docs/perf/large-image.json`
+  - `PO-LASER-9 bench workload list covers 4–25 Mpx and the 470 mm-high page`
+  - `PO-LASER-9 large-image targets recorded for desktop and mobile` (the JSON has a target and a p95 for both)
+- [ ] **Run** `node test/bench.js large` and record the results; the stage exits 0 only when every gated row is within its recorded target.
+- **Commit** (budgets, results and the D6 table in one commit).
 
 ### Task G2.2: Acknowledgements and the export gate (`SBDiag`, part 2)
 
@@ -1846,21 +1970,21 @@ The integer rule was verified against the float definition for every N in 1..16 
 |---|---|
 | `projectName` | `title` |
 | `sourceName` | `extras.legacy.sourceName` |
-| `procRes` | `geometry.fabPx` |
+| `procRes` | `extras.legacy.procRes`; `geometry.fabPitchMM` set by `resolveLegacy` |
 | `smoothRadius` / `smoothPasses` | `interpretation.smoothing.{radius, passes}` |
 | `nSheets` | `construction.sheets` |
 | `thresholdMode` | `interpretation.thresholdRule` |
 | `darkFront` | `polarity`: dark-front or light-front |
 | `palette` | `appearance.palette`, with `appearance.mode = "palette"` |
-| `widthMM` | `geometry.widthMM` |
+| `widthMM` | `geometry.widthMM`, with `sizeBy: "width"` and `targetMM` = page width |
 | `marginMM` | `frame: {enabled: > 0, widthMM}` |
 | `minFeatureMM` / `bridgeMM` / `cullBelowMM2` / `maxBridgeMM` | `cleanup` / `bridge` |
 | `holes` / `holeDiaMM` | `registration` |
 | `cornerStyle` | `cleanup.cornerStyle` (`faceted` → `sharp`) |
 | `detailEps` (px) | `extras.legacy.detailEps`; resolved later |
 
-    In addition, `interpretation.mode = "tonal"` and `construction.mode = "connected-sheet"`. `geometry.heightMM` is `null`, which raises `LEGACY_NEEDS_SOURCE` (blocking). The whole original JSON is kept in `extras.legacy`.
-  - `SBSchema.resolveLegacy(project, srcW, srcH) → project`. It sets `heightMM` from the source aspect, and `toleranceMM = max(0.05, detailEps × widthMM / round(srcW·procRes/max(srcW, srcH)))`, which uses the real working width for portrait sources too.
+    In addition, `interpretation.mode = "tonal"` and `construction.mode = "connected-sheet"`. `geometry.heightMM` is `null`, which raises `LEGACY_NEEDS_SOURCE` (blocking). The whole original JSON is kept in `extras.legacy`. `machine` gets the app default profile (`SBSchema.MACHINES["xtool-s1-feeder"]`), so an oversized legacy piece is reported by the envelope check, never rescaled.
+  - `SBSchema.resolveLegacy(project, srcW, srcH) → project`. It sets `heightMM` from the source aspect, `fabPitchMM` = the legacy pitch `longSideMM / procRes` quantized to 0.001 mm (so a v1.1.0 project keeps its resolution instead of jumping to 0.1 mm/px), and `toleranceMM = max(0.05, detailEps × widthMM / round(srcW·procRes/max(srcW, srcH)))`, which uses the real working width for portrait sources too.
 - The AT-21 guarantee is **same bands, polarity and connected semantics**. It is not byte-identical masks end to end, because v1.1.0 resampled twice on a canvas (the 2000 px pre-cap, then `procRes`). The CHANGELOG records this.
 
 - [ ] **Tests:**
@@ -1868,6 +1992,7 @@ The integer rule was verified against the float definition for every N in 1..16 
   - `AT-21 legacy settings + fixed luminance input → masks equal the persisted golden` (via the engine tonal path with `resample: "none"`)
   - `DEP-04 heightMM null → LEGACY_NEEDS_SOURCE until resolveLegacy`
   - `DEP-04 portrait source: toleranceMM uses real working width`
+  - `DEP-04/PO-LASER-4 legacy procRes 720, 300 × 200 mm → sizeBy width, fabPitchMM 0.417`
   - `DEP-04 legacy JSON preserved in extras`
 - **Commit.**
 
@@ -1957,6 +2082,7 @@ Delete the T0.4 `KNOWN-DEFECT SUP-01` and `KNOWN-DEFECT GEO-07 (bridge)` checks;
     - `unsupported(k) = difference(Final[k], Final[k−1])`; a non-empty result gives `BOND_UNSUPPORTED` (blocking), with `areaMM2`, `region`, `measured` (area) and `limit` (0).
     - Candidate support pairs are found by a **bbox sort-and-sweep**; only overlapping pairs are intersected.
     - Lower part q supports upper part p iff the contact `I = intersection(p, q)` has width w = 2·r\* **≥ 0.5 µm**, i.e. `SBGeom.survivesInset(I, 0.25)` (D3; empty, line and point contact do not count). `SUPPORT_NARROW` (warning) if w < `minFeatureUm`, i.e. `!SBGeom.survivesInset(I, minFeatureUm/2)` with `minFeatureUm = Math.round(minFeatureMM·1000)` rounded **before** halving. Use `SBGeom.classifyContact(I, minFeatureUm)` (`block | warn | ok`). "Survives" is certified by an exact witness; `undecided` counts as not surviving. **Never** test this with `SBGeom.offset`, which refuses sub-µm deltas (S5 F4).
+    - **Advisory tier (PO-LASER-6):** a contact that passes `SUPPORT_NARROW` but has w < `advisoryFeatureUm` (`!SBGeom.survivesInset(I, advisoryFeatureUm/2)`, same rounding rule; default 2.0 mm) gives `FEATURE_MARGINAL` (warning, `detail.kind: "contact"`). With the plywood defaults this is: block below 0.5 µm, `SUPPORT_NARROW` below 1.5 mm, `FEATURE_MARGINAL` below 2.0 mm.
     - Every part's support path must reach layer 0.
     - An empty layer under a non-empty one gives `BOND_EMPTY_UNDER`.
     - Identical consecutive layers give `IDENTICAL_LAYERS` (info).
@@ -1987,6 +2113,12 @@ suite("support.js — final validation (D-4.5, SUP-02/03, GEO-07, AT-08/09)", ()
   const sq = (x0, y0, x1, y1) => ({ outer: [x0, y0, x1, y0, x1, y1, x0, y1], holes: [] }), lo = [sq(0, 0, 10000, 10000)];
   check("D3 1 µm axis overlap is support (w ≥ 0.5 µm) but SUPPORT_NARROW for minFeature 3 mm", SBGeom.classifyContact(SBGeom.intersection([sq(9999, 0, 20000, 10000)], lo), 3000).level === "warn");
   check("D3 3000 µm overlap with minFeature 3 mm → no SUPPORT_NARROW (tie passes)", SBGeom.classifyContact(SBGeom.intersection([sq(7000, 0, 20000, 10000)], lo), 3000).level === "ok");
+  // PO-LASER-6 plywood defaults: 1.5 mm minimum, 2.0 mm advisory. New fixture F.MASKS.stripOnBase(widthMM): a 2-layer stack at 0.1 mm/px
+  // whose upper part overlaps the lower one by a strip of the given width (added to test/fixtures.js in this task).
+  const strip = (w) => SBSupport.validate(mk(F.MASKS.stripOnBase(w)), "bonded-relief", { minFeatureMM: 1.5, advisoryFeatureMM: 2 });
+  check("PO-LASER-6 1.4 mm contact → SUPPORT_NARROW", codes(strip(1.4)).includes("SUPPORT_NARROW"));
+  check("PO-LASER-6 1.8 mm contact → FEATURE_MARGINAL, no SUPPORT_NARROW", codes(strip(1.8)).includes("FEATURE_MARGINAL") && !codes(strip(1.8)).includes("SUPPORT_NARROW"));
+  check("PO-LASER-6 2.0 mm contact → neither (tie passes)", !codes(strip(2.0)).some((c) => c === "SUPPORT_NARROW" || c === "FEATURE_MARGINAL"));
 });
 ```
 
@@ -2006,6 +2138,8 @@ The end-to-end AT-09 smoothing case runs through `SBEngine.generate` in G2.10a.
 - [ ] **Step 3: Benchmark hook**
 
 Add `test/bench.js support`, which runs on `randomNestedStack(lcg(1), 1536, 1024, 8)`. Record p95 in `docs/perf/` now; do not wait for G4.4.
+
+**B3b budget (required for G2.7 exit; D2, Appendix C):** `test/bench.js geom` B3b, the support pass on the dense B1 stack (3,407 pairs), must reach **p95 < 3 s** (the B3 budget; provisional < 6 s until now). The pass computes **one layer-level `intersection` per adjacent layer pair**, attributes the pieces to parts by bbox sweep, and classifies each piece with `SBGeom.survivesInset` / `classifyContact` (never per part pair: 39 s; never `SBGeom.offset`). It skips the containment `difference` when only the graph is needed and reuses the B1 differences. When B3b passes, remove its provisional entry. The support stage is also run on the G2.2b large workloads and its p95 is recorded next to the PO-LASER-9 targets.
 - [ ] **Step 4–5:** run (fail), implement, run (pass), commit.
 
 ### Task G2.8: Feature and sampling checks (GEO-05/06, MAT-03, AT-10)
@@ -2014,13 +2148,15 @@ Add `test/bench.js support`, which runs on `randomNestedStack(lcg(1), 1536, 1024
 - Modify: `js/support.js` (add `featureChecks`)
 
 **Interfaces:**
-- Produces `SBSupport.featureChecks(layers, {minFeatureMM, minPartMM2, mmPerPxMax, calibrated}) → Diagnostic[]` (aggregated per layer):
+- Produces `SBSupport.featureChecks(layers, {minFeatureMM, advisoryFeatureMM, minPartMM2, mmPerPxMax, calibrated}) → Diagnostic[]` (aggregated per layer):
   - `SAMPLING_LOW` (blocking) when `minFeatureMM / mmPerPxMax < 3`, with measured = samples across the feature and limit = 3;
   - per part, `e = offset(part, −halfUm, "miter")` with **integer** `halfUm = Math.floor(minFeatureUm / 2)` and `minFeatureUm = Math.round(minFeatureMM·1000)` (D3: `SBGeom.offset` refuses non-integer deltas, so an odd `minFeatureUm` must not be halved to x.5; on integer-µm geometry the floor is exact: a width w ≤ 2·halfUm vanishes, so w < `minFeatureUm` warns and w ≥ `minFeatureUm` survives for odd `minFeatureUm`):
     - if `isEmpty(e)`, emit `PART_THIN` (warning; the part disappears);
     - if `components(e).length > 1`, emit `NECK_NARROW` (warning; separated residual regions);
+  - **advisory tier (PO-LASER-6):** a part that passes both checks at `minFeatureMM` but would vanish or split at `advisoryFeatureMM` (the same erosion with `halfUm = Math.floor(advisoryFeatureUm / 2)`) gives `FEATURE_MARGINAL` (warning, `detail.kind: "part"|"neck"`; registered in `SBDiag.CODES` with G2.7 and aggregated per `(code, layer)` like `PART_THIN`). Only parts whose bbox is narrower than the advisory width in some direction, or that the first erosion changed, need the second offset (Appendix C: offsets are the slowest primitive);
   - `PART_SMALL` (warning) when a part's area is below `minPartMM2`;
   - `MAT_UNCALIBRATED` (warning) when `!calibrated`.
+- With the plywood defaults (1.5 mm), `SAMPLING_LOW` needs mm/px ≤ 0.5. The 0.1 mm/px target gives 15 samples; a budget-capped pitch still passes unless it is coarser than 0.5 mm/px, and then export is refused as GEO-06 requires.
 - Every GEO-05 message contains the text "Conservative fabrication warning — not a structural simulation".
 
 - [ ] **Tests:** these run on vectorized geometry from `fromMasks` at 0.1 mm/px.
@@ -2031,6 +2167,10 @@ Add `test/bench.js support`, which runs on `randomNestedStack(lcg(1), 1536, 1024
   - `D3 featureChecks with minFeatureMM 2.999 (odd µm) uses integer halfUm 1499 and does not throw`
   - `GEO-05 2.9 mm-wide isolated strip → PART_THIN`
   - `AT-10 part 24.9 mm² → PART_SMALL; 25.1 mm² → none`
+  - `PO-LASER-6 neck 1.4 mm with min 1.5 mm → NECK_NARROW` (14 px)
+  - `PO-LASER-6 neck 1.8 mm with min 1.5 / advisory 2.0 → FEATURE_MARGINAL only` (18 px)
+  - `PO-LASER-6 neck 2.1 mm → none` (21 px)
+  - `PO-LASER-6/GEO-06 1.5 mm feature at 0.5 mm/px → no SAMPLING_LOW; at 0.6 mm/px → SAMPLING_LOW`
   - `GEO-05 message labelled conservative, not structural`
   - `MAT-03 uncalibrated warning present`
 - **Commit.**
@@ -2071,7 +2211,7 @@ Add `test/bench.js support`, which runs on `randomNestedStack(lcg(1), 1536, 1024
 **Interfaces:**
 - Produces `SBEngine.generate(req: GenerateRequest, {isCanceled?, onProgress?}) → GenerateResponse` (§3 names). `req.engineVersion` must equal `SBEngine.VERSION`, otherwise the response is `status: "error"`, `ENGINE_MISMATCH`. Stages, in order:
   1. orient (EXIF only if engine-applied, then user rotate/mirror)
-  2. resample to the requested quality's raster (G2.0 policy; never upsample)
+  2. resample to the raster of `SBEngine.rasterPlan(project, source, quality, deviceClass)` (G2.1b: draft 720 px long side, fabrication from the physical pitch and pixel budget; G2.0 policy; never upsample), emitting its `FAB_EXCEEDS_SOURCE` / `FAB_PITCH_CAPPED`
   3. domain mask A
   4. interpret:
      - height: `heightFilter` if set, then `addedFromSamples`;
@@ -2083,7 +2223,7 @@ Add `test/bench.js support`, which runs on `randomNestedStack(lcg(1), 1536, 1024
   9. replay `repairs[]` (G2.9)
   10. registration holes are proposed from the pre-hole material, then subtracted (G3.1 inserts this; until then, the legacy connected corners from G1.7)
   11. complexity caps. If parts per layer or total vertices exceed the device-class cap, return `status: "error"` with blocking `COMPLEXITY_LIMIT` and **no** layers.
-  12. `SBGeom.validate`, `SBSupport.validate` and `featureChecks`
+  12. `SBGeom.validate`, `SBSupport.validate` and `featureChecks`, then `SBSupport.checkEnvelope(page, machine, material)` (moved forward from G3.10; GEO-10, PO-LASER-2): when `machine` is set, the shared page (artwork plus frame, the extent of every layer sheet) must satisfy `(pageW ≤ maxLengthMM ∧ pageH ≤ maxProcessingHeightMM) ∨ (pageW ≤ maxProcessingHeightMM ∧ pageH ≤ maxLengthMM)`, compared in µm, else `PAGE_OVERFLOW` (blocking, measured page vs limit, fix: "reduce the target size or edit the machine profile"); `material.thicknessMM > maxThicknessMM` gives `MACHINE_THICKNESS` (blocking; registered with this task). Never rescales
   13. `assignParts`
   14. guides plus guide-containment validation (G3.1 inserts this)
 
@@ -2100,6 +2240,11 @@ Add `test/bench.js support`, which runs on `randomNestedStack(lcg(1), 1536, 1024
   - `IMG-03 height mode does not smooth unless heightFilter is set` (spy on kuwahara, thresholds and applyFilter)
   - `§12.3 30k-part noise input → COMPLEXITY_LIMIT, no layers returned`
   - `§9.3 isCanceled → status canceled`
+  - `PO-LASER-2/GEO-10 page 480 × 300 mm on xTool S1 + feeder → fits (rotated: 300 ≤ 470, 480 ≤ 3000)`
+  - `PO-LASER-2/GEO-10 page 480 × 480 mm → PAGE_OVERFLOW blocking, geometry not rescaled`
+  - `PO-LASER-2 frame counts: art 460 × 460 fits, the same art with a 10 mm frame (page 480 × 480) → PAGE_OVERFLOW`
+  - `PO-LASER-2 thickness 15 mm → MACHINE_THICKNESS`
+  - `GEO-10 machine null → no envelope diagnostics`
 - **Commit.**
 
 ### Task G2.10b: Z model, accounting, hashes, freeze and the draft/fab rule
@@ -2114,7 +2259,7 @@ Add `test/bench.js support`, which runs on `randomNestedStack(lcg(1), 1536, 1024
   3. `stats.stockMM` and `stats.reliefMM`, compared as µm integers;
   4. layer hashes, `guideHash` and `geometryHash` (§3, including `quality` and raster size);
   5. `Object.freeze`, deep.
-- **Draft/fabrication rule (LYR-06):** interaction uses `quality: "draft"`. **Every** export, starting with alpha.2, runs `generate` at `quality: "fabrication"`, opens the review panel on that snapshot's diagnostics, and gates on `exportGate(…, "fabrication")`. Draft diagnostics and acks are never reused.
+- **Draft/fabrication rule (LYR-06):** interaction uses `quality: "draft"`. **Every** export, starting with alpha.2, runs `generate` at `quality: "fabrication"`, opens the review panel on that snapshot's diagnostics, and gates on `exportGate(…, "fabrication")`. Draft diagnostics and acks are never reused. The quality-dependent raster comes from `SBEngine.rasterPlan` (G2.1b); this task wires it into hashes and freezing and adds nothing to the raster rule.
 
 - [ ] **Tests:**
   - `§9.2 each layer has index,zBottomMM,zTopMM,material,carriers,parts,cutPaths,scorePaths,diagnostics,canonicalHash`
@@ -2146,7 +2291,7 @@ Add `test/bench.js support`, which runs on `randomNestedStack(lcg(1), 1536, 1024
 **Files:**
 - Modify:
   - `index.html:51-117`: rail stages Source / Interpretation / Construction / Review / Export;
-  - `index.html:62`: `#in-res` becomes "Fabrication resolution", `min=360 max=4096 step=4`;
+  - `index.html:62`: `#in-res` becomes "Fabrication pitch (mm/px)", a number input `min=0.05 max=2 step=0.01`, default 0.1 (PO-LASER-4; replaces the 1536/4096 long-side range). The draft resolution is not a user control (720 px);
   - `index.html:71-72`: `#in-sheets` `min=1 max=16`;
   - `css/style.css`.
 - **QA:** stages are reachable by keyboard in order. **Commit.**
@@ -2158,11 +2303,13 @@ Add `test/bench.js support`, which runs on `randomNestedStack(lcg(1), 1536, 1024
 
 **Interfaces:**
 - Selects: `#in-interp`, `#in-polarity`, `#in-construction`, `#in-thickness`, `#in-thickstate`, `#in-gap`, `#in-manual-th`, `#in-units`, `#in-appearance`, `#in-color`, `#in-explode`.
+- Size and machine (PO-LASER-1/3/8): `#in-sizeby` (Height / Width, default Height), `#in-target` (finished size in the chosen unit, art plus frame), and a **Machine** group: `#in-machine` (profile select, "xTool S1 + feeder" preselected, plus "None") with editable `#in-m-height`, `#in-m-length`, `#in-m-matwidth`, `#in-m-thick`, `#in-m-kerf`. Edits change `project.machine` (a geometry change: revision + 1, regenerate). `#in-thickness` shows the PO-LASER-8 hint.
 - Appearance and view changes call `renderAll()` only, following the pattern at `app.js:614`. Geometry changes bump the revision and call `regenerate()`.
 - The persistent `.dimbar` shows:
   - requested and exported count;
   - max Z, base t and relief;
-  - mm/px of the real raster;
+  - mm/px of the real raster, next to the target pitch, the fabrication raster W × H and Mpx, and the cap reason (budget with device class, or source with the px shortfall) **before** generation (PO-LASER-4/5, NFR-04: never silent);
+  - the page size against the machine processing area ("fits" / "too large by … mm", PO-LASER-2);
   - a thresholds popover listing every boundary as **normalized and mm**, from `SBHeight.boundaries` (LYR-02).
 - Disclaimer copy, from pure strings in `SBDocs.COPY`:
   - MAT-01: "Stock height excludes adhesive films and surface finishes."
@@ -2173,6 +2320,9 @@ Add `test/bench.js support`, which runs on `randomNestedStack(lcg(1), 1536, 1024
   - `LYR-01 dimbar shows requested vs exported`
   - `MAT-01 adhesive/finish exclusion text present`
   - `MAT-04 palette disclaimer text present`
+  - `PO-LASER-4 dimbar shows target and actual mm/px and the cap reason`
+  - `PO-LASER-5 dimbar shows the source shortfall in px`
+  - `PO-LASER-2 dimbar shows page vs machine area`
 - **Commit.**
 
 ### Task G2.11d: Applicability and disabled-with-reason controls
@@ -2280,14 +2430,14 @@ Add `test/bench.js support`, which runs on `randomNestedStack(lcg(1), 1536, 1024
 - Modify: `js/app.js:519-566` (`loadFile`; delete `downscaleIfHuge`), `js/schema.js` (`limits`, `preflight`)
 
 **Interfaces:**
-- Produces: `SBSchema.preflight({bytes, info, deviceClass, fabPx}) → {ok, code?, reason?, suggestDownsamplePx?, warnings: []}`. `info` comes from `SBPng.inspect` or `SBJpeg.inspect`, so the dimensions are known **before** decoding.
+- Produces: `SBSchema.preflight({bytes, info, deviceClass, project}) → {ok, code?, reason?, suggestDownsamplePx?, rasterPlan, warnings: []}`. `info` comes from `SBPng.inspect` or `SBJpeg.inspect`, so the dimensions are known **before** decoding. `rasterPlan` is the G2.1b fabrication plan for those dimensions, so the pitch, cap and shortfall are shown before decoding (PO-LASER-4/5).
 - Intake order:
   1. sniff the signature;
   2. run `inspect` and `check` (both modes);
   3. run `preflight`;
   4. decode. Height PNGs go through `SBPng.decode`; tonal PNG/JPEG use the browser decode (`decode: "canvas-tonal"`, `exifAppliedBy: "browser"`).
-- Downsampling happens only through an explicit button. It records `geometry.fabPx` and a history entry.
-- mm/px is computed from `min(source long side, fabPx)`, which matches G2.0.
+- Downsampling happens only through an explicit button. It records a coarser `geometry.fabPitchMM` and a history entry.
+- mm/px comes from `rasterPlan` (G2.0 `fabRaster`), never from an assumed long side.
 
 - [ ] **Tests:**
   - `IMG-07 desktop 26MiB rejected`
@@ -2295,7 +2445,8 @@ Add `test/bench.js support`, which runs on `randomNestedStack(lcg(1), 1536, 1024
   - `IMG-07 JPEG 6000×4000 (24 MP) rejected from SOF before decode`
   - `IMG-07 mobile 9MP rejected`
   - `IMG-01 tonal APNG and tonal 16-bit PNG rejected at intake`
-  - `GEO-06 fabPx above source → FAB_EXCEEDS_SOURCE, mm/px from source`
+  - `GEO-06/PO-LASER-5 target raster above source → FAB_EXCEEDS_SOURCE with px shortfall, mm/px from source`
+  - `PO-LASER-4 preflight returns the capped pitch for a 470 mm-high page on mobile`
   - `NFR-04 no code path lowers resolution without explicit flag`: a grep check that `downscaleIfHuge` is absent from `js/app.js`
 - **Commit.**
 
@@ -2326,12 +2477,12 @@ Each task below is fully specified. It is expanded into step-level TDD before ex
 | **G3.2** Vector labels and interior point [UP] | Single-stroke font; pole-of-inaccessibility interior point. Delete `legacyTextLabel` from `layerSVG`. | `js/strokefont.js` `SBFont.strokes(text, heightMM) → polylines (µm)`; `SBGeom.interiorPoint(poly, clearanceUm) → [x,y]\|null` (grid refinement, integer, deterministic) | `EXP-03 FIXED: layerSVG never emits <text>` (retargeted; delete the shim check); `AT-13 small part ID exported as paths only`; `ASM-03 crescent interior point inside with clearance`; `ASM-03 donut point not in hole`; `DEP-04 connected sheet label now vector strokes` | ASM-03, EXP-03 |
 | **G3.3** Guides | Modes `none`, `inset-outline`, `interior-mark`. Guides for layer k+1 are scored on layer k. **Centreline region** `Rc = offset(upper, −(concealInset + allowance + footprint/2)) ∩ offset(lower, −footprint/2)`. **Burn region** `Rb = offset(upper, −(concealInset + allowance)) ∩ lower`. ID labels use a label box of `labelHeightMM` in the same test. An empty region omits the mark, raises `GUIDE_OMITTED` with a reason, and falls back to the map. `allowanceMM == 0` raises `ALIGN_CLEARANCE_ZERO` (warning). Guides carry the `canonicalHash` of both layers, are invalidated when either changes, and are written to `part.guideRefs`. All offsets use miter joins. | `js/guides.js` `SBGuides.build(layers, cfg) → {scoreByLayer, labelsByLayer, omitted, byPart}` | `AT-14 crescent/donut/small part: difference(buffer(polyline, footprint/2, square), Rb) empty` (segment-level, not vertex-only); `ASM-02 concealment inset default 0.5 mm, separate from footprint`; `ASM-02 too-small part → omitted + reason`; `SUP-05 stale guide invalidated on hash change`; `§4.5 zero allowance → ALIGN_CLEARANCE_ZERO`; `AT-14 no hidden mirror` | ASM-01, ASM-02, SUP-05 |
 | **G3.4** Registration holes | Off by default in bonded mode. Opt-in hole positions must fit **with `edgeClearanceMM`**, as `offset(circle, clearance)` inside material, on every selected layer; otherwise `REG_HOLE_INVALID` (blocking). Holes are subtracted **before** validation, so a hole set that leaves upper material over a drilled lower layer is reported as `BOND_UNSUPPORTED` by the normal checks. The UI recommends `"all"`. Replaces the G1.7 legacy corners (from `svgout.js:54-61`). | `SBGuides.registration(layers, cfg) → {holes, diagnostics}`; consumed by `SBMaterial.subtractHoles` | `ASM-04 bonded default no holes`; `ASM-04 hole over void rejected`; `ASM-04 hole within edge clearance of a boundary rejected`; `ASM-04 partial-stack holes under upper material → BOND_UNSUPPORTED`; `AT-06 hole in frame accepted (connected)` | ASM-04 |
-| **G3.5** Placement map and instructions | Printable map of every part ID; pure `ASSEMBLY.md` generator with separate bonded and connected texts. The kerf text (`app.js:339-340`) and spacer text (`app.js:349-351`) are rewritten. | `SBSvg.placementMapSVG(snapshot, guides)`; `js/docs.js` `SBDocs.assembly(project, snapshot) → string` (replaces `app.js:311 buildAssemblyMD`) and `SBDocs.COPY` | `ASM-01 map lists every part ID`; `ASM-05 contains front face, base-to-front order, every part ID with support refs, keep/discard, omitted layers, which guides belong to which layer, zero gap, nominal vs measured`; `MAT-05 "no kerf offset applied (kerfMode=external)"`; `NFR-12/EXP-09 no speed/power values` (regex `/\b\d+(\.\d+)?\s*(%\|mm\/s\|mm\/min\|k?W)(?!\w)/i` absent); `EXP-09 downstream-edit warning present`; `ASM-05 bonded text contains no "spacer"`; `MAT-01/MAT-04 disclaimers present in ASSEMBLY.md` | ASM-01, ASM-05, MAT-01, MAT-04, MAT-05, EXP-09, NFR-12 |
+| **G3.5** Placement map and instructions | Printable map of every part ID; pure `ASSEMBLY.md` generator with separate bonded and connected texts. The kerf text (`app.js:339-340`) and spacer text (`app.js:349-351`) are rewritten. The guide names the machine profile (processing area, stock width, max thickness) and states the recorded kerf (0.15 mm by default) as information for the operator's laser software; no offset is applied (MAT-05, PO-LASER-1/7). | `SBSvg.placementMapSVG(snapshot, guides)`; `js/docs.js` `SBDocs.assembly(project, snapshot) → string` (replaces `app.js:311 buildAssemblyMD`) and `SBDocs.COPY` | `ASM-01 map lists every part ID`; `ASM-05 contains front face, base-to-front order, every part ID with support refs, keep/discard, omitted layers, which guides belong to which layer, zero gap, nominal vs measured`; `MAT-05 "no kerf offset applied (kerfMode=external)"`; `NFR-12/EXP-09 no speed/power values` (regex `/\b\d+(\.\d+)?\s*(%\|mm\/s\|mm\/min\|k?W)(?!\w)/i` absent); `EXP-09 downstream-edit warning present`; `ASM-05 bonded text contains no "spacer"`; `MAT-01/MAT-04 disclaimers present in ASSEMBLY.md` | ASM-01, ASM-05, MAT-01, MAT-04, MAT-05, EXP-09, NFR-12 |
 | **G3.6** Revisions, undo/redo and frozen snapshots | Monotonic revisions; command stack of config patches, filter changes and repair ops, depth ≥ 20; deep-frozen snapshot; export reads only the snapshot whose revision equals the revision current when export started | `js/project.js` `SBProject.create(p)`, `.apply(patch)`, `.undo()`, `.redo()`, `.freeze(snapshot)` | `PRJ-04 25 undos restore config`; `PRJ-04 revisions monotonic`; `PRJ-04 repair op in history with source/result revisions`; `SUP-04 undo of repair restores prior hash`; `IMG-03 heightFilter change is an undoable entry`; `EXP-05 snapshot immutable after later edits` (Review Focus 5) | PRJ-04, EXP-05, SUP-04 |
 | **G3.7** Safe ZIP reader | Central-directory parser; stored entries plus deflate-raw through `DecompressionStream("deflate-raw")`; running byte budget | `SBZip.read(bytes, {maxEntries: 1024, maxBytes}) → Promise<Map<name, Uint8Array>>` | `§9.4 ../ traversal rejected`; `absolute/backslash path rejected`; `duplicate entry rejected`; `>1024 entries rejected`; `declared vs actual size mismatch rejected`; `expanded > limit aborts`; `nested .zip/.sbrproj rejected`; `round trip with SBZip.build` | §9.4, NFR-06, PRJ-03 |
 | **G3.8** `.sbrproj`, migration and legacy import | The container holds `project.json`, `source/samples.bin`, `source/meta.json` and optionally `source/original.*`. Validate **before** replacing the open project. Explicit `migrate(from → to)`. An unknown newer major is rejected and the current project kept. Legacy import uses `SBSchema.fromLegacySettings` (G2.4b) and `resolveLegacy` when a source is attached. | `SBProject.pack(project, samples) → Uint8Array`; `SBProject.unpack(bytes) → Promise<{project, samples}>`; `SBSchema.migrate(obj)` | `AT-17 save→load without original → identical geometryHash`; `AT-17 app-version bump → identical geometryHash`; `IMG-02 sample hash verified on load (SBHash.digest)`; `PRJ-06 newer major rejected, current untouched`; `DEP-05 no silent downgrade`; `AT-21/DEP-04 v1.1.0 settings + source → tonal+connected, same bands and polarity`; `AT-22 unknown geometry key in project.json rejected` | PRJ-03, PRJ-06, DEP-04, DEP-05 |
-| **G3.9** Fabrication package and manifest | Exact §9.4 layout through a pure `filePlan` (MVP graft); ZIP name `<sanitized-title>_fabrication.zip`. **Manifest (EXP-06, every SRS:L330 field):** schema, app and engine versions, **upstream baseline `f0552c7`**, `sourceHash`, `sampleHash`, units, **dimensions (artwork and finished page)**, **interpretation mode, polarity and threshold rule**, thresholds used (normalized and mm), **material settings (thickness, state, calibrated, calibration record)**, **resolution (quality, raster w×h, mm/px, resample method)**, tolerances, inventory including omitted indices, Z per layer, conventions (mm, Y-down, front face, no mirroring), `kerfMode:"external"`, support graph, per-file SHA-256 (`SBHash.digest`), and separate uncertainty fields (D-4.2). **`validation.json`:** every diagnostic with `ackState`, plus the **cleanup report in mm²** (added and removed area, holes filled, parts removed) (GEO-08). The tilt PNG is optional: if present it is `proof/illustrative-tilt.png` with an "illustrative" label, and it is outside the exact-inventory check. | `js/package.js` `SBPackage.filePlan(snapshot, opts) → [{path, kind}]`; `SBPackage.buildFabrication(snapshot, project, opts) → files[]`; `app.js:399 buildAndDeliver` becomes a thin call | `EXP-04 inventory exact` (`cuts/layer_00_base.svg`, `cuts/layer_01.svg`…, `proof/assembly.svg`, `proof/placement-map.svg`, `ASSEMBLY.md`, `manifest.json`, `validation.json`, `settings.json`, `project.sbrproj`; tilt PNG optional); `EXP-04 zip name <title>_fabrication.zip`; `EXP-01 trailing-empty layer has no file, index gap kept`; `EXP-06 manifest has every SRS:L330 key`; `EXP-06 manifest hashes match file bytes`; `GEO-08 validation.json cleanupReport in mm²`; `AT-16 generate twice → byte-identical SVGs and manifest except timestamp`; `NFR-06 hostile title escaped in SVG/MD/JSON/filenames` (Review Focus 4); `SUP-03 support graph in manifest` | EXP-01, EXP-04, EXP-05, EXP-06, SUP-03, MAT-05, GEO-08, NFR-06 |
-| **G3.10** Two-phase export, delivery states and bed check | **Phase 1:** freeze the current revision and generate at fabrication quality (worker). **Phase 2:** open the review panel scoped to that fab snapshot's `geometryHash`. It lists blocking items, unacknowledged warnings and any `REPAIR_REVIEW_FAB`, and the user acknowledges the warnings there. **Phase 3:** package only if `exportGate(fabDiags, acks, fabSnapshot, "fabrication").allowed`. Any edit during phases 1–2 marks the result stale and cancels. Export is disabled while stale, processing or blocked. **Diagnostic-only package:** `<title>_NOT-READY-TO-CUT_diagnostic.zip` contains `project.sbrproj`, `validation.json`, `manifest.json` and `proof/` but **no `cuts/`**; its README states it is not for cutting. `deliverFile` (`app.js:449`) returns `"generated"`, `"handed-off"`, `"canceled"` or `"failed"`. Optional `geometry.bedMM {w, h}` raises `PAGE_OVERFLOW` (either axis, either orientation) and never rescales. | `SBDiag.exportGate` (G2.2); `SBPackage.buildDiagnostic(...)`; `SBPackage.deliveryState(event)`; `SBSupport.checkEnvelope(page, bedMM)` | `EXP-07 blocking → disabled`; `EXP-07 draft acks do not satisfy fab gate`; `EXP-07 fab warnings acked in fab review → allowed`; `AT-15 diagnostic-only package has no cuts/ entries and is labelled NOT READY TO CUT`; `EXP-08 share AbortError → canceled, project intact`; `GEO-10 page > bed (w or h) blocks, no rescale` | EXP-07, EXP-08, GEO-10, LYR-06, NFR-09 |
+| **G3.9** Fabrication package and manifest | Exact §9.4 layout through a pure `filePlan` (MVP graft); ZIP name `<sanitized-title>_fabrication.zip`. **Manifest (EXP-06, every SRS:L330 field):** schema, app and engine versions, **upstream baseline `f0552c7`**, `sourceHash`, `sampleHash`, units, **dimensions (artwork and finished page)**, **interpretation mode, polarity and threshold rule**, thresholds used (normalized and mm), **material settings (thickness, state, calibrated, calibration record)**, **resolution (quality, raster w×h, mm/px, resample method)**, tolerances, inventory including omitted indices, Z per layer, conventions (mm, Y-down, front face, no mirroring), `kerfMode:"external"`, **machine profile with its kerf (informational, PO-LASER-1/7)**, **target and actual pitch, pixel budget, device class, cap reason and source shortfall (PO-LASER-4/5)**, support graph, per-file SHA-256 (`SBHash.digest`), and separate uncertainty fields (D-4.2). **`validation.json`:** every diagnostic with `ackState`, plus the **cleanup report in mm²** (added and removed area, holes filled, parts removed) (GEO-08). The tilt PNG is optional: if present it is `proof/illustrative-tilt.png` with an "illustrative" label, and it is outside the exact-inventory check. | `js/package.js` `SBPackage.filePlan(snapshot, opts) → [{path, kind}]`; `SBPackage.buildFabrication(snapshot, project, opts) → files[]`; `app.js:399 buildAndDeliver` becomes a thin call | `EXP-04 inventory exact` (`cuts/layer_00_base.svg`, `cuts/layer_01.svg`…, `proof/assembly.svg`, `proof/placement-map.svg`, `ASSEMBLY.md`, `manifest.json`, `validation.json`, `settings.json`, `project.sbrproj`; tilt PNG optional); `EXP-04 zip name <title>_fabrication.zip`; `EXP-01 trailing-empty layer has no file, index gap kept`; `EXP-06 manifest has every SRS:L330 key`; `EXP-06 manifest hashes match file bytes`; `GEO-08 validation.json cleanupReport in mm²`; `AT-16 generate twice → byte-identical SVGs and manifest except timestamp`; `NFR-06 hostile title escaped in SVG/MD/JSON/filenames` (Review Focus 4); `SUP-03 support graph in manifest` | EXP-01, EXP-04, EXP-05, EXP-06, SUP-03, MAT-05, GEO-08, NFR-06 |
+| **G3.10** Two-phase export, delivery states and bed check | **Phase 1:** freeze the current revision and generate at fabrication quality (worker). **Phase 2:** open the review panel scoped to that fab snapshot's `geometryHash`. It lists blocking items, unacknowledged warnings and any `REPAIR_REVIEW_FAB`, and the user acknowledges the warnings there. **Phase 3:** package only if `exportGate(fabDiags, acks, fabSnapshot, "fabrication").allowed`. Any edit during phases 1–2 marks the result stale and cancels. Export is disabled while stale, processing or blocked. **Diagnostic-only package:** `<title>_NOT-READY-TO-CUT_diagnostic.zip` contains `project.sbrproj`, `validation.json`, `manifest.json` and `proof/` but **no `cuts/`**; its README states it is not for cutting. `deliverFile` (`app.js:449`) returns `"generated"`, `"handed-off"`, `"canceled"` or `"failed"`. The machine envelope check (`PAGE_OVERFLOW`, `MACHINE_THICKNESS`; G2.10a, from `project.machine`, either orientation) is blocking, so the gate refuses the cut package and offers only the diagnostic package; nothing is rescaled. | `SBDiag.exportGate` (G2.2); `SBPackage.buildDiagnostic(...)`; `SBPackage.deliveryState(event)`; `SBSupport.checkEnvelope(page, machine, material)` (G2.10a) | `EXP-07 blocking → disabled`; `EXP-07 draft acks do not satisfy fab gate`; `EXP-07 fab warnings acked in fab review → allowed`; `AT-15 diagnostic-only package has no cuts/ entries and is labelled NOT READY TO CUT`; `EXP-08 share AbortError → canceled, project intact`; `GEO-10/PO-LASER-2 page > machine area (w or h) blocks export, no rescale` | EXP-07, EXP-08, GEO-10, LYR-06, NFR-09 |
 | **G3.11** Autosave and recovery | Debounced `.sbrproj` written to IndexedDB through an injectable storage adapter, with a recovery prompt. On quota or private-mode failure, show a persistent "Unsaved" badge and a "Download project" button. Wire the result of the existing `navigator.storage.persist()` call (`app.js:656`, `:679`) into the autosave status ("storage may be cleared"). | `SBProject.autosave(store, project)`, where `store` is `{put, get}` | `PRJ-05 quota error → unsaved flag + download offered` (fake store throws `QuotaExceededError`); `PRJ-05 persist() false → status shows non-persistent storage` | PRJ-05 |
 
 **G3 exit:** AT-14 to AT-17 and the AT-22 import subset are green. A sample package is checked into `docs/samples/` for review. Release `2.0.0-beta.1`.
@@ -2342,14 +2493,14 @@ Each task below is fully specified. It is expanded into step-level TDD before ex
 |---|---|---|---|---|
 | **G4.0** Service-worker update gating (**before G4.1**) | Remove the unconditional `skipWaiting()` (`sw.js:46-48`). A waiting worker shows "Update available"; `skipWaiting` runs only on user action and never while the project is unsaved or an export is in progress. One cache per version; visible cache/update status. Because a dedicated worker's `importScripts` goes through the controlling SW, the worker must never mix versions (G4.1 handshake). | `sw.js:19-66`, `app.js:664` | `DEP-02 sw.js has no unconditional skipWaiting in install`; `DEP-02 VERSION == APP_VERSION` (T0.2); AT-23 evidence | DEP-02 |
 | **G4.1** Worker, cancel and stale handling (§9.3) | `js/worker.js` `importScripts`s the pure modules in §4 order and runs `SBEngine.generate`. Messages follow §3 `GenerateRequest`/`GenerateResponse`: `engineVersion` is checked both ways (a mismatch rejects and reloads the worker), `status: "progress"` messages are posted per stage, and the response carries `validatedLayers`, `diagnostics` and `geometryHash`. The controller accepts a response only if `requestId` and `revision` match. It **transfers a copy** of `normalizedSource.pixels`, so the project keeps its own copy. Cancel = `worker.terminate()` plus respawn (< 500 ms). Packaging runs in the worker. `build.js` **changes**: it emits the worker modules as `<script type="text/sb-worker">` and starts a Blob worker in `dist/`. On `file://` failure it falls back to chunked main-thread execution with a notice. | `SBDiag.acceptResult(active, response) → boolean` (pure) | `AT-15 stale response discarded`; `§9.3 engineVersion mismatch rejected`; `AT-15 cancel during export keeps last revision and source`; `§9.3 progress messages precede done`; four-list consistency extended to `worker.js` | NFR-02, UI-06, §9.3, NFR-09 |
-| **G4.2** Draft vs fabrication pipelining | The G2.10b rule is already enforced. This task makes the fab generation run in the worker while the UI stays responsive, caches the last fab snapshot per revision, and shows "Preparing fabrication geometry…" in the export flow. | `js/app.js`, `js/worker.js` | `LYR-06 export regenerates at fabPx in worker`; `LYR-06 cached fab snapshot reused only for the same revision` | LYR-06 |
-| **G4.3** Resource envelope and complexity caps | `deviceClass()` uses `deviceMemory` plus coarse pointer, with a user override. The working-set estimate is `w·h·bytesPerStage`; over budget means reject or offer an explicit downsample. Complexity caps per device class (parts per layer, total vertices; mobile: 100 parts/layer, 20,000 vertices per SRS:L562) feed `COMPLEXITY_LIMIT`. Also applies the mobile `.sbrproj` 64 MiB limit. | `SBSchema.estimateWorkingSet(w, h, N)`, `SBSchema.limits(deviceClass)` | `NFR-04 estimate > 192 MiB on mobile → reject code`; `§12.3 mobile caps 100 parts / 20k vertices`; `§9.4 mobile maxBytes 64 MiB` | IMG-07, NFR-04, §12.3 |
-| **G4.4** Benchmarks | `test/bench.js <stage>`: 5 warmups then 30 runs, reporting p50/p95/max as JSON in `docs/perf/`, plus an in-app `?bench`. Two workloads: the desktop reference, and the **mobile reference (768 × 768 samples, 6 layers, ≤100 parts/layer, ≤20,000 vertices)**. Cancellation latency is measured in both. **KI-B1 (tracked):** B1 keeps its 2 s budget; G4.4 resolves the ≈2.14 s p95 overrun from the S6 T-split by optimizing `SBGeom` normalize (numeric vertex keys, skip noding when no collinear contact exists, normalize once per boolean; S5 F5 measured worst-case union + normalize 19 s vs 5.9 s for the union alone), then removes the `TRACKED.B1` entry from `test/bench.js`. | — | Desktop p95: draft ≤ 1.5 s, final plus validation ≤ 10 s, package ≤ 5 s. **Mobile p95: final plus validation ≤ 8 s**, measured on the recorded ≥4 GB device. Cancel ≤ 500 ms on both. | NFR-02, NFR-03, AT-24 |
+| **G4.2** Draft vs fabrication pipelining | The G2.10b rule is already enforced. This task makes the fab generation run in the worker while the UI stays responsive, caches the last fab snapshot per revision, and shows "Preparing fabrication geometry…" in the export flow. | `js/app.js`, `js/worker.js` | `LYR-06 export regenerates at the fabrication rasterPlan (G2.1b) in worker`; `LYR-06 cached fab snapshot reused only for the same revision` | LYR-06 |
+| **G4.3** Resource envelope and complexity caps | `deviceClass()` uses `deviceMemory` plus coarse pointer, with a user override. `SBSchema.limits(deviceClass).fabPxBudget` carries the G2.2b budgets (PO-LASER-4). The working-set estimate is `w·h·bytesPerStage` on the `rasterPlan` raster; over budget means reject or offer an explicit downsample. Complexity caps per device class (parts per layer, total vertices; mobile: 100 parts/layer, 20,000 vertices per SRS:L562) feed `COMPLEXITY_LIMIT`. Also applies the mobile `.sbrproj` 64 MiB limit. | `SBSchema.estimateWorkingSet(w, h, N)`, `SBSchema.limits(deviceClass)` | `NFR-04 estimate > 192 MiB on mobile → reject code`; `§12.3 mobile caps 100 parts / 20k vertices`; `§9.4 mobile maxBytes 64 MiB` | IMG-07, NFR-04, §12.3 |
+| **G4.4** Benchmarks | `test/bench.js <stage>`: 5 warmups then 30 runs, reporting p50/p95/max as JSON in `docs/perf/`, plus an in-app `?bench`. Workloads: the SRS §12.3 desktop reference (1536 × 1536 samples, 8 layers; the NFR-03 acceptance workload, unchanged), the **mobile reference (768 × 768 samples, 6 layers, ≤100 parts/layer, ≤20,000 vertices)**, and the **laser-detail workloads of G2.2b** (desktop and mobile at their pixel budgets, PO-LASER-9), re-measured on the reference machines against the targets recorded in D6. Cancellation latency is measured in both. **KI-B1 (tracked):** B1 keeps its 2 s budget; G4.4 resolves the ≈2.14 s p95 overrun from the S6 T-split by optimizing `SBGeom` normalize (numeric vertex keys, skip noding when no collinear contact exists, normalize once per boolean; S5 F5 measured worst-case union + normalize 19 s vs 5.9 s for the union alone), then removes the `TRACKED.B1` entry from `test/bench.js`. | — | Desktop p95: draft ≤ 1.5 s, final plus validation ≤ 10 s, package ≤ 5 s. **Mobile p95: final plus validation ≤ 8 s**, measured on the recorded ≥4 GB device. Cancel ≤ 500 ms on both. **Laser-detail p95 within the D6 targets** (10 s unless G2.2b recorded a relaxed one). | NFR-02, NFR-03, AT-24, PO-LASER-9 |
 | **G4.5** Accessibility | Keyboard path through stages, tabs, diagnostics and dialogs; `aria-live` status; focus styles; `prefers-reduced-motion` disables the tilt animation; **200% zoom** layout check; audit in `docs/A11Y_AUDIT.md`; browser matrix in `docs/ACCEPTANCE.md` | `index.html`, `css/style.css`, `app.js` | AT-20 evidence, including 200% zoom and reduced motion, and proof/section available without tilt | NFR-07, NFR-08, UI-04 |
 | **G4.6** Local server path and deployment docs | README (replacing "No server" at `README.md:18`): serve locally with `python3 -m http.server 8000` (or any static server) and open `http://localhost:8000`. Production needs HTTPS for the service worker and workers. `file://` gives reduced responsiveness (open question 10). The T0.2 four-list test stays the only `SHELL` guard; there is no generated `SHELL`. | `README.md`, `docs/DEPLOY.md` | `DEP-01 README documents local server and HTTPS`; AT-23 evidence | DEP-01 |
 | **G4.7** Locality and reproducible build | A test checks that no remote URL appears in `index.html` or `dist/` in a **loading context** (`src=`, `href=`, `url(`, `fetch(`, `importScripts(`, `import(`), plus any literal `https?://` outside an allow-list of XML namespace URIs (`http://www.w3.org/2000/svg`, `http://www.w3.org/1999/xlink`) and comments. `build.js` writes `dist/BUILD.json` with a **source-tree content hash** (SHA-256 over the inlined inputs in order), the per-file hashes and the component list. It records no git commit. | `build.js`, `run_tests.js` | `NFR-01 no remote URLs in bundle (namespaces allow-listed)`; `DEP-03 build twice → identical dist and BUILD.json`; `NFR-11 every vendor file listed in COMPONENTS.md with matching SHA-256` | NFR-01, NFR-11, DEP-03 |
 | **G4.8** Browser integration harness and cross-browser determinism | `test/browser.html` loads the real modules (and `dist/`) and runs integration suites. It covers: canvas decode plus EXIF=6 JPEG (applied once), the PNG intake path, `DecompressionStream`, the worker round trip and cancel, SW registration and update gating, and `geometryHash` of 5 fixture projects. Results are written to the DOM as JSON. Driven by `chromium --headless=new --dump-dom file://…/test/browser.html?run` (no npm) in `test/run_browser.sh`. Firefox and Safari run manually and record the same JSON. A dev-only component entry goes in `COMPONENTS.md` if any helper is vendored. | `test/browser.html`, `test/run_browser.sh` | `NFR-10 browser integration suites pass in Chromium headless`; `NFR-05/AT-23 geometryHash identical across Chromium, Firefox, Safari and Node for 5 fixtures`; `IMG-05 EXIF 6 JPEG oriented once` | NFR-05, NFR-08, NFR-10, AT-23 |
-| **G5.1** Calibration coupon and calibration record | Optional `calibration/coupon.svg`: 100 mm square outer dimension, kerf comb, 3 mm feature ladder (narrow webs), **representative holes (3 mm, 5 mm, 8 mm via `SBGeom.circle`)**, sample score marks, no laser settings. A form records `material.calibration` (date, machine, material, measured kerf, smallest successful feature, score result, notes), which goes into the manifest (MAT-06, AT-19). | `SBSvg.couponSVG()`; `SBPackage` option; `js/app.js` form | `MAT-06 coupon only when requested`; `MAT-06 coupon contains holes, narrow webs, score marks`; `AT-18 100 mm square exact in µm`; `MAT-06 calibration record stored and exported` | MAT-06 |
+| **G5.1** Calibration coupon and calibration record | Optional `calibration/coupon.svg`: 100 mm square outer dimension, kerf comb, a feature ladder of 1.0–3.0 mm narrow webs that includes the 1.5 mm minimum and the 2.0 mm advisory width (PO-LASER-6), **representative holes (3 mm, 5 mm, 8 mm via `SBGeom.circle`)**, sample score marks, no laser settings. A form records `material.calibration` (date, machine, material, measured kerf, smallest successful feature, score result, notes), which goes into the manifest (MAT-06, AT-19). | `SBSvg.couponSVG()`; `SBPackage` option; `js/app.js` form | `MAT-06 coupon only when requested`; `MAT-06 coupon contains holes, narrow webs, score marks`; `AT-18 100 mm square exact in µm`; `MAT-06 calibration record stored and exported` | MAT-06, PO-LASER-6/7 |
 | **G5.2** Acceptance evidence | LightBurn import within 0.1 mm (AT-18); calibration workflow (AT-19); three plywood projects cut and glued (AT-25); browser and offline matrix (AT-23); mobile benchmark (AT-24) | `docs/ACCEPTANCE.md`, `docs/RELEASE_RECORD.md` | AT-18, AT-19, AT-23, AT-24, AT-25 signed off | EXP-09, NFR-08, NFR-12, DEP-01 |
 | **G5.3** Release v2.0.0 | Bump `APP_VERSION` and `VERSION`; CHANGELOG with the intentional legacy fixes (frame union, proof extent, groups, bounded smoothing, resampling change, no auto-demo, ZIP layout and name); rollback notes (an older build refuses schema v2+ projects); `COMPONENTS.md`; rebuilt `dist/` | docs, `sw.js`, `app.js:23` | AT-26 evidence | DEP-03, DEP-04, DEP-05, NFR-11 |
 
@@ -2363,12 +2514,13 @@ Each task below is fully specified. It is expanded into step-level TDD before ex
 | R2 | Containment-aware smoothing falls back to raw so often that smoothing is useless in bonded mode | Faceted bonded edges | **Realized and decided (S2, D1, 2026-10-07):** whole-loop fallback rounds 2.8 % of bonded corners on real images. Bonded ships unsmoothed; connected keeps G1.2 smoothing. Per-vertex lazy pinning (S2 option (c), 70–84 % rounded) is a deferred enhancement gated on NFR-03 (final + validation p95 ≤ 10 s desktop, ≤ 8 s mobile at fabrication pitch; prototype 13.4 s on busy-1536) | **Active:** bonded is unsmoothed (option (b)); nesting holds by construction |
 | R3 | Cross-browser non-determinism (decode, transcendental math, joins) | AT-16/17/23 fail; NFR-05 broken | Raw PNG decoder; hard-coded hash constants; miter/square joins only; integer circle table; integer resampler; `.sbrproj` stores samples; G4.8 cross-browser hash comparison | Store canonical geometry in `.sbrproj` and treat it as authoritative on reopen |
 | R4 | Engine extraction or resampling changes connected-mode output | AT-21 regression | Persisted goldens (sheetMasks, thresholds, oldRun, legacy SVG); the resample change is documented; DEP-04 table | Revert to `legacyRun` for connected mode |
-| R5 | Fabrication resolution plus booleans exceed 10 s (desktop) or 8 s (mobile) p95, or the memory budget | NFR-03 and NFR-04 fail | Support benchmark from G2.7; bbox sweep; diagnostic aggregation; worker; per-device complexity caps with `COMPLEXITY_LIMIT` | Lower the default `fabPx` only through an explicit UI choice |
+| R5 | Fabrication resolution plus booleans exceed 10 s (desktop) or 8 s (mobile) p95, or the memory budget; **sharpened by the 0.1 mm/px target (PO-LASER-4): 16 Mpx is about 7× the SRS 1536² workload** | NFR-03 and NFR-04 fail | Large-image benchmark G2.2b sets the per-device pixel budget **before** the engine work; support benchmark from G2.7 (B3b < 3 s); bbox sweep; diagnostic aggregation; worker; per-device complexity caps with `COMPLEXITY_LIMIT` | Coarsen the target pitch or lower the pixel budget only through an explicit UI choice or a recorded D6 change, never silently |
 | R6 | Two-phase export and fab re-review of repairs feel heavy to users | Friction, ignored warnings | Aggregated diagnostics; review panel shows only fab-new or changed items prominently; the fab snapshot is cached per revision (G4.2) | Pre-generate the fab snapshot in the background after edits settle |
 | R7 | Four-list, `dist/` or SW drift breaks offline use or serves mixed versions | Broken PWA, wrong hashes | T0.2 hygiene checks; SW off on localhost; G4.0 before G4.1; engine-version handshake | — |
 | R8 | `DecompressionStream` missing on old Safari (< 16.4) | PNG and ZIP read fail | Feature-detect and block with an explanation; NFR-08 only targets current and previous browser versions | — |
 | R9 | MUST-everywhere SRS means non-compliance until G3 | Pressure to ship partial work | Experimental alpha.2 checkpoint with a known-gaps table; the export gate stays strict | — |
 | R10 | Vendored library goes unmaintained | Long-term burden | Thin adapter; pinned SHA; licence in `COMPONENTS.md` | Swap the backend behind `SBGeom` |
+| R12 | Typical sources have fewer pixels than the 0.1 mm/px target at laser sizes (e.g. 4700 px for a 470 mm-high piece) | Frequent `FAB_EXCEEDS_SOURCE` warnings; users may expect detail the source does not hold | Warning states the px shortfall and that detail cannot be recovered (GEO-06); dimbar shows it before generation; never upsample | Product owner may relax the target pitch in the profile |
 | R11 | NFR-10 browser integration tests need tooling the repo forbids | Release blocked or waiver needed | Headless Chrome `--dump-dom` harness with no npm (G4.8) | Tracked NFR-10 waiver with product-owner approval (open question 18) |
 
 ## 12. Self-review notes
@@ -2466,7 +2618,8 @@ Plan changes implied by the spike results. Each bullet names the affected tasks;
 - **S2 → D1, G1.2, G2.10a (decided 2026-10-07):** bonded mode ships **unsmoothed** (option (b)): `smoothStack(…, {mode: "bonded"})` is the identity, there is no containment fixpoint, and bonded never reports `SMOOTH_FALLBACK`. Connected mode keeps per-loop deviation-bounded smoothing (Chaikin(2)∘RDP → RDP → raw, art rectangle pinned). G2.10a's AT-09 hook becomes `req.debug = {smoothBonded: true}`.
 - **S2 F2 → G1.2 (stair check, implemented):** the plan check "deviation of chaikin(staircase) … 176.78" is wrong as written — the `stair` fixture has 3-unit corners and measures 530.33 µm (= 3 × 176.78). The shipped suite asserts 530.33 for `stair` and 176.78 for the unit square (the 0.125·√2 px constant). `smoothStack` also takes optional `w, h` (art size in px) to pin the art rectangle, and the layer topology check demotes loops whose smoothed rings touch another ring (all smoothed loops when none touch) until the layer topology equals the raw layer's.
 - **S5 F3 → G1.3 (frame-edge check, implemented):** the literal "no frame-edge hole below 1 px²" fails on legitimate input: pinned smoothing rounds the free corners of a raw 1-px notch at the art edge (S5 itself measured pinned holes down to 57,299 µm² at 62,500 µm²/px). The shipped suite asserts that every frame-edge hole is a smoothed raw notch (same count as the raw framed layer) with area ≥ 1 px² − perimeter·tol (the GEO-04 bound; unpinned slivers measured 2,480 µm²). It also found that art-only smoothing can merge frame-edge holes once the frame is unioned (a corner meeting the art line at a point is rounded off it): with `fromMasks({frame: true})`, connected-mode `smoothStack` takes `frameUm` and checks the layer topology with the frame ring unioned, so the framed layer's topology and part count are unchanged by smoothing (GEO-04).
-- **S2 → deferred enhancement (not G1):** per-vertex lazy pinning (S2 option (c); `docs/spikes/S2.md` §3.2, §7) may replace whole-loop fallback in both modes only after it fits NFR-03 at fabrication pitch: final + validation p95 ≤ 10 s desktop and ≤ 8 s mobile on the G4.4 workloads (prototype: 13.4 s on busy-1536 bonded). It would change the Appendix B.2 fallback unit to a vertex and report `SMOOTH_FALLBACK` as "n of m corners kept sharp". The F3 pitch/tolerance question (no corner rounds at 417 µm/px with tol 50 µm) stays a separate product decision.
+- **S2 F3 → resolved by D6 (2026-10-07):** the faceted-corner finding (no corner rounds at 417 µm/px with tol 50 µm) is resolved by finer resolution, not by a looser tolerance: the fabrication pitch target is 0.1 mm/px (Appendix D), at the unchanged 0.05 mm tolerance (S2 §6 F3: 0 % of corners round at 417 µm/px in every variant, 62–99 % across the variants at 100 µm/px; for the shipped connected-mode rule the D1 table gives 14.4 % on real images to 80.2 % on random input at 100 µm/px — the remaining gap is the R2 whole-loop fallback granularity, tracked separately as deferred option (c), not F3). Bonded mode stays unsmoothed (D1).
+- **S2 → deferred enhancement (not G1):** per-vertex lazy pinning (S2 option (c); `docs/spikes/S2.md` §3.2, §7) may replace whole-loop fallback in both modes only after it fits NFR-03 at fabrication pitch: final + validation p95 ≤ 10 s desktop and ≤ 8 s mobile on the G4.4 workloads (prototype: 13.4 s on busy-1536 bonded). It would change the Appendix B.2 fallback unit to a vertex and report `SMOOTH_FALLBACK` as "n of m corners kept sharp". The F3 pitch/tolerance question (no corner rounds at 417 µm/px with tol 50 µm) was a separate product decision; **resolved by D6** (0.1 mm/px pitch, tolerance unchanged).
 - **S5 → D3, §3, S1 interface (decided 2026-10-07; implemented in `js/geom.js`):** the §3 normalization bullet is replaced by the global re-pair-then-split rule. `SBGeom` adds `interiorConnected(poly)`, `insetStatus(I, d)`, `survivesInset(I, d)` and `classifyContact(I, minFeatureUm)`, and exposes `rechain`/`splitTJunctions` for the turn-rule check. `components()` throws `GEO_MULTIPART_POLYGON` if a normalized polygon is not one part; `validate()` reports `GEO_MULTIPART`. `offset` throws `GEO_OFFSET_NONINTEGER` for any non-integer delta. S5's Round-join failure certificate is not shipped (NFR-05); undecided counts as not surviving, so the boolean is unchanged.
 - **S5 → G2.7, G2.8 (thresholds):** G2.7's support predicate is `survivesInset(I, 0.25)` (width ≥ 0.5 µm) and `SUPPORT_NARROW` is `!survivesInset(I, minFeatureUm/2)` with `minFeatureUm` rounded to an integer µm first; never `SBGeom.offset`. G2.8 `featureChecks` offsets by the integer `Math.floor(minFeatureUm/2)`.
 - **S5 → G1.1, G1.3, S1 battery (ported checks):** suites "spike S5 — …" in `test/run_tests.js` carry the cyclic-saddle case, the pixel-exact bijection with BFS 4-components (independent oracle `test/oracle_raster.js`), T-contact `interiorConnected` cases, the frame-union checks (G1.3), the B.3 classification and exact-oracle families (G2.7) and the sub-µm offset refusal (S1). Sweeps run reduced by default; `--s5-full` runs the spike sizes. G1.3 adds the frame-edge micro-hole check for connected-mode smoothing (no frame-edge hole below 1 px², S5 F3).
@@ -2496,3 +2649,86 @@ Plan changes implied by the spike results. Each bullet names the affected tasks;
 - **S6 → G4.4 (B1 budget) — DECIDED 2026-10-07 as tracked known item KI-B1:** B1 keeps the 2 s budget; the overrun is tracked and G4.4 resolves it by optimizing normalize (see the G4.4 row; S5 F5: worst-case union + normalize 19 s vs 5.9 s for the union alone). `node test/bench.js geom` reports B1 over budget as `KNOWN-OVER (tracked)` (`knownOver`, id `KI-B1`) instead of failing; untracked overruns still exit 1. Measured after the D3 commits: p95 2126.6 ms at load 5–6, fingerprint unchanged. Original record: the T-split adds 12–18 % to B1 (A/B in one process: median 1.61–1.88 s → 1.88–2.16 s under load 6–8; ≈17 ms per 50k-vertex layer). The repo's own gate now fails under load: `node test/bench.js geom --runs 5` gave B1 p95 2032.6 ms (median 1953.9 ms) at load 5–7, `overBudget: ["B1"]`, exit 1 without `--no-fail` (fingerprint `27fa97ef…` unchanged). Options for the owner: (a) accept and raise or re-scope the B1 budget, (b) require a faster T-split (or a proven-safe skip) before G4.4, (c) keep the 2 s budget and treat a reference-machine re-measure in G4.4 as the gate. Until decided, G4.4 re-measures B1 on the reference machines with the T-split in place, and G4.1 keeps booleans off the main thread.
 - **S6 → G4.8 (cross-engine fixture):** add `spikes/S6/fixture_draft.json` (draft 8-layer project, 1,660 parts, 70 of them on the contact path; project hash `ee31340d…694a` under the spike reference) to the browser harness. Recompute its expected hashes with the shipped `SBGeom` before pinning, because the backend differs from the spike's dev-only `clipper2-js` 1.2.4.
 - **S6 → G1.1, G2.10b (engine input):** `normalize` does not merge overlapping or edge-sharing parts; it canonicalizes representation only. Material handed to `canonicalBytes` must be boolean-resolved (a `union`/`difference` result or `fromPixelLoops` of one mask), which the §11.1 chain already guarantees.
+
+## Appendix D — Laser target (xTool S1)
+
+Product-owner requirements of **2026-10-07**. Target: **xTool S1 with the conveyor feeder, 40 W diode**, cutting **1/4" basswood or poplar plywood**. The decision and its rationale are recorded as **D6** in `docs/ARCHITECTURE.md`. Requirements the SRS already states keep their SRS IDs; requirements the SRS does not state are `PO-LASER-n`. Every row is also in the §1 traceability matrix.
+
+### D.1 Requirements
+
+| ID | Requirement | Relation to the SRS | Tasks |
+|---|---|---|---|
+| PO-LASER-1 | **Machine profile**, persisted in the project, editable. Default **"xTool S1 + feeder"**: max processing height 470 mm, max length 3000 mm, max material width 545 mm, max thickness 14 mm, kerf 0.15 mm. | New (SRS §9.1 has no machine entity; GEO-10 has only "user-entered laser-bed dimensions") | G2.1, G2.11c, G3.5, G3.9 |
+| PO-LASER-2 | **Machine fit:** every layer sheet, frame included, must fit the processing area (either orientation); stock thickness ≤ max thickness. Blocking diagnostic otherwise; never rescale. | Extends GEO-10 (bed check on by default, plus thickness) | G2.10a, G3.10 |
+| PO-LASER-3 | **Size by height:** the default sizing mode fits the art plus frame to a target height in mm; width follows the source aspect. Width mode stays available. | Extends MAT-02 (dimension entry) | G2.1, G2.11c |
+| PO-LASER-4 | **Physical pitch:** fabrication resolution is derived from the physical size at a target of **0.1 mm/px**, capped by a per-device total pixel budget (desktop roughly 16–25 Mpx, mobile lower; final numbers from G2.2b). A cap uses a coarser pitch and reports the actual mm/px (info), never silently. Draft stays about 720 px on the long side. Replaces the fixed `fabPx` 1536/4096 long-side caps. | Amends LYR-06 ("normally 1536 … up to 4096"); consistent with NFR-04 (not silent) and GEO-06 | G2.0, G2.1, G2.1b, G2.2b, G2.11b, G2.11c, G2.14, G4.3 |
+| PO-LASER-5 | **Source pixel check:** the engine never upsamples; when the source has fewer pixels than the target fabrication raster, warn with how many px short. | Extends GEO-06 / IMG-02 | G2.0, G2.1b, G2.14 |
+| PO-LASER-6 | **6 mm ply feature defaults:** min feature **1.5 mm** with the D3 rules (block below 0.5 µm contact, `SUPPORT_NARROW` below min feature), plus an **advisory warning below 2.0 mm** for contacts, parts and necks. | Amends the MAT-03 starting value (3 mm; still editable and provisional) | G2.1, G2.7, G2.8, G5.1 |
+| PO-LASER-7 | **Kerf:** 0.15 mm in the machine profile, recorded in the guide and manifest. Kerf compensation applies in export only where the plan has it: the plan has none in v1.0, so export stays nominal with `kerfMode=external`. | Within MAT-05 (a recorded value never moves toolpaths); internal compensation stays deferred (SRS L613) | G2.1, G3.5, G3.9, G5.1 |
+| PO-LASER-8 | **Layer thickness** 6.35 mm nominal, editable; the UI notes that 1/4" ply often measures 5.5–6 mm and invites a measured value (`thicknessState: "measured"`). | Within PRJ-01 / MAT-02 (adds the hint) | G2.1, G2.11c |
+| PO-LASER-9 | **Large-image performance:** a benchmark at the pixel budgets sets the budgets and records performance targets for large workloads; the time budget for laser-detail exports may be relaxed if the benchmark requires it, and the relaxation is documented. | Extends NFR-03 / NFR-04 / AT-24 (the SRS §12.3 workloads and budgets are unchanged) | G2.2b, G2.7, G4.4 |
+| PO-LASER-10 | **G2 execution order** as in D.4. | Plan sequencing (SRS §13.1 gates unchanged) | §8 |
+
+### D.2 Rules
+
+- **Sizing (PO-LASER-3).** `geometry.sizeBy` is `"height"` (default) or `"width"`; `geometry.targetMM` is the finished page along that axis (artwork plus 2 × frame). `SBSchema.resolveSize` derives the other axis from the oriented source aspect on the 1 µm grid. Default `targetMM` is **300 mm** (the v1.1.0 default size, now applied to the height); it is a proposed value, editable per project.
+- **Pitch (PO-LASER-4/5).** `geometry.fabPitchMM = 0.1`. `SBRaster.fabRaster` computes `ceil(art / pitch)` per axis, coarsens the pitch in 1 µm steps until `W·H ≤ fabPxBudget`, then clamps each axis to the source (never upsample) and reports `shortPx`. mm/px always comes from the real raster (`sxUm`, `syUm`). Diagnostics: `FAB_PITCH_CAPPED` (info: actual vs target mm/px, device class, budget) and `FAB_EXCEEDS_SOURCE` (warning: source vs target px and the shortfall). Both are shown in the dimbar before generation and written to the manifest. Budgets are per device class in `SBSchema.limits`; provisional desktop 16 Mpx and mobile 4 Mpx until G2.2b.
+- **Envelope (PO-LASER-1/2).** With `machine` set, the page (the shared extent of every layer sheet, frame included) fits iff `(W ≤ L ∧ H ≤ P) ∨ (W ≤ P ∧ H ≤ L)` with `P = maxProcessingHeightMM`, `L = maxLengthMM`, compared in µm; otherwise `PAGE_OVERFLOW` (blocking). `thicknessMM > maxThicknessMM` gives `MACHINE_THICKNESS` (blocking). `maxMaterialWidthMM` (545) is validated to be ≥ the processing height and stated in the assembly guide as the stock width limit. `machine: null` disables the check (GEO-10's "optional" bed).
+- **Features (PO-LASER-6).** `material.minFeatureMM = 1.5`, `material.advisoryFeatureMM = 2.0`. Support contacts: block if w < 0.5 µm, `SUPPORT_NARROW` if w < 1.5 mm, `FEATURE_MARGINAL` if w < 2.0 mm (D3 width, `survivesInset`, integer-µm rounding before halving). Parts and necks: `PART_THIN` / `NECK_NARROW` at 1.5 mm, `FEATURE_MARGINAL` at 2.0 mm (G2.8 erosion rule). `SAMPLING_LOW` then needs mm/px ≤ 0.5.
+- **Kerf (PO-LASER-7).** `machine.kerfMM = 0.15` is informational: the guide and manifest state it and that no offset was applied (MAT-05). The calibration coupon (G5.1) carries the kerf comb and a 1.0–3.0 mm web ladder. Internal compensation remains out of scope until the SRS L613 fixtures exist.
+
+### D.3 Diagnostic codes
+
+| Code | Severity | Added in | Notes |
+|---|---|---|---|
+| `FAB_PITCH_CAPPED` | info | G2.0 (registered), G2.1b (emitted) | New |
+| `FAB_EXCEEDS_SOURCE` | warning | G1.0 (exists) | Now carries `shortPx` and the shortfall text |
+| `FEATURE_MARGINAL` | warning | G2.7 (registered), G2.7/G2.8 (emitted) | New; aggregated per `(code, layer)` like `PART_THIN` |
+| `PAGE_OVERFLOW` | blocking | G1.0 (exists) | Now from the machine profile, emitted by the engine (G2.10a) |
+| `MACHINE_THICKNESS` | blocking | G2.10a | New |
+
+### D.4 G2 execution order (binding)
+
+1. **G2.0** Deterministic resampling and the raster contract, with `fabRaster` (physical pitch, budget, source cap).
+2. **G2.1** `SBSchema` extended: machine profile, sizing, pitch, feature defaults, provisional `limits().fabPxBudget`.
+3. **G2.1b** Draft/fabrication raster snapshot (`SBEngine.rasterPlan`, `qualityPair`).
+4. **G2.2b** Large-image benchmark and per-device pixel budgets (new).
+5. **G2.2** Acknowledgements and the export gate.
+6. **G2.3** `SBHeight`.
+7. **G2.4** Tonal path.
+8. **G2.4b** Legacy settings adapter.
+9. **G2.5** Domain mask and orientation.
+10. **G2.5b** Explicit height filter/remap.
+11. **G2.6** Construction strategies.
+12. **G2.7** `SBSupport.validate`, including the advisory tier and **B3b p95 < 3 s** (layer-level intersection per adjacent pair with `survivesInset`).
+13. **G2.8** Feature and sampling checks, including the advisory tier.
+14. **G2.9** Reviewed clip repair.
+15. **G2.10a** `SBEngine.generate` through validation, with the envelope check.
+16. **G2.10b** Z model, accounting, hashes, freeze.
+17. **G2.11a–e** Controller, stages, control groups (size, pitch, machine), applicability, mode-change review.
+18. **G2.12** Opaque proof, section and tilt.
+19. **G2.13a–d** Layer cards, overlays, diagnostics panel, clip dialog.
+20. **G2.14** Source intake and preflight (with `rasterPlan`).
+21. **Checkpoint** v2.0.0-alpha.2.
+
+### D.5 Affected tasks (summary)
+
+- **Data model (§3, ARCHITECTURE §3):** `geometry.{sizeBy, targetMM, fabPitchMM}` replace `fabPx`; `geometry.bedMM` is replaced by the top-level `machine` profile (in `geometryKey`); `material.minFeatureMM` 1.5 and new `advisoryFeatureMM` 2.0; `GeometryConfig` gains the pitch and cap fields.
+- **G2:** G2.0 (fabRaster, diagnostics, tests), G2.1 (schema fields, `MACHINES`, `resolveSize`, `limits`), G2.1b and G2.2b (new), G2.4b (`procRes` → legacy pitch, `sizeBy: "width"`), G2.7 (advisory tier, B3b budget), G2.8 (advisory tier, sampling at 1.5 mm), G2.10a (raster from `rasterPlan`; envelope check moved here from G3.10), G2.10b (consumes `rasterPlan`), G2.11b (`#in-res` becomes a pitch input), G2.11c (size, pitch and machine controls; dimbar), G2.14 (preflight returns the raster plan; explicit downsample records a coarser pitch).
+- **G3:** G3.5 (guide names the machine and the external kerf), G3.9 (manifest: machine profile, pitch, budget, cap, shortfall), G3.10 (export gating on the engine's envelope diagnostics; `bedMM` removed).
+- **G4:** G4.3 (`fabPxBudget` from G2.2b; working set on the planned raster), G4.4 (NFR-03 workloads: SRS reference unchanged, laser-detail workloads added with the D6 targets).
+- **G5:** G5.1 (coupon ladder 1.0–3.0 mm with 1.5 and 2.0 mm).
+- **Risks:** R5 sharpened; R12 added.
+
+### D.6 SRS deviations to record
+
+These are product-owner amendments; the SRS text should be updated to match when it is next revised. None blocks G2.
+
+1. **LYR-06** names "normally 1536 pixels on the long side and configurable up to 4096". Replaced by the physical pitch with a pixel budget (PO-LASER-4). A 470 mm-high page at 0.1 mm/px is 4700 px on the long side.
+2. **MAT-03** gives 3 mm as the plywood starting feature width. The default becomes 1.5 mm with a 2.0 mm advisory tier (PO-LASER-6); still provisional, editable and labelled as a design filter, not a cutting guarantee.
+3. **NFR-03 / §12.3** workloads are unchanged and remain the acceptance workloads. Laser-detail workloads get their own recorded targets (PO-LASER-9), possibly relaxed.
+4. **IMG-07** caps sources at 16 MP (desktop) and 8 MP (mobile). Because the engine never upsamples, fabrication rasters cannot exceed those sizes, so a desktop budget above 16 Mpx has no effect unless IMG-07 is raised. Open for the product owner; not blocking.
+
+### D.7 Resolved
+
+- **S2 F3** (faceted corners at the default pitch: no corner rounds at 417 µm/px with the 50 µm tolerance) is **resolved by finer resolution, not tolerance**: the fabrication pitch target is 0.1 mm/px and the 0.05 mm tolerance is unchanged (S2 §6 F3: 0 % of corners round at 417 µm/px in every variant, 62–99 % across the variants at 100 µm/px; for the shipped connected-mode rule the D1 table gives 14.4 % on real images to 80.2 % on random input at 100 µm/px — the remaining gap is the R2 whole-loop fallback granularity, tracked separately as deferred option (c), not F3). Bonded mode stays unsmoothed (D1). Recorded in D6, Appendix C and the CHANGELOG (Unreleased).

@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+Planning only; no change to the application yet.
+
+- **Laser target (product owner, 2026-10-07):** the plan and architecture now target the
+  xTool S1 with the conveyor feeder (40 W diode, 1/4" basswood or poplar plywood). Decision
+  D6 in [docs/ARCHITECTURE.md](ARCHITECTURE.md) and Appendix D of the
+  [development plan](plans/opaque-layers-dev-plan.md) add: an editable machine profile saved
+  in the project (default "xTool S1 + feeder": 470 mm processing height, 3000 mm length,
+  545 mm material width, 14 mm thickness, 0.15 mm kerf) with a blocking check that every
+  layer sheet, frame included, fits it; sizing by height as the default; a fabrication pitch
+  of 0.1 mm per pixel capped by a per-device pixel budget (reported, never silent) in place of
+  the fixed 1536/4096 px long side; a warning with the pixel shortfall when the source is
+  smaller than the target (never upsampled); 1.5 mm minimum feature with a 2.0 mm advisory
+  warning for 6 mm ply; and a large-image benchmark (new task G2.2b) that sets the pixel
+  budgets before the rest of G2.
+- **Resolved: S2 F3** (faceted "smooth" corners at the default working resolution of about
+  0.42 mm per pixel, noted under v2.0.0-alpha.1). Resolved by finer resolution, not by a
+  looser tolerance: the 0.1 mm per pixel fabrication pitch, with the 0.05 mm tolerance
+  unchanged. Takes effect when the G2 resolution work (G2.0, G2.1b) ships.
+
 ## v2.0.0-alpha.1 — 2026-10-07
 
 First alpha of the opaque-layers rework (plan G1). Connected export now runs through the

@@ -21,7 +21,9 @@ These come from the SRS and repo conventions. Every task implicitly includes the
 - **No automatic bridging, clipping or deletion in bonded mode.** Culling is explicit opt-in. Smoothing falls back toward raw contours rather than altering material outside the tolerance. Clip-to-lower is the only repair; it is shown (removed area, part-count change) before it is applied, it is reversible, and it is never replayed against geometry the user did not review. (SRS:L180-182, SUP-04)
 - No deduplication of identical layers. Trailing empties may be omitted, but their indices are kept. **An empty layer under a non-empty one blocks in bonded mode.** (SRS:L186)
 - Blocking diagnostics are **never** downgraded. Acknowledgements are scoped to the exact snapshot (`geometryHash`, which includes quality) and are invalidated by any relevant change. (SRS §9.5)
-- Smoothing tolerance is **0.05 mm**. SVG round trip within **0.005 mm** with the same topology. Plywood preset: bonded, white-high, 8 sheets, gap 0, **6.35 mm**, min feature **3 mm**, min part **25 mm²**, uncalibrated.
+- Smoothing tolerance is **0.05 mm**. SVG round trip within **0.005 mm** with the same topology. Plywood preset: bonded, white-high, 8 sheets, gap 0, **6.35 mm** nominal (editable; 1/4" ply often measures 5.5–6 mm), min feature **1.5 mm** with a **2.0 mm** advisory tier (PO-LASER-6; the SRS MAT-03 starting value is 3 mm), min part **25 mm²**, uncalibrated.
+- **Machine envelope (GEO-10, PO-LASER-1/2):** the project carries an editable machine profile, default **xTool S1 + feeder** (processing height 470 mm, length 3000 mm, material width 545 mm, thickness 14 mm, kerf 0.15 mm). Every layer sheet, frame included, must fit its processing area (either orientation) and the stock must not exceed its thickness, otherwise a blocking diagnostic. Nothing is ever rescaled to fit. Kerf stays external (MAT-05).
+- **Fabrication pitch (PO-LASER-4/5):** fabrication resolution is derived from physical size at a target of **0.1 mm/px**, capped by a per-device total pixel budget; a cap is reported (info, actual mm/px), never silent. The engine never upsamples; a source with fewer pixels than the target warns with the shortfall. Draft stays 720 px on the long side.
 - Limits:
   - image input: desktop **25 MiB / 16 MP**, mobile **10 MiB / 8 MP**;
   - `.sbrproj`: **≤1024 entries**, **≤256 MiB** expanded on desktop, **≤64 MiB** on mobile;
@@ -81,15 +83,24 @@ Project = {
                       markFootprintMM: 0.2, allowanceMM: 0.5, labelHeightMM: 3 },
             repairs: [] /* Repair, see below */ },
   material: { name, thicknessMM: 6.35, thicknessState: "nominal"|"measured", calibrated: false,
-            minFeatureMM: 3, minPartMM2: 25, kerfMode: "external",
+            minFeatureMM: 1.5, advisoryFeatureMM: 2.0,   // PO-LASER-6 (SRS MAT-03 starting value: 3)
+            minPartMM2: 25, kerfMode: "external",
             calibration: null /* | {date, machine, material, kerfMM, minFeatureOkMM, scoreOk, notes} user-recorded */ },
   appearance: { mode: "uniform"|"palette", color: "#C8A26B", palette: "dusk" },  // never in geometryKey
   view: { explodeMM: 0 },                                                          // never in geometryKey
-  geometry: { widthMM, heightMM, lockAspect: true, draftPx: 720, fabPx: 1536,
-              resample: { height: "nearest", tonal: "area" },
-              bedMM: null /* | {w, h} */ },
+  geometry: { sizeBy: "height"|"width", targetMM: 300,  // PO-LASER-3: finished page (art + 2·frame) along sizeBy
+              widthMM, heightMM, lockAspect: true,       // artwork; SBSchema.resolveSize derives the free axis from the aspect
+              draftPx: 720,                              // draft long side (unchanged)
+              fabPitchMM: 0.1,                           // PO-LASER-4: target fabrication pitch; budget-capped, never upsampled
+              resample: { height: "nearest", tonal: "area" } },
+  machine: MachineProfile | null,                        // PO-LASER-1; null = no envelope check; in geometryKey
   acks: [] /* {key, revision} */, extras: {}
 }
+
+MachineProfile = { id: "xtool-s1-feeder", name: "xTool S1 + feeder",          // SBSchema.MACHINES default; every field editable
+                   maxProcessingHeightMM: 470, maxLengthMM: 3000,               // processing area, either orientation
+                   maxMaterialWidthMM: 545, maxThicknessMM: 14,
+                   kerfMM: 0.15 }                                               // informational only (MAT-05, kerfMode external)
 
 Repair = { op: "clip-to-lower", layer, sourceRevision, resultRevision,
            keyHash,          // hashJSON(geometryKey(project with repairs truncated before this entry))
@@ -109,7 +120,10 @@ Diagnostic = { id, code, severity: "blocking"|"warning"|"info", revision, qualit
                measured: {value, unit}|null, limit: {value, unit}|null,
                message, fix, ackState: "n/a"|"unacked"|"acked" }
 GeometryConfig (Snapshot.geometry) = { artWMM, artHMM, pageWMM, pageHMM, srcW, srcH,
-               rasterW, rasterH, sxUm, syUm, mmPerPxMax, resample: "none"|"nearest"|"area", grid: "1um" }
+               rasterW, rasterH, sxUm, syUm, mmPerPxMax, resample: "none"|"nearest"|"area", grid: "1um",
+               // PO-LASER-4/5 (G2.0, G2.1b); draft quality uses the 720 px long side instead of the pitch
+               targetPitchUm, pitchUm, pxBudget, deviceClass: "desktop"|"mobile",
+               capped: "none"|"budget"|"source"|"budget+source", shortPx: [shortW, shortH] | null }
 Snapshot = { revision, engineVersion, geometryHash, quality: "draft"|"fabrication", layers, diagnostics,
              cleanupReport: [{layer, addedMM2, removedMM2, holesFilled, partsRemoved, bridges?: PolygonWithHoles[]}],
              supportGraph, guides, geometry: GeometryConfig, page: { wMM, hMM },
@@ -128,7 +142,7 @@ GenerateResponse = { requestId, revision, engineVersion,
 
 `geometryKey(p)` is everything except `appearance`, `view`, `acks`, `extras`, `title`, `units`, `id`, `app`, `createdAt`, `modifiedAt`, `revision` and `source.byteHash`.
 
-`geometryHash = hashJSON({ key: geometryKey(p), engine: engine.version, quality, raster: [rasterW, rasterH], layers: layerHashes, guides: guideHash })`. `engine.version` enters only here, so an app-only release does not invalidate saved hashes.
+`geometryHash = hashJSON({ key: geometryKey(p), engine: engine.version, quality, raster: [rasterW, rasterH], layers: layerHashes, guides: guideHash })`. `engine.version` enters only here, so an app-only release does not invalidate saved hashes. The device pixel budget (PO-LASER-4) reaches the hash only through the raster size: the same project gives the same `geometryHash` on any device that does not cap it, and a capped device reports `FAB_PITCH_CAPPED` with the pitch it used.
 
 **Winding convention** (documented once in `js/geom.js`):
 - In Y-down coordinates the outer ring has **positive** shoelace area and holes have **negative** area. `SBTrace.trace` emits the opposite, so `fromPixelLoops` reverses its rings.
@@ -203,6 +217,8 @@ decision text is filled in when the spike lands.
 merged with their decisions recorded before G1 starts. All four are recorded: D2 (S1),
 D4 (S6), and — by the product-owner decisions of 2026-10-07 — D1 (S2, option (b)) and
 D3 (S5 revision 2, which passed adversarial review; implemented in `js/geom.js`).
+Product-owner laser target (2026-10-07): **D6** (machine profile, size by height, physical
+fabrication pitch, 6 mm ply feature defaults; G2 order G2.0 → G2.1 → G2.1b → G2.2b → rest).
 Tracked known item carried into G1–G4: **KI-B1**, the B1 benchmark overrun (D2, D4;
 plan Appendix C), resolved in G4.4.
 
@@ -215,7 +231,7 @@ plan Appendix C), resolved in G4.4.
   - **Connected mode keeps smoothing per plan (G1.2):** per-loop deviation-bounded fallback Chaikin(2) → RDP → raw against `toleranceMM`, art-rectangle vertices pinned, topology unchanged, fallbacks reported as `SMOOTH_FALLBACK`. Per the S1 amendment, **RDP runs before Chaikin** (Chaikin(2)∘RDP(ε), ε derived from the tolerance) and the tolerance loop runs per loop, not per layer.
   - Clip-to-lower stays a reviewed repair only (SUP-04).
   - **Deferred (not in G1 scope): option (c), per-vertex lazy pinning.** It is a later, performance-gated enhancement for both modes. It may be adopted only when it fits the NFR-03 totals at fabrication pitch — final plus validation p95 ≤ 10 s desktop and ≤ 8 s mobile (G4.4 workloads) — and it changes the Appendix B.2 fallback unit to a vertex, with `SMOOTH_FALLBACK` reported as "n of m corners kept sharp". Tracked in plan Appendix C (S2 → deferred) and risk R2.
-- **Rationale:** S2 confirmed risk R2 for D1 as written: whole-loop fallback granularity (one over-tolerance corner demotes a loop of hundreds) leaves bonded corners almost unrounded (2.8 % on real images), and shared-boundary pinning (a) is dominated and hurts connected mode. Option (c) rounds 70–84 % of bonded corners but measured 13.4 s on busy-1536 against the 10 s NFR-03 budget. Option (b) is exact, free and deterministic, and connected mode is unaffected. Separately (F3), at the shipped default pitch (417 µm/px) and tolerance (50 µm) no option rounds any corner in either mode; procRes ≥ 1200 for 300 mm, or a looser tolerance, remains a separate product question that does not block G1.
+- **Rationale:** S2 confirmed risk R2 for D1 as written: whole-loop fallback granularity (one over-tolerance corner demotes a loop of hundreds) leaves bonded corners almost unrounded (2.8 % on real images), and shared-boundary pinning (a) is dominated and hurts connected mode. Option (c) rounds 70–84 % of bonded corners but measured 13.4 s on busy-1536 against the 10 s NFR-03 budget. Option (b) is exact, free and deterministic, and connected mode is unaffected. Separately (F3), at the shipped default pitch (417 µm/px) and tolerance (50 µm) no option rounds any corner in either mode; procRes ≥ 1200 for 300 mm, or a looser tolerance, remained a separate product question that did not block G1. **F3 resolved 2026-10-07 by D6:** finer resolution, not tolerance — the fabrication pitch target is 0.1 mm/px with the unchanged 50 µm tolerance (S2 §6 F3: 0 % of corners round at 417 µm/px in every variant, 62–99 % across the variants at 100 µm/px; for the shipped connected-mode rule the D1 table gives 14.4 % on real images to 80.2 % on random input at 100 µm/px — the remaining gap is the R2 whole-loop fallback granularity, tracked separately as deferred option (c), not F3); bonded mode stays unsmoothed.
 - Evidence: `docs/spikes/S2.md` (§0 verdict, §4.1 corners rounded, §4.3 cost, §6 F3, §7 proposed text); artifacts in `spikes/S2/`.
 
 Corners rounded, layers ≥ 1, 100 µm/px, tol 50 µm; columns are random / busy-768 / busy-1536 / real images. Node prototype timings, spike machine under contention.
@@ -339,3 +355,32 @@ Cross-engine (spike): all 8 layer hashes and the project hash of the 1,660-part 
 - **Rejection stays available:** `SBPng.check/decode(…, {lowBitDepth: "reject"})` returns/throws `PNG_BITDEPTH` in height mode. The product owner may switch the intake default to it without a code change in `png.js`; the code remains in `SBPng.CODES` and the G1.0 registry.
 - Pinned by suite "spike S4 — amendments" (`S4-A3 …` checks).
 - Related S4 contract notes: `sampleHash` covers the samples only (identical bytes in a 5×1 and a 1×5 image collide), so it identifies a source only together with `w` and `h`, which `source` always stores next to it; never use it alone as a cache or dedup key. `decode` refuses `w·h > maxPixels` (default `SBPng.MAX_PIXELS` = 2^26) before allocating, independent of the IMG-07 preflight.
+
+### D6 — Laser target: machine profile, size by height, physical fabrication pitch
+
+- Owner: product owner (requirements of 2026-10-07); plan Appendix D; tasks G2.0, G2.1, G2.1b, G2.2b, G2.7, G2.8, G2.10a, G2.11b/c, G2.14, G3.5, G3.9, G3.10, G4.3, G4.4, G5.1.
+- Target: **xTool S1 with the conveyor feeder, 40 W diode, 1/4" basswood or poplar plywood.** Requirement IDs: SRS IDs where the SRS states the rule, otherwise `PO-LASER-1`…`PO-LASER-10` (plan Appendix D.1 and §1).
+- **Decision (product owner, 2026-10-07):**
+  1. **Machine profile (PO-LASER-1).** A top-level, editable `machine` section is persisted in the project (§3 `MachineProfile`) and is part of `geometryKey`. Default `SBSchema.MACHINES["xtool-s1-feeder"]`, "xTool S1 + feeder": `maxProcessingHeightMM` 470, `maxLengthMM` 3000, `maxMaterialWidthMM` 545, `maxThicknessMM` 14, `kerfMM` 0.15. `machine: null` turns the envelope check off. It replaces the plan's `geometry.bedMM`.
+  2. **Machine fit (PO-LASER-2, GEO-10).** The engine (G2.10a, stage 12) checks the shared page — the extent of every layer sheet, frame included — against the processing area in either orientation, in µm: `(W ≤ L ∧ H ≤ P) ∨ (W ≤ P ∧ H ≤ L)`. Failure is `PAGE_OVERFLOW` (blocking); stock thicker than `maxThicknessMM` is `MACHINE_THICKNESS` (blocking). Nothing is rescaled.
+  3. **Size by height (PO-LASER-3).** `geometry.sizeBy: "height"` is the default (width mode kept); `geometry.targetMM` (default 300 mm, proposed) is the finished page along that axis, art plus 2 × frame; the other axis follows the oriented source aspect on the 1 µm grid (`SBSchema.resolveSize`).
+  4. **Physical pitch (PO-LASER-4, amends LYR-06).** `geometry.fabPitchMM = 0.1` replaces `geometry.fabPx` (1536, up to 4096). `SBRaster.fabRaster` derives the fabrication raster from the artwork size, coarsens the pitch in integer 1 µm steps until it fits the device pixel budget `SBSchema.limits(deviceClass).fabPxBudget`, and clamps each axis to the source. A cap emits `FAB_PITCH_CAPPED` (info: actual vs target mm/px, device class, budget), shown in the dimbar before generation and in the manifest — the "never silently" of NFR-04. Budgets are provisional (desktop 16 Mpx, mobile 4 Mpx) until the G2.2b benchmark sets them. The draft raster stays 720 px on the long side. `SBEngine.rasterPlan` (G2.1b) is the single rule for both qualities.
+  5. **Source pixel check (PO-LASER-5, GEO-06).** The engine never upsamples. A source with fewer pixels than the target raster gives `FAB_EXCEEDS_SOURCE` (warning) with the shortfall in px; mm/px always comes from the real raster.
+  6. **6 mm ply feature defaults (PO-LASER-6, amends the MAT-03 starting value).** `material.minFeatureMM = 1.5` with D3 unchanged (contact width < 0.5 µm blocks; `SUPPORT_NARROW` below `minFeatureMM`), plus `material.advisoryFeatureMM = 2.0`: contacts, parts and necks below it give `FEATURE_MARGINAL` (warning). Both stay provisional and editable (MAT-03 wording). `SAMPLING_LOW` then requires mm/px ≤ 0.5.
+  7. **Kerf (PO-LASER-7, MAT-05).** `kerfMM` 0.15 is recorded in the profile, the assembly guide and the manifest. The plan has no internal kerf compensation in v1.0 (SRS L54, L613), so export stays nominal with `kerfMode=external` and the operator applies the kerf in the laser software.
+  8. **Thickness (PO-LASER-8).** 6.35 mm nominal stays (PRJ-01), editable, with a hint that 1/4" ply is often 5.5–6 mm and a measured value should be entered.
+  9. **Performance (PO-LASER-9, NFR-03/04).** The SRS §12.3 workloads and NFR-03 budgets are unchanged and remain the acceptance workloads. G2.2b adds laser-detail workloads (4–25 Mpx, and a 470 mm-high page at 0.1 mm/px) and sets the budgets by the rule in plan G2.2b: the desktop budget is the largest of 16/20/25 Mpx within 512 MiB and the laser-detail target; the target is 10 s unless 16 Mpx cannot meet it, in which case a relaxed target (measured p95 rounded up to 5 s, at most 60 s, else escalate) is recorded in the table below and applies only to fabrication generation above the SRS workload size. G2.7 must bring B3b (dense support pass) under the 3 s B3 budget with one layer-level intersection per adjacent pair and `survivesInset`.
+  10. **G2 order (PO-LASER-10):** G2.0 → G2.1 → G2.1b → G2.2b → G2.2 … G2.14 in plan order (plan Appendix D.4).
+- **Rationale:** the S1 with the feeder cuts pieces far larger than the 300 mm the long-side caps were sized for; a 470 mm-high piece at 1536 px is about 0.31 mm/px, too coarse for 1.5 mm features to round well and close to the 0.5 mm/px sampling limit. A physical pitch keeps detail constant in millimetres; the pixel budget keeps the working set and time bounded per device, and reporting the cap keeps NFR-04 honest. Sizing by height matches how the feeder constrains the piece (processing height 470 mm, length up to 3000 mm).
+- **Resolves S2 F3** (D1): no corner rounded at the shipped 417 µm/px with the 50 µm tolerance. Resolved by finer resolution, not tolerance: the 0.1 mm/px target is where S2 measured 62–99 % of corners rounded across the variants (0 % at 417 µm/px). For the shipped connected-mode rule (whole-loop fallback) the D1 table gives 14.4 % on real images to 80.2 % on random input at 100 µm/px; that remaining gap is the R2 granularity question (deferred option (c)), not F3. The tolerance stays 0.05 mm; bonded mode stays unsmoothed.
+- **SRS deviations to carry into the next SRS revision (not blocking):** LYR-06 "1536 … up to 4096" wording; MAT-03 3 mm starting value; laser-detail targets next to NFR-03; IMG-07's 16 MP / 8 MP source limits cap the fabrication raster (never upsampled), so a desktop budget above 16 Mpx has effect only if IMG-07 is raised.
+- **New diagnostic codes:** `FAB_PITCH_CAPPED` (info), `FEATURE_MARGINAL` (warning), `MACHINE_THICKNESS` (blocking); `PAGE_OVERFLOW` and `FAB_EXCEEDS_SOURCE` are reused with the payloads above.
+
+Laser-detail performance targets (PO-LASER-9). Provisional until G2.2b fills the measured columns; G4.4 re-measures on the reference machines.
+
+| Workload | Pixels | Budget source | Final + validation p95 target | Measured p95 | Working set limit |
+|---|---|---|---|---|---|
+| SRS desktop reference (§12.3) | 1536 × 1536, 8 layers | SRS | 10 s (NFR-03, unchanged) | G2.2b / G4.4 | 512 MiB |
+| SRS mobile reference (§12.3) | 768 × 768, 6 layers | SRS | 8 s (unchanged) | G4.4 | 192 MiB |
+| Laser-detail desktop | ≤ `fabPxBudget` (provisional 16 Mpx) | G2.2b | 10 s, or the relaxed target recorded here | G2.2b | 512 MiB |
+| Laser-detail mobile | ≤ `fabPxBudget` (provisional 4 Mpx) | G2.2b | 8 s, or the relaxed target recorded here | G2.2b (scaled), G4.4 (device) | 192 MiB |
