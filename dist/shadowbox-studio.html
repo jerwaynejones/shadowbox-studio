@@ -737,6 +737,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *     certify r* ≥ d with an exact BigInt witness; never through offset().
  *   · Polygons sorted by (minY, minX) of the outer, then by the outer's
  *     coordinate list; holes the same way.
+ *   · maxDeviationUm (densified symmetric Hausdorff) and ringTopology (containment
+ *     tree signature) are the GEO-04 smoothing measures (plan G1.2).
  *   · canonicalBytes / layerHash / materialHash (decision D4, spike S6) are
  *     built on normalize; integer coordinates within ±2^25 µm only.
  * Only + - * / Math.round/floor/ceil/abs/sqrt/min/max, BigInt (finite-width witness), Math.imul (integer hash in the T-split
@@ -1205,6 +1207,103 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     return false;
   };
 
+  // ------------------------------------------------ smoothing measures (G1.2)
+  /**
+   * Segment grid for nearest-segment queries on one flat ring. Each segment is sampled every cell/2 and
+   * registered in the 3×3 cells around every sample, so every cell the segment passes through lists it.
+   */
+  function segGrid(R, cell) {
+    const g = new Map(), n = R.length, key = (cx, cy) => cx * 4194304 + cy;
+    let gx0 = Infinity, gy0 = Infinity, gx1 = -Infinity, gy1 = -Infinity;
+    for (let i = 0; i < n; i += 2) {
+      const j = (i + 2) % n, ax = R[i], ay = R[i + 1], dx = R[j] - ax, dy = R[j + 1] - ay;
+      const steps = Math.max(1, Math.ceil(Math.sqrt(dx * dx + dy * dy) / (cell / 2)));
+      for (let s = 0; s <= steps; s++) {
+        const cx = Math.floor((ax + (dx * s) / steps) / cell), cy = Math.floor((ay + (dy * s) / steps) / cell);
+        for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
+          const k = key(cx + ox, cy + oy); let l = g.get(k);
+          if (!l) g.set(k, (l = [])); if (l[l.length - 1] !== i) l.push(i);
+        }
+        if (cx < gx0) gx0 = cx; if (cx > gx1) gx1 = cx; if (cy < gy0) gy0 = cy; if (cy > gy1) gy1 = cy;
+      }
+    }
+    return { g, key, cell, R, gx0: gx0 - 1, gy0: gy0 - 1, gx1: gx1 + 1, gy1: gy1 + 1 };
+  }
+  function segDist(x, y, R, i) {
+    const n = R.length, j = (i + 2) % n, ax = R[i], ay = R[i + 1], vx = R[j] - ax, vy = R[j + 1] - ay, L2 = vx * vx + vy * vy;
+    let u = L2 ? ((x - ax) * vx + (y - ay) * vy) / L2 : 0;
+    if (u < 0) u = 0; else if (u > 1) u = 1;
+    const ex = x - ax - u * vx, ey = y - ay - u * vy;
+    return Math.sqrt(ex * ex + ey * ey);
+  }
+  /** Distance from (x, y) to the ring indexed by G; rings of cells are searched outward until no closer segment can exist. */
+  function distToGrid(x, y, G) {
+    const { g, key, cell, R } = G, cx = Math.floor(x / cell), cy = Math.floor(y / cell);
+    const rMax = Math.max(Math.abs(cx - G.gx0), Math.abs(cx - G.gx1), Math.abs(cy - G.gy0), Math.abs(cy - G.gy1)) + 1;
+    let best = Infinity;
+    for (let r = 0; r <= rMax; r++) {
+      for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) {
+        if (dx !== -r && dx !== r && dy !== -r && dy !== r) continue;
+        const l = g.get(key(cx + dx, cy + dy)); if (!l) continue;
+        for (const i of l) { const d = segDist(x, y, R, i); if (d < best) best = d; }
+      }
+      if (best <= r * cell) break; // unseen cells are more than r·cell away
+    }
+    return best;
+  }
+  function directedDev(A, GB, step) {
+    let m = 0;
+    const n = A.length;
+    for (let i = 0; i < n; i += 2) {
+      const j = (i + 2) % n, ax = A[i], ay = A[i + 1], dx = A[j] - ax, dy = A[j + 1] - ay;
+      const k = Math.max(1, Math.ceil(Math.sqrt(dx * dx + dy * dy) / step));
+      for (let s = 0; s < k; s++) { const d = distToGrid(ax + (dx * s) / k, ay + (dy * s) / k, GB); if (d > m) m = d; }
+    }
+    return m;
+  }
+  /**
+   * GEO-04 measured deviation: symmetric Hausdorff distance between two closed flat rings (µm), with BOTH rings
+   * densified every ≤ stepUm (vertices included), point-to-segment distances, Math.sqrt only (NFR-05). Peaks
+   * inside segments are therefore measured to within stepUm/2.
+   */
+  C.maxDeviationUm = function (A, B, stepUm) {
+    const step = stepUm === undefined ? 10 : stepUm;
+    if (!(step > 0) || !Number.isFinite(step)) throw new Error("SBGeom.maxDeviationUm: stepUm must be finite and > 0");
+    if (A.length < 2 || B.length < 2 || A.length % 2 || B.length % 2) throw new Error("SBGeom.maxDeviationUm: rings must be flat [x, y, …] with ≥ 1 vertex");
+    const cellOf = (R) => { let L = 0; for (let i = 0; i < R.length; i += 2) { const j = (i + 2) % R.length, dx = R[j] - R[i], dy = R[j + 1] - R[i + 1]; L += Math.sqrt(dx * dx + dy * dy); }
+      return Math.max(4 * step, L / (R.length / 2)); };
+    const ab = directedDev(A, segGrid(B, cellOf(B)), step), ba = directedDev(B, segGrid(A, cellOf(A)), step);
+    return ab > ba ? ab : ba;
+  };
+
+  /**
+   * Canonical topology signature of a normalized polygon set: the containment tree outer → holes → outers
+   * (each outer hangs under the smallest hole of another polygon that contains it), serialized with sorted
+   * children. Ring coordinates do not enter; only ring count and nesting do (GEO-04 topology fallback).
+   */
+  C.ringTopology = function (polys) {
+    const holes = [];
+    polys.forEach((p, pi) => (p.holes || []).forEach((h) => holes.push({ pi, r: h, box: ringBox(h), a: Math.abs(area2(h)), kids: [] })));
+    const roots = [];
+    const probe = (outer, h) => { // a vertex strictly inside/outside h decides (rings of a normalized set never cross)
+      for (let i = 0; i < outer.length; i += 2) { const s = pointInRing(outer[i], outer[i + 1], h); if (s !== 0) return s > 0; }
+      for (let i = 0; i < outer.length; i += 2) { const j = (i + 2) % outer.length, mx = (outer[i] + outer[j]) / 2, my = (outer[i + 1] + outer[j + 1]) / 2;
+        const s = pointInRing(mx, my, h); if (s !== 0) return s > 0; }
+      return false;
+    };
+    polys.forEach((p, pi) => {
+      const b = ringBox(p.outer); let best = null;
+      for (const h of holes) {
+        if (h.pi === pi || h.box[0] > b[0] || h.box[1] > b[1] || h.box[2] < b[2] || h.box[3] < b[3]) continue;
+        if ((best === null || h.a < best.a) && probe(p.outer, h.r)) best = h;
+      }
+      (best ? best.kids : roots).push(pi);
+    });
+    const holesOf = new Map(); for (const h of holes) { let l = holesOf.get(h.pi); if (!l) holesOf.set(h.pi, (l = [])); l.push(h); }
+    const sigP = (pi) => "O(" + (holesOf.get(pi) || []).map((h) => "H(" + h.kids.map(sigP).sort().join("") + ")").sort().join("") + ")";
+    return roots.map(sigP).sort().join("");
+  };
+
   // ------------------------------------------------------------- circle
   // round(1e6*cos(2πk/64)) for k = 0..16, generated once offline and frozen here (no trig at run time).
   const COS64 = [1000000, 995185, 980785, 956940, 923880, 881921, 831470, 773010, 707107, 634393, 555570, 471397, 382683, 290285, 195090, 98017, 0];
@@ -1620,7 +1719,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   };
 
   for (const k of ["fromPixelLoops", "normalize", "validate", "area", "isEmpty", "containsPoint", "bbox", "circle",
-    "canonicalBytes", "layerHashes", "layerHash", "materialHash", "COORD_LIMIT", "interiorConnected", "rechain", "splitTJunctions"]) G[k] = C[k];
+    "canonicalBytes", "layerHashes", "layerHash", "materialHash", "COORD_LIMIT", "interiorConnected", "rechain", "splitTJunctions",
+    "maxDeviationUm", "ringTopology"]) G[k] = C[k];
   G.backend = "clipper2-ts@2.0.1-18";
 
   global.SBGeom = G;
@@ -2919,6 +3019,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *     separate loops instead of welding them into a figure-eight.
  *   · Loops are then simplified (Ramer–Douglas–Peucker) and optionally
  *     rounded (Chaikin corner cutting) for an organic, paper-cut feel.
+ *   · smoothLevel (plan G1.2) is the canonical-path form: levels raw | rdp |
+ *     chaikin = Chaikin(2)∘RDP(ε), pinned vertices kept exactly, squared
+ *     distances only. simplify/chaikin above stay for the legacy path.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -3088,6 +3191,89 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     return pts;
   };
 
+  // ----------------------------------------------- bounded smoothing (G1.2)
+  // Pixel-loop smoothing levels for SBMaterial.smoothStack (connected mode only; D1: bonded is raw).
+  // Squared distances only (no Math.hypot), so the kept-vertex decisions are engine-independent (NFR-05).
+
+  function segDist2(p, a, b) {
+    const vx = b[0] - a[0], vy = b[1] - a[1], L2 = vx * vx + vy * vy;
+    let u = L2 ? ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / L2 : 0;
+    if (u < 0) u = 0; else if (u > 1) u = 1;
+    const ex = p[0] - a[0] - u * vx, ey = p[1] - a[1] - u * vy;
+    return ex * ex + ey * ey;
+  }
+  /** RDP on an open chain; both endpoints kept. */
+  function rdpOpen(pts, eps2) {
+    const n = pts.length;
+    if (n < 3) return pts.slice();
+    const keep = new Uint8Array(n); keep[0] = keep[n - 1] = 1;
+    const stack = [0, n - 1];
+    while (stack.length) {
+      const b = stack.pop(), a = stack.pop();
+      let idx = -1, dmax = 0;
+      for (let i = a + 1; i < b; i++) { const d = segDist2(pts[i], pts[a], pts[b]); if (d > dmax) { dmax = d; idx = i; } }
+      if (idx > 0 && dmax > eps2) { keep[idx] = 1; stack.push(a, idx, idx, b); }
+    }
+    const out = [];
+    for (let i = 0; i < n; i++) if (keep[i]) out.push(pts[i]);
+    return out;
+  }
+  /**
+   * RDP(ε) on a closed loop. Pinned vertices are always kept and split the loop into open chains; with no
+   * pin the loop is split at vertex 0 and the vertex farthest from it (first maximum). Fewer than 3
+   * survivors → the loop is returned unchanged.
+   */
+  function rdpClosed(loop, eps, pinned) {
+    const n = loop.length;
+    if (!(eps > 0) || n < 4) return loop.slice();
+    const eps2 = eps * eps, anchors = [];
+    for (let i = 0; i < n; i++) if (pinned(loop[i])) anchors.push(i);
+    if (anchors.length < 2) {
+      const a = anchors.length ? anchors[0] : 0; let b = -1, best = -1;
+      for (let k = 1; k < n; k++) { const i = (a + k) % n, dx = loop[i][0] - loop[a][0], dy = loop[i][1] - loop[a][1], d = dx * dx + dy * dy; if (d > best) { best = d; b = i; } }
+      anchors.length = 0; anchors.push(Math.min(a, b), Math.max(a, b));
+    }
+    const out = [];
+    for (let t = 0; t < anchors.length; t++) {
+      const a = anchors[t], b = anchors[(t + 1) % anchors.length], chain = [];
+      for (let i = a; ; i = (i + 1) % n) { chain.push(loop[i]); if (i === b && chain.length > 1) break; }
+      const s = rdpOpen(chain, eps2); s.pop(); // the end anchor starts the next chain
+      for (const p of s) out.push(p);
+    }
+    return out.length >= 3 ? out : loop.slice();
+  }
+  /** Chaikin corner cutting, per-vertex form: each free vertex becomes two cut points at ¼ of its edges; pinned vertices are emitted unchanged. */
+  function chaikinPinned(loop, iterations, pinned) {
+    let pts = loop;
+    for (let k = 0; k < iterations; k++) {
+      const out = [], n = pts.length;
+      for (let i = 0; i < n; i++) {
+        const p = pts[(i + n - 1) % n], v = pts[i], q = pts[(i + 1) % n];
+        if (pinned(v)) { out.push(v); continue; }
+        out.push([0.75 * v[0] + 0.25 * p[0], 0.75 * v[1] + 0.25 * p[1]], [0.75 * v[0] + 0.25 * q[0], 0.75 * v[1] + 0.25 * q[1]]);
+      }
+      pts = out;
+    }
+    return pts;
+  }
+  const LEVELS = ["raw", "rdp", "chaikin"];
+  T.SMOOTH_LEVELS = LEVELS;
+  /**
+   * One smoothing level of a closed pixel loop (plan G1.2):
+   *   "raw"     → the loop unchanged (a copy);
+   *   "rdp"     → RDP(ε) alone (ε in px, = tolUm / pitchUm);
+   *   "chaikin" → Chaikin(2)∘RDP(ε) — RDP first (spike S1 amendment: Chaikin ×2 quadruples the vertices).
+   * pinned(pt) marks vertices that must stay exactly (the art-rectangle boundary), so the frame union stays
+   * exact; a cut point that lands on that boundary is pinned on the next Chaikin pass too.
+   */
+  T.smoothLevel = function (loopPx, level, pinned, epsPx) {
+    if (!LEVELS.includes(level)) throw new Error("SBTrace.smoothLevel: level must be raw|rdp|chaikin (got " + level + ")");
+    const pin = pinned || (() => false);
+    if (level === "raw") return loopPx.slice();
+    const r = rdpClosed(loopPx, epsPx, pin);
+    return level === "rdp" ? r : chaikinPinned(r, 2, pin);
+  };
+
   global.SBTrace = T;
 })(typeof window !== "undefined" ? window : globalThis);
 
@@ -3108,9 +3294,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *       opts = {revision = 0, quality = "draft", smooth?}. Per layer:
  *         1. k = 0 with a full mask → the exact 4-vertex art rectangle B;
  *         2. trace (SBTrace.trace already merges collinear lattice runs);
- *         3. smoothing — D1: bonded mode is UNSMOOTHED (raw lattice contours,
- *            identity); connected-mode smoothing on the pixel loops is G1.2 and
- *            is refused here rather than silently skipped;
+ *         3. opts.smooth = {tolUm, mode}: smoothing on the PIXEL loops, never after
+ *            conversion (G1.2). D1: mode "bonded" is UNSMOOTHED (raw lattice
+ *            contours, identity); mode "connected" runs smoothStack with the art
+ *            rectangle pinned and adds one SMOOTH_FALLBACK warning per layer that
+ *            had fallbacks. The exact full base rectangle is never smoothed;
  *         4. fromPixelLoops (reverses the trace winding) → union(·, []) (NonZero)
  *            → normalize (D3: T-contacts noded, re-pair, split saddles) → validate;
  *         5. parts = the normalized polygons: after D3 every polygon is exactly one
@@ -3124,6 +3312,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *       coordinates (it plays the plan's "ringHash" role with no collisions), so
  *       IDs depend only on the material: equal materialHash ⇒ equal IDs (SUP-05).
  *       fromMasks already calls it; it is idempotent and does not mutate input.
+ *   SBMaterial.smoothStack(loopsByLayer, {tolUm, sxUm, syUm, mode, w?, h?})
+ *       → {loopsByLayer, levels, fallbacks} (G1.2, D1): bonded = identity; connected =
+ *       per-loop deviation-bounded fallback chaikin → rdp → raw (Chaikin(2)∘RDP(ε),
+ *       ε = tolUm / max pitch) with lone-ring and layer topology checks. No
+ *       containment fixpoint, no conform, no automatic clip.
  *   SBMaterial.diagnosticsFor(material, layer, {revision, quality}) → Diagnostic[]
  *       SBGeom.validate codes as blocking diagnostics; region = bbox in mm.
  *
@@ -3191,6 +3384,103 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     });
   };
 
+  // ------------------------------------------------- bounded smoothing (G1.2, D1)
+  const ringUm = (loop, sx, sy) => { const r = new Array(loop.length * 2); for (let i = 0; i < loop.length; i++) { r[2 * i] = Math.round(loop[i][0] * sx); r[2 * i + 1] = Math.round(loop[i][1] * sy); } return r; };
+  const sameLoop = (a, b) => { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i][0] !== b[i][0] || a[i][1] !== b[i][1]) return false; return true; };
+  /** Topology of one ring on its own (role-free: forced positive): a self-crossing or collapsed ring changes it. */
+  function loneTopology(G, r) { return G.ringTopology(G.normalize(G.union([{ outer: r, holes: [] }], []))); }
+  function layerTopology(G, loops, sx, sy) { return G.ringTopology(G.normalize(G.union(G.fromPixelLoops(loops, sx, sy, 0, 0), []))); }
+  /** Exact segment contact (crossing or touching) between two flat integer rings, bbox-filtered. */
+  function ringsTouch(A, B) {
+    const bA = global.SBGeom.bbox({ outer: A }), bB = global.SBGeom.bbox({ outer: B });
+    if (bA[0] > bB[2] || bB[0] > bA[2] || bA[1] > bB[3] || bB[1] > bA[3]) return false;
+    const x0 = Math.max(bA[0], bB[0]), y0 = Math.max(bA[1], bB[1]), x1 = Math.min(bA[2], bB[2]), y1 = Math.min(bA[3], bB[3]);
+    const segs = (R) => { const o = []; for (let i = 0; i < R.length; i += 2) { const j = (i + 2) % R.length;
+      if (Math.max(R[i], R[j]) < x0 || Math.min(R[i], R[j]) > x1 || Math.max(R[i + 1], R[j + 1]) < y0 || Math.min(R[i + 1], R[j + 1]) > y1) continue; o.push(i); } return o; };
+    const sa = segs(A), sb = segs(B);
+    const orient = (ax, ay, bx, by, cx, cy) => Math.sign((bx - ax) * (cy - ay) - (by - ay) * (cx - ax));
+    const on = (ax, ay, bx, by, cx, cy) => cx >= Math.min(ax, bx) && cx <= Math.max(ax, bx) && cy >= Math.min(ay, by) && cy <= Math.max(ay, by);
+    for (const i of sa) { const j = (i + 2) % A.length, ax = A[i], ay = A[i + 1], bx = A[j], by = A[j + 1];
+      for (const k of sb) { const l = (k + 2) % B.length, cx = B[k], cy = B[k + 1], dx = B[l], dy = B[l + 1];
+        const o1 = orient(ax, ay, bx, by, cx, cy), o2 = orient(ax, ay, bx, by, dx, dy), o3 = orient(cx, cy, dx, dy, ax, ay), o4 = orient(cx, cy, dx, dy, bx, by);
+        if (o1 !== o2 && o3 !== o4 && o1 * o2 <= 0 && o3 * o4 <= 0 && (o1 || o2 || o3 || o4)) return true;
+        if ((o1 === 0 && on(ax, ay, bx, by, cx, cy)) || (o2 === 0 && on(ax, ay, bx, by, dx, dy)) || (o3 === 0 && on(cx, cy, dx, dy, ax, ay)) || (o4 === 0 && on(cx, cy, dx, dy, bx, by))) return true;
+      } }
+    return false;
+  }
+
+  /**
+   * D1 smoothing of traced pixel loops, before conversion to µm (plan G1.2):
+   *   mode "bonded"    → identity: raw lattice contours, every level "raw", no fallbacks (D1 option (b));
+   *   mode "connected" → per loop, the highest level in chaikin → rdp → raw whose densified deviation
+   *                      (SBGeom.maxDeviationUm, µm, as rounded for output) is ≤ tolUm and whose lone-ring
+   *                      topology is unchanged; then per layer, while the layer topology differs from the raw
+   *                      layer's, loops whose smoothed rings touch another loop's ring drop one level (all
+   *                      smoothed loops when none touch). All-raw reproduces the raw layer, so this terminates.
+   * opts = {tolUm, sxUm, syUm, mode, w?, h?}: with w, h the art-rectangle boundary (x = 0|w, y = 0|h) is pinned.
+   * ε = tolUm / max(sxUm, syUm) px. No containment fixpoint, no conform, no clip (Appendix C, S2 → D1).
+   * Returns {loopsByLayer, levels, fallbacks: [{layer, loopIndex, from, to, reason, devUm}]}; one record per
+   * demotion step (devUm is the measured deviation of the level left, null when it was not measured).
+   */
+  M.smoothStack = function (loopsByLayer, opts) {
+    const o = opts || {};
+    if (o.mode !== "bonded" && o.mode !== "connected") throw new Error("SBMaterial.smoothStack: mode must be connected|bonded (got " + o.mode + ")");
+    if (!(Number.isFinite(o.tolUm) && o.tolUm >= 0)) throw new Error("SBMaterial.smoothStack: NONFINITE — tolUm must be finite and ≥ 0");
+    if (!finitePos(o.sxUm) || !finitePos(o.syUm)) throw new Error("SBMaterial.smoothStack: NONFINITE — sxUm and syUm must be finite and > 0");
+    if (o.mode === "bonded") // D1 option (b): raw lattice contours; nesting holds by construction
+      return { loopsByLayer: loopsByLayer.map((ls) => ls.slice()), levels: loopsByLayer.map((ls) => ls.map(() => "raw")), fallbacks: [] };
+    const G = global.SBGeom, T = global.SBTrace, sx = o.sxUm, sy = o.syUm, tol = o.tolUm;
+    const eps = tol / Math.max(sx, sy);
+    const W = o.w, H = o.h, pinned = Number.isFinite(W) && Number.isFinite(H) ? (p) => p[0] === 0 || p[1] === 0 || p[0] === W || p[1] === H : () => false;
+    const ORDER = ["chaikin", "rdp", "raw"], fallbacks = [], levels = [], out = [];
+    loopsByLayer.forEach((loops, k) => {
+      const lv = [], sm = [], rawUm = loops.map((lp) => ringUm(lp, sx, sy));
+      loops.forEach((lp, i) => {
+        let rawTopo = null;
+        for (let t = 0; t < ORDER.length; t++) {
+          const level = ORDER[t];
+          if (level === "raw") { lv.push("raw"); sm.push(lp); break; }
+          const s = T.smoothLevel(lp, level, pinned, eps);
+          if (sameLoop(s, lp)) { lv.push(level); sm.push(s); break; } // unchanged: deviation 0, topology unchanged
+          const su = ringUm(s, sx, sy), d = G.maxDeviationUm(rawUm[i], su);
+          let reason = d > tol ? "deviation" : null;
+          if (!reason) { if (rawTopo === null) rawTopo = loneTopology(G, rawUm[i]); if (loneTopology(G, su) !== rawTopo) reason = "topology"; }
+          if (!reason) { lv.push(level); sm.push(s); break; }
+          fallbacks.push({ layer: k, loopIndex: i, from: level, to: ORDER[t + 1], reason, devUm: d });
+        }
+      });
+      // layer-level topology: smoothing must not weld, split or re-nest rings (GEO-04)
+      if (lv.some((l) => l !== "raw")) {
+        const rawTopo = layerTopology(G, loops, sx, sy);
+        for (let guard = 0; guard < 2 * loops.length + 2 && layerTopology(G, sm, sx, sy) !== rawTopo; guard++) {
+          const smUm = sm.map((s, i) => (lv[i] === "raw" ? rawUm[i] : ringUm(s, sx, sy)));
+          let culprits = [];
+          for (let i = 0; i < sm.length; i++) if (lv[i] !== "raw")
+            for (let j = 0; j < sm.length; j++) if (j !== i && ringsTouch(smUm[i], smUm[j])) { culprits.push(i); break; }
+          if (!culprits.length) culprits = lv.map((l, i) => (l !== "raw" ? i : -1)).filter((i) => i >= 0);
+          for (const i of culprits) {
+            const to = ORDER[ORDER.indexOf(lv[i]) + 1];
+            fallbacks.push({ layer: k, loopIndex: i, from: lv[i], to, reason: "topology", devUm: null });
+            lv[i] = to; sm[i] = to === "raw" ? loops[i] : T.smoothLevel(loops[i], to, pinned, eps);
+          }
+        }
+      }
+      levels.push(lv); out.push(sm);
+    });
+    return { loopsByLayer: out, levels, fallbacks };
+  };
+
+  /** SMOOTH_FALLBACK (warning, connected mode only): one per layer, counting the loops that fell back. */
+  function smoothDiagnostics(fallbacks, tolUm, dOpts) {
+    const byLayer = new Map();
+    for (const f of fallbacks) { let g = byLayer.get(f.layer); if (!g) byLayer.set(f.layer, (g = { loops: new Set(), dev: 0, reasons: new Set() })); g.loops.add(f.loopIndex); g.reasons.add(f.reason); if (f.devUm > g.dev) g.dev = f.devUm; }
+    const out = new Map();
+    for (const [layer, g] of byLayer) out.set(layer, global.SBDiag.make("SMOOTH_FALLBACK", Object.assign({}, dOpts, {
+      layer, count: g.loops.size, measured: g.dev > 0 ? { value: g.dev / 1000, unit: "mm" } : null, limit: { value: tolUm / 1000, unit: "mm" },
+      detail: g.loops.size + " outline" + (g.loops.size === 1 ? "" : "s") + " kept less smooth (" + Array.from(g.reasons).sort().join(", ") + ")" })));
+    return out;
+  }
+
   M.fromMasks = function (final, w, h, page, opts) {
     opts = opts || {};
     const G = global.SBGeom, T = global.SBTrace;
@@ -3201,20 +3491,34 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     if (2 * fUm + Math.max(aw, ah) > G.COORD_LIMIT)
       throw new Error("SBMaterial.fromMasks: COORD_LIMIT — page exceeds ±2^25 µm (" + G.COORD_LIMIT / 1000 + " mm); geometry is never truncated");
     const smooth = opts.smooth || null;
-    if (smooth && smooth.mode !== "bonded")
-      throw new Error("SBMaterial.fromMasks: connected-mode smoothing is implemented in G1.2 (smoothStack); not available yet");
-    // D1: bonded smoothing is the identity — raw lattice contours, nesting holds by construction.
+    if (smooth && smooth.mode !== "bonded" && smooth.mode !== "connected")
+      throw new Error("SBMaterial.fromMasks: smooth.mode must be connected|bonded (got " + smooth.mode + ")");
     const dOpts = { revision: opts.revision === undefined ? 0 : opts.revision, quality: opts.quality || "draft" };
 
-    const layers = final.map((mask, k) => {
+    // 1–2: classify and trace every layer (null loops = empty layer or the exact full base rectangle)
+    const traced = final.map((mask, k) => {
       if (!mask || mask.length !== w * h) throw new Error("SBMaterial.fromMasks: layer " + k + " mask length is not w·h");
       let full = true, any = false;
       for (let i = 0; i < mask.length; i++) { if (mask[i]) any = true; else full = false; if (any && !full) break; }
+      return { any, base: any && k === 0 && full, loops: any && !(k === 0 && full) ? T.trace(mask, w, h) : null };
+    });
+    // 3: smoothing on the pixel loops, never after conversion. D1: bonded is the identity (raw contours).
+    let smoothDiags = new Map();
+    if (smooth && smooth.mode === "connected") {
+      const S = M.smoothStack(traced.map((t) => t.loops || []), { tolUm: smooth.tolUm, sxUm, syUm, mode: "connected", w, h });
+      traced.forEach((t, k) => { if (t.loops) t.loops = S.loopsByLayer[k]; });
+      smoothDiags = smoothDiagnostics(S.fallbacks, smooth.tolUm, dOpts);
+    } else if (smooth && !(Number.isFinite(smooth.tolUm) && smooth.tolUm >= 0)) {
+      throw new Error("SBMaterial.fromMasks: NONFINITE — smooth.tolUm must be finite and ≥ 0");
+    }
+
+    const layers = traced.map((t, k) => {
       let material;
-      if (!any) material = [];
-      else if (k === 0 && full) material = [{ outer: [fUm, fUm, fUm + aw, fUm, fUm + aw, fUm + ah, fUm, fUm + ah], holes: [] }];
-      else material = G.normalize(G.union(G.fromPixelLoops(T.trace(mask, w, h), sxUm, syUm, fUm, fUm), []));
+      if (!t.any) material = [];
+      else if (t.base) material = [{ outer: [fUm, fUm, fUm + aw, fUm, fUm + aw, fUm + ah, fUm, fUm + ah], holes: [] }];
+      else material = G.normalize(G.union(G.fromPixelLoops(t.loops, sxUm, syUm, fUm, fUm), []));
       const diagnostics = M.diagnosticsFor(material, k, dOpts);
+      if (smoothDiags.has(k)) diagnostics.push(smoothDiags.get(k));
       const parts = [], cutPaths = [];
       let area = 0, cut = 0, vertices = 0;
       for (const p of material) {

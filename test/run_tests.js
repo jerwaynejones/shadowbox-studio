@@ -1586,17 +1586,159 @@ suite("material.js — canonical polygons (GEO-01/03, D-4.2, SUP-05; G1.1)", () 
   check("GEO-03 clean material → no diagnostics", SBMaterial.diagnosticsFor(L[1].material, 1, {}).length === 0);
   const dflt = SBMaterial.diagnosticsFor([{ outer: [0, 0, 10, 0, 20, 0], holes: [] }], 0, {});
   check("§9.1 diagnostics default to revision 0 / draft quality", dflt.length > 0 && dflt.every((x) => x.revision === 0 && x.quality === "draft"));
-  // ---- D1: bonded is unsmoothed; connected smoothing is G1.2
+  // ---- D1: bonded is unsmoothed (connected-mode smoothing: suite "smoothing — …", G1.2)
   const ci = F.MASKS.crescentInterior, pg = { artWMM: ci.w * 0.25, artHMM: ci.h * 0.25, frameMM: 0 };
   check("D1 bonded mode is unsmoothed: smooth {mode: bonded} equals raw contours",
     JSON.stringify(SBMaterial.fromMasks(ci.layers, ci.w, ci.h, pg, { smooth: { tolUm: 50, mode: "bonded" } }).map((l) => l.material)) === JSON.stringify(SBMaterial.fromMasks(ci.layers, ci.w, ci.h, pg, {}).map((l) => l.material)));
   const throws = (f, re) => { try { f(); return false; } catch (x) { return !re || re.test(x.message); } };
-  check("D1 connected smoothing is refused until G1.2 (never silently raw)", throws(() => SBMaterial.fromMasks(ci.layers, ci.w, ci.h, pg, { smooth: { tolUm: 50, mode: "connected" } }), /G1\.2/));
   // ---- input guards
   check("NONFINITE non-finite or non-positive art size throws", throws(() => SBMaterial.fromMasks(d.layers, 9, 9, { artWMM: NaN, artHMM: 9, frameMM: 0 }, {}), /NONFINITE/) &&
     throws(() => SBMaterial.scale({ w: 9, h: 9, artWMM: 0, artHMM: 9 }), /NONFINITE/) && throws(() => SBMaterial.fromMasks(d.layers, 9, 9, { artWMM: 9, artHMM: 9, frameMM: -1 }, {}), /NONFINITE/));
   check("D4/amendment C page beyond COORD_LIMIT throws a coded error (never truncates)", throws(() => SBMaterial.fromMasks(d.layers, 9, 9, { artWMM: 40000, artHMM: 9, frameMM: 0 }, {}), /COORD_LIMIT/));
   check("mask size mismatch throws", throws(() => SBMaterial.fromMasks([new Uint8Array(5)], 9, 9, { artWMM: 9, artHMM: 9, frameMM: 0 }, {})));
+});
+
+suite("smoothing — bounded, connected mode; bonded unsmoothed (GEO-04, D1, AT-09; G1.2)", () => {
+  const F = require("./fixtures.js"), G = SBGeom, M = SBMaterial, T = SBTrace;
+  check("G1.2 API present", typeof G.maxDeviationUm === "function" && typeof G.ringTopology === "function" && typeof T.smoothLevel === "function" && typeof M.smoothStack === "function");
+  if (typeof M.smoothStack !== "function" || typeof T.smoothLevel !== "function" || typeof G.maxDeviationUm !== "function" || typeof G.ringTopology !== "function") return;
+  // ---- plan checks (verbatim, except the stair constant: spike S2 F2, see below)
+  const stair = [[0,0],[1,0],[1,1],[2,1],[2,2],[3,2],[3,3],[0,3]];
+  const toUm = (lp, s) => lp.flatMap(([x, y]) => [Math.round(x * s), Math.round(y * s)]);
+  const dev = G.maxDeviationUm(toUm(stair, 1000), toUm(SBTrace.smoothLevel(stair, "chaikin", () => false, 0), 1000));
+  // S2 F2: the plan's "176.78" is the UNIT-corner constant; the stair's 3-unit corners give 3 × 176.78 = 530.33 µm.
+  check("GEO-04 deviation of chaikin(staircase) at 1 mm/px within 1 µm of 530.33 (3-unit corners; S2 F2)", Math.abs(dev - 530.33) <= 1);
+  const unit = [[0,0],[1,0],[1,1],[0,1]];
+  const devUnit = G.maxDeviationUm(toUm(unit, 1000), toUm(SBTrace.smoothLevel(unit, "chaikin", () => false, 0), 1000));
+  check("GEO-04 deviation of chaikin(unit corner) at 1 mm/px within 1 µm of 176.78 (0.125·√2 px)", Math.abs(devUnit - 176.78) <= 1);
+  const r = SBMaterial.smoothStack([[], [stair]], { tolUm: 1, sxUm: 250, syUm: 250, mode: "connected" });
+  check("GEO-04 tolerance exceeded (1 µm @ 250 µm/px) → fallback recorded", r.levels[1][0] !== "chaikin" && r.fallbacks.length > 0);
+  // densified measurement is never below a brute-force sampled distance
+  const rng = F.lcg(3); let okDense = true;
+  for (let t = 0; t < 20; t++) { const A = [0,0,1000,0,1000,1000,0,1000], B = A.map((v) => v + Math.round((rng() - 0.5) * 200));
+    const brute = (P, Q) => { let m = 0; for (let i = 0; i < P.length; i += 2) { const j = (i + 2) % P.length;
+      for (let s = 0; s <= 100; s++) { const x = P[i] + (P[j] - P[i]) * s / 100, y = P[i + 1] + (P[j + 1] - P[i + 1]) * s / 100;
+        let best = Infinity; for (let k = 0; k < Q.length; k += 2) { const l = (k + 2) % Q.length, dx = Q[l] - Q[k], dy = Q[l + 1] - Q[k + 1];
+          const u = Math.max(0, Math.min(1, ((x - Q[k]) * dx + (y - Q[k + 1]) * dy) / (dx * dx + dy * dy || 1)));
+          best = Math.min(best, Math.hypot(x - Q[k] - u * dx, y - Q[k + 1] - u * dy)); } m = Math.max(m, best); } } return m; };
+    if (G.maxDeviationUm(A, B) + 1 < Math.max(brute(A, B), brute(B, A))) okDense = false; }
+  check("GEO-04 deviation measured at segment interiors (densified ≥ sampled)", okDense);
+  const ci = F.MASKS.crescentInterior, page = { artWMM: ci.w * 0.25, artHMM: ci.h * 0.25, frameMM: 0 };
+  const Lb = SBMaterial.fromMasks(ci.layers, ci.w, ci.h, page, { smooth: { tolUm: 50, mode: "bonded" } });
+  const Lraw = SBMaterial.fromMasks(ci.layers, ci.w, ci.h, page, {});
+  check("D1 bonded mode is unsmoothed: material equals the raw lattice contours", JSON.stringify(Lb.map((l) => l.material)) === JSON.stringify(Lraw.map((l) => l.material)));
+  check("D1/SUP-02 bonded (unsmoothed) leaves no overhang", G.isEmpty(G.difference(Lb[1].material, Lb[0].material)));
+  check("D1 bonded smoothStack reports no SMOOTH_FALLBACK", SBMaterial.smoothStack([[], [stair]], { tolUm: 50, sxUm: 250, syUm: 250, mode: "bonded" }).fallbacks.length === 0);
+  const bt = F.MASKS.borderTouch;
+  const Lc = SBMaterial.fromMasks(bt.layers, bt.w, bt.h, { artWMM: 8, artHMM: 5, frameMM: 0 }, { smooth: { tolUm: 50, mode: "connected" } });
+  check("GEO-02 art-boundary vertices pinned (x=0 edge kept exact)", Lc[1].material[0].outer.some((v, i) => i % 2 === 0 && v === 0));
+  check("GEO-04 topology unchanged after smoothing (donut keeps its hole)", (() => { const d = F.MASKS.donutIsland;
+    const a = SBMaterial.fromMasks(d.layers, d.w, d.h, { artWMM: 9, artHMM: 9, frameMM: 0 }, {});
+    const b = SBMaterial.fromMasks(d.layers, d.w, d.h, { artWMM: 9, artHMM: 9, frameMM: 0 }, { smooth: { tolUm: 50, mode: "connected" } });
+    return G.ringTopology(a[1].material) === G.ringTopology(b[1].material); })());
+
+  // ---- SBGeom.maxDeviationUm / ringTopology
+  const sq = (x0, y0, s) => [x0, y0, x0 + s, y0, x0 + s, y0 + s, x0, y0 + s];
+  check("maxDeviationUm(A, A) = 0 and is symmetric", G.maxDeviationUm(sq(0, 0, 1000), sq(0, 0, 1000)) === 0 &&
+    G.maxDeviationUm(sq(0, 0, 1000), sq(37, -12, 1000)) === G.maxDeviationUm(sq(37, -12, 1000), sq(0, 0, 1000)));
+  check("maxDeviationUm of a square translated by 100 µm = 100", Math.abs(G.maxDeviationUm(sq(0, 0, 1000), sq(100, 0, 1000)) - 100) < 1e-9);
+  check("maxDeviationUm is direction-independent of start vertex and winding", G.maxDeviationUm(sq(0, 0, 1000), [1000, 0, 0, 0, 0, 1000, 1000, 1000]) === 0);
+  const disk = [{ outer: sq(0, 0, 9000), holes: [] }], donut = [{ outer: sq(0, 0, 9000), holes: [[1000, 1000, 1000, 8000, 8000, 8000, 8000, 1000]] }];
+  const isl = (x) => ({ outer: sq(x, 4000, 1000), holes: [] });
+  check("ringTopology: disk ≠ donut", G.ringTopology(disk) !== G.ringTopology(donut));
+  check("ringTopology: island inside the hole ≠ island outside the donut (same ring counts)",
+    G.ringTopology(G.normalize(donut.concat([isl(4000)]))) !== G.ringTopology(G.normalize(donut.concat([isl(10000)]))));
+  check("ringTopology is independent of polygon order", G.ringTopology([isl(4000)].concat(donut)) === G.ringTopology(donut.concat([isl(4000)])));
+  check("ringTopology: two islands in one hole ≠ one island in each of two parts' holes",
+    G.ringTopology(G.normalize([{ outer: sq(0, 0, 9000), holes: [[1000, 1000, 1000, 8000, 8000, 8000, 8000, 1000]] }, isl(2000), isl(5000)])) !==
+    G.ringTopology(G.normalize([{ outer: sq(0, 0, 4000), holes: [[1000, 1000, 1000, 3000, 3000, 3000, 3000, 1000]] }, { outer: sq(1500, 1500, 1000), holes: [] },
+      { outer: sq(5000, 0, 4000), holes: [[6000, 1000, 6000, 3000, 8000, 3000, 8000, 1000]] }, { outer: sq(6500, 1500, 1000), holes: [] }])));
+
+  // ---- SBTrace.smoothLevel: RDP before Chaikin (S1 amendment), pins
+  const never = () => false;
+  check("smoothLevel raw is the identity", JSON.stringify(T.smoothLevel(stair, "raw", never, 5)) === JSON.stringify(stair));
+  check("smoothLevel rdp(0) is the identity on a lattice loop", JSON.stringify(T.smoothLevel(stair, "rdp", never, 0)) === JSON.stringify(stair));
+  const longStair = []; for (let i = 0; i < 20; i++) longStair.push([i, i], [i + 1, i]); longStair.push([20, 20], [0, 20]);
+  const rdp1 = T.smoothLevel(longStair, "rdp", never, 1);
+  check("smoothLevel rdp(ε = 1 px) collapses a 45° staircase to a few vertices", rdp1.length <= 6 && rdp1.length >= 3);
+  check("smoothLevel chaikin = Chaikin(2)∘RDP(ε): 4 × the RDP vertex count (RDP runs first)",
+    T.smoothLevel(longStair, "chaikin", never, 1).length === 4 * rdp1.length);
+  check("smoothLevel rdp keeps every output vertex a raw vertex", rdp1.every((p) => longStair.some((q) => q[0] === p[0] && q[1] === p[1])));
+  const box = [[0, 0], [5, 0], [5, 2], [0, 2]], pinB = (p) => p[0] === 0 || p[1] === 0 || p[0] === 8 || p[1] === 5;
+  const sb = T.smoothLevel(box, "chaikin", pinB, 0.5);
+  check("smoothLevel keeps pinned vertices exactly and rounds the free corner",
+    [[0, 0], [5, 0], [0, 2]].every((v) => sb.some((p) => p[0] === v[0] && p[1] === v[1])) && !sb.some((p) => p[0] === 5 && p[1] === 2));
+  check("smoothLevel: points on the art boundary stay on it (no material leaves the x=0 / y=0 edges)",
+    sb.filter((p) => p[0] === 0).length >= 2 && sb.filter((p) => p[1] === 0).length >= 2);
+  check("smoothLevel rejects an unknown level", (() => { try { T.smoothLevel(box, "bezier", never, 0); return false; } catch (e) { return true; } })());
+  check("smoothLevel never uses Math.hypot (NFR-05: engine-independent rounding)", !/Math\.hypot/.test(T.smoothLevel.toString()));
+
+  // ---- smoothStack (D1)
+  const small = [[0, 0], [0, 1], [1, 1], [1, 0]], big = [[3, 0], [3, 4], [7, 4], [7, 0]]; // trace winding (outer)
+  const ss = M.smoothStack([[], [small, big]], { tolUm: 300, sxUm: 1000, syUm: 1000, mode: "connected" });
+  check("D1 connected: tolerance loop runs per loop (unit square kept at chaikin, 4 px square falls back)", ss.levels[1][0] === "chaikin" && ss.levels[1][1] !== "chaikin");
+  const fb = ss.fallbacks.find((f) => f.loopIndex === 1);
+  check("D1 fallback record {layer, loopIndex, from, to, reason: deviation, devUm > tol}",
+    !!fb && fb.layer === 1 && fb.from === "chaikin" && fb.to === ss.levels[1][1] && fb.reason === "deviation" && fb.devUm > 300 && ss.fallbacks.every((f) => f.loopIndex !== 0));
+  check("D1 connected: smoothed loop returned for the kept level, raw loop object for raw",
+    ss.loopsByLayer[1][0].length === 16 && ss.loopsByLayer[0].length === 0);
+  const sbd = M.smoothStack([[], [small, big]], { tolUm: 300, sxUm: 1000, syUm: 1000, mode: "bonded" });
+  check("D1 bonded smoothStack is the identity (raw loops, every level raw)",
+    JSON.stringify(sbd.loopsByLayer) === JSON.stringify([[], [small, big]]) && sbd.levels[1].every((l) => l === "raw") && sbd.fallbacks.length === 0);
+  check("smoothStack refuses an unknown mode or a non-finite tolerance", (() => { let n = 0;
+    try { M.smoothStack([[]], { tolUm: 50, sxUm: 1, syUm: 1, mode: "x" }); } catch (e) { n++; }
+    try { M.smoothStack([[]], { tolUm: NaN, sxUm: 1, syUm: 1, mode: "connected" }); } catch (e) { n++; } return n === 2; })());
+
+  // ---- fromMasks connected mode: real smoothing, pins, diagnostics
+  const Lbig = M.fromMasks(bt.layers, bt.w, bt.h, { artWMM: 8, artHMM: 5, frameMM: 0 }, { smooth: { tolUm: 500, mode: "connected" } });
+  const o = Lbig[1].material[0].outer, has = (x, y) => { for (let i = 0; i < o.length; i += 2) if (o[i] === x && o[i + 1] === y) return true; return false; };
+  check("GEO-02 connected smoothing at tol 500 µm rounds the free corner and keeps the art-edge corners exact",
+    has(0, 0) && has(5000, 0) && has(0, 2000) && !has(5000, 2000) && o.length > 8);
+  check("D1 connected: no SMOOTH_FALLBACK when every loop smooths", !Lbig[1].diagnostics.some((x) => x.code === "SMOOTH_FALLBACK"));
+  const Lfb = M.fromMasks(bt.layers, bt.w, bt.h, { artWMM: 8, artHMM: 5, frameMM: 0 }, { smooth: { tolUm: 50, mode: "connected" } });
+  const sf = Lfb[1].diagnostics.filter((x) => x.code === "SMOOTH_FALLBACK");
+  check("D1 connected: SMOOTH_FALLBACK warning per layer with count, measured and limit (mm)",
+    sf.length === 1 && sf[0].severity === "warning" && sf[0].layer === 1 && sf[0].count === 1 && sf[0].limit.value === 0.05 && sf[0].limit.unit === "mm" && sf[0].measured.value > 0.05);
+  check("D1 the full base layer stays the exact art rectangle under connected smoothing", JSON.stringify(Lbig[0].material) === JSON.stringify([{ outer: [0, 0, 8000, 0, 8000, 5000, 0, 5000], holes: [] }]));
+  check("D1 bonded fromMasks never reports SMOOTH_FALLBACK", !M.fromMasks(bt.layers, bt.w, bt.h, { artWMM: 8, artHMM: 5, frameMM: 0 }, { smooth: { tolUm: 50, mode: "bonded" } }).some((l) => l.diagnostics.some((x) => x.code === "SMOOTH_FALLBACK")));
+  const d = F.MASKS.donutIsland;
+  const Ld = M.fromMasks(d.layers, d.w, d.h, { artWMM: 9, artHMM: 9, frameMM: 0 }, { smooth: { tolUm: 1000, mode: "connected" } });
+  check("GEO-04 donut smoothed at tol 1 mm keeps its hole and island (2 parts, topology unchanged, valid)",
+    Ld[1].parts.length === 2 && G.ringTopology(Ld[1].material) === G.ringTopology(M.fromMasks(d.layers, d.w, d.h, { artWMM: 9, artHMM: 9, frameMM: 0 }, {})[1].material) &&
+    !Ld[1].diagnostics.some((x) => x.severity === "blocking") && Ld[1].material.some((p) => p.outer.length > 8));
+  // property: random masks, every kept smoothing within tolerance, layer topology unchanged, valid, deterministic
+  let okDev = true, okTopo = true, okValid = true, okDet = true, smoothed = 0, fell = 0;
+  for (let sd = 1; sd <= 25; sd++) {
+    const rr = F.lcg(sd * 7 + 1), w = 18, h = 14, mm = new Uint8Array(w * h);
+    for (let i = 0; i < mm.length; i++) mm[i] = rr() < 0.5 ? 1 : 0;
+    const loops = T.trace(mm, w, h);
+    const S = M.smoothStack([[], loops], { tolUm: 120, sxUm: 250, syUm: 250, mode: "connected", w, h });
+    S.levels[1].forEach((lv, i) => { if (lv === "raw") return; smoothed++;
+      if (G.maxDeviationUm(toUm(loops[i], 250), toUm(S.loopsByLayer[1][i], 250)) > 120) okDev = false; });
+    fell += S.fallbacks.length;
+    const pgR = { artWMM: w * 0.25, artHMM: h * 0.25, frameMM: 0 }, full = new Uint8Array(w * h).fill(1);
+    const A = M.fromMasks([full, mm], w, h, pgR, {}), B = M.fromMasks([full, mm], w, h, pgR, { smooth: { tolUm: 120, mode: "connected" } });
+    if (G.ringTopology(A[1].material) !== G.ringTopology(B[1].material)) okTopo = false;
+    if (B[1].diagnostics.some((x) => x.severity === "blocking")) okValid = false;
+    const B2 = M.fromMasks([full, mm], w, h, pgR, { smooth: { tolUm: 120, mode: "connected" } });
+    if (B2[1].canonicalHash !== B[1].canonicalHash) okDet = false;
+  }
+  check(`GEO-04 25 noise masks @250 µm/px tol 120: every kept smoothing within tolerance (${smoothed} loops smoothed, ${fell} fallbacks)`, okDev && smoothed > 0);
+  check("GEO-04 25 noise masks: layer topology unchanged by smoothing", okTopo);
+  check("GEO-03 25 noise masks: smoothed layers raise no blocking diagnostics", okValid);
+  check("NFR-05 connected smoothing is deterministic (same canonicalHash on repeat)", okDet);
+  // topology fallback: a noise layer (seed 10) whose per-loop smoothing at tol 1.5 mm, each within tolerance, re-nests/welds rings
+  const tf = F.art(["##.###..", ".##.####", "###.###.", "#..#.##.", "##..##.#", "..#####.", "###.##.."]);
+  const TS = M.smoothStack([[], T.trace(tf.m, tf.w, tf.h)], { tolUm: 1500, sxUm: 1000, syUm: 1000, mode: "connected", w: tf.w, h: tf.h });
+  const pgT = { artWMM: tf.w, artHMM: tf.h, frameMM: 0 }, fullT = new Uint8Array(tf.w * tf.h).fill(1);
+  const TA = M.fromMasks([fullT, tf.m], tf.w, tf.h, pgT, {}), TB = M.fromMasks([fullT, tf.m], tf.w, tf.h, pgT, { smooth: { tolUm: 1500, mode: "connected" } });
+  check("GEO-04 layer-topology fallback recorded (reason topology) where per-loop smoothing would change the layer", TS.fallbacks.some((f) => f.reason === "topology" && f.devUm === null));
+  check("GEO-04 that layer keeps its part count and topology after the fallback", TB[1].parts.length === TA[1].parts.length && G.ringTopology(TB[1].material) === G.ringTopology(TA[1].material));
+  check("GEO-04 the topology fallback is reported as SMOOTH_FALLBACK (topology)", TB[1].diagnostics.some((x) => x.code === "SMOOTH_FALLBACK" && /topology/.test(x.message)));
+  // per-loop topology: an RDP chord within tolerance makes a lone ring self-cross (noise seed 15, tol 1 mm)
+  const tp = F.art(["#.###..#", "##.####.", "#.....##", "...#.###", ".#.##.#.", "##.####.", "..##.#.."]);
+  const TP = M.smoothStack([[], T.trace(tp.m, tp.w, tp.h)], { tolUm: 1000, sxUm: 1000, syUm: 1000, mode: "connected", w: tp.w, h: tp.h });
+  check("GEO-04 lone-ring topology fallback recorded (reason topology, deviation within tolerance)", TP.fallbacks.some((f) => f.reason === "topology" && f.devUm !== null && f.devUm <= 1000));
 });
 
 // ------------------------------------------------------------------ report

@@ -24,6 +24,8 @@
  *     certify r* ≥ d with an exact BigInt witness; never through offset().
  *   · Polygons sorted by (minY, minX) of the outer, then by the outer's
  *     coordinate list; holes the same way.
+ *   · maxDeviationUm (densified symmetric Hausdorff) and ringTopology (containment
+ *     tree signature) are the GEO-04 smoothing measures (plan G1.2).
  *   · canonicalBytes / layerHash / materialHash (decision D4, spike S6) are
  *     built on normalize; integer coordinates within ±2^25 µm only.
  * Only + - * / Math.round/floor/ceil/abs/sqrt/min/max, BigInt (finite-width witness), Math.imul (integer hash in the T-split
@@ -492,6 +494,103 @@
     return false;
   };
 
+  // ------------------------------------------------ smoothing measures (G1.2)
+  /**
+   * Segment grid for nearest-segment queries on one flat ring. Each segment is sampled every cell/2 and
+   * registered in the 3×3 cells around every sample, so every cell the segment passes through lists it.
+   */
+  function segGrid(R, cell) {
+    const g = new Map(), n = R.length, key = (cx, cy) => cx * 4194304 + cy;
+    let gx0 = Infinity, gy0 = Infinity, gx1 = -Infinity, gy1 = -Infinity;
+    for (let i = 0; i < n; i += 2) {
+      const j = (i + 2) % n, ax = R[i], ay = R[i + 1], dx = R[j] - ax, dy = R[j + 1] - ay;
+      const steps = Math.max(1, Math.ceil(Math.sqrt(dx * dx + dy * dy) / (cell / 2)));
+      for (let s = 0; s <= steps; s++) {
+        const cx = Math.floor((ax + (dx * s) / steps) / cell), cy = Math.floor((ay + (dy * s) / steps) / cell);
+        for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
+          const k = key(cx + ox, cy + oy); let l = g.get(k);
+          if (!l) g.set(k, (l = [])); if (l[l.length - 1] !== i) l.push(i);
+        }
+        if (cx < gx0) gx0 = cx; if (cx > gx1) gx1 = cx; if (cy < gy0) gy0 = cy; if (cy > gy1) gy1 = cy;
+      }
+    }
+    return { g, key, cell, R, gx0: gx0 - 1, gy0: gy0 - 1, gx1: gx1 + 1, gy1: gy1 + 1 };
+  }
+  function segDist(x, y, R, i) {
+    const n = R.length, j = (i + 2) % n, ax = R[i], ay = R[i + 1], vx = R[j] - ax, vy = R[j + 1] - ay, L2 = vx * vx + vy * vy;
+    let u = L2 ? ((x - ax) * vx + (y - ay) * vy) / L2 : 0;
+    if (u < 0) u = 0; else if (u > 1) u = 1;
+    const ex = x - ax - u * vx, ey = y - ay - u * vy;
+    return Math.sqrt(ex * ex + ey * ey);
+  }
+  /** Distance from (x, y) to the ring indexed by G; rings of cells are searched outward until no closer segment can exist. */
+  function distToGrid(x, y, G) {
+    const { g, key, cell, R } = G, cx = Math.floor(x / cell), cy = Math.floor(y / cell);
+    const rMax = Math.max(Math.abs(cx - G.gx0), Math.abs(cx - G.gx1), Math.abs(cy - G.gy0), Math.abs(cy - G.gy1)) + 1;
+    let best = Infinity;
+    for (let r = 0; r <= rMax; r++) {
+      for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) {
+        if (dx !== -r && dx !== r && dy !== -r && dy !== r) continue;
+        const l = g.get(key(cx + dx, cy + dy)); if (!l) continue;
+        for (const i of l) { const d = segDist(x, y, R, i); if (d < best) best = d; }
+      }
+      if (best <= r * cell) break; // unseen cells are more than r·cell away
+    }
+    return best;
+  }
+  function directedDev(A, GB, step) {
+    let m = 0;
+    const n = A.length;
+    for (let i = 0; i < n; i += 2) {
+      const j = (i + 2) % n, ax = A[i], ay = A[i + 1], dx = A[j] - ax, dy = A[j + 1] - ay;
+      const k = Math.max(1, Math.ceil(Math.sqrt(dx * dx + dy * dy) / step));
+      for (let s = 0; s < k; s++) { const d = distToGrid(ax + (dx * s) / k, ay + (dy * s) / k, GB); if (d > m) m = d; }
+    }
+    return m;
+  }
+  /**
+   * GEO-04 measured deviation: symmetric Hausdorff distance between two closed flat rings (µm), with BOTH rings
+   * densified every ≤ stepUm (vertices included), point-to-segment distances, Math.sqrt only (NFR-05). Peaks
+   * inside segments are therefore measured to within stepUm/2.
+   */
+  C.maxDeviationUm = function (A, B, stepUm) {
+    const step = stepUm === undefined ? 10 : stepUm;
+    if (!(step > 0) || !Number.isFinite(step)) throw new Error("SBGeom.maxDeviationUm: stepUm must be finite and > 0");
+    if (A.length < 2 || B.length < 2 || A.length % 2 || B.length % 2) throw new Error("SBGeom.maxDeviationUm: rings must be flat [x, y, …] with ≥ 1 vertex");
+    const cellOf = (R) => { let L = 0; for (let i = 0; i < R.length; i += 2) { const j = (i + 2) % R.length, dx = R[j] - R[i], dy = R[j + 1] - R[i + 1]; L += Math.sqrt(dx * dx + dy * dy); }
+      return Math.max(4 * step, L / (R.length / 2)); };
+    const ab = directedDev(A, segGrid(B, cellOf(B)), step), ba = directedDev(B, segGrid(A, cellOf(A)), step);
+    return ab > ba ? ab : ba;
+  };
+
+  /**
+   * Canonical topology signature of a normalized polygon set: the containment tree outer → holes → outers
+   * (each outer hangs under the smallest hole of another polygon that contains it), serialized with sorted
+   * children. Ring coordinates do not enter; only ring count and nesting do (GEO-04 topology fallback).
+   */
+  C.ringTopology = function (polys) {
+    const holes = [];
+    polys.forEach((p, pi) => (p.holes || []).forEach((h) => holes.push({ pi, r: h, box: ringBox(h), a: Math.abs(area2(h)), kids: [] })));
+    const roots = [];
+    const probe = (outer, h) => { // a vertex strictly inside/outside h decides (rings of a normalized set never cross)
+      for (let i = 0; i < outer.length; i += 2) { const s = pointInRing(outer[i], outer[i + 1], h); if (s !== 0) return s > 0; }
+      for (let i = 0; i < outer.length; i += 2) { const j = (i + 2) % outer.length, mx = (outer[i] + outer[j]) / 2, my = (outer[i + 1] + outer[j + 1]) / 2;
+        const s = pointInRing(mx, my, h); if (s !== 0) return s > 0; }
+      return false;
+    };
+    polys.forEach((p, pi) => {
+      const b = ringBox(p.outer); let best = null;
+      for (const h of holes) {
+        if (h.pi === pi || h.box[0] > b[0] || h.box[1] > b[1] || h.box[2] < b[2] || h.box[3] < b[3]) continue;
+        if ((best === null || h.a < best.a) && probe(p.outer, h.r)) best = h;
+      }
+      (best ? best.kids : roots).push(pi);
+    });
+    const holesOf = new Map(); for (const h of holes) { let l = holesOf.get(h.pi); if (!l) holesOf.set(h.pi, (l = [])); l.push(h); }
+    const sigP = (pi) => "O(" + (holesOf.get(pi) || []).map((h) => "H(" + h.kids.map(sigP).sort().join("") + ")").sort().join("") + ")";
+    return roots.map(sigP).sort().join("");
+  };
+
   // ------------------------------------------------------------- circle
   // round(1e6*cos(2πk/64)) for k = 0..16, generated once offline and frozen here (no trig at run time).
   const COS64 = [1000000, 995185, 980785, 956940, 923880, 881921, 831470, 773010, 707107, 634393, 555570, 471397, 382683, 290285, 195090, 98017, 0];
@@ -907,7 +1006,8 @@
   };
 
   for (const k of ["fromPixelLoops", "normalize", "validate", "area", "isEmpty", "containsPoint", "bbox", "circle",
-    "canonicalBytes", "layerHashes", "layerHash", "materialHash", "COORD_LIMIT", "interiorConnected", "rechain", "splitTJunctions"]) G[k] = C[k];
+    "canonicalBytes", "layerHashes", "layerHash", "materialHash", "COORD_LIMIT", "interiorConnected", "rechain", "splitTJunctions",
+    "maxDeviationUm", "ringTopology"]) G[k] = C[k];
   G.backend = "clipper2-ts@2.0.1-18";
 
   global.SBGeom = G;

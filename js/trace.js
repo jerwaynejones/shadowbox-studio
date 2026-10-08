@@ -15,6 +15,9 @@
  *     separate loops instead of welding them into a figure-eight.
  *   · Loops are then simplified (Ramer–Douglas–Peucker) and optionally
  *     rounded (Chaikin corner cutting) for an organic, paper-cut feel.
+ *   · smoothLevel (plan G1.2) is the canonical-path form: levels raw | rdp |
+ *     chaikin = Chaikin(2)∘RDP(ε), pinned vertices kept exactly, squared
+ *     distances only. simplify/chaikin above stay for the legacy path.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -182,6 +185,89 @@
       pts = out;
     }
     return pts;
+  };
+
+  // ----------------------------------------------- bounded smoothing (G1.2)
+  // Pixel-loop smoothing levels for SBMaterial.smoothStack (connected mode only; D1: bonded is raw).
+  // Squared distances only (no Math.hypot), so the kept-vertex decisions are engine-independent (NFR-05).
+
+  function segDist2(p, a, b) {
+    const vx = b[0] - a[0], vy = b[1] - a[1], L2 = vx * vx + vy * vy;
+    let u = L2 ? ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / L2 : 0;
+    if (u < 0) u = 0; else if (u > 1) u = 1;
+    const ex = p[0] - a[0] - u * vx, ey = p[1] - a[1] - u * vy;
+    return ex * ex + ey * ey;
+  }
+  /** RDP on an open chain; both endpoints kept. */
+  function rdpOpen(pts, eps2) {
+    const n = pts.length;
+    if (n < 3) return pts.slice();
+    const keep = new Uint8Array(n); keep[0] = keep[n - 1] = 1;
+    const stack = [0, n - 1];
+    while (stack.length) {
+      const b = stack.pop(), a = stack.pop();
+      let idx = -1, dmax = 0;
+      for (let i = a + 1; i < b; i++) { const d = segDist2(pts[i], pts[a], pts[b]); if (d > dmax) { dmax = d; idx = i; } }
+      if (idx > 0 && dmax > eps2) { keep[idx] = 1; stack.push(a, idx, idx, b); }
+    }
+    const out = [];
+    for (let i = 0; i < n; i++) if (keep[i]) out.push(pts[i]);
+    return out;
+  }
+  /**
+   * RDP(ε) on a closed loop. Pinned vertices are always kept and split the loop into open chains; with no
+   * pin the loop is split at vertex 0 and the vertex farthest from it (first maximum). Fewer than 3
+   * survivors → the loop is returned unchanged.
+   */
+  function rdpClosed(loop, eps, pinned) {
+    const n = loop.length;
+    if (!(eps > 0) || n < 4) return loop.slice();
+    const eps2 = eps * eps, anchors = [];
+    for (let i = 0; i < n; i++) if (pinned(loop[i])) anchors.push(i);
+    if (anchors.length < 2) {
+      const a = anchors.length ? anchors[0] : 0; let b = -1, best = -1;
+      for (let k = 1; k < n; k++) { const i = (a + k) % n, dx = loop[i][0] - loop[a][0], dy = loop[i][1] - loop[a][1], d = dx * dx + dy * dy; if (d > best) { best = d; b = i; } }
+      anchors.length = 0; anchors.push(Math.min(a, b), Math.max(a, b));
+    }
+    const out = [];
+    for (let t = 0; t < anchors.length; t++) {
+      const a = anchors[t], b = anchors[(t + 1) % anchors.length], chain = [];
+      for (let i = a; ; i = (i + 1) % n) { chain.push(loop[i]); if (i === b && chain.length > 1) break; }
+      const s = rdpOpen(chain, eps2); s.pop(); // the end anchor starts the next chain
+      for (const p of s) out.push(p);
+    }
+    return out.length >= 3 ? out : loop.slice();
+  }
+  /** Chaikin corner cutting, per-vertex form: each free vertex becomes two cut points at ¼ of its edges; pinned vertices are emitted unchanged. */
+  function chaikinPinned(loop, iterations, pinned) {
+    let pts = loop;
+    for (let k = 0; k < iterations; k++) {
+      const out = [], n = pts.length;
+      for (let i = 0; i < n; i++) {
+        const p = pts[(i + n - 1) % n], v = pts[i], q = pts[(i + 1) % n];
+        if (pinned(v)) { out.push(v); continue; }
+        out.push([0.75 * v[0] + 0.25 * p[0], 0.75 * v[1] + 0.25 * p[1]], [0.75 * v[0] + 0.25 * q[0], 0.75 * v[1] + 0.25 * q[1]]);
+      }
+      pts = out;
+    }
+    return pts;
+  }
+  const LEVELS = ["raw", "rdp", "chaikin"];
+  T.SMOOTH_LEVELS = LEVELS;
+  /**
+   * One smoothing level of a closed pixel loop (plan G1.2):
+   *   "raw"     → the loop unchanged (a copy);
+   *   "rdp"     → RDP(ε) alone (ε in px, = tolUm / pitchUm);
+   *   "chaikin" → Chaikin(2)∘RDP(ε) — RDP first (spike S1 amendment: Chaikin ×2 quadruples the vertices).
+   * pinned(pt) marks vertices that must stay exactly (the art-rectangle boundary), so the frame union stays
+   * exact; a cut point that lands on that boundary is pinned on the next Chaikin pass too.
+   */
+  T.smoothLevel = function (loopPx, level, pinned, epsPx) {
+    if (!LEVELS.includes(level)) throw new Error("SBTrace.smoothLevel: level must be raw|rdp|chaikin (got " + level + ")");
+    const pin = pinned || (() => false);
+    if (level === "raw") return loopPx.slice();
+    const r = rdpClosed(loopPx, epsPx, pin);
+    return level === "rdp" ? r : chaikinPinned(r, 2, pin);
   };
 
   global.SBTrace = T;
