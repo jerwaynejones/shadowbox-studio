@@ -2,7 +2,13 @@
 
 ## Unreleased
 
-Planning only; no change to the application yet.
+- **G2.0, raster contract (engine only; not yet wired into the app):** `SBRaster.resample`
+  (pure integer `none` / `nearest` / exact `area` box average, never upsamples and throws
+  `RESAMPLE_UPSAMPLE`), `SBRaster.rasterSize` (draft 720 px long side) and
+  `SBRaster.fabRaster` (physical 0.1 mm/px pitch, coarsened in 1 µm steps to fit the device
+  pixel budget, clamped to the source with the px shortfall). New info diagnostic
+  `FAB_PITCH_CAPPED`; `FAB_EXCEEDS_SOURCE` now carries `shortPx` and no longer suggests that
+  missing detail is interpolated.
 
 - **Laser target (product owner, 2026-10-07):** the plan and architecture now target the
   xTool S1 with the conveyor feeder (40 W diode, 1/4" basswood or poplar plywood). Decision

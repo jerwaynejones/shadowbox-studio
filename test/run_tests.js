@@ -2209,6 +2209,142 @@ suite("engine.js — connected export through the canonical path (DEP-04, GEO-02
     /frame/i.test(sec) && /CUT/.test(sec) && /SCORE/.test(sec) && /proof/i.test(sec) && /0\.05 mm/.test(sec) && /holes/i.test(sec) && /label/i.test(sec));
 });
 
+suite("raster.js — G2.0 deterministic resampling and the raster contract, fabRaster (IMG-02/03, GEO-06, NFR-05, PO-LASER-4/5)", () => {
+  const R = SBRaster, F = require("./fixtures.js");
+  const codeOf = (fn) => { try { fn(); return null; } catch (e) { return e.code || "UNCODED:" + e.message; } };
+  check("G2.0 SBRaster exposes resample, rasterSize, fabRaster, resamplePolicy, scaleUm, fabDiagnostics, cacheKey",
+    ["resample", "rasterSize", "fabRaster", "resamplePolicy", "scaleUm", "fabDiagnostics", "cacheKey"].every((k) => typeof R[k] === "function"));
+  if (typeof R.resample !== "function" || typeof R.fabRaster !== "function") return;
+
+  // ---- resample
+  const ramp = new Uint8Array(256 * 3); for (let y = 0; y < 3; y++) for (let x = 0; x < 256; x++) ramp[y * 256 + x] = x;
+  const near = R.resample(ramp, 1, 256, 3, 37, 2, "nearest"), inSet = new Set(ramp);
+  check("IMG-03 height nearest: output values ⊆ input values", near.length === 74 && [...near].every((v) => inSet.has(v)));
+  check("IMG-03 nearest uses sx = floor((2x+1)·w / (2W))", [...near.slice(0, 37)].every((v, x) => v === Math.floor((2 * x + 1) * 256 / 74)));
+  { const rnd = F.lcg(2001), img = new Uint8Array(23 * 17 * 4); for (let i = 0; i < img.length; i++) img[i] = Math.floor(rnd() * 256);
+    const id = R.resample(img, 4, 23, 17, 23, 17, "none");
+    check("IMG-02 none is the identity (a copy, not the same buffer)", id instanceof Uint8Array && id !== img && id.length === img.length && id.every((v, i) => v === img[i]));
+    check("IMG-02 nearest and area at the same size are the identity",
+      R.resample(img, 4, 23, 17, 23, 17, "nearest").every((v, i) => v === img[i]) && R.resample(img, 4, 23, 17, 23, 17, "area").every((v, i) => v === img[i]));
+    check("IMG-02 none with a different size throws RESAMPLE_SIZE", codeOf(() => R.resample(img, 4, 23, 17, 20, 17, "none")) === "RESAMPLE_SIZE"); }
+  // exact rational oracle for the area average (BigInt, half-up)
+  const areaOracle = (px, c, w, h, W, H) => {
+    const out = new Uint8Array(W * H * c), ov = (a0, a1, b0, b1) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
+    for (let Y = 0; Y < H; Y++) for (let X = 0; X < W; X++) for (let k = 0; k < c; k++) {
+      let s = 0n;
+      for (let y = 0; y < h; y++) { const wy = ov(Y * h, (Y + 1) * h, y * H, (y + 1) * H); if (!wy) continue;
+        for (let x = 0; x < w; x++) { const wx = ov(X * w, (X + 1) * w, x * W, (x + 1) * W); if (wx) s += BigInt(px[(y * w + x) * c + k] * wx * wy); } }
+      const D = BigInt(w * h); out[(Y * W + X) * c + k] = Number((2n * s + D) / (2n * D));
+    }
+    return out;
+  };
+  { const rnd = F.lcg(2002); let ok = true, rep = true;
+    for (let t = 0; t < 40 && ok; t++) {
+      const c = [1, 3, 4][t % 3], w = 1 + Math.floor(rnd() * 29), h = 1 + Math.floor(rnd() * 23), W = 1 + Math.floor(rnd() * w), H = 1 + Math.floor(rnd() * h);
+      const px = new Uint8Array(w * h * c); for (let i = 0; i < px.length; i++) px[i] = Math.floor(rnd() * 256);
+      const a = R.resample(px, c, w, h, W, H, "area"), o = areaOracle(px, c, w, h, W, H);
+      ok = a.length === o.length && a.every((v, i) => v === o[i]);
+      rep = rep && R.resample(px, c, w, h, W, H, "area").every((v, i) => v === a[i]);
+    }
+    check("NFR-05 area on gray is integer-exact and repeatable (40 random sizes/channels vs exact BigInt oracle)", ok && rep); }
+  { const px = new Uint8Array([0, 1, 0, 1]);
+    check("NFR-05 area rounds half up (0,1 → 1; 0,0,0,1 → 0)", R.resample(px.subarray(0, 2), 1, 2, 1, 1, 1, "area")[0] === 1 && R.resample(new Uint8Array([0, 0, 0, 1]), 1, 4, 1, 1, 1, "area")[0] === 0); }
+  check("RESAMPLE_UPSAMPLE thrown for W > w", codeOf(() => R.resample(new Uint8Array(4), 1, 2, 2, 3, 2, "nearest")) === "RESAMPLE_UPSAMPLE");
+  check("RESAMPLE_UPSAMPLE thrown for H > h (area)", codeOf(() => R.resample(new Uint8Array(4), 1, 2, 2, 2, 3, "area")) === "RESAMPLE_UPSAMPLE");
+  check("G2.0 resample rejects unknown methods, bad sizes and short buffers",
+    codeOf(() => R.resample(new Uint8Array(4), 1, 2, 2, 1, 1, "bilinear")) === "RESAMPLE_METHOD" &&
+    codeOf(() => R.resample(new Uint8Array(4), 1, 2, 2, 0, 1, "area")) === "RESAMPLE_SIZE" &&
+    codeOf(() => R.resample(new Uint8Array(4), 1, 2, 2.5, 1, 1, "area")) === "RESAMPLE_SIZE" &&
+    codeOf(() => R.resample(new Uint8Array(3), 1, 2, 2, 1, 1, "area")) === "RESAMPLE_SIZE");
+  check("G2.0 resample does not mutate its input", (() => { const p = new Uint8Array([9, 8, 7, 6]), q = p.slice(); R.resample(p, 1, 4, 1, 2, 1, "area"); R.resample(p, 1, 4, 1, 3, 1, "nearest"); return p.every((v, i) => v === q[i]); })());
+
+  // ---- rasterSize (draft)
+  const rs = R.rasterSize;
+  check("LYR-06 rasterSize draft 720 long side, never larger than the source",
+    JSON.stringify(rs(4000, 3000, 720)) === JSON.stringify({ W: 720, H: 540, capped: false }) &&
+    JSON.stringify(rs(3000, 4000, 720)) === JSON.stringify({ W: 540, H: 720, capped: false }) &&
+    JSON.stringify(rs(200, 150, 720)) === JSON.stringify({ W: 200, H: 150, capped: true }) &&
+    JSON.stringify(rs(720, 10, 720)) === JSON.stringify({ W: 720, H: 10, capped: false }) &&
+    JSON.stringify(rs(10000, 1, 720)) === JSON.stringify({ W: 720, H: 1, capped: false }));
+  check("NFR-05 rasterSize rounds the short side half up in integers (1000×333 → 720×240, 999×1 → 720×1)",
+    rs(1000, 333, 720).H === 240 && rs(999, 1, 720).H === 1 && rs(1001, 501, 720).H === 360);
+
+  // ---- fabRaster
+  const fab = (artWUm, artHUm, srcW, srcH, pxBudget, targetPitchUm = 100) => R.fabRaster({ artWUm, artHUm, srcW, srcH, targetPitchUm, pxBudget });
+  const tiny = fab(400000, 300000, 200, 150, 16e6);
+  check("GEO-06/PO-LASER-5 never upsamples: 200×150 source, 400×300 mm at 0.1 mm/px → 200×150, capped \"source\", shortPx [3800, 2850]",
+    tiny.W === 200 && tiny.H === 150 && tiny.pitchUm === 100 && tiny.capped === "source" && JSON.stringify(tiny.shortPx) === "[3800,2850]");
+  { const s = R.scaleUm(400000, 300000, tiny.W, tiny.H);
+    check("GEO-06 mmPerPx uses the real raster after capping (2.0 mm/px)", s.sxUm === 2000 && s.syUm === 2000 && s.mmPerPxMax === 2); }
+  check("PO-LASER-4 300×225 mm art at 0.1 mm/px, budget 16e6 → 3000×2250, pitch 100 µm, capped \"none\"",
+    JSON.stringify(fab(300000, 225000, 6000, 4500, 16e6)) === JSON.stringify({ W: 3000, H: 2250, pitchUm: 100, capped: "none", shortPx: null }));
+  { const r = fab(470000, 470000, 8000, 8000, 16e6);
+    check("PO-LASER-4 470×470 mm art, budget 16e6 → pitch 118 µm (first integer pitch with W·H ≤ budget), capped \"budget\"",
+      r.pitchUm === 118 && r.W === 3984 && r.H === 3984 && r.capped === "budget" && r.shortPx === null && 4018 * 4018 > 16e6); }
+  { const r = fab(470000, 470000, 3000, 5000, 16e6);
+    check("PO-LASER-4 budget and source caps combine: capped \"budget+source\"",
+      r.capped === "budget+source" && r.pitchUm === 118 && r.W === 3000 && r.H === 3984 && JSON.stringify(r.shortPx) === "[984,0]"); }
+  { // brute-force minimality of the budget pitch over a sweep
+    const rnd = F.lcg(2003); let ok = true;
+    const cdiv = (a, b) => Math.ceil(a / b);
+    for (let t = 0; t < 200 && ok; t++) {
+      const a = 1000 + Math.floor(rnd() * 900000), b = 1000 + Math.floor(rnd() * 900000), B = 1000 + Math.floor(rnd() * 30e6), p0 = 20 + Math.floor(rnd() * 200);
+      const r = fab(a, b, 1e6, 1e6, B, p0);
+      const fits = (p) => cdiv(a, p) * cdiv(b, p) <= B;
+      ok = fits(r.pitchUm) && r.pitchUm >= p0 && (r.pitchUm === p0 || !fits(r.pitchUm - 1)) &&
+        r.W === cdiv(a, r.pitchUm) && r.H === cdiv(b, r.pitchUm) && r.capped === (r.pitchUm === p0 ? "none" : "budget");
+    }
+    check("PO-LASER-4 budget pitch is the smallest integer ≥ target with W·H ≤ budget (200-case sweep vs brute force)", ok); }
+  { const ins = [[300000, 225000, 6000, 4500, 16e6], [470000, 470000, 3000, 5000, 16e6], [400000, 300000, 200, 150, 16e6], [123457, 98765, 777, 5000, 2e6, 87]];
+    const outs = ins.map((a) => [fab(...a), fab(...a), fab(...a)]);
+    const isInt = (r) => [r.W, r.H, r.pitchUm].every(Number.isInteger) && (r.shortPx === null || r.shortPx.every(Number.isInteger));
+    check("NFR-05 fabRaster is integer-only and repeatable (same inputs ×3, every output an integer)",
+      outs.every((t) => t.every(isInt) && JSON.stringify(t[0]) === JSON.stringify(t[1]) && JSON.stringify(t[1]) === JSON.stringify(t[2]))); }
+  check("NFR-05 fabRaster rejects non-integer or non-positive inputs",
+    [{ artWUm: 1.5 }, { artHUm: 0 }, { srcW: -1 }, { targetPitchUm: 0.1 }, { pxBudget: 0 }, { pxBudget: NaN }].every((bad) =>
+      codeOf(() => R.fabRaster(Object.assign({ artWUm: 1000, artHUm: 1000, srcW: 10, srcH: 10, targetPitchUm: 100, pxBudget: 1e6 }, bad))) === "RASTER_ARG"));
+  check("NFR-05 G2.0 raster contract uses no transcendental math (resample, rasterSize, fabRaster)",
+    [R.resample, R.rasterSize, R.fabRaster].every((f) => !/Math\.(cbrt|sin|cos|exp|log|pow|hypot|atan|tan)/.test(f.toString())));
+
+  // ---- policy and cache key
+  check("IMG-03 policy: height none when the source fits, else nearest; area only as an explicit filter; tonal area",
+    R.resamplePolicy("height", 200, 150, 200, 150) === "none" && R.resamplePolicy("height", 400, 300, 200, 150) === "nearest" &&
+    R.resamplePolicy("height", 400, 300, 200, 150, { heightArea: true }) === "area" && R.resamplePolicy("tonal", 400, 300, 200, 150) === "area" &&
+    R.resamplePolicy("tonal", 200, 150, 200, 150) === "area" && codeOf(() => R.resamplePolicy("bogus", 1, 1, 1, 1)) === "RESAMPLE_METHOD");
+  check("Appendix C S4: raster cache key covers (w, h, channels, W, H, method, sampleHash), never sampleHash alone",
+    R.cacheKey({ w: 5, h: 1, channels: 1, W: 5, H: 1, method: "none", sampleHash: "ab" }) !== R.cacheKey({ w: 1, h: 5, channels: 1, W: 1, H: 5, method: "none", sampleHash: "ab" }) &&
+    R.cacheKey({ w: 4, h: 4, channels: 1, W: 2, H: 2, method: "area", sampleHash: "ab" }) !== R.cacheKey({ w: 4, h: 4, channels: 1, W: 2, H: 2, method: "nearest", sampleHash: "ab" }) &&
+    R.cacheKey({ w: 4, h: 4, channels: 1, W: 2, H: 2, method: "area", sampleHash: "ab" }) === R.cacheKey({ w: 4, h: 4, channels: 1, W: 2, H: 2, method: "area", sampleHash: "ab" }) &&
+    codeOf(() => R.cacheKey({ w: 4, h: 4, channels: 1, W: 2, H: 2, method: "area" })) === "RASTER_ARG");
+
+  // ---- diagnostics
+  const D = SBDiag.CODES;
+  check("PO-LASER-4 FAB_PITCH_CAPPED registered (info, process); FAB_EXCEEDS_SOURCE stays a warning",
+    D.FAB_PITCH_CAPPED && D.FAB_PITCH_CAPPED.severity === "info" && D.FAB_PITCH_CAPPED.kind === "process" && D.FAB_EXCEEDS_SOURCE.severity === "warning");
+  check("GEO-06 FAB_EXCEEDS_SOURCE fix text no longer promises interpolation", !/interpolat/i.test(D.FAB_EXCEEDS_SOURCE.fix) && /cannot be recovered/i.test(D.FAB_EXCEEDS_SOURCE.fix));
+  { const ctx = { artWUm: 400000, artHUm: 300000, srcW: 200, srcH: 150, targetPitchUm: 100, pxBudget: 16e6, deviceClass: "desktop", quality: "fabrication", revision: 3 };
+    const ds = R.fabDiagnostics(R.fabRaster(ctx), ctx), d = ds[0];
+    check("PO-LASER-5 FAB_EXCEEDS_SOURCE: shortfall message, source vs target px, shortPx, fabrication quality",
+      ds.length === 1 && d.code === "FAB_EXCEEDS_SOURCE" && d.quality === "fabrication" && d.revision === 3 &&
+      JSON.stringify(d.shortPx) === "[3800,2850]" && /3800 × 2850 px short of the 0\.1 mm\/px target/.test(d.message) &&
+      /cannot be recovered/.test(d.message) && /200 × 150 px/.test(d.message) && /2 mm\/px/.test(d.message) &&
+      d.measured.value === 30000 && d.measured.unit === "px" && d.limit.value === 12e6 && d.limit.unit === "px"); }
+  { const ctx = { artWUm: 470000, artHUm: 470000, srcW: 8000, srcH: 8000, targetPitchUm: 100, pxBudget: 16e6, deviceClass: "mobile", quality: "fabrication" };
+    const ds = R.fabDiagnostics(R.fabRaster(ctx), ctx), d = ds[0];
+    check("PO-LASER-4 FAB_PITCH_CAPPED: actual vs target mm/px from the real raster, names device class and budget",
+      ds.length === 1 && d.code === "FAB_PITCH_CAPPED" && d.severity === "info" && d.measured.unit === "mm/px" && d.measured.value === 0.118 &&
+      d.limit.value === 0.1 && /mobile/.test(d.message) && /16000000 px/.test(d.message) && /0\.118 mm\/px/.test(d.message)); }
+  { const ctx = { artWUm: 470000, artHUm: 470000, srcW: 3000, srcH: 5000, targetPitchUm: 100, pxBudget: 16e6, deviceClass: "desktop", quality: "fabrication" };
+    const ds = R.fabDiagnostics(R.fabRaster(ctx), ctx);
+    check("PO-LASER-4/5 budget+source raises both diagnostics (capped first, then the shortfall)",
+      ds.map((d) => d.code).join() === "FAB_PITCH_CAPPED,FAB_EXCEEDS_SOURCE" && JSON.stringify(ds[1].shortPx) === "[984,0]"); }
+  { const ctx = { artWUm: 300000, artHUm: 225000, srcW: 6000, srcH: 4500, targetPitchUm: 100, pxBudget: 16e6, deviceClass: "desktop", quality: "fabrication" };
+    check("PO-LASER-4 uncapped plan raises no fabrication diagnostics", R.fabDiagnostics(R.fabRaster(ctx), ctx).length === 0); }
+  check("§9.1 SBDiag.make validates shortPx ([int ≥ 0, int ≥ 0]) and omits it when absent",
+    !("shortPx" in SBDiag.make("FAB_EXCEEDS_SOURCE", {})) && codeOf(() => SBDiag.make("FAB_EXCEEDS_SOURCE", { shortPx: [1.5, 0] })) !== null &&
+    codeOf(() => SBDiag.make("FAB_EXCEEDS_SOURCE", { shortPx: [1] })) !== null);
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

@@ -22,6 +22,10 @@
  * reports under D3. Programmer-error throws (GEO_MULTIPART_POLYGON,
  * GEO_OFFSET_NONINTEGER, GEO_INSET_NOT_DYADIC) are not user diagnostics.
  *
+ * G2.0 (PO-LASER-4/5): FAB_PITCH_CAPPED (info) is registered here; make()
+ * accepts an optional shortPx [shortW, shortH] that FAB_EXCEEDS_SOURCE
+ * carries (SBRaster.fabDiagnostics builds both).
+ *
  * D1: SMOOTH_FALLBACK is only ever raised in connected mode; bonded mode is
  * unsmoothed and never reports it.
  *
@@ -128,7 +132,7 @@
     ["REPAIR_REVIEW_FAB", W, P, "Repair must be reviewed at fabrication quality",
       "Review the repair in the fabrication review before exporting."],
     ["FAB_EXCEEDS_SOURCE", W, P, "Fabrication resolution exceeds the source resolution",
-      "Use a higher-resolution source, or accept that detail is interpolated."],
+      "Use a higher-resolution source or a smaller artwork; the engine never upsamples, so missing source detail cannot be recovered."],
     // ---- info
     ["KERF_EXTERNAL", I, F, "Kerf is compensated in the laser software",
       "Set kerf offset in your laser software; cut files are at nominal size."],
@@ -140,6 +144,8 @@
       "Adjust the thresholds or reduce the sheet count if the band was expected."],
     ["DISPLAY_ONLY_IGNORED", I, P, "Display-only setting does not affect the output",
       "No action needed; this setting only changes the preview."],
+    ["FAB_PITCH_CAPPED", I, P, "Fabrication pitch was coarsened to fit the device pixel budget",
+      "No action needed; the actual mm/px is shown. Reduce the artwork size or use a device with a larger budget for finer detail."],
     ["HEIGHT_FILTERED", I, P, "Height map was filtered before slicing",
       "The recorded filter is applied deterministically; remove it to slice raw heights."],
     ["RESAMPLED", I, P, "Source was resampled to the working resolution",
@@ -183,6 +189,11 @@
       ackState: c.severity === W ? "unacked" : "n/a",
     };
     if (Array.isArray(f.parts)) d.parts = f.parts.slice();
+    if (f.shortPx !== undefined && f.shortPx !== null) { // PO-LASER-5 (FAB_EXCEEDS_SOURCE): [shortW, shortH] px
+      if (!Array.isArray(f.shortPx) || f.shortPx.length !== 2 || !f.shortPx.every((v) => Number.isInteger(v) && v >= 0))
+        throw new Error("SBDiag.make: shortPx must be [int ≥ 0, int ≥ 0]");
+      d.shortPx = f.shortPx.slice();
+    }
     if (f.count !== undefined) {
       if (!Number.isInteger(f.count) || f.count < 1) throw new Error("SBDiag.make: count must be a positive integer");
       d.count = f.count;
