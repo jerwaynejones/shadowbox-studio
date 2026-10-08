@@ -2,6 +2,47 @@
 
 ## Unreleased
 
+## v2.0.0-alpha.2 — 2026-10-08, experimental bonded relief
+
+An **experimental** checkpoint at the end of the G2 core (plan "Checkpoint v2.0.0-alpha.2", MVP graft). It is not
+SRS-compliant yet (plan R9): the known-gaps table below lists what is missing until G3–G5. The export gate is strict.
+
+- **Every export regenerates at fabrication quality (LYR-06, G2.10b rule).** Download runs `SBEngine.generate` at
+  quality `fabrication` on the source at its own size (`SBEngine.fabricationRequest`; the raster comes from
+  `SBEngine.rasterPlan`, so the pitch, pixel budget and source cap apply). The draft preview, its diagnostics and its
+  acknowledgements are never reused for the export.
+- **Fabrication review and export gate (EXP-07).** The fabrication run's diagnostics are listed in the new
+  "Fabrication review" in the Export stage, each warning with an "Acknowledge for this fabrication result" checkbox
+  keyed on that snapshot's `geometryHash`. The ZIP is built only when
+  `SBDiag.exportGate(diagnostics, acks, snapshot, "fabrication")` allows it: any blocking diagnostic (or a failed run,
+  for example `COMPLEXITY_LIMIT`) disables Export with the reason; unacknowledged warnings stop the download until they
+  are acknowledged, then Download again (the reviewed run is reused while the revision, source and device class are
+  unchanged). Any geometry edit hides the review and the next export regenerates.
+- **Cut files from the fabrication snapshot.** `SBEngine.fabricationFiles(snapshot, project, colors)` writes the legacy
+  flat layout: `sheet_NN.svg` (NN = layer index + 1) for every exported layer and `proof.svg`. Trailing empty layers
+  (`omitted-trailing`) get no file and keep their index gap (D-4.7). Bonded sheets are pure vector; connected sheets
+  keep the v1.1.0 text label "{title} k/n" until G3.2. A draft snapshot is refused (`QUALITY`).
+- **Includes G2.13a–d and G2.14** (layer cards, overlays and state badges, diagnostics panel, clip dialog and Revert,
+  source intake with preflight and explicit downsample), shipped on this branch since alpha.1.
+- **Checks:** `E2E height plywood preset → 8 layers validated, 0 blocking on ramp fixture` plus the gate, file layout,
+  trailing-empty, connected-label and app-wiring checks of the checkpoint suite.
+
+### Known gaps (alpha.2)
+
+| Area | Gap in alpha.2 | Arrives in |
+|---|---|---|
+| Guides | No placement guides, labels or placement map; bonded sheets carry no layer label | G3.1–G3.3 |
+| Project file | No `.sbrproj` save or load; acknowledgements are runtime only | G3.7, G3.8 |
+| Manifest | No `manifest.json` or `validation.json`; the cleanup report is not exported | G3.9 |
+| Package layout | Legacy flat layout (`sheet_NN.svg`, `proof.svg`, `ASSEMBLY.md`, `settings.json`, `preview.png`), not the §9.4 `cuts/` + `proof/` layout; ZIP name `<title>_shadowbox.zip` | G3.9 |
+| Fabrication review | Minimal: one review list in the Export stage; no two-phase freeze, no diagnostic-only `NOT-READY-TO-CUT` package, no delivery states; items do not focus the Proof (it shows the draft) | G3.10 |
+| Draft vs export | The on-screen preview, cards, overlays and draft diagnostics still come from the interim legacy draft pipeline (720 px); only the export uses `SBEngine.generate`. Clip repairs reviewed on the legacy draft fail closed as `REPAIR_STALE` in the fabrication run and must be reviewed again | G3 (app adopts `generate` for the draft) |
+| `preview.png` | The bundle image is the draft proof, not a render of the fabrication snapshot | G3.9 |
+| Performance | The fabrication run is synchronous on the main thread. Bonded runs follow the recorded D6 budgets (25 Mpx desktop, 1 Mpx mobile). Connected mode with smooth corners has no budget (KI-CONN-PERF): about 10 s at 1 Mpx in Node, longer at the 0.1 mm/px pitch of a 300 mm page | G4.1 (worker) |
+| Tonal determinism | Tonal sources are read through the browser canvas (decode and the explicit downsample) | G4.1 |
+| Source record | `project.source` (byte and sample hashes, EXIF) is not filled from intake; the fabrication request names the decoded, already oriented pixels | G2.5 follow-up / G3.8 |
+| Calibration | Plywood profile uncalibrated (`MAT_UNCALIBRATED` warning on every plywood export); feature widths provisional | G5.1 |
+
 - **G2.12, opaque proof, stack section and tilt (UI-02/03, MAT-04, GEO-01):** the preview now has
   four tabs, Proof, Section, Layers and Tilt (illustrative), and is drawn from the same canonical
   polygons as the cut files. Proof paints each layer's material back to front in the page frame

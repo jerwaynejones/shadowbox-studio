@@ -249,6 +249,7 @@ button.diag-go:hover .diag-msg { text-decoration: underline; }
 .diag-ack { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
 #diag-clear { margin-top: 6px; }
 #diag-clear[hidden] { display: none; }
+#fab-review[hidden] { display: none; }
 /* G2.11d (UI-01): a control that does not apply to the current modes stays visible, dimmed, with its reason */
 .row.disabled > label, .row.disabled output { opacity: 0.5; }
 .row.disabled input, .row.disabled select { cursor: not-allowed; }

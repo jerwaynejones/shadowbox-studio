@@ -2629,11 +2629,11 @@ suite("engine.js — connected export through the canonical path (DEP-04, GEO-02
   // ---- app wiring and release
   const app = fs.readFileSync(path.join(root, "js/app.js"), "utf8"), html = fs.readFileSync(path.join(root, "index.html"), "utf8");
   const bad = app.slice(app.indexOf("async function buildAndDeliver"), app.indexOf("async function deliverFile"));
-  check("G1.7 buildAndDeliver uses the canonical path (SBEngine.connectedFiles), not the legacy shims",
-    /SBEngine\.connectedFiles\(/.test(bad) && !/sheetSVG|proofSVG/.test(bad) && !/SBSvg\.(sheetSVG|proofSVG)/.test(app));
+  check("G1.7 → alpha.2 buildAndDeliver writes the fabrication snapshot (SBEngine.fabricationFiles), not the legacy shims or the draft run",
+    /SBEngine\.fabricationFiles\(/.test(bad) && !/SBEngine\.connectedFiles\(/.test(bad) && !/sheetSVG|proofSVG/.test(bad) && !/SBSvg\.(sheetSVG|proofSVG)/.test(app));
   check("G1.7 → G2.12 preview badge retired: the preview is drawn from the canonical polygons (preview.setSnapshot)",
     !(app + html).includes("Draft preview: cut files come from polygons") && /preview\.setSnapshot\(/.test(app));
-  check("DEP-02 release 2.0.0-alpha.1 (APP_VERSION)", /const APP_VERSION\s*=\s*"2\.0\.0-alpha\.1"/.test(app));
+  check("DEP-02 release 2.0.0-alpha.2 (APP_VERSION)", /const APP_VERSION\s*=\s*"2\.0\.0-alpha\.2"/.test(app));
   const cl = fs.readFileSync(path.join(root, "docs/CHANGELOG.md"), "utf8"), sec = (cl.split(/^## v2\.0\.0-alpha\.1\b.*$/m)[1] || "").split(/^## /m)[0];
   check("DEP-04 CHANGELOG v2.0.0-alpha.1 lists the intentional connected-mode changes",
     /frame/i.test(sec) && /CUT/.test(sec) && /SCORE/.test(sec) && /proof/i.test(sec) && /0\.05 mm/.test(sec) && /holes/i.test(sec) && /label/i.test(sec));
@@ -5028,9 +5028,9 @@ suite("support.js/engine.js/proof.js/preview.js/app.js — G2.13d clip dialog an
   check("SUP-04 app.js: Clip to lower layer opens proposeClip, Accept calls applyClip, Revert calls removeRepair; the view replays repairs",
     /Clip to lower layer/.test(appSrc) && /SBSupport\.proposeClip\(/.test(appSrc) && /SBSupport\.applyClip\(/.test(appSrc) &&
     /SBSupport\.removeRepair\(/.test(appSrc) && /SBEngine\.legacyView\(/.test(appSrc) && /preview\.drawClipCard\(/.test(appSrc) && /Revert/.test(appSrc));
-  check("SUP-04 app.js: REPAIR_STALE and REPAIR_REVIEW_FAB items link back to the clip dialog; the export passes the project",
+  check("SUP-04 app.js: REPAIR_STALE and REPAIR_REVIEW_FAB items link back to the clip dialog; the export passes the project (alpha.2: generate replays construction.repairs at fabrication)",
     /REPAIR_STALE/.test(appSrc) && /REPAIR_REVIEW_FAB/.test(appSrc) && /SBProof\.repairForDiagnostic\(/.test(appSrc) &&
-    /SBEngine\.connectedFiles\([^)]*project\)/.test(appSrc));
+    /SBEngine\.fabricationRequest\(project,/.test(appSrc) && /SBEngine\.fabricationFiles\([^)]*project/.test(appSrc));
 });
 
 suite("schema.js/diag.js/app.js — G2.14 source intake and explicit preflight (IMG-01/07, GEO-06, NFR-04, PO-LASER-4/5, AT-22/24)", () => {
@@ -5177,6 +5177,74 @@ suite("schema.js/diag.js/app.js — G2.14 source intake and explicit preflight (
     check("G2.14 app.js: #filein value is reset so the same file can be chosen again", /\$\("filein"\)[\s\S]{0,200}e\.target\.value = ""/.test(appSrc));
     check("IMG-05 app.js: downsample target and button label come from SBSchema.downsampleTarget (no intake.w/info.w swap test)",
       /SBSchema\.downsampleTarget\(pre\)/.test(ds) && !/pre\.intake\.w !== pre\.info\.w/.test(appSrc) && (appSrc.match(/SBSchema\.downsampleTarget\(/g) || []).length >= 2); }
+});
+
+// ------------------------------------------------ checkpoint v2.0.0-alpha.2 (experimental bonded relief)
+suite("engine.js/app.js/CHANGELOG — checkpoint v2.0.0-alpha.2 (LYR-06, EXP-07, AT-03/08)", () => {
+  const F = require("./fixtures.js"), E = SBEngine, D = SBDiag;
+  check("alpha.2 API present (SBEngine.fabricationRequest, SBEngine.fabricationFiles)",
+    typeof E.fabricationRequest === "function" && typeof E.fabricationFiles === "function");
+  if (typeof E.fabricationRequest !== "function" || typeof E.fabricationFiles !== "function") return;
+  const sev = (d) => D.CODES[d.code].severity;
+
+  // ---- E2E: plywood preset, height ramp at 0.1 mm/px (400 × 100 px, 10 mm high)
+  const w = 400, h = 100, p = SBSchema.defaults("plywood"); p.geometry.targetMM = 10;
+  const rq = E.fabricationRequest(p, { pixels: F.ramp(w, h), channels: 1, w, h, alpha: null }, { requestId: "e2e", deviceClass: "desktop", format: "png", decode: "raw-gray8" });
+  check("LYR-06 fabricationRequest: quality fabrication, engine version, project revision, a source record for the decoded (already oriented) pixels",
+    rq.quality === "fabrication" && rq.engineVersion === E.VERSION && rq.revision === p.revision && rq.config.revision === p.revision &&
+    rq.config.source && rq.config.source.w === w && rq.config.source.h === h && rq.config.source.channels === 1 && rq.config.source.decode === "raw-gray8" &&
+    rq.config.source.orientation.exifAppliedBy === "none" && rq.deviceClass === "desktop" && p.source === null && SBSchema.validate(rq.config).ok);
+  const r = E.generate(rq), s = r.snapshot;
+  check("E2E height plywood preset → 8 layers validated, 0 blocking on ramp fixture",
+    r.status === "done" && s.quality === "fabrication" && s.layers.length === 8 && s.layers.every((L) => L.status !== "omitted-trailing" && L.material.length > 0) &&
+    s.stats.exported === 8 && s.diagnostics.filter((d) => sev(d) === "blocking").length === 0);
+  const warn = s.diagnostics.filter((d) => sev(d) === "warning");
+  const g0 = D.exportGate(s.diagnostics, [], s, "fabrication"), g1 = D.exportGate(s.diagnostics, warn.map((d) => D.ackKey(d, s.geometryHash)), s, "fabrication");
+  check("EXP-07 E2E: warnings gate the fabrication export until acknowledged on the fab snapshot, then it is allowed",
+    warn.length > 0 && !g0.allowed && g0.reason === "UNACKED" && g1.allowed);
+  const files = E.fabricationFiles(s, p, "#c8a26b");
+  check("alpha.2 export keeps the legacy flat layout: sheet_01..08.svg and proof.svg from the fabrication snapshot",
+    files.map((f) => f.name).join() === "sheet_01.svg,sheet_02.svg,sheet_03.svg,sheet_04.svg,sheet_05.svg,sheet_06.svg,sheet_07.svg,sheet_08.svg,proof.svg" &&
+    files.every((f) => typeof f.data === "string" && f.data.includes('viewBox="0 0 ' + SBSvg.fmtUm(Math.round(s.page.wMM * 1000)) + " ")));
+  check("EXP-01 bonded sheets are pure vector (no legacy text label) and name the construction",
+    files.slice(0, -1).every((f) => !/<text/.test(f.data) && /construction=bonded-relief/.test(f.data)));
+  check("EXP-07 fabricationFiles refuses a draft snapshot (never exports the draft)",
+    (() => { const dr = E.generate(Object.assign({}, rq, { quality: "draft" })).snapshot; try { E.fabricationFiles(dr, p, "#c8a26b"); return false; } catch (e) { return /QUALITY/.test(e.message); } })());
+
+  // ---- trailing empties: no file, the index gap is kept (D-4.7)
+  { const q = SBSchema.defaults("plywood"); q.geometry.targetMM = 10;
+    const half = new Uint8Array(w * h).fill(100);   // 100/255 → the lower layers only
+    const t = E.generate(E.fabricationRequest(q, { pixels: half, channels: 1, w, h, alpha: null }, { format: "png", decode: "raw-gray8" })).snapshot;
+    const names = E.fabricationFiles(t, q, "#c8a26b").map((f) => f.name);
+    check("D-4.7 omitted-trailing layers get no sheet file; the indices of the others are kept",
+      t.stats.omitted.length > 0 && names.length === t.stats.exported + 1 && names[0] === "sheet_01.svg" && names[names.length - 1] === "proof.svg" &&
+      !names.includes("sheet_" + String(t.stats.omitted[0] + 1).padStart(2, "0") + ".svg")); }
+
+  // ---- connected mode keeps the legacy sheet label until G3.2
+  { const q = SBSchema.defaults("acrylic"); q.title = "acr"; q.interpretation.mode = "height"; q.interpretation.polarity = "white-high"; q.geometry.widthMM = 40; q.geometry.targetMM = 40;
+    const rr = E.generate(E.fabricationRequest(q, { pixels: F.ramp(w, h), channels: 1, w, h, alpha: null }, { format: "png", decode: "raw-gray8" }));
+    const fs2 = rr.status === "done" ? E.fabricationFiles(rr.snapshot, q, ["#111111", "#222222", "#333333", "#444444", "#555555"]) : [];
+    check("DEP-04 connected fabrication sheets keep the v1.1.0 text label \"{title} k/n\"",
+      fs2.length === 6 && /<text[^>]*>acr 1\/5<\/text>/.test(fs2[0].data) && /construction=connected-sheet/.test(fs2[0].data)); }
+
+  // ---- app wiring: every export regenerates at fabrication and is gated (G2.10b rule)
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8"), html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+  const fn = (name) => { const i = appSrc.indexOf("function " + name + "("); return i < 0 ? "" : appSrc.slice(i, appSrc.indexOf("\n  }\n", i)); };
+  const ex = fn("exportBundle"), fr = fn("fabReview");
+  check("LYR-06 app.js export regenerates with SBEngine.generate at fabrication quality (SBEngine.fabricationRequest)",
+    /SBEngine\.fabricationRequest\(/.test(appSrc) && /SBEngine\.generate\(/.test(appSrc) && /fabReview\(/.test(ex));
+  check("EXP-07 app.js export is gated by SBDiag.exportGate(…, \"fabrication\") before any file is built",
+    /SBDiag\.exportGate\([^)]*"fabrication"\)/.test(appSrc) && ex.indexOf("exportGate(") >= 0 && ex.indexOf("exportGate(") < ex.indexOf("buildAndDeliver("));
+  check("EXP-07 app.js: the fabrication review lists the fab snapshot's diagnostics with acks keyed on its geometryHash; draft acks are not reused",
+    /id="fab-review"/.test(html) && /id="fab-list"/.test(html) && /SBDiag\.ackKey\(d, run\.fab\.snapshot\.geometryHash\)/.test(appSrc) && /run\.fab\.acks/.test(appSrc) &&
+    !/run\.fab\.acks\s*=\s*run\.acks/.test(appSrc) && /function fabCurrent\(\)/.test(appSrc) && /project\.revision/.test(fn("fabCurrent")));
+  check("EXP-07 app.js: a blocking fabrication diagnostic disables Export with its reason",
+    /reason === "BLOCKING"/.test(appSrc) && /btn\.disabled = /.test(fn("updateGate")) && /fabCurrent\(\)/.test(fn("updateGate")));
+
+  // ---- CHANGELOG
+  const cl = fs.readFileSync(path.join(__dirname, "..", "docs/CHANGELOG.md"), "utf8"), sec = (cl.split(/^## v2\.0\.0-alpha\.2\b.*$/m)[1] || "").split(/^## /m)[0];
+  check("R9 CHANGELOG v2.0.0-alpha.2 has a known-gaps table (guides, .sbrproj, manifest, flat layout, fabrication review)",
+    /known gaps/i.test(sec) && /^\|.*\|\s*$/m.test(sec) && /guides/i.test(sec) && /\.sbrproj/.test(sec) && /manifest/i.test(sec) && /flat/i.test(sec) && /fabrication/i.test(sec) && /exportGate/.test(sec));
 });
 
 // ------------------------------------------------------------------ report

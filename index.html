@@ -214,9 +214,16 @@
     <section class="step" id="stage-export" tabindex="-1" aria-labelledby="h-export">
       <h2 id="h-export"><span class="stepnum">5</span> Export</h2>
       <p class="hint">One ZIP with every sheet SVG (real mm units), a color
-      proof, the assembly guide, a preview render, and your settings.</p>
+      proof, the assembly guide, a preview render, and your settings. Export regenerates the layers at fabrication
+      quality and checks them first; blocking issues stop it and warnings need an acknowledgement below.</p>
       <button id="btn-export" class="btn primary wide" disabled aria-describedby="why-export">Download cut files (.zip)</button>
       <p id="why-export" class="why" role="status">Choose a source</p>
+      <!-- alpha.2 (LYR-06, EXP-07): the fabrication review of the last export, scoped to its snapshot's geometryHash. -->
+      <div id="fab-review" class="diag" role="region" aria-labelledby="h-fab" hidden>
+        <h3 id="h-fab">Fabrication review</h3>
+        <p id="fab-summary" class="diag-summary" role="status" aria-live="polite"></p>
+        <ul id="fab-list" class="diag-list" aria-labelledby="h-fab"></ul>
+      </div>
     </section>
 
   </aside>

@@ -12,7 +12,8 @@
  * the Z model, trailing-empty accounting, stats, the D4 hashes (layerHash, guideHash, geometryHash) and a deep freeze.
  * legacyDiagnostics/legacySnapshotHash (G2.13c) give the app's legacy draft run the same final-polygon checks and an
  * ack-scoping snapshot hash until the app adopts generate. legacyView (G2.13d) replays the project's reviewed
- * clip repairs on that geometry (review views, diagnostics and the cut files).
+ * clip repairs on that geometry (review views and diagnostics). fabricationRequest/fabricationFiles (checkpoint
+ * v2.0.0-alpha.2) build the export's fabrication GenerateRequest and write its snapshot in the legacy flat layout.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -469,7 +470,7 @@
    *             (§3, D4); also in the response as geometryHash
    *   freeze    every response is deep-frozen (Object.freeze; typed arrays skipped)
    * Draft/fabrication (LYR-06): the hash carries quality and the raster size, so draft diagnostics and acks never
-   * apply to a fabrication snapshot; every export regenerates at fabrication (G3.10).
+   * apply to a fabrication snapshot; every export regenerates at fabrication (alpha.2 checkpoint; two-phase in G3.10).
    */
   E.generate = function (req, opts) {
     opts = opts || {};
@@ -660,6 +661,50 @@
     step("done", 1);
     return Object.assign({}, head, { status: "done", validatedLayers: layers, snapshot, diagnostics, geometryHash });
   }
+
+  // ------------------------------------------------ fabrication export (checkpoint v2.0.0-alpha.2, LYR-06, EXP-07)
+
+  /**
+   * fabricationRequest(project, pixels: {pixels, channels: 1|4, w, h, alpha}, {requestId?, deviceClass?, format?, decode?})
+   *   → GenerateRequest at quality "fabrication" (G2.10b rule: every export regenerates at fabrication).
+   * The app decodes and orients the source itself (browser or SBEngine.orient at intake), so the source record names
+   * the decoded pixels with exifAppliedBy "none" (no second rotation). An existing project.source keeps its hashes,
+   * format, decode and alpha policy; its size and channels follow the pixels handed over. Pure: project is not mutated.
+   */
+  E.fabricationRequest = function (project, px, o) {
+    o = o || {};
+    const src = Object.assign(global.SBSchema.sourceTemplate(), project.source ? JSON.parse(JSON.stringify(project.source)) : {});
+    if (o.format) src.format = o.format;
+    if (o.decode) src.decode = o.decode;
+    src.w = px.w; src.h = px.h; src.channels = px.channels;
+    src.orientation = { exif: 1, exifAppliedBy: "none", rotate: 0, mirror: false };
+    const config = Object.assign({}, project, { source: src });
+    return { requestId: o.requestId === undefined ? "export" : o.requestId, revision: project.revision, engineVersion: E.VERSION, quality: "fabrication",
+      normalizedSource: { pixels: px.pixels, channels: px.channels, w: px.w, h: px.h, alpha: px.alpha == null ? null : px.alpha },
+      sourceHash: src.byteHash, config, deviceClass: o.deviceClass === undefined ? "desktop" : o.deviceClass };
+  };
+
+  /**
+   * fabricationFiles(snapshot, project, colors) → [{name, data}] in the legacy flat layout (the §9.4 layout is G3.9):
+   * sheet_NN.svg (NN = index + 1) for every layer that is not omitted-trailing, then proof.svg (SBSvg.assemblySVG of
+   * those layers) in the snapshot's page frame. Connected sheets keep the v1.1.0 text label "{title} k/n" (until G3.2);
+   * bonded sheets are pure vector. A snapshot that is not at fabrication quality is refused (QUALITY): draft geometry
+   * is never exported (LYR-06).
+   */
+  E.fabricationFiles = function (snapshot, project, colors) {
+    if (!snapshot || snapshot.quality !== "fabrication")
+      throw new Error("SBEngine.fabricationFiles: QUALITY — only a fabrication snapshot is exported (got " + (snapshot && snapshot.quality) + ")");
+    const S = global.SBSvg, mode = project.construction.mode, page = snapshot.page;
+    const layers = snapshot.layers.filter((L) => L.status !== "omitted-trailing"), n = snapshot.layers.length;
+    const files = layers.map((L) => ({
+      name: "sheet_" + String(L.index + 1).padStart(2, "0") + ".svg",
+      data: S.layerSVG(L, page, mode === "connected-sheet"
+        ? { construction: mode, legacyTextLabel: project.title + " " + (L.index + 1) + "/" + n }
+        : { construction: mode }),
+    }));
+    files.push({ name: "proof.svg", data: S.assemblySVG(layers, page, colors) });
+    return files;
+  };
 
   global.SBEngine = E;
 })(typeof window !== "undefined" ? window : globalThis);

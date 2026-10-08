@@ -20,7 +20,7 @@
   // Single source of truth for the visible version. The service worker keeps
   // its own matching cache-version string (sw.js); bump both together on every
   // release so users can confirm at a glance which build they are running.
-  const APP_VERSION = "2.0.0-alpha.1";
+  const APP_VERSION = "2.0.0-alpha.2";
 
   // ------------------------------------------------------------------ state
   const PALETTES = {
@@ -56,6 +56,10 @@
     acks: new Set(),     // G2.13c: SBDiag.ackKey strings acknowledged on run.geometryHash (cleared with a new hash)
     focus: null,         // G2.13c: the diagnostics focus shown in the proof ({layer, parts, regions, label}), re-applied per snapshot
     applied: null,       // G2.13d: construction.repairs indices replayed on the shown view (SBEngine.legacyView); null until built
+    sourceRoute: { format: "png", decode: "canvas-tonal" },   // alpha.2: the source record of the decoded pixels (fabrication request)
+    // alpha.2 (LYR-06, EXP-07): the fabrication run of the last export, {status, snapshot, diagnostics, error, revision, gen,
+    // deviceClass, acks, ms}. Its acks are keyed on the fab snapshot's geometryHash; draft acks (run.acks) never carry over.
+    fab: null,
     report: "",
   };
 
@@ -108,13 +112,22 @@
     const btn = $("btn-export"), why = $("why-export");
     if (!btn || btn.dataset.busy === "1") return;
     const blocked = !gate.ok || !run.sheets.length;
-    btn.disabled = blocked;
-    if (why) { why.textContent = blocked ? (gate.reason || "Generating…") : ""; why.hidden = !blocked; }
+    let disabled = blocked, text = blocked ? (gate.reason || "Generating…") : "";
+    if (!blocked && fabCurrent()) {
+      // alpha.2 (EXP-07): the fabrication review of this revision decides; a blocking item disables Export.
+      const g = fabGate(), f = run.fab;
+      if (f.status !== "done") { disabled = true; text = "The fabrication run failed (" + (f.error ? f.error.code : f.status) + "); change the settings and export again"; }
+      else if (g.reason === "BLOCKING") { disabled = true; text = "Fabrication review: " + g.blocking.length + " blocking issue" + (g.blocking.length === 1 ? "" : "s") + "; export is disabled until they are fixed"; }
+      else if (g.reason === "UNACKED") text = "Acknowledge " + g.unacked.length + " warning" + (g.unacked.length === 1 ? "" : "s") + " in the fabrication review, then download";
+    }
+    btn.disabled = disabled;
+    if (why) { why.textContent = text; why.hidden = !text; }
   }
 
   function regenerate() {
     syncControls();
     updateDimbar();
+    renderFabReview();   // alpha.2: a fabrication review of an older revision or source is hidden (it is not current)
     const gate = SBSchema.canGenerate(project, run.sourceImage);
     if (!gate.ok) {
       updateGate(gate);
@@ -287,7 +300,8 @@
    * measured value against the limit and the fix. An item with a layer is a <button> (click, Enter or Space) that
    * switches to the Proof and focuses that layer, its parts and region (preview.setFocus). Warnings carry an
    * "Acknowledge" checkbox keyed by SBDiag.ackKey on run.geometryHash, so an ack never outlives the snapshot; blocking
-   * items have none (§9.5). Interim: the legacy draft run exports regardless (the export gate arrives with G3.10).
+   * items have none (§9.5). These are draft acks: the export (alpha.2) regenerates at fabrication and is gated by its own
+   * fabrication review (renderFabReview), where these never apply.
    */
   function renderDiagnostics() {
     renderRepairs();
@@ -760,8 +774,21 @@
     btn.disabled = true;
     const label = btn.textContent;
     btn.textContent = "Preparing…";
-    setStatus("building cut files…");
     try {
+      // alpha.2 (G2.10b rule, LYR-06, EXP-07): every export regenerates at fabrication quality, reviews that snapshot's
+      // diagnostics and is gated by SBDiag.exportGate on it. Draft diagnostics and acks are never reused.
+      const ok = await fabReview();
+      if (!ok) { setStatus("the project changed during the fabrication run; export again", true); return; }
+      const gate = SBDiag.exportGate(run.fab.diagnostics, run.fab.acks, run.fab.snapshot, "fabrication");
+      if (!gate.allowed) {
+        const fr = $("fab-review");
+        if (fr && fr.scrollIntoView) fr.scrollIntoView({ block: "nearest" });
+        setStatus(gate.reason === "UNACKED"
+          ? `fabrication review: acknowledge ${gate.unacked.length} warning${gate.unacked.length === 1 ? "" : "s"}, then download`
+          : `fabrication review: export refused (${run.fab.status !== "done" && run.fab.error ? run.fab.error.code : gate.reason})`, true);
+        return;
+      }
+      setStatus("building cut files…");
       await buildAndDeliver();
     } catch (err) {
       setStatus(`export failed: ${err.message || err}`, true);
@@ -772,12 +799,111 @@
     }
   }
 
+  /** alpha.2: true while run.fab is the fabrication run of the shown project revision, source and device class. */
+  function fabCurrent() {
+    return !!run.fab && run.fab.revision === project.revision && run.fab.gen === sourceGen && run.fab.deviceClass === deviceClass();
+  }
+
+  /** The export gate on the current fabrication run (SBDiag.exportGate at "fabrication"; NO_SNAPSHOT after a failed run). */
+  function fabGate() {
+    return SBDiag.exportGate(run.fab.diagnostics, run.fab.acks, run.fab.snapshot, "fabrication");
+  }
+
+  /**
+   * alpha.2 (LYR-06): make run.fab the fabrication run of the current revision. Reused while current (so the user can
+   * acknowledge warnings and download again); otherwise the source is read at its own size and SBEngine.generate runs at
+   * quality "fabrication" on the main thread (the G4.1 worker moves it off). Acks carry over only to the same
+   * geometryHash. Resolves true when run.fab is current, false when the project or source changed meanwhile.
+   */
+  async function fabReview() {
+    if (fabCurrent()) { renderFabReview(); return true; }
+    const gen = sourceGen, rev = project.revision, dc = deviceClass();
+    setStatus("generating the fabrication geometry (the page is busy until it finishes)…");
+    await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));   // paint the status first
+    if (gen !== sourceGen || rev !== project.revision || !run.sourceImage) return false;
+    const w = run.sourceW, h = run.sourceH;
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const cx = c.getContext("2d", { willReadFrequently: true });
+    cx.drawImage(run.sourceImage, 0, 0, w, h);
+    const rgba = new Uint8Array(cx.getImageData(0, 0, w, h).data.buffer);
+    let alpha = null;
+    for (let i = 3; i < rgba.length; i += 4) if (rgba[i] !== 255) { alpha = new Uint8Array(w * h); break; }
+    if (alpha) for (let i = 0; i < alpha.length; i++) alpha[i] = rgba[4 * i + 3];
+    const t0 = performance.now();
+    const res = SBEngine.generate(SBEngine.fabricationRequest(project, { pixels: rgba, channels: 4, w, h, alpha },
+      { requestId: "export-" + rev, deviceClass: dc, format: run.sourceRoute.format, decode: run.sourceRoute.decode }));
+    const snap = res.snapshot || null;
+    const acks = run.fab && run.fab.snapshot && snap && run.fab.snapshot.geometryHash === snap.geometryHash ? run.fab.acks : new Set();
+    run.fab = { status: res.status, snapshot: snap, diagnostics: (snap ? snap.diagnostics : res.diagnostics) || [], error: res.error || null,
+      revision: rev, gen, deviceClass: dc, acks, ms: performance.now() - t0 };
+    renderFabReview();
+    return true;
+  }
+
+  /**
+   * The fabrication review (#fab-review): the current fabrication run's diagnostics grouped by severity (SBDiag.summarize
+   * and describe), each warning with an "Acknowledge" checkbox keyed by SBDiag.ackKey on the fab snapshot's geometryHash.
+   * Hidden while there is no current fabrication run. Items are not navigable: the Proof shows the draft geometry.
+   */
+  function renderFabReview() {
+    const box = $("fab-review"), list = $("fab-list"), sum = $("fab-summary");
+    if (!box || !list || !sum) return;
+    list.textContent = "";
+    if (!fabCurrent()) { box.hidden = true; updateGate(SBSchema.canGenerate(project, run.sourceImage)); return; }
+    box.hidden = false;
+    const f = run.fab, diags = f.diagnostics, hash = f.snapshot ? f.snapshot.geometryHash : null;
+    const head = f.snapshot ? `Fabrication result at ${f.snapshot.geometry.rasterW} × ${f.snapshot.geometry.rasterH} px (${(f.ms / 1000).toFixed(1)} s): ` : "";
+    if (f.status !== "done") sum.textContent = `The fabrication run failed: ${f.error ? f.error.code + ", " + f.error.message : f.status}.`;
+    else {
+      const groups = SBDiag.summarize(diags);
+      const acked = diags.filter((d) => SBDiag.describe(d).severity === "warning" && f.acks.has(SBDiag.ackKey(d, run.fab.snapshot.geometryHash))).length;
+      sum.textContent = head + (groups.length ? groups.map((g) => g.count + " " + (g.severity === "warning" ? (g.count === 1 ? "warning" : "warnings") : g.label.toLowerCase())).join(", ") +
+        (acked ? ` (${acked} acknowledged)` : "") + "." : "no issues.");
+    }
+    for (const d of diags) {
+      const it = SBDiag.describe(d), li = document.createElement("li");
+      li.className = "diag-item";
+      const go = document.createElement("div");
+      go.className = "diag-go";
+      go.appendChild(badge(it.severity, it.icon, it.severityLabel));
+      for (const [cls, text] of [["diag-where", it.where], ["diag-msg", it.message], ["diag-measure", it.measure]]) {
+        if (!text) continue;
+        const s2 = document.createElement("span"); s2.className = cls; s2.textContent = text; go.appendChild(s2);
+      }
+      li.appendChild(go);
+      const fix = document.createElement("p");
+      fix.className = "diag-fix";
+      fix.textContent = "Fix: " + it.fix;
+      li.appendChild(fix);
+      if (it.severity === "warning" && hash) {
+        const key = SBDiag.ackKey(d, run.fab.snapshot.geometryHash);
+        const lab = document.createElement("label"), cb = document.createElement("input");
+        lab.className = "diag-ack";
+        cb.type = "checkbox";
+        cb.checked = run.fab.acks.has(key);
+        cb.dataset.key = key;
+        cb.addEventListener("change", () => {
+          if (cb.checked) run.fab.acks.add(key); else run.fab.acks.delete(key);
+          renderFabReview();
+          const again = Array.from($("fab-list").querySelectorAll(".diag-ack input")).find((x) => x.dataset.key === key);
+          if (again) again.focus();
+        });
+        lab.appendChild(cb);
+        lab.appendChild(document.createTextNode("Acknowledge for this fabrication result"));
+        li.appendChild(lab);
+      }
+      list.appendChild(li);
+    }
+    updateGate(SBSchema.canGenerate(project, run.sourceImage));
+  }
+
   async function buildAndDeliver() {
     const colors = sheetColors();
-    // G1.7: cut files and proof come from canonical polygons (SBMaterial → layerSVG/assemblySVG):
-    // frame unioned with edge art, v1.1.0 corner holes and text label kept, legacy file names.
+    // alpha.2: cut files and proof come from the reviewed fabrication snapshot (SBEngine.generate at fabrication
+    // quality, gated by exportGate in exportBundle), in the legacy flat layout (sheet_NN.svg, proof.svg) until G3.9.
     const state = cfg();
-    const files = SBEngine.connectedFiles(run.sheets, run.procW, run.procH, state, colors, project);   // G2.13d: reviewed repairs replayed
+    const files = SBEngine.fabricationFiles(run.fab.snapshot, project, colors);
     files.push({ name: "ASSEMBLY.md", data: buildAssemblyMD(colors) });
     files.push({ name: "settings.json", data: settingsJSON() });
 
@@ -1126,7 +1252,7 @@
       return;
     }
     if (gen !== sourceGen) { if (src.close) src.close(); return; }
-    acceptSource(file.name, src);
+    acceptSource(file.name, src, pre.intake);
     const notes = pre.warnings.filter((d) => d.code === "EXIF_AMBIGUOUS").map((d) => d.message);
     if (notes.length) showSourceProblem(`${file.name}: ${notes.join("; ")}`);
   }
@@ -1190,8 +1316,10 @@
   }
 
   /** Use a decoded source at its own size (run.sourceW/H feed the fabrication raster plan). */
-  function acceptSource(name, src) {
+  function acceptSource(name, src, intake) {
     const old = run.sourceImage;
+    // alpha.2: the source record the fabrication request names (format, and the decode route the pixels came through)
+    run.sourceRoute = { format: intake && intake.format === "jpeg" ? "jpeg" : "png", decode: intake && intake.decode === "raw" ? "raw-gray8" : "canvas-tonal" };
     run.sourceImage = src;
     run.sourceW = src.width; run.sourceH = src.height;
     run.sourceName = name;
@@ -1239,7 +1367,7 @@
         full.close();
       }
       project = SBSchema.applyDownsample(project, { fromW, fromH, toW, toH });
-      acceptSource(file.name, c);
+      acceptSource(file.name, c, pre.intake);
       setStatus(`downsampled ${file.name} to ${toW} × ${toH} px; fabrication pitch ${project.geometry.fabPitchMM} mm/px`, true);
     } catch (e) {
       if (gen === sourceGen) showSourceProblem(`couldn’t downsample ${file.name}: ${e.message}`);
