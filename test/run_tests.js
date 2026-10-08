@@ -4788,6 +4788,128 @@ suite("diag.js/proof.js/engine.js/preview.js/app.js — G2.13b overlays and stat
     /in-overlays/.test(appSrc) && !/bridges: \{ masks:/.test(appSrc));
 });
 
+suite("diag.js/engine.js/preview.js/app.js/style.css — G2.13c diagnostics panel (UI-04, NFR-07, AT-08/10/20)", () => {
+  const D = SBDiag, E = SBEngine, M = SBMaterial, F = require("./fixtures.js");
+  const throws = (f, re) => { try { f(); return false; } catch (x) { return !re || re.test(x.message); } };
+  check("G2.13c API present", typeof D.summarize === "function" && typeof D.describe === "function" &&
+    typeof E.legacyDiagnostics === "function" && typeof E.legacySnapshotHash === "function");
+  if (typeof D.summarize !== "function" || typeof D.describe !== "function") return;
+
+  // ---- summarize (UI-04)
+  const thin = D.make("PART_THIN", { layer: 1, part: "L1-P002", region: [1, 2, 3, 4], measured: { value: 0.8, unit: "mm" }, limit: { value: 1.5, unit: "mm" } });
+  const unsup = D.make("BOND_UNSUPPORTED", { layer: 2, part: "L2-P001", areaMM2: 3.5, region: [10, 20, 12, 25], measured: { value: 3.5, unit: "mm2" }, limit: { value: 0, unit: "mm2" } });
+  const uncal = D.make("MAT_UNCALIBRATED", {}), info = D.make("PALETTE_ONLY", {}), samp = D.make("SAMPLING_LOW", { measured: { value: 2.875, unit: "samples" }, limit: { value: 3, unit: "samples" } });
+  const all = [info, thin, uncal, unsup, samp];
+  const COLOR_WORDS = /\b(red|amber|yellow|green|orange|blue|grey|gray|purple|pink|black|white)\b/i;
+  const sum = D.summarize(all);
+  check("UI-04 summarize labels are text, not color names", sum.length === 3 &&
+    sum.every((g) => typeof g.label === "string" && g.label.length >= 4 && !COLOR_WORDS.test(g.label) && !/^#|rgb/.test(g.label) &&
+      typeof g.icon === "string" && g.icon.length > 0 && !COLOR_WORDS.test(g.icon)) &&
+    new Set(sum.map((g) => g.label)).size === 3);
+  check("UI-04 summarize: grouped by severity (blocking, warning, info), counts per group, empty groups omitted",
+    JSON.stringify(sum.map((g) => [g.severity, g.count])) === JSON.stringify([["blocking", 2], ["warning", 2], ["info", 1]]) &&
+    JSON.stringify(D.summarize([info]).map((g) => g.severity)) === '["info"]' && D.summarize([]).length === 0 && D.summarize(null).length === 0);
+  check("§9.5 summarize takes severity from the registry, never from a stored field",
+    D.summarize([Object.assign({}, thin, { severity: "info" })])[0].severity === "warning");
+  check("UI-04 summarize counts an aggregated diagnostic once (its affected parts are in the item text)",
+    D.summarize(D.aggregate([thin, D.make("PART_THIN", { layer: 1, part: "L1-P003", measured: { value: 0.6, unit: "mm" }, limit: { value: 1.5, unit: "mm" } })]))[0].count === 1);
+
+  // ---- describe (item text)
+  const t = D.describe(thin);
+  check("UI-04 item text includes measured vs limit",
+    /measured 0\.8 mm/.test(t.measure) && /limit 1\.5 mm/.test(t.measure) && t.text.includes(t.measure) &&
+    /3\.5 mm²/.test(D.describe(unsup).measure) && /0 mm²/.test(D.describe(unsup).measure) &&
+    /measured 2\.88 samples/.test(D.describe(samp).text) && /limit 3 samples/.test(D.describe(samp).text));
+  check("UI-04 describe: severity text and icon, title, fix and location (1-based layer, part)",
+    t.severity === "warning" && t.severityLabel === "Warning" && t.icon === sum[1].icon && t.title === D.CODES.PART_THIN.title &&
+    t.fix === D.CODES.PART_THIN.fix && t.where === "Layer 2, part L1-P002" && t.text.startsWith("Warning: ") && t.text.includes("Layer 2") &&
+    D.describe(unsup).severityLabel === "Blocking" && D.describe(info).severityLabel === "Info");
+  check("UI-04 describe: no measurement → empty measure, no location → empty where; not navigable",
+    D.describe(uncal).measure === "" && D.describe(uncal).where === "" && D.describe(uncal).navigable === false && t.navigable === true);
+  check("UI-04 describe: focus target {layer, parts, regions}; one bbox or a region list normalized to a list of bboxes", (() => {
+    const agg = D.aggregate([thin, D.make("PART_THIN", { layer: 1, part: "L1-P003", region: [5, 6, 7, 8], measured: { value: 0.6, unit: "mm" }, limit: { value: 1.5, unit: "mm" } })])[0];
+    const f = D.describe(agg).focus;
+    return JSON.stringify(t.focus) === JSON.stringify({ layer: 1, parts: ["L1-P002"], regions: [[1, 2, 3, 4]] }) &&
+      f.layer === 1 && JSON.stringify(f.parts) === '["L1-P002","L1-P003"]' && JSON.stringify(f.regions) === "[[1,2,3,4],[5,6,7,8]]" &&
+      /2 affected/.test(D.describe(agg).text) && /measured 0\.6 mm/.test(D.describe(agg).measure) && D.describe(uncal).focus === null; })());
+  check("UI-04 describe refuses a non-diagnostic", throws(() => D.describe(null), /describe/) && throws(() => D.describe({}), /describe/));
+
+  // ---- engine: the app's interim diagnostics for a legacy run (until it adopts SBEngine.generate)
+  const pg = M.page({ artWMM: 80, artHMM: 50, frameMM: 10 });
+  const view = { page: pg, layers: M.fromMasks(F.MASKS.borderTouch.layers, 8, 5, pg, { frame: true }) };
+  const pa = SBSchema.defaults("acrylic"), pp = SBSchema.defaults("plywood");
+  const da = E.legacyDiagnostics(view, 8, 5, pa), dp = E.legacyDiagnostics(view, 8, 5, pp);
+  check("UI-04 legacyDiagnostics: draft-quality, registry codes, the project revision; MAT_UNCALIBRATED for uncalibrated stock",
+    Array.isArray(da) && da.length > 0 && da.every((d) => d.quality === "draft" && D.CODES[d.code] && d.revision === pa.revision) &&
+    da.some((d) => d.code === "MAT_UNCALIBRATED"));
+  check("UI-04 legacyDiagnostics: SAMPLING_LOW measured vs limit at the legacy pitch (10 mm/px here)",
+    (() => { const s = da.find((d) => d.code === "SAMPLING_LOW"); return !!s && s.measured.unit === "samples" && s.limit.value === 3 && s.measured.value < 3; })());
+  check("D3/D6 legacyDiagnostics: bonded projects run the bonded support checks (BOND_* only in bonded), connected the split check",
+    !da.some((d) => /^BOND_/.test(d.code)) && dp.every((d) => d.code !== "CONNECTED_SPLIT"));
+  check("NFR-05 legacyDiagnostics is deterministic and does not mutate the view", (() => {
+    const before = JSON.stringify(view.layers.map((L) => L.material)); const again = E.legacyDiagnostics(view, 8, 5, pa);
+    return JSON.stringify(again) === JSON.stringify(da) && JSON.stringify(view.layers.map((L) => L.material)) === before; })());
+  const h1 = E.legacySnapshotHash(view, 8, 5);
+  check("§9.5/D4 legacySnapshotHash: a hex hash over the layer hashes and raster; changes with the geometry or raster size",
+    /^[0-9a-f]{64}$/.test(h1) && h1 === E.legacySnapshotHash(view, 8, 5) && h1 !== E.legacySnapshotHash(view, 16, 10) &&
+    h1 !== E.legacySnapshotHash({ page: pg, layers: view.layers.slice(0, 1) }, 8, 5));
+  check("§9.5 acks are scoped to the snapshot: an ack key for one legacy snapshot never matches another",
+    D.ackKey(thin, h1) !== D.ackKey(thin, E.legacySnapshotHash(view, 16, 10)));
+
+  // ---- preview.js focus highlight (recording 2D context, no DOM)
+  const log = { strokes: [], texts: [], fills: [], draws: 0 };
+  const mkCtx = () => { const st = { imageSmoothingEnabled: true, fillStyle: "#000", strokeStyle: "#000", lineWidth: 1, globalAlpha: 1 }; const stack = []; let dash = [];
+    return Object.assign(st, { setTransform() {}, clearRect() {}, save() { stack.push(Object.assign({}, st, { _d: dash })); }, restore() { const o = stack.pop() || {}; dash = o._d || []; delete o._d; Object.assign(st, o); },
+      fillRect() { log.fills.push(st.fillStyle); }, strokeRect() { log.strokes.push({ style: st.strokeStyle, w: st.lineWidth, rect: true }); }, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, rect() {}, arc() {},
+      setLineDash(d) { dash = d.slice(); }, getLineDash() { return dash.slice(); },
+      stroke() { log.strokes.push({ style: st.strokeStyle, w: st.lineWidth }); }, fillText(x) { log.texts.push(x); }, fill() { log.fills.push(st.fillStyle); },
+      createImageData: (w2, h2) => ({ data: new Uint8ClampedArray(w2 * h2 * 4) }), putImageData() {}, measureText: (x) => ({ width: x.length * 6 }),
+      drawImage() { log.draws++; } }); };
+  const mkCanvas = () => ({ width: 0, height: 0, clientWidth: 400, clientHeight: 300, _ctx: null,
+    getContext() { return this._ctx || (this._ctx = mkCtx()); }, addEventListener() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 300 }), toBlob(cb) { cb(null); } });
+  const ctx = vm.createContext({ console, Math, Uint8Array, Uint8ClampedArray, Promise, SBUtil, SBProof: globalThis.SBProof, devicePixelRatio: 1,
+    document: { createElement: () => mkCanvas() }, addEventListener() {}, requestAnimationFrame() {},
+    Path2D: function () { this.moveTo = () => {}; this.lineTo = () => {}; this.closePath = () => {}; } });
+  ctx.globalThis = ctx; ctx.window = ctx;
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "js", "preview.js"), "utf8"), ctx, { filename: "preview.js" });
+  const pv = ctx.SBPreview.create(mkCanvas());
+  check("UI-04 preview exposes setFocus", typeof pv.setFocus === "function");
+  if (typeof pv.setFocus !== "function") return;
+  const LA = M.assignParts(view.layers);
+  pv.setSnapshot({ page: pg, layers: LA, tMM: 3, gMM: 2 }, "#808080");
+  const frame = (mode) => { log.strokes = []; log.texts = []; log.fills = []; log.draws = 0; pv.setMode(mode); pv.snapshot(); return { strokes: log.strokes.slice(), texts: log.texts.slice(), fills: log.fills.slice(), draws: log.draws }; };
+  const plain = frame("proof");
+  const pid = LA[1].parts[0].id;
+  pv.setFocus({ layer: 1, parts: [pid], regions: [[10, 10, 30, 20]], label: "Layer 2" });
+  const foc = frame("proof");
+  check("UI-04 focus: the region is outlined with a high-contrast double stroke and a text label (not colour only)",
+    foc.strokes.filter((s) => s.rect).length >= 2 && foc.texts.some((x) => /Layer 2/.test(x)) && !plain.texts.some((x) => /Layer 2/.test(x)));
+  check("UI-04 focus: the other layers are veiled and the focused layer is drawn again on top; its part is outlined",
+    foc.draws === plain.draws + 1 && foc.fills.some((f) => /rgba\(/.test(f)) && foc.strokes.filter((s) => !s.rect).length > plain.strokes.filter((s) => !s.rect).length);
+  check("UI-04 focus is proof-only (section draws none) and cleared by setFocus(null) and by a new snapshot", (() => {
+    const sec = frame("section"); if (sec.texts.some((x) => /^Layer 2$/.test(x))) return false;
+    pv.setFocus(null); const a = frame("proof"); pv.setFocus({ layer: 1, parts: [], regions: [[1, 1, 2, 2]], label: "Layer 2" });
+    pv.setSnapshot({ page: pg, layers: LA, tMM: 3, gMM: 2 }, "#808080"); const b = frame("proof");
+    return !a.texts.some((x) => /Layer 2/.test(x)) && !b.texts.some((x) => /Layer 2/.test(x)); })());
+  check("UI-04 setFocus refuses a layer outside the snapshot", throws(() => pv.setFocus({ layer: 99, parts: [], regions: [] }), /FOCUS/));
+
+  // ---- wiring
+  const root = path.join(__dirname, ".."), appSrc = fs.readFileSync(path.join(root, "js", "app.js"), "utf8"),
+    html = fs.readFileSync(path.join(root, "index.html"), "utf8"), css = fs.readFileSync(path.join(root, "css", "style.css"), "utf8");
+  check("UI-04 index.html: a Diagnostics region in Review with a heading, a status summary and the list",
+    /id="diag-panel"[^>]*aria-labelledby="h-diag"/.test(html) && /id="h-diag"/.test(html) && /id="diag-summary"[^>]*role="status"/.test(html) &&
+    /id="diag-list"[^>]*class="diag-list"|class="diag-list"[^>]*id="diag-list"/.test(html) &&
+    (() => { const m = /<section class="step" id="stage-review"[\s\S]*?<\/section>/.exec(html); return !!m && /id="diag-panel"/.test(m[0]); })());
+  check("UI-04 app.js: the panel is built from SBDiag.summarize / SBDiag.describe over SBEngine.legacyDiagnostics",
+    /SBDiag\.summarize\(/.test(appSrc) && /SBDiag\.describe\(/.test(appSrc) && /SBEngine\.legacyDiagnostics\(/.test(appSrc) && /SBEngine\.legacySnapshotHash\(/.test(appSrc));
+  check("NFR-07 app.js: navigable items are <button>s (click and Enter) that switch to the Proof and call preview.setFocus",
+    /createElement\("button"\)/.test(appSrc) && /preview\.setFocus\(/.test(appSrc) && /switchTab\("proof"\)/.test(appSrc));
+  check("§9.5 app.js: warnings get an \"Acknowledge\" checkbox keyed by SBDiag.ackKey on the current snapshot hash; blocking never",
+    /Acknowledge/.test(appSrc) && /SBDiag\.ackKey\(/.test(appSrc) && /run\.geometryHash/.test(appSrc) && /severity === "warning"/.test(appSrc));
+  check("NFR-07 app.js: icons are aria-hidden and the severity is in text", /aria-hidden/.test(appSrc) && /severityLabel/.test(appSrc));
+  check("UI-04 style.css: .diag-list and .badge rules; a visible keyboard focus style", /\.diag-list\b/.test(css) && /\.badge\b/.test(css) && /\.diag-list[^{]*:focus-visible/.test(css));
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

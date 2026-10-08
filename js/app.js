@@ -50,6 +50,11 @@
     viewError: null,     // message when connectedLayers failed for this run (the views fall back to the raster)
     overlays: null,      // G2.13b: SBProof.overlays model of the last run (cleanup changes, bridges) for the proof
     state: null,         // G2.13b (UI-05): SBDiag.STATES value of the shown result; null before the first run
+    diagnostics: null,   // G2.13c (UI-04): SBEngine.legacyDiagnostics of the shown view; null until it is built
+    diagError: null,     // message when the diagnostics could not be computed for this run
+    geometryHash: null,  // G2.13c (§9.5): SBEngine.legacySnapshotHash of the shown view; scopes the acknowledgements
+    acks: new Set(),     // G2.13c: SBDiag.ackKey strings acknowledged on run.geometryHash (cleared with a new hash)
+    focus: null,         // G2.13c: the diagnostics focus shown in the proof ({layer, parts, regions, label}), re-applied per snapshot
     report: "",
   };
 
@@ -144,6 +149,7 @@
     run.view = null;   // G2.12: canonical polygons for Proof/Section/Tilt, rebuilt lazily per run (renderAll)
     run.overlays = null;   // G2.13b: rebuilt with the view
     run.viewError = null;
+    run.diagnostics = null; run.diagError = null; run.focus = null;   // G2.13c: rebuilt with the view
     run.viewToken++;   // a view build still pending for the previous run is dropped
     let totalBridged = totals.bridged, totalCulled = totals.culled, totalCutMM = totals.cutMM;
     run.procW = w; run.procH = h; run.revision = project.revision;
@@ -156,6 +162,7 @@
     setStatus(run.report);
     updateGate(gate);
     updateDimbar();
+    renderDiagnostics();
 
     renderAll();
   }
@@ -221,15 +228,29 @@
     const t0 = performance.now();
     try {
       const c = cfg();
-      run.view = SBEngine.connectedLayers(run.sheets, run.procW, run.procH, c);
+      const v = SBEngine.connectedLayers(run.sheets, run.procW, run.procH, c);
+      run.view = { page: v.page, layers: SBMaterial.assignParts(v.layers) };   // G2.13c: part IDs for diagnostics and focus
+      // G2.13c (UI-04): the final-polygon checks on the view (legacy interim source until the app adopts generate).
+      // A failure here never costs the proof: the panel says so and the views still update.
+      try {
+        run.diagnostics = SBEngine.legacyDiagnostics(run.view, run.procW, run.procH, project);
+        const hash = SBEngine.legacySnapshotHash(run.view, run.procW, run.procH);
+        if (hash !== run.geometryHash) run.acks = new Set();   // acknowledgements are scoped to one snapshot (§9.5)
+        run.geometryHash = hash;
+      } catch (err) {
+        run.diagnostics = null; run.geometryHash = null; run.acks = new Set();
+        run.diagError = String(err && err.message || err);
+      }
       // G2.13b (GEO-08, UI-05): cleanup changes and bridges as cleanupReport-shaped polygons (the generate shape).
       run.overlays = SBProof.overlays({ cleanupReport: SBEngine.legacyCleanupReport(run.sheets, run.procW, run.procH, c),
-        diagnostics: [], mode: project.construction.mode });
+        diagnostics: run.diagnostics || [], mode: project.construction.mode });
     } catch (err) {
       run.viewError = String(err && err.message || err);
       setStatus(`${run.report} · proof unavailable: ${run.viewError}`);
+      renderDiagnostics();
       return;
     }
+    renderDiagnostics();
     run.report += ` · proof ${(performance.now() - t0).toFixed(0)} ms`;
     setStatus(run.report);
     showView(sheetColors());
@@ -242,6 +263,7 @@
       preview.setSnapshot({ page: run.view.page, layers: run.view.layers, tMM: project.material.thicknessMM, gMM: bonded ? 0 : project.construction.gapMM },
         colors);
       preview.setOverlays(run.overlays);   // bridges (tilt and the proof overlay) come from cleanupReport[].bridges
+      if (run.focus) { try { preview.setFocus(run.focus); } catch (_) { run.focus = null; } }   // G2.13c: a new snapshot clears the focus
       setStatus(run.report);
       try { renderSheetGrid(colors); }   // G2.13a: the cards now come from the polygon snapshot
       catch (err) { setStatus(`${run.report} · layer cards unavailable: ${err.message || err}`); }
@@ -250,6 +272,126 @@
       showRaster(colors);
       try { renderSheetGrid(colors); } catch (_) { /* the status line already reports the failure */ }   // raster cards
     }
+  }
+
+  // ------------------------------------------------------- diagnostics (G2.13c: UI-04, NFR-07, §9.5)
+
+  /**
+   * The diagnostics panel: a summary line (SBDiag.summarize) and the list grouped by severity, each group headed by a
+   * badge with a glyph icon (aria-hidden) and the severity in text. Each item (SBDiag.describe) shows where, what, the
+   * measured value against the limit and the fix. An item with a layer is a <button> (click, Enter or Space) that
+   * switches to the Proof and focuses that layer, its parts and region (preview.setFocus). Warnings carry an
+   * "Acknowledge" checkbox keyed by SBDiag.ackKey on run.geometryHash, so an ack never outlives the snapshot; blocking
+   * items have none (§9.5). Interim: the legacy draft run exports regardless (the export gate arrives with G3.10).
+   */
+  function renderDiagnostics() {
+    const list = $("diag-list"), sum = $("diag-summary");
+    if (!list || !sum) return;
+    list.textContent = "";
+    $("diag-clear").hidden = !run.focus;
+    if (!run.sheets.length) { sum.textContent = "Generate to check the layers"; return; }
+    if (run.viewError) { sum.textContent = "Diagnostics unavailable: the proof geometry could not be built (" + run.viewError + ")"; return; }
+    if (run.diagError) { sum.textContent = "Diagnostics unavailable: " + run.diagError; return; }
+    if (!run.diagnostics) { sum.textContent = "Checking the layers…"; return; }
+    const diags = run.diagnostics, groups = SBDiag.summarize(diags);
+    if (!groups.length) { sum.textContent = "No issues found in this draft result."; return; }
+    const acked = diags.filter((d) => SBDiag.describe(d).severity === "warning" && run.acks.has(SBDiag.ackKey(d, run.geometryHash))).length;
+    const noun = (g) => (g.severity === "warning" ? (g.count === 1 ? "warning" : "warnings") : g.label.toLowerCase());
+    sum.textContent = groups.map((g) => g.count + " " + noun(g) + (g.severity === "warning" && acked ? " (" + acked + " acknowledged)" : "")).join(", ") +
+      " in this draft result.";
+    for (const g of groups) {
+      const li = document.createElement("li");
+      li.className = "diag-group";
+      const head = document.createElement("div");
+      head.className = "diag-head";
+      head.appendChild(badge(g.severity, g.icon, g.label));
+      head.appendChild(document.createTextNode(String(g.count)));
+      li.appendChild(head);
+      const ul = document.createElement("ul");
+      li.appendChild(ul);
+      diags.forEach((d) => {
+        const it = SBDiag.describe(d);
+        if (it.severity !== g.severity) return;
+        ul.appendChild(diagItem(d, it));
+      });
+      list.appendChild(li);
+    }
+  }
+
+  /** A severity badge: glyph icon (aria-hidden) plus the severity label in text. */
+  function badge(severity, icon, label) {
+    const b = document.createElement("span");
+    b.className = "badge";
+    b.dataset.sev = severity;
+    const i = document.createElement("span");
+    i.setAttribute("aria-hidden", "true");
+    i.textContent = icon;
+    b.appendChild(i);
+    b.appendChild(document.createTextNode(label));
+    return b;
+  }
+
+  function diagItem(d, it) {
+    const li = document.createElement("li");
+    li.className = "diag-item";
+    const go = it.navigable ? document.createElement("button") : document.createElement("div");
+    go.className = "diag-go";
+    if (it.navigable) {
+      go.type = "button";
+      go.title = "Show " + it.where + " in the Proof";
+      go.addEventListener("click", () => focusDiagnostic(d, it, li));
+    }
+    go.appendChild(badge(it.severity, it.icon, it.severityLabel));
+    const add = (cls, text) => { if (!text) return; const s2 = document.createElement("span"); s2.className = cls; s2.textContent = text; go.appendChild(s2); };
+    add("diag-where", it.where);
+    add("diag-msg", it.message);
+    add("diag-measure", it.measure);
+    li.appendChild(go);
+    const fix = document.createElement("p");
+    fix.className = "diag-fix";
+    fix.textContent = "Fix: " + it.fix;
+    li.appendChild(fix);
+    if (it.severity === "warning" && run.geometryHash) {
+      const key = SBDiag.ackKey(d, run.geometryHash);
+      const lab = document.createElement("label");
+      lab.className = "diag-ack";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = run.acks.has(key);
+      cb.addEventListener("change", () => {
+        if (cb.checked) run.acks.add(key); else run.acks.delete(key);
+        renderDiagnostics();
+        const again = Array.from($("diag-list").querySelectorAll(".diag-ack input")).find((x) => x.dataset.key === key);
+        if (again) again.focus();   // keep the keyboard position across the re-render
+      });
+      cb.dataset.key = key;
+      lab.appendChild(cb);
+      lab.appendChild(document.createTextNode("Acknowledge for this result"));
+      li.appendChild(lab);
+    }
+    if (run.focus && it.focus && run.focus.key === d.id) li.setAttribute("aria-current", "true");
+    return li;
+  }
+
+  /** Show one diagnostic's layer, parts and region in the Proof (UI-04). */
+  function focusDiagnostic(d, it, li) {
+    if (!preview.hasSnapshot()) { setStatus(`${run.report} · the proof is not ready; try again once it is built`, true); return; }
+    const f = { layer: it.focus.layer, parts: it.focus.parts, regions: it.focus.regions, label: it.where, key: d.id };
+    try { preview.setFocus(f); }
+    catch (err) { setStatus(`${run.report} · cannot show ${it.where}: ${err.message || err}`, true); return; }
+    switchTab("proof");
+    document.querySelectorAll("#diag-list .diag-item[aria-current]").forEach((x) => x.removeAttribute("aria-current"));
+    li.setAttribute("aria-current", "true");
+    run.focus = f;
+    $("diag-clear").hidden = false;
+    setStatus(`Showing ${it.where}: ${it.title}` + (it.measure ? ` (${it.measure})` : ""), true);
+  }
+
+  function clearDiagnosticFocus() {
+    run.focus = null;
+    try { preview.setFocus(null); } catch (_) { /* nothing shown */ }
+    document.querySelectorAll("#diag-list .diag-item[aria-current]").forEach((x) => x.removeAttribute("aria-current"));
+    $("diag-clear").hidden = true;
   }
 
   /** The v1.1.0 raster composite of the current masks (interim view while the polygons build, and the fallback). */
@@ -944,6 +1086,9 @@
 
     // review: the staged Generate control, under the same guard as Export (canGenerate)
     $("btn-generate").addEventListener("click", regenerate);
+    // G2.13c: the diagnostics focus is cleared by its button or Escape inside the list
+    $("diag-clear").addEventListener("click", clearDiagnosticFocus);
+    $("diag-list").addEventListener("keydown", (e) => { if (e.key === "Escape" && run.focus) { clearDiagnosticFocus(); e.preventDefault(); } });
 
     // export
     $("btn-export").addEventListener("click", exportBundle);

@@ -25,6 +25,9 @@
  *   SBDiag.STATES / nextState(state, event) / stateBadge(state)
  *                                result states draft|stale|processing|validated|failed
  *                                and their text badges (G2.13b, UI-05)
+ *   SBDiag.summarize(diags)      → [{severity, label, icon, count}] per severity (G2.13c, UI-04)
+ *   SBDiag.describe(diag)        → one diagnostics-panel item: text with measured vs limit,
+ *                                location and the focus target {layer, parts, regions} (G2.13c)
  *
  * Besides the plan's list the registry carries every import error code:
  * SBPng.CODES (12), SBJpeg.CODES (4) and the preflight JPEG_UNSUPPORTED
@@ -389,5 +392,55 @@
     return { state, label: BADGES[state][0], text: BADGES[state][1] };
   }
 
-  global.SBDiag = { CODES, make, aggregate, ackKey, exportGate, withAckState, STATES, nextState, stateBadge };
+  // ---- G2.13c: the diagnostics panel model (UI-04, NFR-07) ----
+
+  const SEVERITIES = [B, W, I];
+  // Text label plus a glyph icon (never a colour name): the label carries the meaning, the icon only reinforces it.
+  const SEV = { blocking: ["Blocking", "\u2716"], warning: ["Warning", "\u25B2"], info: ["Info", "\u2139"] };
+
+  /** Group counts for the panel summary: [{severity, label, icon, count}] in blocking, warning, info order; empty groups omitted. */
+  function summarize(diags) {
+    const n = { blocking: 0, warning: 0, info: 0 };
+    for (const d of diags || []) n[severityOf(d)]++;
+    return SEVERITIES.filter((s) => n[s] > 0).map((s) => ({ severity: s, label: SEV[s][0], icon: SEV[s][1], count: n[s] }));
+  }
+
+  const UNIT = { mm2: "mm\u00B2", um: "\u00B5m" };
+  function fmtNum(v) {
+    if (v !== 0 && Math.abs(v) < 0.01) return String(Number(v.toPrecision(2)));
+    return String(Math.round(v * 100) / 100);
+  }
+  const fmtMeasure = (m) => fmtNum(m.value) + " " + (UNIT[m.unit] || m.unit);
+  const isBox = (r) => Array.isArray(r) && r.length === 4 && r.every(Number.isFinite);
+
+  /**
+   * One panel item: {severity, severityLabel, icon, code, title, message, where, measure, fix, text, focus, navigable}.
+   *   measure  "measured 0.8 mm vs limit 1.5 mm" (either half alone when only one is set; "" when neither)
+   *   where    "Layer k+1[, part ID | , n parts]" ("" without a layer)
+   *   focus    {layer, parts: string[], regions: [[x0, y0, x1, y1] mm]} for a diagnostic with an integer layer, else null;
+   *            a single bbox region or an aggregated region list both become a list of bboxes.
+   *   text     the whole item as one string (severity in text, location, message, measured vs limit).
+   * Severity always from the registry (§9.5).
+   */
+  function describe(d) {
+    if (!d || typeof d !== "object" || typeof d.code !== "string") throw new Error("SBDiag.describe: diagnostic required");
+    const severity = severityOf(d), c = CODES[d.code] || { title: d.code, fix: "" };
+    const parts = Array.isArray(d.parts) ? d.parts.slice() : d.part !== null && d.part !== undefined ? [d.part] : [];
+    const layer = Number.isInteger(d.layer) ? d.layer : null;
+    let where = "";
+    if (layer !== null) where = "Layer " + (layer + 1) + (Array.isArray(d.parts) ? (parts.length ? ", " + parts.length + " part" + (parts.length === 1 ? "" : "s") : "") :
+      parts.length ? ", part " + parts[0] : "");
+    const m = [];
+    if (d.measured) m.push("measured " + fmtMeasure(d.measured));
+    if (d.limit) m.push("limit " + fmtMeasure(d.limit));
+    const measure = m.join(" vs ");
+    const regions = isBox(d.region) ? [d.region.slice()] : Array.isArray(d.region) ? d.region.filter(isBox).map((r) => r.slice()) : [];
+    const focus = layer === null ? null : { layer, parts, regions };
+    const message = typeof d.message === "string" && d.message ? d.message : c.title;
+    const text = SEV[severity][0] + ": " + (where ? where + " \u2014 " : "") + message + (measure ? " (" + measure + ")" : "");
+    return { severity, severityLabel: SEV[severity][0], icon: SEV[severity][1], code: d.code, title: c.title, message, where, measure,
+      fix: c.fix, text, focus, navigable: focus !== null };
+  }
+
+  global.SBDiag = { CODES, make, aggregate, ackKey, exportGate, withAckState, STATES, nextState, stateBadge, summarize, describe };
 })(typeof window !== "undefined" ? window : globalThis);

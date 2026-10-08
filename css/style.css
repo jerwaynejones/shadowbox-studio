@@ -209,6 +209,45 @@ select {
 .btn:disabled, .btn:disabled:hover { opacity: 0.5; cursor: not-allowed; background: var(--film); border-color: var(--film); color: inherit; }
 .why { margin: 6px 0 0; font-size: 12px; opacity: 0.75; }
 .why[hidden] { display: none; }
+
+/* G2.13c (UI-04, NFR-07): diagnostics panel. Severity is always in text (badge label) with a glyph icon; the
+   border style (solid / dashed / dotted) and colour only reinforce it. Text stays on the panel ink for contrast. */
+.diag { margin-top: 12px; }
+.diag h3 { margin: 0 0 4px; font: 600 13px var(--body); }
+.diag-summary { margin: 0 0 6px; font-size: 12px; }
+.diag-list, .diag-list ul { list-style: none; margin: 0; padding: 0; }
+.diag-group + .diag-group { margin-top: 8px; }
+.diag-head { display: flex; align-items: center; gap: 6px; margin: 4px 0; font-size: 12px; font-weight: 600; }
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 6px;
+  font: 600 11px var(--mono);
+  letter-spacing: 0.03em;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: 3px;
+}
+.badge[data-sev="blocking"] { border-color: var(--cut); border-style: solid; }
+.badge[data-sev="warning"] { border-color: var(--amber); border-style: dashed; border-left-style: solid; }
+.badge[data-sev="info"] { border-color: var(--score); border-style: dotted; border-left-style: solid; }
+.diag-item { margin: 4px 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); font-size: 12px; }
+.diag-go {
+  display: block; width: 100%; padding: 0; margin: 0;
+  text-align: left; font: inherit; color: inherit; background: none; border: 0;
+}
+button.diag-go { cursor: pointer; }
+button.diag-go:hover .diag-msg { text-decoration: underline; }
+.diag-list button.diag-go:focus-visible, .diag-list input:focus-visible { outline: 2px solid var(--score); outline-offset: 2px; }
+.diag-item[aria-current="true"], .diag-item.current { border-color: var(--score); box-shadow: 0 0 0 1px var(--score); }
+.diag-where { display: block; font-weight: 600; }
+.diag-msg { display: block; }
+.diag-measure { display: block; font-family: var(--mono); color: var(--ink-soft); }
+.diag-fix { margin: 4px 0 0; color: var(--ink-soft); }
+.diag-ack { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+#diag-clear { margin-top: 6px; }
+#diag-clear[hidden] { display: none; }
 /* G2.11d (UI-01): a control that does not apply to the current modes stays visible, dimmed, with its reason */
 .row.disabled > label, .row.disabled output { opacity: 0.5; }
 .row.disabled input, .row.disabled select { cursor: not-allowed; }

@@ -20,6 +20,9 @@
  * with a "!" icon and bridges in amber (connected mode, #in-bridgesvis), plus a per-layer mm² legend. Off by
  * default, so the proof stays the material alone. Overlay bridges also replace the mask bridges in the tilt view.
  *
+ * G2.13c: setFocus() takes a diagnostics-panel focus {layer, parts, regions, label}: the proof veils the stack, redraws
+ * that layer on top and outlines its parts and regions with a dark-and-light double stroke and a text tag.
+ *
  * setSnapshot() rasterizes each layer's Path2D (from the µm rings) once per snapshot into
  * an offscreen canvas; frames only composite. The explode slider is display-only: it moves
  * layers in the tilt view and never touches geometry. setSheets() keeps the v1.1.0 raster
@@ -37,6 +40,11 @@
   const OV_REMOVED = "#F4F7FA";
   const OV_UNSUPPORTED = "#E5484D";
   const OV_DASH = [5, 4];
+  // G2.13c diagnostics focus (proof view): veil over the stack, double stroke and a text tag
+  const FOCUS_VEIL = "rgba(10,16,24,0.62)";
+  const FOCUS_DARK = "#0A1018";
+  const FOCUS_LIGHT = "#FFFFFF";
+  const FOCUS_TAG = "rgba(10,16,24,0.85)";
   const HATCH = "rgba(255,255,255,0.16)";   // waste hatch strokes on the bed colour
   const HATCH_PX = 7;                       // hatch pitch in card pixels
   const CARD_MAX_PX = 480;                  // long side of a layer card canvas
@@ -75,6 +83,7 @@
       overlays: null,      // G2.13b: SBProof.overlays model, plus per-layer page-sized bridge canvases (tilt)
       overlayBridges: [],
       showOverlays: false,
+      focus: null,         // G2.13c: {layer, parts, regions, label} highlighted in the proof (diagnostics panel)
       dragging: false,
       running: false,
       dirty: true,
@@ -118,6 +127,7 @@
           : null,
       }));
       state.overlays = null; state.overlayBridges = [];
+      state.focus = null;
       state.snap = null;   // the raster replaces any polygon snapshot (interim view while the polygons build)
       state.dirty = true;
     }
@@ -145,6 +155,7 @@
       const prevY = state.snap && state.snap.page.hMM === page.hMM ? state.snap.sectionY : page.hMM / 2;
       state.snap = { page, tMM: snap.tMM, gMM: snap.gMM, layers: snap.layers, model, fills, images, bridges, sectionY: prevY, section: null };
       state.overlays = null; state.overlayBridges = [];   // G2.13b: overlays belong to one snapshot; setOverlays after this
+      state.focus = null;   // G2.13c: a focus belongs to the diagnostics of one snapshot
       setSectionY(prevY);
       state.dirty = true;
     }
@@ -237,6 +248,50 @@
         ctx.fillStyle = "#F4F7FA"; ctx.fillText(line, ox + 8, ly);
         ly += 16;
       }
+      ctx.restore();
+    }
+
+    /**
+     * G2.13c (UI-04): focus one layer (and parts / regions) from the diagnostics panel. f = {layer, parts: string[],
+     * regions: [[x0, y0, x1, y1] mm, page frame], label?} or null to clear. The proof then veils the rest of the stack,
+     * draws the focused layer again on top, outlines its listed parts and the regions with a dark-and-light double
+     * stroke, and names the focus in text. Proof only; a new snapshot clears it. FOCUS on a layer not in the snapshot.
+     */
+    function setFocus(f) {
+      if (f === null || f === undefined) { state.focus = null; state.dirty = true; return; }
+      const s = state.snap;
+      if (!s) throw new Error("SBPreview.setFocus: FOCUS — no polygon snapshot");
+      if (!f || !Number.isInteger(f.layer) || !s.layers.some((L) => L.index === f.layer))
+        throw new Error("SBPreview.setFocus: FOCUS — layer " + (f && f.layer) + " is not in the snapshot");
+      state.focus = { layer: f.layer, parts: Array.isArray(f.parts) ? f.parts.slice() : [],
+        regions: Array.isArray(f.regions) ? f.regions.filter((r) => Array.isArray(r) && r.length === 4 && r.every(Number.isFinite)) : [],
+        label: typeof f.label === "string" && f.label ? f.label : "Layer " + (f.layer + 1) };
+      state.dirty = true;
+    }
+
+    /** Proof-view focus (G2.13c) over the page drawn at (ox, oy) with dw × dh px. */
+    function drawFocus(ox, oy, dw, dh) {
+      const s = state.snap, f = state.focus;
+      if (!s || !f) return;
+      const sc = dw / (s.page.wMM * 1000);   // px per µm
+      ctx.save();
+      ctx.fillStyle = FOCUS_VEIL; ctx.fillRect(ox, oy, dw, dh);
+      const im = s.images.find((e) => e.layerIndex === f.layer);
+      if (im) { ctx.imageSmoothingEnabled = global.SBProof.drawParams("proof").smoothing; ctx.drawImage(im.canvas, ox, oy, dw, dh); }
+      const L = s.layers.find((x) => x.index === f.layer);
+      const want = new Set(f.parts);
+      const polys = want.size && L && L.parts ? L.parts.filter((p) => want.has(p.id)).map((p) => p.polygon) : [];
+      const twice = (draw) => { ctx.strokeStyle = FOCUS_DARK; ctx.lineWidth = 4; draw(); ctx.strokeStyle = FOCUS_LIGHT; ctx.lineWidth = 2; draw(); };
+      if (polys.length) { polyPath(polys, ox, oy, sc); twice(() => ctx.stroke()); }
+      for (const r of f.regions) {
+        const x0 = ox + r[0] * 1000 * sc - 4, y0 = oy + r[1] * 1000 * sc - 4;
+        const w = Math.max(8, (r[2] - r[0]) * 1000 * sc + 8), h = Math.max(8, (r[3] - r[1]) * 1000 * sc + 8);
+        twice(() => ctx.strokeRect(x0, y0, w, h));
+      }
+      ctx.font = "bold 12px system-ui, sans-serif";
+      const tw = ctx.measureText(f.label).width;
+      ctx.fillStyle = FOCUS_TAG; ctx.fillRect(ox + dw - tw - 14, oy + 4, tw + 10, 18);
+      ctx.fillStyle = FOCUS_LIGHT; ctx.fillText(f.label, ox + dw - tw - 9, oy + 17);
       ctx.restore();
     }
 
@@ -365,7 +420,7 @@
           ctx.drawImage(items[s].bridge, ox + dx + f, oy + dy + f, dw - 2 * f, dh - 2 * f);
         }
       }
-      if (state.mode === "proof") drawOverlays(ox, oy, dw);
+      if (state.mode === "proof") { drawOverlays(ox, oy, dw); drawFocus(ox, oy, dw, dh); }
     }
 
     /**
@@ -441,6 +496,7 @@
       setOverlays,
       /** G2.13b: the Changes overlay on the proof (off by default). */
       setShowOverlays(v) { state.showOverlays = !!v; state.dirty = true; },
+      setFocus,
       redraw() { state.dirty = true; },
       /**
        * Snapshot a composite for the export bundle. mode ("proof" | "section" | "tilt") draws that view for the

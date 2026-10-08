@@ -273,6 +273,45 @@ select {
 .btn:disabled, .btn:disabled:hover { opacity: 0.5; cursor: not-allowed; background: var(--film); border-color: var(--film); color: inherit; }
 .why { margin: 6px 0 0; font-size: 12px; opacity: 0.75; }
 .why[hidden] { display: none; }
+
+/* G2.13c (UI-04, NFR-07): diagnostics panel. Severity is always in text (badge label) with a glyph icon; the
+   border style (solid / dashed / dotted) and colour only reinforce it. Text stays on the panel ink for contrast. */
+.diag { margin-top: 12px; }
+.diag h3 { margin: 0 0 4px; font: 600 13px var(--body); }
+.diag-summary { margin: 0 0 6px; font-size: 12px; }
+.diag-list, .diag-list ul { list-style: none; margin: 0; padding: 0; }
+.diag-group + .diag-group { margin-top: 8px; }
+.diag-head { display: flex; align-items: center; gap: 6px; margin: 4px 0; font-size: 12px; font-weight: 600; }
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 6px;
+  font: 600 11px var(--mono);
+  letter-spacing: 0.03em;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: 3px;
+}
+.badge[data-sev="blocking"] { border-color: var(--cut); border-style: solid; }
+.badge[data-sev="warning"] { border-color: var(--amber); border-style: dashed; border-left-style: solid; }
+.badge[data-sev="info"] { border-color: var(--score); border-style: dotted; border-left-style: solid; }
+.diag-item { margin: 4px 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); font-size: 12px; }
+.diag-go {
+  display: block; width: 100%; padding: 0; margin: 0;
+  text-align: left; font: inherit; color: inherit; background: none; border: 0;
+}
+button.diag-go { cursor: pointer; }
+button.diag-go:hover .diag-msg { text-decoration: underline; }
+.diag-list button.diag-go:focus-visible, .diag-list input:focus-visible { outline: 2px solid var(--score); outline-offset: 2px; }
+.diag-item[aria-current="true"], .diag-item.current { border-color: var(--score); box-shadow: 0 0 0 1px var(--score); }
+.diag-where { display: block; font-weight: 600; }
+.diag-msg { display: block; }
+.diag-measure { display: block; font-family: var(--mono); color: var(--ink-soft); }
+.diag-fix { margin: 4px 0 0; color: var(--ink-soft); }
+.diag-ack { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+#diag-clear { margin-top: 6px; }
+#diag-clear[hidden] { display: none; }
 /* G2.11d (UI-01): a control that does not apply to the current modes stays visible, dimmed, with its reason */
 .row.disabled > label, .row.disabled output { opacity: 0.5; }
 .row.disabled input, .row.disabled select { cursor: not-allowed; }
@@ -626,6 +665,14 @@ select {
       <h2 id="h-review"><span class="stepnum">4</span> Review</h2>
       <button id="btn-generate" class="btn wide" disabled aria-describedby="why-generate">Generate</button>
       <p id="why-generate" class="why" role="status">Choose a source</p>
+      <!-- G2.13c (UI-04, NFR-07): diagnostics grouped by severity, icon plus text; an item with a layer is a button
+           that shows its layer, parts and region in the Proof; warnings carry an Acknowledge checkbox for this result. -->
+      <div id="diag-panel" class="diag" role="region" aria-labelledby="h-diag">
+        <h3 id="h-diag">Diagnostics</h3>
+        <p id="diag-summary" class="diag-summary" role="status" aria-live="polite">Generate to check the layers</p>
+        <ul id="diag-list" class="diag-list" aria-labelledby="h-diag"></ul>
+        <button id="diag-clear" class="btn" type="button" hidden>Clear highlight</button>
+      </div>
       <div class="row"><label for="in-appearance">Appearance</label>
         <select id="in-appearance">
           <option value="uniform">Uniform stock colour</option>
@@ -2069,6 +2116,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *   SBDiag.STATES / nextState(state, event) / stateBadge(state)
  *                                result states draft|stale|processing|validated|failed
  *                                and their text badges (G2.13b, UI-05)
+ *   SBDiag.summarize(diags)      → [{severity, label, icon, count}] per severity (G2.13c, UI-04)
+ *   SBDiag.describe(diag)        → one diagnostics-panel item: text with measured vs limit,
+ *                                location and the focus target {layer, parts, regions} (G2.13c)
  *
  * Besides the plan's list the registry carries every import error code:
  * SBPng.CODES (12), SBJpeg.CODES (4) and the preflight JPEG_UNSUPPORTED
@@ -2433,7 +2483,57 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     return { state, label: BADGES[state][0], text: BADGES[state][1] };
   }
 
-  global.SBDiag = { CODES, make, aggregate, ackKey, exportGate, withAckState, STATES, nextState, stateBadge };
+  // ---- G2.13c: the diagnostics panel model (UI-04, NFR-07) ----
+
+  const SEVERITIES = [B, W, I];
+  // Text label plus a glyph icon (never a colour name): the label carries the meaning, the icon only reinforces it.
+  const SEV = { blocking: ["Blocking", "\u2716"], warning: ["Warning", "\u25B2"], info: ["Info", "\u2139"] };
+
+  /** Group counts for the panel summary: [{severity, label, icon, count}] in blocking, warning, info order; empty groups omitted. */
+  function summarize(diags) {
+    const n = { blocking: 0, warning: 0, info: 0 };
+    for (const d of diags || []) n[severityOf(d)]++;
+    return SEVERITIES.filter((s) => n[s] > 0).map((s) => ({ severity: s, label: SEV[s][0], icon: SEV[s][1], count: n[s] }));
+  }
+
+  const UNIT = { mm2: "mm\u00B2", um: "\u00B5m" };
+  function fmtNum(v) {
+    if (v !== 0 && Math.abs(v) < 0.01) return String(Number(v.toPrecision(2)));
+    return String(Math.round(v * 100) / 100);
+  }
+  const fmtMeasure = (m) => fmtNum(m.value) + " " + (UNIT[m.unit] || m.unit);
+  const isBox = (r) => Array.isArray(r) && r.length === 4 && r.every(Number.isFinite);
+
+  /**
+   * One panel item: {severity, severityLabel, icon, code, title, message, where, measure, fix, text, focus, navigable}.
+   *   measure  "measured 0.8 mm vs limit 1.5 mm" (either half alone when only one is set; "" when neither)
+   *   where    "Layer k+1[, part ID | , n parts]" ("" without a layer)
+   *   focus    {layer, parts: string[], regions: [[x0, y0, x1, y1] mm]} for a diagnostic with an integer layer, else null;
+   *            a single bbox region or an aggregated region list both become a list of bboxes.
+   *   text     the whole item as one string (severity in text, location, message, measured vs limit).
+   * Severity always from the registry (§9.5).
+   */
+  function describe(d) {
+    if (!d || typeof d !== "object" || typeof d.code !== "string") throw new Error("SBDiag.describe: diagnostic required");
+    const severity = severityOf(d), c = CODES[d.code] || { title: d.code, fix: "" };
+    const parts = Array.isArray(d.parts) ? d.parts.slice() : d.part !== null && d.part !== undefined ? [d.part] : [];
+    const layer = Number.isInteger(d.layer) ? d.layer : null;
+    let where = "";
+    if (layer !== null) where = "Layer " + (layer + 1) + (Array.isArray(d.parts) ? (parts.length ? ", " + parts.length + " part" + (parts.length === 1 ? "" : "s") : "") :
+      parts.length ? ", part " + parts[0] : "");
+    const m = [];
+    if (d.measured) m.push("measured " + fmtMeasure(d.measured));
+    if (d.limit) m.push("limit " + fmtMeasure(d.limit));
+    const measure = m.join(" vs ");
+    const regions = isBox(d.region) ? [d.region.slice()] : Array.isArray(d.region) ? d.region.filter(isBox).map((r) => r.slice()) : [];
+    const focus = layer === null ? null : { layer, parts, regions };
+    const message = typeof d.message === "string" && d.message ? d.message : c.title;
+    const text = SEV[severity][0] + ": " + (where ? where + " \u2014 " : "") + message + (measure ? " (" + measure + ")" : "");
+    return { severity, severityLabel: SEV[severity][0], icon: SEV[severity][1], code: d.code, title: c.title, message, where, measure,
+      fix: c.fix, text, focus, navigable: focus !== null };
+  }
+
+  global.SBDiag = { CODES, make, aggregate, ackKey, exportGate, withAckState, STATES, nextState, stateBadge, summarize, describe };
 })(typeof window !== "undefined" ? window : globalThis);
 
 </script>
@@ -7236,6 +7336,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  * interpretHeight (G2.5b) is the height-mode interpretation stage: raw unless an explicit heightFilter is set (IMG-03).
  * generate (G2.10a) is the §11.1 pipeline through validation, with the machine-envelope check; G2.10b completes it with
  * the Z model, trailing-empty accounting, stats, the D4 hashes (layerHash, guideHash, geometryHash) and a deep freeze.
+ * legacyDiagnostics/legacySnapshotHash (G2.13c) give the app's legacy draft run the same final-polygon checks and an
+ * ack-scoping snapshot hash until the app adopts generate.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -7373,6 +7475,41 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       if (b) { const poly = E.maskPolygons(w, h, sxUm, syUm, fUm, (i) => b[i]); if (poly) e.bridges = poly; }
       return e;
     });
+  };
+
+  /**
+   * G2.13c (UI-04): legacyDiagnostics(view, w, h, project) → Diagnostic[] for a legacyRun result whose polygons are
+   * `view` (connectedLayers, ideally after SBMaterial.assignParts so part diagnostics carry IDs). The app's interim
+   * diagnostics source until it adopts SBEngine.generate; the same final-polygon checks generate runs at step 12, at
+   * draft quality and the project revision: each layer's geometry diagnostics, SBSupport.validate in the project's
+   * construction mode (bonded: containment and the support graph, one layer-level boolean per adjacent pair;
+   * connected: CONNECTED_SPLIT), SBSupport.featureChecks at the legacy pitch (mmPerPxMax = the coarser axis of the
+   * view's page over w × h, so SAMPLING_LOW reflects the geometry the app exports) and SBSupport.checkEnvelope.
+   * Pure; the view is not mutated.
+   */
+  E.legacyDiagnostics = function (view, w, h, project) {
+    const M = global.SBMaterial, S = global.SBSupport, mat = project.material, page = view.page;
+    const dOpts = { revision: project.revision, quality: "draft" };
+    const out = [];
+    for (const L of view.layers) for (const d of L.diagnostics || []) out.push(Object.assign({}, d, dOpts));
+    out.push(...S.validate(view.layers, project.construction.mode, { minFeatureMM: mat.minFeatureMM, advisoryFeatureMM: mat.advisoryFeatureMM,
+      revision: dOpts.revision, quality: dOpts.quality }).diagnostics);
+    const { sxUm, syUm } = M.scale({ w, h, artWMM: page.artWMM, artHMM: page.artHMM });
+    out.push(...S.featureChecks(view.layers, { minFeatureMM: mat.minFeatureMM, advisoryFeatureMM: mat.advisoryFeatureMM, minPartMM2: mat.minPartMM2,
+      mmPerPxMax: Math.max(sxUm, syUm) / 1000, calibrated: mat.calibrated, revision: dOpts.revision, quality: dOpts.quality }));
+    out.push(...S.checkEnvelope({ wMM: page.wMM, hMM: page.hMM }, project.machine, mat, dOpts));
+    return out;
+  };
+
+  /**
+   * G2.13c (§9.5, D4): legacySnapshotHash(view, w, h) → the hash that scopes acknowledgements to one legacy result:
+   * hashJSON({engine, quality: "draft", raster: [w, h], page, layers: D4 layerHash per layer}). Any geometry or raster
+   * change gives a new hash, so an ack (SBDiag.ackKey) never carries over to another snapshot.
+   */
+  E.legacySnapshotHash = function (view, w, h) {
+    const G = global.SBGeom;
+    return global.SBHash.hashJSON({ engine: E.VERSION, quality: "draft", raster: [w, h], page: [view.page.wMM, view.page.hMM],
+      layers: view.layers.map((L) => G.layerHashes(L).layerHash) });
   };
 
   /**
@@ -7857,6 +7994,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  * with a "!" icon and bridges in amber (connected mode, #in-bridgesvis), plus a per-layer mm² legend. Off by
  * default, so the proof stays the material alone. Overlay bridges also replace the mask bridges in the tilt view.
  *
+ * G2.13c: setFocus() takes a diagnostics-panel focus {layer, parts, regions, label}: the proof veils the stack, redraws
+ * that layer on top and outlines its parts and regions with a dark-and-light double stroke and a text tag.
+ *
  * setSnapshot() rasterizes each layer's Path2D (from the µm rings) once per snapshot into
  * an offscreen canvas; frames only composite. The explode slider is display-only: it moves
  * layers in the tilt view and never touches geometry. setSheets() keeps the v1.1.0 raster
@@ -7874,6 +8014,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   const OV_REMOVED = "#F4F7FA";
   const OV_UNSUPPORTED = "#E5484D";
   const OV_DASH = [5, 4];
+  // G2.13c diagnostics focus (proof view): veil over the stack, double stroke and a text tag
+  const FOCUS_VEIL = "rgba(10,16,24,0.62)";
+  const FOCUS_DARK = "#0A1018";
+  const FOCUS_LIGHT = "#FFFFFF";
+  const FOCUS_TAG = "rgba(10,16,24,0.85)";
   const HATCH = "rgba(255,255,255,0.16)";   // waste hatch strokes on the bed colour
   const HATCH_PX = 7;                       // hatch pitch in card pixels
   const CARD_MAX_PX = 480;                  // long side of a layer card canvas
@@ -7912,6 +8057,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       overlays: null,      // G2.13b: SBProof.overlays model, plus per-layer page-sized bridge canvases (tilt)
       overlayBridges: [],
       showOverlays: false,
+      focus: null,         // G2.13c: {layer, parts, regions, label} highlighted in the proof (diagnostics panel)
       dragging: false,
       running: false,
       dirty: true,
@@ -7955,6 +8101,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
           : null,
       }));
       state.overlays = null; state.overlayBridges = [];
+      state.focus = null;
       state.snap = null;   // the raster replaces any polygon snapshot (interim view while the polygons build)
       state.dirty = true;
     }
@@ -7982,6 +8129,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       const prevY = state.snap && state.snap.page.hMM === page.hMM ? state.snap.sectionY : page.hMM / 2;
       state.snap = { page, tMM: snap.tMM, gMM: snap.gMM, layers: snap.layers, model, fills, images, bridges, sectionY: prevY, section: null };
       state.overlays = null; state.overlayBridges = [];   // G2.13b: overlays belong to one snapshot; setOverlays after this
+      state.focus = null;   // G2.13c: a focus belongs to the diagnostics of one snapshot
       setSectionY(prevY);
       state.dirty = true;
     }
@@ -8074,6 +8222,50 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
         ctx.fillStyle = "#F4F7FA"; ctx.fillText(line, ox + 8, ly);
         ly += 16;
       }
+      ctx.restore();
+    }
+
+    /**
+     * G2.13c (UI-04): focus one layer (and parts / regions) from the diagnostics panel. f = {layer, parts: string[],
+     * regions: [[x0, y0, x1, y1] mm, page frame], label?} or null to clear. The proof then veils the rest of the stack,
+     * draws the focused layer again on top, outlines its listed parts and the regions with a dark-and-light double
+     * stroke, and names the focus in text. Proof only; a new snapshot clears it. FOCUS on a layer not in the snapshot.
+     */
+    function setFocus(f) {
+      if (f === null || f === undefined) { state.focus = null; state.dirty = true; return; }
+      const s = state.snap;
+      if (!s) throw new Error("SBPreview.setFocus: FOCUS — no polygon snapshot");
+      if (!f || !Number.isInteger(f.layer) || !s.layers.some((L) => L.index === f.layer))
+        throw new Error("SBPreview.setFocus: FOCUS — layer " + (f && f.layer) + " is not in the snapshot");
+      state.focus = { layer: f.layer, parts: Array.isArray(f.parts) ? f.parts.slice() : [],
+        regions: Array.isArray(f.regions) ? f.regions.filter((r) => Array.isArray(r) && r.length === 4 && r.every(Number.isFinite)) : [],
+        label: typeof f.label === "string" && f.label ? f.label : "Layer " + (f.layer + 1) };
+      state.dirty = true;
+    }
+
+    /** Proof-view focus (G2.13c) over the page drawn at (ox, oy) with dw × dh px. */
+    function drawFocus(ox, oy, dw, dh) {
+      const s = state.snap, f = state.focus;
+      if (!s || !f) return;
+      const sc = dw / (s.page.wMM * 1000);   // px per µm
+      ctx.save();
+      ctx.fillStyle = FOCUS_VEIL; ctx.fillRect(ox, oy, dw, dh);
+      const im = s.images.find((e) => e.layerIndex === f.layer);
+      if (im) { ctx.imageSmoothingEnabled = global.SBProof.drawParams("proof").smoothing; ctx.drawImage(im.canvas, ox, oy, dw, dh); }
+      const L = s.layers.find((x) => x.index === f.layer);
+      const want = new Set(f.parts);
+      const polys = want.size && L && L.parts ? L.parts.filter((p) => want.has(p.id)).map((p) => p.polygon) : [];
+      const twice = (draw) => { ctx.strokeStyle = FOCUS_DARK; ctx.lineWidth = 4; draw(); ctx.strokeStyle = FOCUS_LIGHT; ctx.lineWidth = 2; draw(); };
+      if (polys.length) { polyPath(polys, ox, oy, sc); twice(() => ctx.stroke()); }
+      for (const r of f.regions) {
+        const x0 = ox + r[0] * 1000 * sc - 4, y0 = oy + r[1] * 1000 * sc - 4;
+        const w = Math.max(8, (r[2] - r[0]) * 1000 * sc + 8), h = Math.max(8, (r[3] - r[1]) * 1000 * sc + 8);
+        twice(() => ctx.strokeRect(x0, y0, w, h));
+      }
+      ctx.font = "bold 12px system-ui, sans-serif";
+      const tw = ctx.measureText(f.label).width;
+      ctx.fillStyle = FOCUS_TAG; ctx.fillRect(ox + dw - tw - 14, oy + 4, tw + 10, 18);
+      ctx.fillStyle = FOCUS_LIGHT; ctx.fillText(f.label, ox + dw - tw - 9, oy + 17);
       ctx.restore();
     }
 
@@ -8202,7 +8394,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
           ctx.drawImage(items[s].bridge, ox + dx + f, oy + dy + f, dw - 2 * f, dh - 2 * f);
         }
       }
-      if (state.mode === "proof") drawOverlays(ox, oy, dw);
+      if (state.mode === "proof") { drawOverlays(ox, oy, dw); drawFocus(ox, oy, dw, dh); }
     }
 
     /**
@@ -8278,6 +8470,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       setOverlays,
       /** G2.13b: the Changes overlay on the proof (off by default). */
       setShowOverlays(v) { state.showOverlays = !!v; state.dirty = true; },
+      setFocus,
       redraw() { state.dirty = true; },
       /**
        * Snapshot a composite for the export bundle. mode ("proof" | "section" | "tilt") draws that view for the
@@ -8353,6 +8546,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     viewError: null,     // message when connectedLayers failed for this run (the views fall back to the raster)
     overlays: null,      // G2.13b: SBProof.overlays model of the last run (cleanup changes, bridges) for the proof
     state: null,         // G2.13b (UI-05): SBDiag.STATES value of the shown result; null before the first run
+    diagnostics: null,   // G2.13c (UI-04): SBEngine.legacyDiagnostics of the shown view; null until it is built
+    diagError: null,     // message when the diagnostics could not be computed for this run
+    geometryHash: null,  // G2.13c (§9.5): SBEngine.legacySnapshotHash of the shown view; scopes the acknowledgements
+    acks: new Set(),     // G2.13c: SBDiag.ackKey strings acknowledged on run.geometryHash (cleared with a new hash)
+    focus: null,         // G2.13c: the diagnostics focus shown in the proof ({layer, parts, regions, label}), re-applied per snapshot
     report: "",
   };
 
@@ -8447,6 +8645,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     run.view = null;   // G2.12: canonical polygons for Proof/Section/Tilt, rebuilt lazily per run (renderAll)
     run.overlays = null;   // G2.13b: rebuilt with the view
     run.viewError = null;
+    run.diagnostics = null; run.diagError = null; run.focus = null;   // G2.13c: rebuilt with the view
     run.viewToken++;   // a view build still pending for the previous run is dropped
     let totalBridged = totals.bridged, totalCulled = totals.culled, totalCutMM = totals.cutMM;
     run.procW = w; run.procH = h; run.revision = project.revision;
@@ -8459,6 +8658,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     setStatus(run.report);
     updateGate(gate);
     updateDimbar();
+    renderDiagnostics();
 
     renderAll();
   }
@@ -8524,15 +8724,29 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const t0 = performance.now();
     try {
       const c = cfg();
-      run.view = SBEngine.connectedLayers(run.sheets, run.procW, run.procH, c);
+      const v = SBEngine.connectedLayers(run.sheets, run.procW, run.procH, c);
+      run.view = { page: v.page, layers: SBMaterial.assignParts(v.layers) };   // G2.13c: part IDs for diagnostics and focus
+      // G2.13c (UI-04): the final-polygon checks on the view (legacy interim source until the app adopts generate).
+      // A failure here never costs the proof: the panel says so and the views still update.
+      try {
+        run.diagnostics = SBEngine.legacyDiagnostics(run.view, run.procW, run.procH, project);
+        const hash = SBEngine.legacySnapshotHash(run.view, run.procW, run.procH);
+        if (hash !== run.geometryHash) run.acks = new Set();   // acknowledgements are scoped to one snapshot (§9.5)
+        run.geometryHash = hash;
+      } catch (err) {
+        run.diagnostics = null; run.geometryHash = null; run.acks = new Set();
+        run.diagError = String(err && err.message || err);
+      }
       // G2.13b (GEO-08, UI-05): cleanup changes and bridges as cleanupReport-shaped polygons (the generate shape).
       run.overlays = SBProof.overlays({ cleanupReport: SBEngine.legacyCleanupReport(run.sheets, run.procW, run.procH, c),
-        diagnostics: [], mode: project.construction.mode });
+        diagnostics: run.diagnostics || [], mode: project.construction.mode });
     } catch (err) {
       run.viewError = String(err && err.message || err);
       setStatus(`${run.report} · proof unavailable: ${run.viewError}`);
+      renderDiagnostics();
       return;
     }
+    renderDiagnostics();
     run.report += ` · proof ${(performance.now() - t0).toFixed(0)} ms`;
     setStatus(run.report);
     showView(sheetColors());
@@ -8545,6 +8759,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       preview.setSnapshot({ page: run.view.page, layers: run.view.layers, tMM: project.material.thicknessMM, gMM: bonded ? 0 : project.construction.gapMM },
         colors);
       preview.setOverlays(run.overlays);   // bridges (tilt and the proof overlay) come from cleanupReport[].bridges
+      if (run.focus) { try { preview.setFocus(run.focus); } catch (_) { run.focus = null; } }   // G2.13c: a new snapshot clears the focus
       setStatus(run.report);
       try { renderSheetGrid(colors); }   // G2.13a: the cards now come from the polygon snapshot
       catch (err) { setStatus(`${run.report} · layer cards unavailable: ${err.message || err}`); }
@@ -8553,6 +8768,126 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       showRaster(colors);
       try { renderSheetGrid(colors); } catch (_) { /* the status line already reports the failure */ }   // raster cards
     }
+  }
+
+  // ------------------------------------------------------- diagnostics (G2.13c: UI-04, NFR-07, §9.5)
+
+  /**
+   * The diagnostics panel: a summary line (SBDiag.summarize) and the list grouped by severity, each group headed by a
+   * badge with a glyph icon (aria-hidden) and the severity in text. Each item (SBDiag.describe) shows where, what, the
+   * measured value against the limit and the fix. An item with a layer is a <button> (click, Enter or Space) that
+   * switches to the Proof and focuses that layer, its parts and region (preview.setFocus). Warnings carry an
+   * "Acknowledge" checkbox keyed by SBDiag.ackKey on run.geometryHash, so an ack never outlives the snapshot; blocking
+   * items have none (§9.5). Interim: the legacy draft run exports regardless (the export gate arrives with G3.10).
+   */
+  function renderDiagnostics() {
+    const list = $("diag-list"), sum = $("diag-summary");
+    if (!list || !sum) return;
+    list.textContent = "";
+    $("diag-clear").hidden = !run.focus;
+    if (!run.sheets.length) { sum.textContent = "Generate to check the layers"; return; }
+    if (run.viewError) { sum.textContent = "Diagnostics unavailable: the proof geometry could not be built (" + run.viewError + ")"; return; }
+    if (run.diagError) { sum.textContent = "Diagnostics unavailable: " + run.diagError; return; }
+    if (!run.diagnostics) { sum.textContent = "Checking the layers…"; return; }
+    const diags = run.diagnostics, groups = SBDiag.summarize(diags);
+    if (!groups.length) { sum.textContent = "No issues found in this draft result."; return; }
+    const acked = diags.filter((d) => SBDiag.describe(d).severity === "warning" && run.acks.has(SBDiag.ackKey(d, run.geometryHash))).length;
+    const noun = (g) => (g.severity === "warning" ? (g.count === 1 ? "warning" : "warnings") : g.label.toLowerCase());
+    sum.textContent = groups.map((g) => g.count + " " + noun(g) + (g.severity === "warning" && acked ? " (" + acked + " acknowledged)" : "")).join(", ") +
+      " in this draft result.";
+    for (const g of groups) {
+      const li = document.createElement("li");
+      li.className = "diag-group";
+      const head = document.createElement("div");
+      head.className = "diag-head";
+      head.appendChild(badge(g.severity, g.icon, g.label));
+      head.appendChild(document.createTextNode(String(g.count)));
+      li.appendChild(head);
+      const ul = document.createElement("ul");
+      li.appendChild(ul);
+      diags.forEach((d) => {
+        const it = SBDiag.describe(d);
+        if (it.severity !== g.severity) return;
+        ul.appendChild(diagItem(d, it));
+      });
+      list.appendChild(li);
+    }
+  }
+
+  /** A severity badge: glyph icon (aria-hidden) plus the severity label in text. */
+  function badge(severity, icon, label) {
+    const b = document.createElement("span");
+    b.className = "badge";
+    b.dataset.sev = severity;
+    const i = document.createElement("span");
+    i.setAttribute("aria-hidden", "true");
+    i.textContent = icon;
+    b.appendChild(i);
+    b.appendChild(document.createTextNode(label));
+    return b;
+  }
+
+  function diagItem(d, it) {
+    const li = document.createElement("li");
+    li.className = "diag-item";
+    const go = it.navigable ? document.createElement("button") : document.createElement("div");
+    go.className = "diag-go";
+    if (it.navigable) {
+      go.type = "button";
+      go.title = "Show " + it.where + " in the Proof";
+      go.addEventListener("click", () => focusDiagnostic(d, it, li));
+    }
+    go.appendChild(badge(it.severity, it.icon, it.severityLabel));
+    const add = (cls, text) => { if (!text) return; const s2 = document.createElement("span"); s2.className = cls; s2.textContent = text; go.appendChild(s2); };
+    add("diag-where", it.where);
+    add("diag-msg", it.message);
+    add("diag-measure", it.measure);
+    li.appendChild(go);
+    const fix = document.createElement("p");
+    fix.className = "diag-fix";
+    fix.textContent = "Fix: " + it.fix;
+    li.appendChild(fix);
+    if (it.severity === "warning" && run.geometryHash) {
+      const key = SBDiag.ackKey(d, run.geometryHash);
+      const lab = document.createElement("label");
+      lab.className = "diag-ack";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = run.acks.has(key);
+      cb.addEventListener("change", () => {
+        if (cb.checked) run.acks.add(key); else run.acks.delete(key);
+        renderDiagnostics();
+        const again = Array.from($("diag-list").querySelectorAll(".diag-ack input")).find((x) => x.dataset.key === key);
+        if (again) again.focus();   // keep the keyboard position across the re-render
+      });
+      cb.dataset.key = key;
+      lab.appendChild(cb);
+      lab.appendChild(document.createTextNode("Acknowledge for this result"));
+      li.appendChild(lab);
+    }
+    if (run.focus && it.focus && run.focus.key === d.id) li.setAttribute("aria-current", "true");
+    return li;
+  }
+
+  /** Show one diagnostic's layer, parts and region in the Proof (UI-04). */
+  function focusDiagnostic(d, it, li) {
+    if (!preview.hasSnapshot()) { setStatus(`${run.report} · the proof is not ready; try again once it is built`, true); return; }
+    const f = { layer: it.focus.layer, parts: it.focus.parts, regions: it.focus.regions, label: it.where, key: d.id };
+    try { preview.setFocus(f); }
+    catch (err) { setStatus(`${run.report} · cannot show ${it.where}: ${err.message || err}`, true); return; }
+    switchTab("proof");
+    document.querySelectorAll("#diag-list .diag-item[aria-current]").forEach((x) => x.removeAttribute("aria-current"));
+    li.setAttribute("aria-current", "true");
+    run.focus = f;
+    $("diag-clear").hidden = false;
+    setStatus(`Showing ${it.where}: ${it.title}` + (it.measure ? ` (${it.measure})` : ""), true);
+  }
+
+  function clearDiagnosticFocus() {
+    run.focus = null;
+    try { preview.setFocus(null); } catch (_) { /* nothing shown */ }
+    document.querySelectorAll("#diag-list .diag-item[aria-current]").forEach((x) => x.removeAttribute("aria-current"));
+    $("diag-clear").hidden = true;
   }
 
   /** The v1.1.0 raster composite of the current masks (interim view while the polygons build, and the fallback). */
@@ -9247,6 +9582,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
 
     // review: the staged Generate control, under the same guard as Export (canGenerate)
     $("btn-generate").addEventListener("click", regenerate);
+    // G2.13c: the diagnostics focus is cleared by its button or Escape inside the list
+    $("diag-clear").addEventListener("click", clearDiagnosticFocus);
+    $("diag-list").addEventListener("keydown", (e) => { if (e.key === "Escape" && run.focus) { clearDiagnosticFocus(); e.preventDefault(); } });
 
     // export
     $("btn-export").addEventListener("click", exportBundle);

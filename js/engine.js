@@ -10,6 +10,8 @@
  * interpretHeight (G2.5b) is the height-mode interpretation stage: raw unless an explicit heightFilter is set (IMG-03).
  * generate (G2.10a) is the §11.1 pipeline through validation, with the machine-envelope check; G2.10b completes it with
  * the Z model, trailing-empty accounting, stats, the D4 hashes (layerHash, guideHash, geometryHash) and a deep freeze.
+ * legacyDiagnostics/legacySnapshotHash (G2.13c) give the app's legacy draft run the same final-polygon checks and an
+ * ack-scoping snapshot hash until the app adopts generate.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -147,6 +149,41 @@
       if (b) { const poly = E.maskPolygons(w, h, sxUm, syUm, fUm, (i) => b[i]); if (poly) e.bridges = poly; }
       return e;
     });
+  };
+
+  /**
+   * G2.13c (UI-04): legacyDiagnostics(view, w, h, project) → Diagnostic[] for a legacyRun result whose polygons are
+   * `view` (connectedLayers, ideally after SBMaterial.assignParts so part diagnostics carry IDs). The app's interim
+   * diagnostics source until it adopts SBEngine.generate; the same final-polygon checks generate runs at step 12, at
+   * draft quality and the project revision: each layer's geometry diagnostics, SBSupport.validate in the project's
+   * construction mode (bonded: containment and the support graph, one layer-level boolean per adjacent pair;
+   * connected: CONNECTED_SPLIT), SBSupport.featureChecks at the legacy pitch (mmPerPxMax = the coarser axis of the
+   * view's page over w × h, so SAMPLING_LOW reflects the geometry the app exports) and SBSupport.checkEnvelope.
+   * Pure; the view is not mutated.
+   */
+  E.legacyDiagnostics = function (view, w, h, project) {
+    const M = global.SBMaterial, S = global.SBSupport, mat = project.material, page = view.page;
+    const dOpts = { revision: project.revision, quality: "draft" };
+    const out = [];
+    for (const L of view.layers) for (const d of L.diagnostics || []) out.push(Object.assign({}, d, dOpts));
+    out.push(...S.validate(view.layers, project.construction.mode, { minFeatureMM: mat.minFeatureMM, advisoryFeatureMM: mat.advisoryFeatureMM,
+      revision: dOpts.revision, quality: dOpts.quality }).diagnostics);
+    const { sxUm, syUm } = M.scale({ w, h, artWMM: page.artWMM, artHMM: page.artHMM });
+    out.push(...S.featureChecks(view.layers, { minFeatureMM: mat.minFeatureMM, advisoryFeatureMM: mat.advisoryFeatureMM, minPartMM2: mat.minPartMM2,
+      mmPerPxMax: Math.max(sxUm, syUm) / 1000, calibrated: mat.calibrated, revision: dOpts.revision, quality: dOpts.quality }));
+    out.push(...S.checkEnvelope({ wMM: page.wMM, hMM: page.hMM }, project.machine, mat, dOpts));
+    return out;
+  };
+
+  /**
+   * G2.13c (§9.5, D4): legacySnapshotHash(view, w, h) → the hash that scopes acknowledgements to one legacy result:
+   * hashJSON({engine, quality: "draft", raster: [w, h], page, layers: D4 layerHash per layer}). Any geometry or raster
+   * change gives a new hash, so an ack (SBDiag.ackKey) never carries over to another snapshot.
+   */
+  E.legacySnapshotHash = function (view, w, h) {
+    const G = global.SBGeom;
+    return global.SBHash.hashJSON({ engine: E.VERSION, quality: "draft", raster: [w, h], page: [view.page.wMM, view.page.hMM],
+      layers: view.layers.map((L) => G.layerHashes(L).layerHash) });
   };
 
   /**

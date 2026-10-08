@@ -184,6 +184,14 @@
       <h2 id="h-review"><span class="stepnum">4</span> Review</h2>
       <button id="btn-generate" class="btn wide" disabled aria-describedby="why-generate">Generate</button>
       <p id="why-generate" class="why" role="status">Choose a source</p>
+      <!-- G2.13c (UI-04, NFR-07): diagnostics grouped by severity, icon plus text; an item with a layer is a button
+           that shows its layer, parts and region in the Proof; warnings carry an Acknowledge checkbox for this result. -->
+      <div id="diag-panel" class="diag" role="region" aria-labelledby="h-diag">
+        <h3 id="h-diag">Diagnostics</h3>
+        <p id="diag-summary" class="diag-summary" role="status" aria-live="polite">Generate to check the layers</p>
+        <ul id="diag-list" class="diag-list" aria-labelledby="h-diag"></ul>
+        <button id="diag-clear" class="btn" type="button" hidden>Clear highlight</button>
+      </div>
       <div class="row"><label for="in-appearance">Appearance</label>
         <select id="in-appearance">
           <option value="uniform">Uniform stock colour</option>
