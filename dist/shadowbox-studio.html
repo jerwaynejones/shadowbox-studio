@@ -3171,12 +3171,53 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    * @param {number} r          window radius in px (>=1)
    * @param {number} passes     number of applications (2 = stronger cartoon)
    */
-  R.kuwahara = function (src, w, h, r, passes = 1) {
+  R.kuwahara = function (src, w, h, r, passes = 1, domain = null) {
     if (r < 1 || passes < 1) return src.slice();
     let cur = src;
-    for (let p = 0; p < passes; p++) cur = kuwaharaOnce(cur, w, h, r);
+    for (let p = 0; p < passes; p++) cur = domain ? kuwaharaDomainOnce(cur, w, h, r, domain) : kuwaharaOnce(cur, w, h, r);
     return cur;
   };
+
+  // G2.4 (IMG-04): the domain-aware variant. Window statistics use only
+  // in-domain samples (count table instead of the window area); out-of-domain
+  // pixels are copied unchanged and never influence an in-domain result. An
+  // in-domain pixel is in all four of its own windows, so every n ≥ 1. With an
+  // all-ones domain the arithmetic is the same as kuwaharaOnce, value for value.
+  function kuwaharaDomainOnce(src, w, h, r, domain) {
+    const W = w + 1, H = h + 1;
+    const sat = new Float64Array(W * H), sat2 = new Float64Array(W * H), cnt = new Float64Array(W * H);
+    for (let y = 0; y < h; y++) {
+      let row = 0, row2 = 0, rowN = 0;
+      for (let x = 0; x < w; x++) {
+        if (domain[y * w + x]) { const v = src[y * w + x]; row += v; row2 += v * v; rowN++; }
+        const i = (y + 1) * W + (x + 1);
+        sat[i] = sat[i - W] + row; sat2[i] = sat2[i - W] + row2; cnt[i] = cnt[i - W] + rowN;
+      }
+    }
+    const boxSum = (T, x0, y0, x1, y1) =>
+      T[y1 * W + x1] - T[y0 * W + x1] - T[y1 * W + x0] + T[y0 * W + x0];
+    const out = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = y * w + x;
+        if (!domain[idx]) { out[idx] = src[idx]; continue; }
+        let bestVar = Infinity, bestMean = src[idx];
+        for (let q = 0; q < 4; q++) {
+          const x0 = SBUtilClampI(q & 1 ? x : x - r, 0, w);
+          const x1 = SBUtilClampI((q & 1 ? x + r : x) + 1, 0, w);
+          const y0 = SBUtilClampI(q & 2 ? y : y - r, 0, h);
+          const y1 = SBUtilClampI((q & 2 ? y + r : y) + 1, 0, h);
+          const n = boxSum(cnt, x0, y0, x1, y1);
+          if (n <= 0) continue;
+          const mean = boxSum(sat, x0, y0, x1, y1) / n;
+          const variance = boxSum(sat2, x0, y0, x1, y1) / n - mean * mean;
+          if (variance < bestVar) { bestVar = variance; bestMean = mean; }
+        }
+        out[idx] = bestMean;
+      }
+    }
+    return out;
+  }
 
   function kuwaharaOnce(src, w, h, r) {
     const W = w + 1, H = h + 1;
@@ -3225,31 +3266,67 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
 
   /**
    * Compute N-1 ascending thresholds over the luminance histogram.
-   * @param {"balanced"|"linear"} mode
+   * @param {"balanced"|"linear"|"manual"} mode
    *   balanced — percentile split: every band covers ~equal pixel area
    *   linear   — equal luminance spacing between the 2nd/98th percentiles
+   *   manual   — opts.manual: N-1 normalized values in [0,1], non-decreasing,
+   *              multiplied by 255 (LYR-03; descending → THRESHOLD_ORDER)
+   * Any other mode keeps the v1.1.0 fallback to balanced (DEP-04).
+   * @param {{manual?: number[], domain?: Uint8Array|null}} [opts]
+   *   domain — when given, the histogram and percentiles use only in-domain
+   *   pixels (IMG-04); out-of-domain samples never move a threshold.
+   * @returns {number[]} thresholds, carrying `emptyBands`: the band indices
+   *   (0..N-1, per R.bands) with no in-domain pixel (IMG-06, AT-04).
+   * With domain null every threshold is identical to v1.1.0 (golden T0.4).
    */
-  R.thresholds = function (L, nBands, mode) {
-    const hist = new Float64Array(256);
-    for (let i = 0; i < L.length; i++) hist[Math.round(SBUtilClampI(L[i], 0, 255))]++;
-    const total = L.length;
-    // cumulative
-    const cum = new Float64Array(257);
-    for (let i = 0; i < 256; i++) cum[i + 1] = cum[i] + hist[i];
-
-    const pct = (p) => { // value at percentile p (0..1)
-      const target = p * total;
-      for (let i = 0; i < 256; i++) if (cum[i + 1] >= target) return i;
-      return 255;
-    };
-
+  R.thresholds = function (L, nBands, mode, opts) {
+    const o = opts || {}, domain = o.domain || null;
+    if (domain && domain.length !== L.length) throw rfail("THRESHOLD_ARG", "domain length " + domain.length + " != " + L.length);
     const t = [];
-    if (mode === "linear") {
-      const lo = pct(0.02), hi = Math.max(pct(0.98), lo + nBands);
-      for (let k = 1; k < nBands; k++) t.push(lo + ((hi - lo) * k) / nBands);
+    if (mode === "manual") {
+      const m = o.manual;
+      if (!Array.isArray(m) && !ArrayBuffer.isView(m)) throw rfail("THRESHOLD_ARG", "manual mode needs opts.manual");
+      if (m.length !== Math.max(0, nBands - 1)) throw rfail("THRESHOLD_ARG", "manual needs " + (nBands - 1) + " values, got " + m.length);
+      for (let k = 0; k < m.length; k++) {
+        const v = m[k];
+        if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 1) throw rfail("THRESHOLD_ARG", "manual[" + k + "] must be in [0,1]");
+        if (k > 0 && v < m[k - 1]) throw rfail("THRESHOLD_ORDER", "manual thresholds must be non-decreasing (index " + k + ")");
+        t.push(v * 255);
+      }
     } else {
-      for (let k = 1; k < nBands; k++) t.push(pct(k / nBands) + 0.5);
+      const hist = new Float64Array(256);
+      let total = 0;
+      if (domain) { for (let i = 0; i < L.length; i++) if (domain[i]) { hist[Math.round(SBUtilClampI(L[i], 0, 255))]++; total++; } }
+      else { for (let i = 0; i < L.length; i++) hist[Math.round(SBUtilClampI(L[i], 0, 255))]++; total = L.length; }
+      // cumulative
+      const cum = new Float64Array(257);
+      for (let i = 0; i < 256; i++) cum[i + 1] = cum[i] + hist[i];
+
+      const pct = (p) => { // value at percentile p (0..1)
+        const target = p * total;
+        for (let i = 0; i < 256; i++) if (cum[i + 1] >= target) return i;
+        return 255;
+      };
+
+      if (mode === "linear") {
+        const lo = pct(0.02), hi = Math.max(pct(0.98), lo + nBands);
+        for (let k = 1; k < nBands; k++) t.push(lo + ((hi - lo) * k) / nBands);
+      } else {
+        for (let k = 1; k < nBands; k++) t.push(pct(k / nBands) + 0.5);
+      }
     }
+    // IMG-06 / AT-04: surface bands without in-domain pixels (flat input,
+    // duplicate thresholds, empty domain). Uses the same rule as R.bands.
+    const counts = new Float64Array(Math.max(1, nBands));
+    for (let i = 0; i < L.length; i++) {
+      if (domain && !domain[i]) continue;
+      const v = L[i];
+      let b = 0;
+      while (b < t.length && v >= t[b]) b++;
+      counts[b]++;
+    }
+    t.emptyBands = [];
+    for (let b = 0; b < Math.max(1, nBands); b++) if (counts[b] === 0) t.emptyBands.push(b);
     return t;
   };
 
@@ -3280,19 +3357,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    * @returns {Uint8Array[]} one 0/1 mask per sheet
    */
   R.sheetMasks = function (bandMap, nBands, w, h, darkFront) {
-    const masks = [];
-    const full = new Uint8Array(w * h).fill(1);
-    masks.push(full); // backing sheet
-    for (let s = 1; s < nBands; s++) {
-      const m = new Uint8Array(w * h);
-      const cutoff = nBands - 1 - s; // include bands 0..cutoff (dark side)
-      for (let i = 0; i < bandMap.length; i++) {
-        const b = darkFront ? bandMap[i] : nBands - 1 - bandMap[i];
-        m[i] = b <= cutoff ? 1 : 0;
-      }
-      masks.push(m);
-    }
-    return masks;
+    // G2.4: the tonal path behind the height interface (D-4.4). Byte-identical
+    // to v1.1.0 (golden test/golden/sheetmasks.json; G2.3 equivalence check).
+    return SBHeight.cumulativeMasks(SBHeight.tonalAdded(bandMap, nBands, darkFront), null, nBands, w, h);
   };
 
 

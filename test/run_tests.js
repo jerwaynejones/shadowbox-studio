@@ -2343,6 +2343,64 @@ suite("height.js — G2.3 extended (module order, boundaries in mm, tonal equiva
     } return true; })());
 });
 
+// ------------------------------------------------ raster.js tonal path (G2.4)
+suite("raster.js — G2.4 tonal path: manual thresholds, domain-aware statistics, emptyBands (LYR-03, IMG-04/06, AT-04/05/21)", () => {
+  const W = 23, Hh = 17, n = W * Hh;
+  const grad = Float32Array.from({ length: n }, (_, i) => ((i % W) * 255) / (W - 1));
+  const rnd = (() => { let x = 777; return () => (x = (x * 1103515245 + 12345) >>> 0) / 4294967296; })();
+  const noisy = Float32Array.from({ length: n }, () => Math.floor(rnd() * 256));
+  const dom = Uint8Array.from({ length: n }, (_, i) => ((i % W) + Math.floor(i / W)) % 3 !== 0 ? 1 : 0);
+  const alter = (L) => Float32Array.from(L, (v, i) => (dom[i] ? v : (v * 7 + 91) % 256));
+  const code = (f) => { try { f(); return null; } catch (e) { return e.code; } };
+  // LYR-03 manual
+  const tm = SBRaster.thresholds(grad, 5, "manual", { manual: [0.2, 0.4, 0.6, 0.8] });
+  check("LYR-03 manual thresholds honored (normalized × 255)", Array.from(tm).join() === "51,102,153,204");
+  check("LYR-03 manual thresholds drive the bands", (() => { const b = SBRaster.bands(Float32Array.of(50, 51, 101, 102, 203, 204, 255), tm); return b.join() === "0,1,1,2,3,4,4"; })());
+  check("LYR-03 descending manual thresholds rejected (THRESHOLD_ORDER)", code(() => SBRaster.thresholds(grad, 4, "manual", { manual: [0.5, 0.4, 0.6] })) === "THRESHOLD_ORDER");
+  check("LYR-03 manual wrong count / out of range / non-finite rejected (THRESHOLD_ARG)",
+    code(() => SBRaster.thresholds(grad, 4, "manual", { manual: [0.1, 0.2] })) === "THRESHOLD_ARG" &&
+    code(() => SBRaster.thresholds(grad, 3, "manual", { manual: [-0.1, 0.5] })) === "THRESHOLD_ARG" &&
+    code(() => SBRaster.thresholds(grad, 3, "manual", { manual: [0.5, 1.01] })) === "THRESHOLD_ARG" &&
+    code(() => SBRaster.thresholds(grad, 3, "manual", { manual: [0.5, NaN] })) === "THRESHOLD_ARG" &&
+    code(() => SBRaster.thresholds(grad, 3, "manual")) === "THRESHOLD_ARG");
+  check("DEP-04 unrecognised mode keeps the v1.1.0 balanced fallback", Array.from(SBRaster.thresholds(noisy, 4, "median")).join() === Array.from(SBRaster.thresholds(noisy, 4, "balanced")).join());
+  // IMG-06 / AT-04 flat and duplicate thresholds
+  const flat = new Float32Array(n).fill(128), tf = SBRaster.thresholds(flat, 5, "balanced");
+  check("IMG-06 flat 128 image N=5 balanced: thresholds finite and emptyBands.length === 4", tf.length === 4 && tf.every(Number.isFinite) && Array.isArray(tf.emptyBands) && tf.emptyBands.length === 4);
+  check("IMG-06 flat 128 image N=5 linear: thresholds finite, emptyBands surfaced", (() => { const t = SBRaster.thresholds(flat, 5, "linear"); return t.every(Number.isFinite) && t.emptyBands.length === 4; })());
+  check("AT-04 duplicate tonal thresholds → emptyBands non-empty", SBRaster.thresholds(grad, 5, "manual", { manual: [0.2, 0.5, 0.5, 0.8] }).emptyBands.join() === "2");
+  check("IMG-06 gradient balanced has no empty bands", SBRaster.thresholds(grad, 5, "balanced").emptyBands.length === 0);
+  check("IMG-06 emptyBands are in-domain counts: band 4 empty when only the domain lacks bright pixels", (() => {
+    const L = Float32Array.from(grad, (v, i) => (dom[i] ? Math.min(v, 100) : 255));
+    return SBRaster.thresholds(L, 5, "manual", { manual: [0.1, 0.2, 0.3, 0.9], domain: dom }).emptyBands.join() === "4" &&
+      SBRaster.thresholds(L, 5, "manual", { manual: [0.1, 0.2, 0.3, 0.9] }).emptyBands.length === 0; })());
+  check("IMG-04 empty domain: thresholds finite, every band empty", (() => { const t = SBRaster.thresholds(grad, 4, "balanced", { domain: new Uint8Array(n) });
+    return t.every(Number.isFinite) && t.emptyBands.join() === "0,1,2,3"; })());
+  // IMG-04 / AT-05 domain-aware statistics
+  check("IMG-04 tonal thresholds unchanged when out-of-domain pixels are altered", ["balanced", "linear"].every((m) => {
+    const a = SBRaster.thresholds(noisy, 6, m, { domain: dom }), b = SBRaster.thresholds(alter(noisy), 6, m, { domain: dom });
+    return Array.from(a).join() === Array.from(b).join() && a.emptyBands.join() === b.emptyBands.join(); }));
+  check("IMG-04 domain changes the statistics (out-of-domain pixels excluded)", (() => {
+    const L = Float32Array.from(noisy, (v, i) => (dom[i] ? v : 0));
+    return Array.from(SBRaster.thresholds(L, 6, "balanced", { domain: dom })).join() !== Array.from(SBRaster.thresholds(L, 6, "balanced")).join(); })());
+  check("DEP-04 domain null and all-ones domain give v1.1.0 thresholds", ["balanced", "linear"].every((m) => {
+    const a = SBRaster.thresholds(noisy, 6, m), b = SBRaster.thresholds(noisy, 6, m, { domain: null }), c = SBRaster.thresholds(noisy, 6, m, { domain: new Uint8Array(n).fill(1) });
+    return Array.from(a).join() === Array.from(b).join() && Array.from(a).join() === Array.from(c).join(); }));
+  check("IMG-04 domain length mismatch rejected (THRESHOLD_ARG)", code(() => SBRaster.thresholds(noisy, 3, "balanced", { domain: new Uint8Array(3) })) === "THRESHOLD_ARG");
+  // IMG-04 kuwahara
+  const ka = SBRaster.kuwahara(noisy, W, Hh, 2, 2, dom), kb = SBRaster.kuwahara(alter(noisy), W, Hh, 2, 2, dom);
+  check("IMG-04 kuwahara: in-domain output unchanged when out-of-domain pixels are altered", ka.every((v, i) => !dom[i] || v === kb[i]));
+  check("IMG-04 kuwahara: out-of-domain pixels left unchanged", ka.every((v, i) => dom[i] || v === noisy[i]));
+  check("IMG-04 kuwahara: all-ones domain == no domain (v1.1.0)", (() => { const a = SBRaster.kuwahara(noisy, W, Hh, 3, 2), b = SBRaster.kuwahara(noisy, W, Hh, 3, 2, new Uint8Array(n).fill(1));
+    return a.every((v, i) => v === b[i]); })());
+  check("IMG-04 kuwahara: domain output stays in the in-domain value range", (() => {
+    let lo = 255, hi = 0; for (let i = 0; i < n; i++) if (dom[i]) { lo = Math.min(lo, noisy[i]); hi = Math.max(hi, noisy[i]); }
+    const L = Float32Array.from(noisy, (v, i) => (dom[i] ? v : 1e6)), k = SBRaster.kuwahara(L, W, Hh, 2, 1, dom);
+    return k.every((v, i) => !dom[i] || (v >= lo - 1e-3 && v <= hi + 1e-3)); })());
+  // sheetMasks rewired through SBHeight
+  check("D-4.4 sheetMasks delegates to SBHeight.tonalAdded + cumulativeMasks", /SBHeight\.cumulativeMasks\(\s*SBHeight\.tonalAdded\(/.test(SBRaster.sheetMasks.toString()));
+});
+
 suite("raster.js — G2.0 deterministic resampling and the raster contract, fabRaster (IMG-02/03, GEO-06, NFR-05, PO-LASER-4/5)", () => {
   const R = SBRaster, F = require("./fixtures.js");
   const codeOf = (fn) => { try { fn(); return null; } catch (e) { return e.code || "UNCODED:" + e.message; } };

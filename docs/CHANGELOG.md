@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **G2.4, tonal path (engine only; not yet wired into the app):** `SBRaster.thresholds(L, N,
+  mode, {manual, domain})` adds `manual` thresholds (N−1 normalized values in [0, 1],
+  non-decreasing, × 255; a descending list is rejected with `THRESHOLD_ORDER`, a wrong count or
+  out-of-range value with `THRESHOLD_ARG`) and alpha-domain statistics: with `domain` the
+  histogram and percentiles use only in-domain pixels (IMG-04). Every result now carries
+  `emptyBands`, the bands with no in-domain pixel, so flat images and duplicate thresholds are
+  surfaced (IMG-06, AT-04). `SBRaster.kuwahara(…, domain)` samples only in-domain neighbours and
+  leaves out-of-domain pixels unchanged. `SBRaster.sheetMasks` is now
+  `SBHeight.cumulativeMasks(SBHeight.tonalAdded(…))`. Without a domain every output is unchanged
+  from v1.1.0 (persisted golden), including the fallback of an unrecognised mode to balanced.
+
 - **G2.3, height quantization (engine only; not yet wired into the app):** new module
   `js/height.js` (`SBHeight`), loaded after `jpeg.js` and before `raster.js`. Nearest-layer rule
   `addedFromNorm` / exact integer `addedFromSamples` (white-high or black-high; ties at the

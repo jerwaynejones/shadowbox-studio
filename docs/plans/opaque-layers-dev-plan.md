@@ -1957,14 +1957,14 @@ The integer rule was verified against the float definition for every N in 1..16 
   - `SBRaster.sheetMasks` is reimplemented as `SBHeight.cumulativeMasks(SBHeight.tonalAdded(bandMap, N, darkFront), null, N, w, h)`.
   - With `domain` null, every output is identical to v1.1.0, as the persisted golden pins.
 
-- [ ] **Step 1: Tests**
+- [x] **Step 1: Tests**
   - `DEP-04/AT-21 thresholds + sheetMasks match persisted v1.1.0 golden (24 configs)`. This is the T0.4 check; it now exercises the new code against the literal hashes in `test/golden/sheetmasks.json`.
   - `LYR-03 manual thresholds honored`
   - `IMG-06 flat 128 image N=5 balanced: thresholds finite and emptyBands.length === 4`. This fails before the change, because `emptyBands` is undefined.
   - `AT-04 duplicate tonal thresholds → emptyBands non-empty`
   - `IMG-04 tonal thresholds unchanged when out-of-domain pixels are altered`
   - `IMG-04 kuwahara: in-domain output unchanged when out-of-domain pixels are altered`
-- [ ] **Step 2–5:** fail, implement, pass, commit.
+- [x] **Step 2–5:** fail, implement, pass, commit.
 
 ### Task G2.4b: Legacy settings adapter (pure) (DEP-04, AT-21; pulled forward from G3.8)
 
