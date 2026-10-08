@@ -2106,7 +2106,18 @@ Delete the T0.4 `KNOWN-DEFECT SUP-01` and `KNOWN-DEFECT GEO-07 (bridge)` checks;
     - Identical consecutive layers give `IDENTICAL_LAYERS` (info).
   - Connected rules: each non-empty layer with more than one component gives `CONNECTED_SPLIT` (blocking).
 
-- [ ] **Step 1: Tests**
+- Implementation notes (as built, 2026-10-08):
+  - `cfg = {minFeatureMM (bonded: required), advisoryFeatureMM? (≥ minFeatureMM; absent = no advisory tier), revision, quality, unsupported?, graphOnly?}`. `unsupported[k]` hands over precomputed `Final[k] − Final[k−1]` (the B1 differences); `graphOnly` skips containment and empty-layer checks. Bad arguments throw `SUPPORT_ARG`. Inputs are never mutated; diagnostics come in layer order through `SBDiag.aggregate`.
+  - The one boolean per adjacent pair is `intersection(Final[k], Final[k−1])`, or `Final[k] − U` when the containment difference U is at hand. That is `Final[k]` itself when U is empty, so the normal bonded case needs no boolean at all.
+  - Pieces are classified widest-first through `SBGeom.insetStatus`: advisory inset, then `minFeatureUm/2`, then 0.25 µm. The thresholds and certification are those of `classifyContact` / `survivesInset`, and a bbox/area pre-filter skips insets that cannot survive. The certified witness also breaks bbox-sweep ties in attribution. Per (upper, lower) pair the widest piece decides; `SUPPORT_NARROW` and `FEATURE_MARGINAL` are emitted per pair on the upper part, with the lower part named in the message.
+  - `BOND_UNSUPPORTED` is per layer (area, bbox region, measured area, limit 0 mm²). A part with no support although containment held is reported per part. `BOND_EMPTY_UNDER` is reported on each empty layer that has a non-empty layer above it. `IDENTICAL_LAYERS` compares normalized material (bonded only). In connected mode the graph is empty and `reachesBase` is true.
+  - `SBDiag`: `FEATURE_MARGINAL` is registered (warning, fabrication) and aggregated like `PART_THIN`. `make()` accepts `detail: {kind, text?}`, which sets `d.detail = {kind}`, enters the id, and splits aggregation groups per kind.
+  - `SBSupport.annotate(layers, supportGraph)` rewrites `Part.supports[]` to part IDs (§3).
+  - B3b performance required amendments to `SBGeom.insetStatus` (ARCHITECTURE D3, "G2.7 amendments"): a scale-free quick witness, an erosion failure certificate (no trig) that leaves no undecided L- and plus-shapes, failure certificates before the witness insets, a float filter in the exact witness check, and an early stop in `refine`. Verdict semantics are unchanged.
+  - Test deviations: `mk` takes the pitch from `st.mmPerPx` (default 1), because `stripOnBase` is drawn at 0.1 mm/px. The GEO-07 check repeats the crescent as layer 2 and grows that layer. The plan's version grows layer 1 of the 2-layer `crescentInterior`, which stays inside the full base, so it would pass only through stale part data. The aggregated `FEATURE_MARGINAL` carries `parts[]` rather than `part`.
+  - `node test/bench.js support` runs B3 and B3b. Results (loaded machine, 1-min load 8–9): **B3b p95 1.32 s** (3,407 pairs), B3 2.9 ms; `docs/perf/SUPPORT.md`, `docs/perf/support.json`. The B3b budget in `bench geom` is 3 s, and the provisional entry is removed. `bench large` times `SBSupport.validate` in its support slot. The G2.2b large rows were not re-run here, because the long benchmark was out of scope; G2.7b records their support p95.
+
+- [x] **Step 1: Tests**
 
 ```js
 suite("support.js — final validation (D-4.5, SUP-02/03, GEO-07, AT-08/09)", () => {
@@ -2142,7 +2153,7 @@ suite("support.js — final validation (D-4.5, SUP-02/03, GEO-07, AT-08/09)", ()
 
 The end-to-end AT-09 smoothing case runs through `SBEngine.generate` in G2.10a.
 
-- [ ] **Step 2: Property tests** (seeded)
+- [x] **Step 2: Property tests** (seeded)
 
 ```js
   const rng = F.lcg(7); let allClean = true;
@@ -2153,12 +2164,12 @@ The end-to-end AT-09 smoothing case runs through `SBEngine.generate` in G2.10a.
   check("D-4.5 property: bonded(nested stack, featR 1) never reports unsupported (50 seeds)", allClean);
 ```
 
-- [ ] **Step 3: Benchmark hook**
+- [x] **Step 3: Benchmark hook**
 
 Add `test/bench.js support`, which runs on `randomNestedStack(lcg(1), 1536, 1024, 8)`. Record p95 in `docs/perf/` now; do not wait for G4.4.
 
 **B3b budget (required for G2.7 exit; D2, Appendix C):** `test/bench.js geom` B3b, the support pass on the dense B1 stack (3,407 pairs), must reach **p95 < 3 s** (the B3 budget; provisional < 6 s until now). The pass computes **one layer-level `intersection` per adjacent layer pair**, attributes the pieces to parts by bbox sweep, and classifies each piece with `SBGeom.survivesInset` / `classifyContact` (never per part pair: 39 s; never `SBGeom.offset`). It skips the containment `difference` when only the graph is needed and reuses the B1 differences. When B3b passes, remove its provisional entry. The support stage is also run on the G2.2b large workloads and its p95 is recorded next to the PO-LASER-9 targets.
-- [ ] **Step 4–5:** run (fail), implement, run (pass), commit.
+- [x] **Step 4–5:** run (fail), implement, run (pass), commit. Plus an extended suite: support graph and the per-part-pair oracle, the advisory tier and rounding, reuse and graphOnly, determinism, annotate, `SUPPORT_ARG`, and the `bench support` smoke test.
 
 ### Task G2.7b: Complexity caps and busy-art simplification (§12.3, NFR-03/04, PO-LASER-9; moved from G4.3, 2026-10-08)
 

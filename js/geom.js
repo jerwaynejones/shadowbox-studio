@@ -894,10 +894,29 @@
   /** Exact: is (X/q, Y/q) strictly inside the rings (even–odd) with every edge at distance ≥ d? */
   function verifyWitness(rings, X, Y, q, d) {
     const [dn, dd] = dyadic(d), Q = BigInt(q), PX = BigInt(X), PY = BigInt(Y), lim = dn * Q * (dn * Q), dd2 = dd * dd, Z = BigInt(0);
+    // G2.7 float filter: q is a power of two and |coords| ≤ 2^25 µm, so px, py and every edge vector are exact doubles;
+    // the float distance is off by ≲ 1e-7 µm, so an edge clearly farther than d + 1e-5 µm that does not straddle the
+    // ray ambiguously is decided in floating point; every other edge is checked in BigInt as before.
+    const px = X / q, py = Y / q, far = d + 1e-5, far2 = far * far, exactFloat = (q & (q - 1)) === 0 && Number.isSafeInteger(X) && Number.isSafeInteger(Y);
     let inside = false;
     for (const r of rings) {
       const n = r.length / 2;
       for (let i = 0, j = n - 1; i < n; j = i++) {
+        if (exactFloat) {
+          const fax = r[2 * j], fay = r[2 * j + 1], fbx = r[2 * i], fby = r[2 * i + 1], fex = fbx - fax, fey = fby - fay, fwx = px - fax, fwy = py - fay;
+          const fL = fex * fex + fey * fey, ft = fwx * fex + fwy * fey;
+          let d2;
+          if (ft <= 0 || fL === 0) d2 = fwx * fwx + fwy * fwy;
+          else if (ft >= fL) { const vx = px - fbx, vy = py - fby; d2 = vx * vx + vy * vy; }
+          else { const cr = fex * fwy - fey * fwx; d2 = (cr * cr) / fL; }
+          if (d2 > far2) {
+            if ((fay > py) !== (fby > py)) {
+              const sf = (px - fax) * fey - fex * (py - fay);
+              if (Math.abs(sf) <= 1e-6 * (Math.abs((px - fax) * fey) + Math.abs(fex * (py - fay)) + 1)) { /* ambiguous: exact path below */ }
+              else { if (fey > 0 ? sf < 0 : sf > 0) inside = !inside; continue; }
+            } else continue;
+          }
+        }
         const ax = BigInt(r[2 * j]) * Q, ay = BigInt(r[2 * j + 1]) * Q, bx = BigInt(r[2 * i]) * Q, by = BigInt(r[2 * i + 1]) * Q;
         const ex = bx - ax, ey = by - ay, wx = PX - ax, wy = PY - ay, L = ex * ex + ey * ey, t = wx * ex + wy * ey;
         if (t <= Z) { if (dd2 * (wx * wx + wy * wy) < lim) return false; }
@@ -934,14 +953,83 @@
     }
     return inside ? Math.sqrt(m) : -1;
   }
-  function refine(rings, x, y, step) { // pattern search towards the max-inscribed-disk centre (float; verified exactly after)
+  function refine(rings, x, y, step, stopAt) { // pattern search towards the max-inscribed-disk centre (float; verified exactly after)
     let best = depthF(rings, x, y);
-    for (let it = 0; it < 4000 && step > 1e-7; it++) {
+    for (let it = 0; it < 4000 && step > 1e-7 && !(best >= stopAt); it++) { // G2.7: stop once clearly deep enough
       let moved = false;
       for (const [dx, dy] of DIRS16) { const v = depthF(rings, x + dx * step, y + dy * step); if (v > best) { best = v; x += dx * step; y += dy * step; moved = true; break; } }
       if (!moved) step /= 2;
     }
     return [x, y, best];
+  }
+  /**
+   * G2.7 step 0 ("quick", scale-free): float depth on a K×K grid of cell centres, then a bounded pattern search from
+   * the deepest few; a point deeper than d + 0.001 µm is snapped to 1/4096 µm and verified exactly. Cheap for the
+   * large pieces where the Clipper2 insets at ×scale dominate. Returns {X, Y, q} or null.
+   */
+  function quickWitness(rings, dUm) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const r of rings) { const b = ringBox(r); if (b[0] < x0) x0 = b[0]; if (b[1] < y0) y0 = b[1]; if (b[2] > x1) x1 = b[2]; if (b[3] > y1) y1 = b[3]; }
+    if (x1 - x0 < 2 * dUm || y1 - y0 < 2 * dUm) return null;
+    const K = 8, cw = (x1 - x0) / K, ch = (y1 - y0) / K, target = dUm + 1e-3, Q = 4096, pts = [];
+    const snap = (x, y) => { const X = Math.round(x * Q), Y = Math.round(y * Q); return verifyWitness(rings, X, Y, Q, dUm) ? { X, Y, q: Q } : null; };
+    for (let i = 0; i < K; i++) for (let j = 0; j < K; j++) {
+      const x = x0 + (i + 0.5) * cw, y = y0 + (j + 0.5) * ch, v = depthF(rings, x, y);
+      if (v >= target) { const w = snap(x, y); if (w) return w; }
+      if (v > 0) pts.push([v, x, y]);
+    }
+    pts.sort((a, b) => b[0] - a[0] || a[1] - b[1] || a[2] - b[2]);
+    for (let t = 0; t < pts.length && t < 3; t++) {
+      let [best, x, y] = pts[t], step = (cw > ch ? cw : ch) / 2;
+      for (let ev = 0; best < target && ev < 48 && step > 1e-3;) {
+        let moved = false;
+        for (const [dx, dy] of DIRS16) { ev++; const v = depthF(rings, x + dx * step, y + dy * step); if (v > best) { best = v; x += dx * step; y += dy * step; moved = true; break; } }
+        if (!moved) step /= 2;
+      }
+      if (best < target) continue;
+      const w = snap(x, y); if (w) return w;
+    }
+    return null;
+  }
+  /**
+   * G2.7 step 2b ("erosion" failure certificate, no trig): remove from I (×scale paths `up`) a subset of the open
+   * R-neighbourhood of its boundary — a strip of half-width R along every edge (corners rounded to integers, R kept
+   * one unit below the margin) and, at every reflex vertex, the two pie slices between the edge normals, their arcs
+   * taken from an inscribed 64-gon (COS64, truncated towards the centre) — in ONE Clipper2 difference. Empty ⇒ r* < R + 1 + m ≤ D, by the bevel argument: a true inset at D would
+   * keep a disk of radius > m there, which the ≤ 0.71-unit rounding cannot erase. Tight to ~0.1 % at reflex
+   * vertices, where the bevel certificate leaves the S5 "undecided" band.
+   */
+  function erosionEmpty(C2, up, R) {
+    const k = R * (1 - 2e-6) / 1e6, disk = [];
+    for (let i = 0; i < 64; i++) {
+      const q = i >> 4, j = i & 15; let c = COS64[j], sn = COS64[16 - j];
+      for (let t = 0; t < q; t++) { const c2 = -sn; sn = c; c = c2; }
+      disk.push({ x: Math.trunc(c * k), y: Math.trunc(sn * k) });
+    }
+    const pos = (p) => (C2.area(p) < 0 ? p.reverse() : p), clip = [];
+    for (const path of up) {
+      const n = path.length, sgn = C2.area(path) > 0 ? 1 : -1;
+      for (let i = 0; i < n; i++) {
+        const a = path[i], b = path[(i + 1) % n], z = path[(i + n - 1) % n], ex = b.x - a.x, ey = b.y - a.y, L2 = Math.sqrt(ex * ex + ey * ey);
+        if (L2 > 0) {
+          const nx = (-ey / L2) * R, ny = (ex / L2) * R;
+          clip.push(pos([{ x: Math.round(a.x + nx), y: Math.round(a.y + ny) }, { x: Math.round(b.x + nx), y: Math.round(b.y + ny) },
+            { x: Math.round(b.x - nx), y: Math.round(b.y - ny) }, { x: Math.round(a.x - nx), y: Math.round(a.y - ny) }]));
+        }
+        const px = a.x - z.x, py = a.y - z.y, cr = px * ey - py * ex; // turn at a; reflex when against the ring's orientation
+        const L1 = Math.sqrt(px * px + py * py);
+        if (cr * sgn < 0 && L1 > 0 && L2 > 0) { // pie slices between the two edge normals, on both sides (one is the gap)
+          for (const sd of [1, -1]) {
+            const n1x = (-py / L1) * sd, n1y = (px / L1) * sd, n2x = (-ey / L2) * sd, n2y = (ex / L2) * sd, c12 = n1x * n2y - n1y * n2x;
+            const arc = disk.filter((v) => c12 * (n1x * v.y - n1y * v.x) > 0 && c12 * (v.x * n2y - v.y * n2x) > 0)
+              .sort((u, v) => c12 * (v.x * u.y - v.y * u.x));
+            clip.push(pos([{ x: a.x, y: a.y }, { x: Math.round(a.x + n1x * R), y: Math.round(a.y + n1y * R) }]
+              .concat(arc.map((v) => ({ x: a.x + v.x, y: a.y + v.y })), [{ x: Math.round(a.x + n2x * R), y: Math.round(a.y + n2y * R) }])));
+          }
+        }
+      }
+    }
+    return !C2.difference(up, clip, C2.FillRule.NonZero).some((p) => C2.area(p) !== 0);
   }
   /**
    * insetStatus(I: PolygonWithHoles[], dUm, {scale}?) → {status: "survives"|"fails"|"undecided", witness?: {X, Y, q}, scale, via}.
@@ -957,6 +1045,8 @@
     }
     if (!rings.length || C.area(polys) <= 0) return { status: "fails", via: "empty" };
     const s = opts && opts.scale !== undefined ? opts.scale : Math.max(16, Math.ceil(16 / dUm)), m = 2;
+    // 0. quick scale-free witness (G2.7)
+    const qw = quickWitness(rings, dUm); if (qw) return { status: "survives", witness: qw, scale: s, via: "quick" };
     let x0 = Infinity, y0 = Infinity;
     for (const r of rings) { const b = ringBox(r); if (b[0] < x0) x0 = b[0]; if (b[1] < y0) y0 = b[1]; }
     const up = rings.map((r) => { const p = []; for (let i = 0; i < r.length; i += 2) p.push({ x: (r[i] - x0) * s, y: (r[i + 1] - y0) * s }); return p; });
@@ -972,17 +1062,21 @@
       }
       return null;
     };
-    // 1. witnesses from Clipper2 insets (miter ⊆ true inset ⊆ bevel)
+    // 1. failure certificates (sound, so they never pre-empt a witness; run first since step 0 found none):
+    //    the bevel (outer approximation) inset at d − m is empty ⇒ r* < d; then (G2.7) the erosion certificate,
+    //    tight at reflex vertices: strips + inscribed pie slices, radius D − m − 1
+    const bevelDm = D - m >= 1 ? off(D - m, JT.Bevel) : null;
+    if (bevelDm && !bevelDm.some((p) => C2.area(p) !== 0)) return { status: "fails", scale: s, via: "bevel" };
+    if (D - m - 1 >= 1 && erosionEmpty(C2, up, D - m - 1)) return { status: "fails", scale: s, via: "erosion" };
+    // 2. witnesses from Clipper2 insets (miter ⊆ true inset ⊆ bevel)
     for (const [delta, jt] of [[D + m, JT.Miter], [D, JT.Miter], [D + m, JT.Bevel], [D - m, JT.Miter], [D - m, JT.Bevel]]) {
-      const w = tryPaths(off(delta, jt)); if (w) return { status: "survives", witness: w, scale: s, via: "inset" };
+      const w = tryPaths(delta === D - m && jt === JT.Bevel && bevelDm ? bevelDm : off(delta, jt)); if (w) return { status: "survives", witness: w, scale: s, via: "inset" };
     }
-    // 2. failure certificate: the bevel (outer approximation) inset at d − m is empty ⇒ r* < d
-    if (D - m >= 1 && !off(D - m, JT.Bevel).some((p) => C2.area(p) !== 0)) return { status: "fails", scale: s, via: "bevel" };
     // 3. refine the deepest candidates (and the input's own) by pattern search; snap to 1/4096 µm; verify exactly
     for (const c of candidatesOf(up)) seeds.push([c[0] / s + x0, c[1] / s + y0]);
     const ranked = seeds.map(([x, y]) => [x, y, depthF(rings, x, y)]).filter((t) => t[2] > 0).sort((a, b) => b[2] - a[2] || a[0] - b[0] || a[1] - b[1]).slice(0, 4);
     for (const [sx, sy] of ranked) {
-      const [rx, ry, dep] = refine(rings, sx, sy, 1 / s); if (dep < dUm * (1 - 1e-9)) continue;
+      const [rx, ry, dep] = refine(rings, sx, sy, 1 / s, dUm + 1e-3); if (dep < dUm * (1 - 1e-9)) continue;
       const Q = 4096, X = Math.round(rx * Q), Y = Math.round(ry * Q);
       if (verifyWitness(rings, X, Y, Q, dUm)) return { status: "survives", witness: { X, Y, q: Q }, scale: s, via: "refine" };
     }

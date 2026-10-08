@@ -78,7 +78,7 @@ thin (`r25`, below). The load files in `raw/` keep only the time and load column
 **Stages timed** (per run, `methodDetail` in the JSON): final + validation = trace + `SBMaterial.fromMasks` at
 fabrication quality, then the adjacent-pair `difference` in both directions, then the support pass (one
 layer-level `intersection` per adjacent pair, `classifyContact` and then `survivesInset` at the advisory width).
-These are timed for bonded mode (D1 unsmoothed, **gated**) and connected mode (G1.2 smoothing, reported). The
+(Since G2.7 the support slot runs `SBSupport.validate` with the upward differences reused; the rows below predate that change and were not re-run, see `SUPPORT.md`.) These are timed for bonded mode (D1 unsmoothed, **gated**) and connected mode (G1.2 smoothing, reported). The
 working set is one gc'd instrumented pass: the peak of `arrayBuffers + heapUsed` above the pre-pipeline baseline
 (algorithm-owned, SRS §12.3).
 

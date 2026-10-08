@@ -31,13 +31,17 @@
  *   B1   8 layers × ~50k vertices, difference of every ADJACENT layer pair in
  *        both directions (7 pairs × 2 = 14 differences per run)  budget p95 < 2 s
  *   B2   offset −1500 µm and +300 µm (miter) on all 8 B1 layers     reported only
- *   B3   support pairs on randomNestedStack(lcg(1), 1536, 1024, 8)  budget p95 < 3 s
+ *   B3   SBSupport.validate on randomNestedStack(lcg(1), 1536, 1024, 8)  budget p95 < 3 s
  *        (that stack has material only in layers 0–2, so B3 is light)
- *   B3b  the same support pass on the dense B1 stack (~3.4k pairs)   provisional
- *        budget p95 < 6 s; G2.7 must bring it under the B3 budget
- * Support pass (layer level, never per part pair): containment
- * isEmpty(L_k − L_(k−1)), then one intersection(L_k, L_(k−1)) per adjacent
- * pair, each piece attributed to its smallest containing part on both layers.
+ *   B3b  the same support pass on the dense B1 stack (3,407 pairs)          budget p95 < 3 s
+ *        (provisional 6 s until G2.7; the B3 budget since 2026-10-08)
+ * Support pass (G2.7, SBSupport.validate, bonded-relief, 1.5 / 2.0 mm): one layer-level
+ * boolean per adjacent pair (never per part pair), each piece classified on its D3
+ * contact width (SBGeom.insetStatus) and attributed to its parts by a bbox sweep. B3b
+ * reuses the B1 differences (L_k − L_(k−1)); B3b_full, without reuse, is reported.
+ *
+ *     node test/bench.js support [--runs N] [--json out.json] [--no-fail] [--quick]
+ * runs B3 and B3b only (G2.7 Step 3).
  *
  * --quick shrinks the page to 192×128 px and runs once (smoke test only; its
  * timings are not comparable and budgets are not enforced). Without --no-fail
@@ -69,7 +73,7 @@ const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] :
 const stage = argv[0];
 const QUICK = argv.includes("--quick");
 const RUNS = QUICK ? 1 : +arg("--runs", 15);
-const STAGES = { geom: benchGeom, large: benchLarge, "large-assemble": benchLargeAssemble };
+const STAGES = { geom: benchGeom, support: benchSupport, large: benchLarge, "large-assemble": benchLargeAssemble };
 if (MAIN && !STAGES[stage]) { console.error("usage: node test/bench.js " + Object.keys(STAGES).join("|") + " [--runs N] [--json out.json] [--no-fail] [--quick]"); process.exit(2); }
 
 function timeRuns(fn, runs, warm) {
@@ -127,10 +131,51 @@ const TRACKED = {
   },
 };
 
+/**
+ * G2.7 support pass (SBSupport.validate, bonded-relief, plywood thresholds 1.5 / 2.0 mm) — B3 on
+ * randomNestedStack(lcg(1), W, H, 8) and B3b on the dense B1 stack. Layers are MaterialLayers from
+ * SBMaterial.fromMasks (parts given, as in the product). B3 runs the full validation (containment differences
+ * included); B3b reuses the B1 differences (cfg.unsupported, computed once outside the timing, as the engine
+ * will hand them over) — the gated B3b figure. B3b_full (no reuse) is reported.
+ */
+const SUPPORT_CFG = { minFeatureMM: 1.5, advisoryFeatureMM: 2 };
+function supportStage(W, H, SX, denseMasks, denseL) {
+  const G = SBGeom, M = SBMaterial, out = {};
+  const page = { artWMM: (W * SX) / 1000, artHMM: (H * SX) / 1000, frameMM: 0 };
+  const sub = Math.max(QUICK ? 1 : 5, Math.floor(RUNS / 2)), b3bRuns = QUICK ? 1 : Math.max(5, Math.floor(RUNS / 2));
+  const summary = (r) => ({ pairs: r.supportGraph.edges.reduce((a, e) => a + e.supports.length, 0), reachesBase: r.supportGraph.reachesBase,
+    contained: !r.diagnostics.some((d) => d.code === "BOND_UNSUPPORTED"),
+    diagnostics: r.diagnostics.reduce((a, d) => ((a[d.code] = (a[d.code] || 0) + (d.count || 1)), a), {}) });
+  const S = M.fromMasks(F.randomNestedStack(F.lcg(1), W, H, 8), W, H, page, {});
+  out.inputB3 = { generator: `randomNestedStack(lcg(1), ${W}, ${H}, 8)`, vertices: S.map((l) => l.stats.vertices), parts: S.map((l) => l.parts.length) };
+  let r = null;
+  out.B3_supportPass = Object.assign(timeRuns(() => { r = SBSupport.validate(S, "bonded-relief", SUPPORT_CFG); }, sub, QUICK ? 0 : 1), summary(r));
+  const D = M.fromMasks(denseMasks, W, H, page, {});
+  const sameAsB1 = !denseL || D.every((l, k) => JSON.stringify(l.material) === JSON.stringify(denseL[k]));
+  const diffs = D.map((l, k) => (k ? G.difference(l.material, D[k - 1].material) : null)); // B1 shape, reused
+  out.inputB3b = { generator: "the B1 noise stack as MaterialLayers", parts: D.map((l) => l.parts.length), sameMaterialAsB1: sameAsB1, cfg: SUPPORT_CFG };
+  out.B3b_supportPass_dense = Object.assign(timeRuns(() => { r = SBSupport.validate(D, "bonded-relief", Object.assign({ unsupported: diffs }, SUPPORT_CFG)); }, b3bRuns, QUICK ? 0 : 1),
+    summary(r), { reuse: "B1 differences (cfg.unsupported)" });
+  out.B3b_supportPass_dense_full = Object.assign(timeRuns(() => { r = SBSupport.validate(D, "bonded-relief", SUPPORT_CFG); }, QUICK ? 1 : 3, 0),
+    summary(r), { reuse: "none (containment differences inside)", gated: false });
+  return out;
+}
+
+/** Stage "support" (G2.7): B3 and B3b only, on the geom page (1536×1024 px at 200 µm/px; --quick 192×128). */
+function benchSupport() {
+  const W = QUICK ? 192 : 1536, H = QUICK ? 128 : 1024, SX = 200, CELL = QUICK ? 9 : 27, BUDGET = { B3: 3000, B3b: 3000 };
+  const report = { stage: "support", backend: SBGeom.backend, node: process.version, quick: QUICK, runs: RUNS, page: { w: W, h: H, sxUm: SX, syUm: SX },
+    budgetsMs: BUDGET, loadAvgStart: require("os").loadavg().map((x) => +x.toFixed(2)) };
+  Object.assign(report, supportStage(W, H, SX, noiseStack(11, W, H, 8, CELL), null));
+  report.loadAvgEnd = require("os").loadavg().map((x) => +x.toFixed(2));
+  report.overBudget = QUICK ? [] : [["B3", report.B3_supportPass], ["B3b", report.B3b_supportPass_dense]].filter(([k, x]) => x.p95Ms >= BUDGET[k]).map(([k]) => k);
+  return report;
+}
+
 function benchGeom() {
   const G = SBGeom, T = SBTrace;
   const W = QUICK ? 192 : 1536, H = QUICK ? 128 : 1024, SX = 200, SY = 200, CELL = QUICK ? 9 : 27;
-  const BUDGET = { B1: 2000, B3: 3000, B3b: 6000 };
+  const BUDGET = { B1: 2000, B3: 3000, B3b: 3000 }; // B3b provisional 6 s until G2.7 (2026-10-08: under the B3 budget)
   const verts = (polys) => polys.reduce((s, p) => s + p.outer.length / 2 + p.holes.reduce((t, h) => t + h.length / 2, 0), 0);
   const layersOf = (masks) => masks.map((m) => G.union(G.fromPixelLoops(T.trace(m, W, H), SX, SY, 0, 0), []));
   const report = { stage: "geom", backend: G.backend, node: process.version, quick: QUICK, runs: RUNS, page: { w: W, h: H, sxUm: SX, syUm: SY }, budgetsMs: BUDGET };
@@ -154,52 +199,12 @@ function benchGeom() {
   report.B2_offset_inset1500 = timeRuns(() => { for (const l of L) G.offset(l, -1500, "miter"); }, sub, QUICK ? 0 : 1);
   report.B2_offset_grow300 = timeRuns(() => { for (const l of L) G.offset(l, 300, "miter"); }, sub, QUICK ? 0 : 1);
 
-  // ------------------------------------------------------------------ support pass (B3 / B3b)
-  const partsOf = (S) => S.map((l) => G.components(l).map((c) => ({ poly: c[0], bb: G.bbox(c[0]), a: G.area([c[0]]) })));
-  function owner(piece, parts) {
-    const r = piece.outer, bb = G.bbox(piece); let best = null, bestA = Infinity;
-    for (let i = 0; i < parts.length; i++) {
-      const p = parts[i];
-      if (p.bb[0] > bb[0] || p.bb[1] > bb[1] || p.bb[2] < bb[2] || p.bb[3] < bb[3] || p.a >= bestA) continue;
-      const o2 = p.o2 || (p.o2 = p.poly.outer.map((v) => v * 2));
-      let inside = true;
-      for (let j = 0; j < r.length; j += 2) { // doubled vertices / edge midpoints until one is off the boundary
-        const t = (j + 2) % r.length;
-        const s = pointInRing(r[j] + r[t], r[j + 1] + r[t + 1], o2); if (s !== 0) { inside = s > 0; break; }
-      }
-      if (inside) { best = i; bestA = p.a; }
-    }
-    return best;
-  }
-  let pairs = 0, contained = true;
-  function supportPairs(S, given) {
-    pairs = 0; contained = true;
-    const parts = given || partsOf(S);
-    for (let k = 1; k < S.length; k++) {
-      if (!G.isEmpty(G.difference(S[k], S[k - 1]))) contained = false;
-      const seen = new Set();
-      for (const piece of G.intersection(S[k], S[k - 1])) {
-        const a = owner(piece, parts[k]), b = owner(piece, parts[k - 1]);
-        if (a !== null && b !== null) seen.add(a + ":" + b);
-      }
-      pairs += seen.size;
-    }
-  }
-  const S = layersOf(F.randomNestedStack(F.lcg(1), W, H, 8));
-  report.inputB3 = { generator: `randomNestedStack(lcg(1), ${W}, ${H}, 8)`, vertices: S.map(verts) };
-  report.B3_supportPairs = timeRuns(() => supportPairs(S), sub, QUICK ? 0 : 1);
-  Object.assign(report.B3_supportPairs, { pairs, contained });
-  const b3bRuns = QUICK ? 1 : Math.max(3, Math.floor(RUNS / 3));
-  report.B3b_supportPairs_dense = timeRuns(() => supportPairs(L), b3bRuns, QUICK ? 0 : 1);
-  Object.assign(report.B3b_supportPairs_dense, { pairs, contained });
-  const P = partsOf(L); // parts exist as MaterialLayer.parts in the product (G1.1)
-  report.B3b_supportPairs_dense_partsGiven = timeRuns(() => supportPairs(L, P), b3bRuns, QUICK ? 0 : 1);
-  report.B3b_supportPairs_dense_partsGiven.pairs = pairs;
-
+  // ------------------------------------------------------------------ support pass (B3 / B3b, G2.7)
+  Object.assign(report, supportStage(W, H, SX, masks, L));
   report.fingerprintB1 = require("crypto").createHash("sha256").update(JSON.stringify([G.difference(L[0], L[1]), G.offset(L[2], -1500, "miter")])).digest("hex");
   const over = [], known = [];
   if (!QUICK) {
-    for (const [k, r] of [["B1", report.B1_difference], ["B3", report.B3_supportPairs], ["B3b", report.B3b_supportPairs_dense]]) {
+    for (const [k, r] of [["B1", report.B1_difference], ["B3", report.B3_supportPass], ["B3b", report.B3b_supportPass_dense]]) {
       if (r.p95Ms < BUDGET[k]) continue;
       if (TRACKED[k]) known.push({ metric: k, p95Ms: r.p95Ms, budgetMs: BUDGET[k], status: "KNOWN-OVER (tracked)", id: TRACKED[k].id, ref: TRACKED[k].ref });
       else over.push(k);
@@ -278,22 +283,17 @@ function largePass(wl, samples, src, mem) {
   // 3. trace + fromMasks: bonded (D1: unsmoothed) and connected (G1.2 smoothing)
   t0 = now(); const bonded = M.fromMasks(masks, w, h, page, { quality: "fabrication", smooth: { mode: "bonded", tolUm: LARGE.tolUm } }); t.materialBonded = now() - t0; sample();
   t0 = now(); const connected = M.fromMasks(masks, w, h, page, { quality: "fabrication", smooth: { mode: "connected", tolUm: LARGE.tolUm } }); t.materialConnected = now() - t0; sample();
-  // 4. validation: adjacent-pair difference both directions (B1 shape) and the support pass (B3b shape)
+  // 4. validation: adjacent-pair difference both directions (B1 shape) and the support pass (G2.7 SBSupport.validate,
+  //    bonded-relief at the plywood thresholds; the upward differences are reused, B3b shape)
   const validate = (layers) => {
-    const d0 = now();
-    for (let k = 1; k < layers.length; k++) { G.difference(layers[k - 1].material, layers[k].material); G.difference(layers[k].material, layers[k - 1].material); }
-    const d1 = now(); let pieces = 0, blocked = 0, narrow = 0, marginal = 0;
-    for (let k = 1; k < layers.length; k++) {
-      for (const piece of G.intersection(layers[k].material, layers[k - 1].material)) {
-        pieces++;
-        const c = G.classifyContact([piece], LARGE.minFeatureUm);
-        if (c.level === "block") blocked++;
-        else if (c.level === "warn") narrow++;
-        else if (!G.survivesInset([piece], LARGE.advisoryFeatureUm / 2)) marginal++;
-      }
-    }
+    const d0 = now(), up = [null];
+    for (let k = 1; k < layers.length; k++) { G.difference(layers[k - 1].material, layers[k].material); up.push(G.difference(layers[k].material, layers[k - 1].material)); }
+    const d1 = now();
+    const r = SBSupport.validate(layers, "bonded-relief", { minFeatureMM: LARGE.minFeatureUm / 1000, advisoryFeatureMM: LARGE.advisoryFeatureUm / 1000, unsupported: up, quality: "fabrication" });
+    const n = (c) => r.diagnostics.filter((d) => d.code === c).reduce((a, d) => a + (d.count || 1), 0);
     sample();
-    return { diffMs: d1 - d0, supportMs: now() - d1, pieces, blocked, narrow, marginal };
+    return { diffMs: d1 - d0, supportMs: now() - d1, pieces: r.supportGraph.edges.reduce((a, e) => a + e.supports.length, 0),
+      blocked: n("BOND_UNSUPPORTED"), narrow: n("SUPPORT_NARROW"), marginal: n("FEATURE_MARGINAL") };
   };
   const vb = validate(bonded); t.diffBonded = vb.diffMs; t.supportBonded = vb.supportMs;
   const vc = validate(connected); t.diffConnected = vc.diffMs; t.supportConnected = vc.supportMs;
@@ -390,7 +390,7 @@ function knownOverLarge(byId, d) {
 }
 
 const LARGE_METHOD = {
-  final: "final + validation = stage 3 (trace + SBMaterial.fromMasks, fabrication quality) + stage 4 (adjacent-pair difference ×2 directions, support pass: one layer-level intersection per adjacent pair, classifyContact(piece, minFeature) then survivesInset(advisory/2) per piece), timed per run for bonded (D1 unsmoothed) and connected (G1.2 smoothing); the gated value (stages.final) is BONDED mode (PO decision 2026-10-08); connected (stages.finalConnected) is reported as KI-CONN-PERF, not gating",
+  final: "final + validation = stage 3 (trace + SBMaterial.fromMasks, fabrication quality) + stage 4 (adjacent-pair difference ×2 directions, support pass: SBSupport.validate (G2.7; until G2.7: one layer-level intersection per adjacent pair, classifyContact(piece, minFeature) then survivesInset(advisory/2) per piece)), timed per run for bonded (D1 unsmoothed) and connected (G1.2 smoothing); the gated value (stages.final) is BONDED mode (PO decision 2026-10-08); connected (stages.finalConnected) is reported as KI-CONN-PERF, not gating",
   workingSet: "one instrumented pass per row after gc(): peak of process.memoryUsage() arrayBuffers + heapUsed minus the pre-pipeline baseline, sampled after every stage (algorithm-owned, SRS §12.3); the input samples are outside it",
   desktopRule: "largest of 16/20/25 Mpx (realistic) with working set ≤ 512 MiB and bonded final p95 ≤ target; target 10 s if 16 Mpx meets it, else 16 Mpx p95 rounded up to 5 s (≤ 60 s, else escalate)",
   mobileRule: "largest of 1/1.25/1.5/2/4/6/8 Mpx (realistic) with working set ≤ 192 MiB and desktop bonded final p95 × k ≤ 8 s; k = 4 provisional until the ≥ 4 GB reference device (G4.4); if none qualifies, mobile fabrication is draft-only (FAB_DEVICE_DRAFT_ONLY), recorded, not escalated",

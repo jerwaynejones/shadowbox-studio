@@ -12,9 +12,10 @@
  *                                CODES and cannot be passed in (§9.5: no
  *                                downgrade). ackState is "unacked" for
  *                                warnings and "n/a" for blocking and info.
- *   SBDiag.aggregate(diags)      merges PART_SMALL, PART_THIN and NECK_NARROW
- *                                per (code, layer) into one diagnostic with
- *                                count, parts[] and a region list.
+ *   SBDiag.aggregate(diags)      merges PART_SMALL, PART_THIN, NECK_NARROW and
+ *                                FEATURE_MARGINAL per (code, layer[, detail.kind])
+ *                                into one diagnostic with count, parts[] and a
+ *                                region list.
  *   SBDiag.ackKey(diag, geometryHash)  "code|layer|part-or-*|geometryHash"
  *   SBDiag.exportGate(diags, acks, snapshot, expectedQuality="fabrication")
  *                                → {allowed, reason, blocking, unacked};
@@ -31,6 +32,11 @@
  * G2.0 (PO-LASER-4/5): FAB_PITCH_CAPPED (info) is registered here; make()
  * accepts an optional shortPx [shortW, shortH] that FAB_EXCEEDS_SOURCE
  * carries (SBRaster.fabDiagnostics builds both).
+ *
+ * G2.7 (PO-LASER-6): FEATURE_MARGINAL (warning) is registered here. make()
+ * accepts detail as a string or {kind, text?}; the object form sets
+ * d.detail = {kind} (FEATURE_MARGINAL "contact" | "part" | "neck"), enters the
+ * id and splits aggregation groups.
  *
  * D1: SMOOTH_FALLBACK is only ever raised in connected mode; bonded mode is
  * unsmoothed and never reports it.
@@ -125,6 +131,8 @@
       "Increase the minimum feature size or add bridges, or accept the risk."],
     ["SUPPORT_NARROW", W, F, "Part rests on a narrow support",
       "Increase the minimum feature size or adjust the thresholds, or accept the risk."],
+    ["FEATURE_MARGINAL", W, F, "Feature is below the advisory width for this material",
+      "Widen the highlighted contact, part or neck, raise the minimum feature size, or accept the risk after a test cut."],
     ["GUIDE_OMITTED", W, F, "Assembly guide could not be placed",
       "Reduce the guide allowance or label height, or place the part by the placement map."],
     ["CLEANUP_ALTERED", W, G, "Cleanup changed the artwork",
@@ -163,7 +171,7 @@
   Object.freeze(CODES);
 
   const QUALITIES = ["draft", "fabrication"];
-  const AGGREGATED = new Set(["PART_SMALL", "PART_THIN", "NECK_NARROW"]);
+  const AGGREGATED = new Set(["PART_SMALL", "PART_THIN", "NECK_NARROW", "FEATURE_MARGINAL"]);
 
   function measure(m, name) {
     if (m === undefined || m === null) return null;
@@ -184,16 +192,22 @@
     const quality = f.quality === undefined ? "draft" : f.quality;
     if (!QUALITIES.includes(quality)) throw new Error("SBDiag.make: quality must be draft|fabrication (got " + quality + ")");
     const areaMM2 = orNull(f.areaMM2);
+    let detailText = f.detail, detailKind = null;
+    if (f.detail !== null && typeof f.detail === "object") { // G2.7: {kind, text?} (FEATURE_MARGINAL detail.kind "contact"|"part"|"neck")
+      if (typeof f.detail.kind !== "string" || !f.detail.kind) throw new Error("SBDiag.make: detail must be a string or {kind: string, text?: string}");
+      detailKind = f.detail.kind; detailText = f.detail.text;
+    }
     if (areaMM2 !== null && !Number.isFinite(areaMM2)) throw new Error("SBDiag.make: areaMM2 must be finite");
     const d = {
       id: "", code, severity: c.severity, revision: orNull(f.revision), quality,
       layer: orNull(f.layer), part: orNull(f.part),
       areaMM2, region: orNull(f.region),
       measured: measure(f.measured, "measured"), limit: measure(f.limit, "limit"),
-      message: f.detail ? c.title + ": " + f.detail : c.title,
+      message: detailText ? c.title + ": " + detailText : c.title,
       fix: c.fix,
       ackState: c.severity === W ? "unacked" : "n/a",
     };
+    if (detailKind !== null) d.detail = { kind: detailKind };
     if (Array.isArray(f.parts)) d.parts = f.parts.slice();
     if (f.shortPx !== undefined && f.shortPx !== null) { // PO-LASER-5 (FAB_EXCEEDS_SOURCE): [shortW, shortH] px
       if (!Array.isArray(f.shortPx) || f.shortPx.length !== 2 || !f.shortPx.every((v) => Number.isInteger(v) && v >= 0))
@@ -205,12 +219,14 @@
       d.count = f.count;
     }
     // Deterministic id from what the diagnostic is about (not revision or quality).
-    d.id = code + "-" + global.SBHash.hashJSON({ code, layer: d.layer, part: d.part, parts: d.parts || null, region: d.region }).slice(0, 12);
+    const idOf = { code, layer: d.layer, part: d.part, parts: d.parts || null, region: d.region };
+    if (detailKind !== null) idOf.kind = detailKind; // existing ids unchanged
+    d.id = code + "-" + global.SBHash.hashJSON(idOf).slice(0, 12);
     return d;
   }
 
   /**
-   * Merge PART_SMALL / PART_THIN / NECK_NARROW per (code, layer). The merged
+   * Merge PART_SMALL / PART_THIN / NECK_NARROW / FEATURE_MARGINAL per (code, layer, detail.kind). The merged
    * diagnostic takes the position of the group's first member; other
    * diagnostics are passed through unchanged. Idempotent; input not mutated.
    */
@@ -218,7 +234,7 @@
     const groups = new Map(), out = [];
     for (const d of diags) {
       if (!AGGREGATED.has(d.code)) { out.push(d); continue; }
-      const key = d.code + "|" + d.layer;
+      const key = d.code + "|" + d.layer + (d.detail ? "|" + d.detail.kind : "");
       let g = groups.get(key);
       if (!g) { g = { slot: out.length, members: [] }; groups.set(key, g); out.push(null); }
       g.members.push(d);
@@ -237,7 +253,7 @@
         if (!limit && d.limit) limit = d.limit;
       }
       if (g.members.length === 1 && Array.isArray(first.parts)) { out[g.slot] = first; continue; } // already aggregated
-      const detail = count + " affected";
+      const text = count + " affected", detail = first.detail ? { kind: first.detail.kind, text } : text;
       out[g.slot] = make(first.code, { revision: first.revision, quality: first.quality, layer: first.layer, part: null,
         parts, count, areaMM2: area, region: regions, measured: worst, limit, detail });
     }

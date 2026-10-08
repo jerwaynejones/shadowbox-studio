@@ -1621,10 +1621,29 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   /** Exact: is (X/q, Y/q) strictly inside the rings (even–odd) with every edge at distance ≥ d? */
   function verifyWitness(rings, X, Y, q, d) {
     const [dn, dd] = dyadic(d), Q = BigInt(q), PX = BigInt(X), PY = BigInt(Y), lim = dn * Q * (dn * Q), dd2 = dd * dd, Z = BigInt(0);
+    // G2.7 float filter: q is a power of two and |coords| ≤ 2^25 µm, so px, py and every edge vector are exact doubles;
+    // the float distance is off by ≲ 1e-7 µm, so an edge clearly farther than d + 1e-5 µm that does not straddle the
+    // ray ambiguously is decided in floating point; every other edge is checked in BigInt as before.
+    const px = X / q, py = Y / q, far = d + 1e-5, far2 = far * far, exactFloat = (q & (q - 1)) === 0 && Number.isSafeInteger(X) && Number.isSafeInteger(Y);
     let inside = false;
     for (const r of rings) {
       const n = r.length / 2;
       for (let i = 0, j = n - 1; i < n; j = i++) {
+        if (exactFloat) {
+          const fax = r[2 * j], fay = r[2 * j + 1], fbx = r[2 * i], fby = r[2 * i + 1], fex = fbx - fax, fey = fby - fay, fwx = px - fax, fwy = py - fay;
+          const fL = fex * fex + fey * fey, ft = fwx * fex + fwy * fey;
+          let d2;
+          if (ft <= 0 || fL === 0) d2 = fwx * fwx + fwy * fwy;
+          else if (ft >= fL) { const vx = px - fbx, vy = py - fby; d2 = vx * vx + vy * vy; }
+          else { const cr = fex * fwy - fey * fwx; d2 = (cr * cr) / fL; }
+          if (d2 > far2) {
+            if ((fay > py) !== (fby > py)) {
+              const sf = (px - fax) * fey - fex * (py - fay);
+              if (Math.abs(sf) <= 1e-6 * (Math.abs((px - fax) * fey) + Math.abs(fex * (py - fay)) + 1)) { /* ambiguous: exact path below */ }
+              else { if (fey > 0 ? sf < 0 : sf > 0) inside = !inside; continue; }
+            } else continue;
+          }
+        }
         const ax = BigInt(r[2 * j]) * Q, ay = BigInt(r[2 * j + 1]) * Q, bx = BigInt(r[2 * i]) * Q, by = BigInt(r[2 * i + 1]) * Q;
         const ex = bx - ax, ey = by - ay, wx = PX - ax, wy = PY - ay, L = ex * ex + ey * ey, t = wx * ex + wy * ey;
         if (t <= Z) { if (dd2 * (wx * wx + wy * wy) < lim) return false; }
@@ -1661,14 +1680,83 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     }
     return inside ? Math.sqrt(m) : -1;
   }
-  function refine(rings, x, y, step) { // pattern search towards the max-inscribed-disk centre (float; verified exactly after)
+  function refine(rings, x, y, step, stopAt) { // pattern search towards the max-inscribed-disk centre (float; verified exactly after)
     let best = depthF(rings, x, y);
-    for (let it = 0; it < 4000 && step > 1e-7; it++) {
+    for (let it = 0; it < 4000 && step > 1e-7 && !(best >= stopAt); it++) { // G2.7: stop once clearly deep enough
       let moved = false;
       for (const [dx, dy] of DIRS16) { const v = depthF(rings, x + dx * step, y + dy * step); if (v > best) { best = v; x += dx * step; y += dy * step; moved = true; break; } }
       if (!moved) step /= 2;
     }
     return [x, y, best];
+  }
+  /**
+   * G2.7 step 0 ("quick", scale-free): float depth on a K×K grid of cell centres, then a bounded pattern search from
+   * the deepest few; a point deeper than d + 0.001 µm is snapped to 1/4096 µm and verified exactly. Cheap for the
+   * large pieces where the Clipper2 insets at ×scale dominate. Returns {X, Y, q} or null.
+   */
+  function quickWitness(rings, dUm) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const r of rings) { const b = ringBox(r); if (b[0] < x0) x0 = b[0]; if (b[1] < y0) y0 = b[1]; if (b[2] > x1) x1 = b[2]; if (b[3] > y1) y1 = b[3]; }
+    if (x1 - x0 < 2 * dUm || y1 - y0 < 2 * dUm) return null;
+    const K = 8, cw = (x1 - x0) / K, ch = (y1 - y0) / K, target = dUm + 1e-3, Q = 4096, pts = [];
+    const snap = (x, y) => { const X = Math.round(x * Q), Y = Math.round(y * Q); return verifyWitness(rings, X, Y, Q, dUm) ? { X, Y, q: Q } : null; };
+    for (let i = 0; i < K; i++) for (let j = 0; j < K; j++) {
+      const x = x0 + (i + 0.5) * cw, y = y0 + (j + 0.5) * ch, v = depthF(rings, x, y);
+      if (v >= target) { const w = snap(x, y); if (w) return w; }
+      if (v > 0) pts.push([v, x, y]);
+    }
+    pts.sort((a, b) => b[0] - a[0] || a[1] - b[1] || a[2] - b[2]);
+    for (let t = 0; t < pts.length && t < 3; t++) {
+      let [best, x, y] = pts[t], step = (cw > ch ? cw : ch) / 2;
+      for (let ev = 0; best < target && ev < 48 && step > 1e-3;) {
+        let moved = false;
+        for (const [dx, dy] of DIRS16) { ev++; const v = depthF(rings, x + dx * step, y + dy * step); if (v > best) { best = v; x += dx * step; y += dy * step; moved = true; break; } }
+        if (!moved) step /= 2;
+      }
+      if (best < target) continue;
+      const w = snap(x, y); if (w) return w;
+    }
+    return null;
+  }
+  /**
+   * G2.7 step 2b ("erosion" failure certificate, no trig): remove from I (×scale paths `up`) a subset of the open
+   * R-neighbourhood of its boundary — a strip of half-width R along every edge (corners rounded to integers, R kept
+   * one unit below the margin) and, at every reflex vertex, the two pie slices between the edge normals, their arcs
+   * taken from an inscribed 64-gon (COS64, truncated towards the centre) — in ONE Clipper2 difference. Empty ⇒ r* < R + 1 + m ≤ D, by the bevel argument: a true inset at D would
+   * keep a disk of radius > m there, which the ≤ 0.71-unit rounding cannot erase. Tight to ~0.1 % at reflex
+   * vertices, where the bevel certificate leaves the S5 "undecided" band.
+   */
+  function erosionEmpty(C2, up, R) {
+    const k = R * (1 - 2e-6) / 1e6, disk = [];
+    for (let i = 0; i < 64; i++) {
+      const q = i >> 4, j = i & 15; let c = COS64[j], sn = COS64[16 - j];
+      for (let t = 0; t < q; t++) { const c2 = -sn; sn = c; c = c2; }
+      disk.push({ x: Math.trunc(c * k), y: Math.trunc(sn * k) });
+    }
+    const pos = (p) => (C2.area(p) < 0 ? p.reverse() : p), clip = [];
+    for (const path of up) {
+      const n = path.length, sgn = C2.area(path) > 0 ? 1 : -1;
+      for (let i = 0; i < n; i++) {
+        const a = path[i], b = path[(i + 1) % n], z = path[(i + n - 1) % n], ex = b.x - a.x, ey = b.y - a.y, L2 = Math.sqrt(ex * ex + ey * ey);
+        if (L2 > 0) {
+          const nx = (-ey / L2) * R, ny = (ex / L2) * R;
+          clip.push(pos([{ x: Math.round(a.x + nx), y: Math.round(a.y + ny) }, { x: Math.round(b.x + nx), y: Math.round(b.y + ny) },
+            { x: Math.round(b.x - nx), y: Math.round(b.y - ny) }, { x: Math.round(a.x - nx), y: Math.round(a.y - ny) }]));
+        }
+        const px = a.x - z.x, py = a.y - z.y, cr = px * ey - py * ex; // turn at a; reflex when against the ring's orientation
+        const L1 = Math.sqrt(px * px + py * py);
+        if (cr * sgn < 0 && L1 > 0 && L2 > 0) { // pie slices between the two edge normals, on both sides (one is the gap)
+          for (const sd of [1, -1]) {
+            const n1x = (-py / L1) * sd, n1y = (px / L1) * sd, n2x = (-ey / L2) * sd, n2y = (ex / L2) * sd, c12 = n1x * n2y - n1y * n2x;
+            const arc = disk.filter((v) => c12 * (n1x * v.y - n1y * v.x) > 0 && c12 * (v.x * n2y - v.y * n2x) > 0)
+              .sort((u, v) => c12 * (v.x * u.y - v.y * u.x));
+            clip.push(pos([{ x: a.x, y: a.y }, { x: Math.round(a.x + n1x * R), y: Math.round(a.y + n1y * R) }]
+              .concat(arc.map((v) => ({ x: a.x + v.x, y: a.y + v.y })), [{ x: Math.round(a.x + n2x * R), y: Math.round(a.y + n2y * R) }])));
+          }
+        }
+      }
+    }
+    return !C2.difference(up, clip, C2.FillRule.NonZero).some((p) => C2.area(p) !== 0);
   }
   /**
    * insetStatus(I: PolygonWithHoles[], dUm, {scale}?) → {status: "survives"|"fails"|"undecided", witness?: {X, Y, q}, scale, via}.
@@ -1684,6 +1772,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     }
     if (!rings.length || C.area(polys) <= 0) return { status: "fails", via: "empty" };
     const s = opts && opts.scale !== undefined ? opts.scale : Math.max(16, Math.ceil(16 / dUm)), m = 2;
+    // 0. quick scale-free witness (G2.7)
+    const qw = quickWitness(rings, dUm); if (qw) return { status: "survives", witness: qw, scale: s, via: "quick" };
     let x0 = Infinity, y0 = Infinity;
     for (const r of rings) { const b = ringBox(r); if (b[0] < x0) x0 = b[0]; if (b[1] < y0) y0 = b[1]; }
     const up = rings.map((r) => { const p = []; for (let i = 0; i < r.length; i += 2) p.push({ x: (r[i] - x0) * s, y: (r[i + 1] - y0) * s }); return p; });
@@ -1699,17 +1789,21 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       }
       return null;
     };
-    // 1. witnesses from Clipper2 insets (miter ⊆ true inset ⊆ bevel)
+    // 1. failure certificates (sound, so they never pre-empt a witness; run first since step 0 found none):
+    //    the bevel (outer approximation) inset at d − m is empty ⇒ r* < d; then (G2.7) the erosion certificate,
+    //    tight at reflex vertices: strips + inscribed pie slices, radius D − m − 1
+    const bevelDm = D - m >= 1 ? off(D - m, JT.Bevel) : null;
+    if (bevelDm && !bevelDm.some((p) => C2.area(p) !== 0)) return { status: "fails", scale: s, via: "bevel" };
+    if (D - m - 1 >= 1 && erosionEmpty(C2, up, D - m - 1)) return { status: "fails", scale: s, via: "erosion" };
+    // 2. witnesses from Clipper2 insets (miter ⊆ true inset ⊆ bevel)
     for (const [delta, jt] of [[D + m, JT.Miter], [D, JT.Miter], [D + m, JT.Bevel], [D - m, JT.Miter], [D - m, JT.Bevel]]) {
-      const w = tryPaths(off(delta, jt)); if (w) return { status: "survives", witness: w, scale: s, via: "inset" };
+      const w = tryPaths(delta === D - m && jt === JT.Bevel && bevelDm ? bevelDm : off(delta, jt)); if (w) return { status: "survives", witness: w, scale: s, via: "inset" };
     }
-    // 2. failure certificate: the bevel (outer approximation) inset at d − m is empty ⇒ r* < d
-    if (D - m >= 1 && !off(D - m, JT.Bevel).some((p) => C2.area(p) !== 0)) return { status: "fails", scale: s, via: "bevel" };
     // 3. refine the deepest candidates (and the input's own) by pattern search; snap to 1/4096 µm; verify exactly
     for (const c of candidatesOf(up)) seeds.push([c[0] / s + x0, c[1] / s + y0]);
     const ranked = seeds.map(([x, y]) => [x, y, depthF(rings, x, y)]).filter((t) => t[2] > 0).sort((a, b) => b[2] - a[2] || a[0] - b[0] || a[1] - b[1]).slice(0, 4);
     for (const [sx, sy] of ranked) {
-      const [rx, ry, dep] = refine(rings, sx, sy, 1 / s); if (dep < dUm * (1 - 1e-9)) continue;
+      const [rx, ry, dep] = refine(rings, sx, sy, 1 / s, dUm + 1e-3); if (dep < dUm * (1 - 1e-9)) continue;
       const Q = 4096, X = Math.round(rx * Q), Y = Math.round(ry * Q);
       if (verifyWitness(rings, X, Y, Q, dUm)) return { status: "survives", witness: { X, Y, q: Q }, scale: s, via: "refine" };
     }
@@ -1756,9 +1850,10 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *                                CODES and cannot be passed in (§9.5: no
  *                                downgrade). ackState is "unacked" for
  *                                warnings and "n/a" for blocking and info.
- *   SBDiag.aggregate(diags)      merges PART_SMALL, PART_THIN and NECK_NARROW
- *                                per (code, layer) into one diagnostic with
- *                                count, parts[] and a region list.
+ *   SBDiag.aggregate(diags)      merges PART_SMALL, PART_THIN, NECK_NARROW and
+ *                                FEATURE_MARGINAL per (code, layer[, detail.kind])
+ *                                into one diagnostic with count, parts[] and a
+ *                                region list.
  *   SBDiag.ackKey(diag, geometryHash)  "code|layer|part-or-*|geometryHash"
  *   SBDiag.exportGate(diags, acks, snapshot, expectedQuality="fabrication")
  *                                → {allowed, reason, blocking, unacked};
@@ -1775,6 +1870,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  * G2.0 (PO-LASER-4/5): FAB_PITCH_CAPPED (info) is registered here; make()
  * accepts an optional shortPx [shortW, shortH] that FAB_EXCEEDS_SOURCE
  * carries (SBRaster.fabDiagnostics builds both).
+ *
+ * G2.7 (PO-LASER-6): FEATURE_MARGINAL (warning) is registered here. make()
+ * accepts detail as a string or {kind, text?}; the object form sets
+ * d.detail = {kind} (FEATURE_MARGINAL "contact" | "part" | "neck"), enters the
+ * id and splits aggregation groups.
  *
  * D1: SMOOTH_FALLBACK is only ever raised in connected mode; bonded mode is
  * unsmoothed and never reports it.
@@ -1869,6 +1969,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       "Increase the minimum feature size or add bridges, or accept the risk."],
     ["SUPPORT_NARROW", W, F, "Part rests on a narrow support",
       "Increase the minimum feature size or adjust the thresholds, or accept the risk."],
+    ["FEATURE_MARGINAL", W, F, "Feature is below the advisory width for this material",
+      "Widen the highlighted contact, part or neck, raise the minimum feature size, or accept the risk after a test cut."],
     ["GUIDE_OMITTED", W, F, "Assembly guide could not be placed",
       "Reduce the guide allowance or label height, or place the part by the placement map."],
     ["CLEANUP_ALTERED", W, G, "Cleanup changed the artwork",
@@ -1907,7 +2009,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   Object.freeze(CODES);
 
   const QUALITIES = ["draft", "fabrication"];
-  const AGGREGATED = new Set(["PART_SMALL", "PART_THIN", "NECK_NARROW"]);
+  const AGGREGATED = new Set(["PART_SMALL", "PART_THIN", "NECK_NARROW", "FEATURE_MARGINAL"]);
 
   function measure(m, name) {
     if (m === undefined || m === null) return null;
@@ -1928,16 +2030,22 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const quality = f.quality === undefined ? "draft" : f.quality;
     if (!QUALITIES.includes(quality)) throw new Error("SBDiag.make: quality must be draft|fabrication (got " + quality + ")");
     const areaMM2 = orNull(f.areaMM2);
+    let detailText = f.detail, detailKind = null;
+    if (f.detail !== null && typeof f.detail === "object") { // G2.7: {kind, text?} (FEATURE_MARGINAL detail.kind "contact"|"part"|"neck")
+      if (typeof f.detail.kind !== "string" || !f.detail.kind) throw new Error("SBDiag.make: detail must be a string or {kind: string, text?: string}");
+      detailKind = f.detail.kind; detailText = f.detail.text;
+    }
     if (areaMM2 !== null && !Number.isFinite(areaMM2)) throw new Error("SBDiag.make: areaMM2 must be finite");
     const d = {
       id: "", code, severity: c.severity, revision: orNull(f.revision), quality,
       layer: orNull(f.layer), part: orNull(f.part),
       areaMM2, region: orNull(f.region),
       measured: measure(f.measured, "measured"), limit: measure(f.limit, "limit"),
-      message: f.detail ? c.title + ": " + f.detail : c.title,
+      message: detailText ? c.title + ": " + detailText : c.title,
       fix: c.fix,
       ackState: c.severity === W ? "unacked" : "n/a",
     };
+    if (detailKind !== null) d.detail = { kind: detailKind };
     if (Array.isArray(f.parts)) d.parts = f.parts.slice();
     if (f.shortPx !== undefined && f.shortPx !== null) { // PO-LASER-5 (FAB_EXCEEDS_SOURCE): [shortW, shortH] px
       if (!Array.isArray(f.shortPx) || f.shortPx.length !== 2 || !f.shortPx.every((v) => Number.isInteger(v) && v >= 0))
@@ -1949,12 +2057,14 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       d.count = f.count;
     }
     // Deterministic id from what the diagnostic is about (not revision or quality).
-    d.id = code + "-" + global.SBHash.hashJSON({ code, layer: d.layer, part: d.part, parts: d.parts || null, region: d.region }).slice(0, 12);
+    const idOf = { code, layer: d.layer, part: d.part, parts: d.parts || null, region: d.region };
+    if (detailKind !== null) idOf.kind = detailKind; // existing ids unchanged
+    d.id = code + "-" + global.SBHash.hashJSON(idOf).slice(0, 12);
     return d;
   }
 
   /**
-   * Merge PART_SMALL / PART_THIN / NECK_NARROW per (code, layer). The merged
+   * Merge PART_SMALL / PART_THIN / NECK_NARROW / FEATURE_MARGINAL per (code, layer, detail.kind). The merged
    * diagnostic takes the position of the group's first member; other
    * diagnostics are passed through unchanged. Idempotent; input not mutated.
    */
@@ -1962,7 +2072,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const groups = new Map(), out = [];
     for (const d of diags) {
       if (!AGGREGATED.has(d.code)) { out.push(d); continue; }
-      const key = d.code + "|" + d.layer;
+      const key = d.code + "|" + d.layer + (d.detail ? "|" + d.detail.kind : "");
       let g = groups.get(key);
       if (!g) { g = { slot: out.length, members: [] }; groups.set(key, g); out.push(null); }
       g.members.push(d);
@@ -1981,7 +2091,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
         if (!limit && d.limit) limit = d.limit;
       }
       if (g.members.length === 1 && Array.isArray(first.parts)) { out[g.slot] = first; continue; } // already aggregated
-      const detail = count + " affected";
+      const text = count + " affected", detail = first.detail ? { kind: first.detail.kind, text } : text;
       out[g.slot] = make(first.code, { revision: first.revision, quality: first.quality, layer: first.layer, part: null,
         parts, count, areaMM2: area, region: regions, measured: worst, limit, detail });
     }
@@ -4833,6 +4943,263 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   }
 
   global.SBMaterial = M;
+})(typeof window !== "undefined" ? window : globalThis);
+
+</script>
+<script>
+/* ============================================================================
+ * Shadowbox Studio — js/support.js
+ * ----------------------------------------------------------------------------
+ * SBSupport: validation of the FINAL polygons (plan G2.7; D-4.5, D-4.7, SUP-02/03,
+ * GEO-02, GEO-07, LYR-05, PO-LASER-6). Masks are never trusted: everything here is
+ * computed on MaterialLayer.material (integer µm, D3-normalized).
+ *
+ *   validate(layers, mode, cfg) → {diagnostics, supportGraph: {edges: [{layer, part,
+ *       supports: [{layer, part, areaUm2}]}], reachesBase}}
+ *     mode "bonded-relief":
+ *       · BOND_EMPTY_UNDER (blocking): an empty layer j with a non-empty layer above it
+ *         (reported on j; trailing empty layers are not reported, D-4.7).
+ *       · BOND_UNSUPPORTED (blocking): unsupported(k) = difference(Final[k], Final[k−1])
+ *         non-empty; areaMM2, region (bbox, mm), measured = area, limit = 0 mm² (SUP-02).
+ *         A part with no support although containment held (sub-µm contact only) is
+ *         reported the same way, per part.
+ *       · Support graph (SUP-03): ONE layer-level boolean per adjacent pair (Appendix C: never
+ *         per part pair): intersection(Final[k], Final[k−1]), or, when the containment
+ *         difference U = Final[k] − Final[k−1] is at hand (computed for SUP-02 or reused from
+ *         the caller's B1 differences), Final[k] − U, i.e. Final[k] itself when U is empty
+ *         (no boolean at all in the normal bonded case). Each piece is classified on
+ *         the D3 contact width w = 2·r* (certified by SBGeom.insetStatus, the function
+ *         behind survivesInset / classifyContact; undecided = not surviving, never
+ *         SBGeom.offset) and, unless it blocks, attributed to its upper and lower part by
+ *         a bbox sort-and-sweep, ties broken by an even–odd test at the piece's certified
+ *         witness (≥ 0.25 µm from every boundary, so a float test is exact enough).
+ *         Lower part q supports upper part p iff some piece of p ∩ q has w ≥ 0.5 µm.
+ *         Per (p, q) the widest piece decides:
+ *           w < 0.5 µm               no support (block)
+ *           w < minFeatureUm         SUPPORT_NARROW (warning)
+ *           w < advisoryFeatureUm    FEATURE_MARGINAL (warning, detail.kind "contact")
+ *         minFeatureUm = Math.round(minFeatureMM·1000), likewise the advisory width, both
+ *         rounded BEFORE halving (dyadic insets). The widest test runs first: a piece that
+ *         survives the advisory inset is "ok" without the narrower checks. A bbox / area
+ *         pre-filter (an inscribed disk of radius d needs a bbox ≥ 2d and an area > 3d²)
+ *         skips insets that cannot survive.
+ *       · reachesBase: every part's support path reaches layer 0.
+ *       · IDENTICAL_LAYERS (info): consecutive non-empty layers with equal material.
+ *     mode "connected-sheet": CONNECTED_SPLIT (blocking) for each non-empty layer with
+ *       more than one part (measured = parts, limit = 1). Sheets are aligned, not
+ *       stacked on each other, so the support graph is empty and reachesBase is true.
+ *     cfg = {minFeatureMM (bonded: required, > 0), advisoryFeatureMM? (≥ minFeatureMM;
+ *       absent = no advisory tier), revision = 0, quality = "draft",
+ *       unsupported?: (PolygonWithHoles[]|null)[] precomputed differences per layer
+ *       (index 0 unused; reuse of the B1 differences), graphOnly?: skip containment and
+ *       empty-layer checks (support graph and contact diagnostics only)}.
+ *     Diagnostics are in layer order and pass through SBDiag.aggregate.
+ *   annotate(layers, supportGraph) → layers' with Part.supports[] rewritten to part IDs (§3).
+ *
+ * Bad arguments throw SUPPORT_ARG. Inputs are never mutated. Looks up SBGeom and SBDiag at
+ * call time.
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+  const S = {};
+  const MODES = ["bonded-relief", "connected-sheet"];
+  const LEVEL = { block: 0, warn: 1, marginal: 2, ok: 3 };
+
+  function sfail(msg) { const e = new Error("SUPPORT_ARG: " + msg); e.code = "SUPPORT_ARG"; return e; }
+  const posNum = (v) => typeof v === "number" && Number.isFinite(v) && v > 0;
+
+  function checkArgs(layers, mode, cfg) {
+    if (!Array.isArray(layers)) throw sfail("layers must be a MaterialLayer array");
+    layers.forEach((L, k) => {
+      if (!L || !Array.isArray(L.material) || !Array.isArray(L.parts)) throw sfail("layer " + k + " must carry material[] and parts[]");
+    });
+    if (!MODES.includes(mode)) throw sfail("mode must be " + MODES.join("|") + " (got " + mode + ")");
+    if (!cfg || typeof cfg !== "object") throw sfail("cfg must be an object");
+    if (mode !== "bonded-relief") return;
+    if (!posNum(cfg.minFeatureMM)) throw sfail("minFeatureMM must be a finite number > 0 (got " + cfg.minFeatureMM + ")");
+    if (cfg.advisoryFeatureMM !== undefined && cfg.advisoryFeatureMM !== null &&
+        !(posNum(cfg.advisoryFeatureMM) && cfg.advisoryFeatureMM >= cfg.minFeatureMM))
+      throw sfail("advisoryFeatureMM must be finite and ≥ minFeatureMM (got " + cfg.advisoryFeatureMM + ")");
+    if (cfg.unsupported !== undefined && cfg.unsupported !== null &&
+        !(Array.isArray(cfg.unsupported) && cfg.unsupported.length === layers.length && cfg.unsupported.every((u, k) => k === 0 || Array.isArray(u))))
+      throw sfail("unsupported must hold one difference per layer (index 0 unused)");
+  }
+
+  const mm = (v) => v / 1000;
+  function bboxOf(polys) {
+    const G = global.SBGeom;
+    let b = null;
+    for (const p of polys) {
+      const q = G.bbox(p);
+      if (!b) b = q.slice(); else { if (q[0] < b[0]) b[0] = q[0]; if (q[1] < b[1]) b[1] = q[1]; if (q[2] > b[2]) b[2] = q[2]; if (q[3] > b[3]) b[3] = q[3]; }
+    }
+    return b;
+  }
+  const regionMM = (b) => (b ? b.map(mm) : null);
+
+  /**
+   * Classify one contact piece: {level, witness} with level block|warn|marginal|ok (see header).
+   * mfUm / advUm are integer µm (advUm 0 = no advisory tier). The witness {x, y} (float µm) is set
+   * for every non-blocking level.
+   */
+  function classify(piece, mfUm, advUm) {
+    const G = global.SBGeom, polys = [piece], b = G.bbox(piece), bw = b[2] - b[0], bh = b[3] - b[1], a = G.area(polys);
+    const status = (d) => (bw >= 2 * d && bh >= 2 * d && a > 3 * d * d ? G.insetStatus(polys, d) : { status: "fails" });
+    const hit = (level, s) => ({ level, witness: { x: s.witness.X / s.witness.q, y: s.witness.Y / s.witness.q } });
+    let s;
+    if (advUm > mfUm) { s = status(advUm / 2); if (s.status === "survives") return hit("ok", s); }
+    if (mfUm >= 1) { s = status(mfUm / 2); if (s.status === "survives") return hit(advUm > mfUm ? "marginal" : "ok", s); }
+    s = status(0.25);
+    if (s.status === "survives") return hit(mfUm >= 1 ? "warn" : "ok", s);
+    return { level: "block", witness: null };
+  }
+
+  /** Even–odd point test on all rings of a polygon (float; the witness has ≥ 0.25 µm clearance). */
+  function insidePoly(x, y, poly) {
+    let inside = false;
+    for (const r of [poly.outer].concat(poly.holes || [])) {
+      const n = r.length / 2;
+      for (let i = 0, j = n - 1; i < n; j = i++) {
+        const ax = r[2 * j], ay = r[2 * j + 1], bx = r[2 * i], by = r[2 * i + 1];
+        if ((ay > y) !== (by > y) && x < ((bx - ax) * (y - ay)) / (by - ay) + ax) inside = !inside;
+      }
+    }
+    return inside;
+  }
+
+  /**
+   * Bbox sort-and-sweep attribution: for each item (bbox + witness) the index of the part whose bbox contains
+   * the item's bbox and, when several do, whose polygon contains the witness. null if none.
+   */
+  function attribute(items, parts) {
+    const pb = parts.map((p, i) => ({ i, b: p.bbox || global.SBGeom.bbox(p.polygon) })).sort((u, v) => u.b[0] - v.b[0] || u.i - v.i);
+    const order = items.map((it, j) => j).sort((u, v) => items[u].b[0] - items[v].b[0] || u - v);
+    const out = new Array(items.length).fill(null);
+    let active = [], next = 0;
+    for (const j of order) {
+      const ib = items[j].b;
+      while (next < pb.length && pb[next].b[0] <= ib[0]) active.push(pb[next++]);
+      active = active.filter((e) => e.b[2] >= ib[0]);
+      const cand = active.filter((e) => e.b[1] <= ib[1] && e.b[2] >= ib[2] && e.b[3] >= ib[3]);
+      if (cand.length === 1) out[j] = cand[0].i;
+      else if (cand.length > 1) { // smallest bbox first; the last candidate needs no test (the piece lies in exactly one part)
+        const ar = (e) => (e.b[2] - e.b[0]) * (e.b[3] - e.b[1]);
+        cand.sort((u, v) => ar(u) - ar(v) || u.i - v.i);
+        const w = items[j].witness, hit = cand.slice(0, -1).find((e) => insidePoly(w.x, w.y, parts[e.i].polygon));
+        out[j] = hit ? hit.i : cand[cand.length - 1].i;
+      }
+    }
+    return out;
+  }
+
+  function sameMaterial(a, b) {
+    if (a.length !== b.length) return false;
+    const eq = (r, s) => r.length === s.length && r.every((v, i) => v === s[i]);
+    return a.every((p, i) => eq(p.outer, b[i].outer) && (p.holes || []).length === (b[i].holes || []).length && (p.holes || []).every((h, j) => eq(h, b[i].holes[j])));
+  }
+
+  function validateBonded(layers, cfg, dOpts) {
+    const G = global.SBGeom, D = global.SBDiag;
+    const make = (code, f) => D.make(code, Object.assign({}, dOpts, f));
+    const n = layers.length, nonEmpty = layers.map((L) => L.material.length > 0);
+    const mfUm = Math.round(cfg.minFeatureMM * 1000);
+    const advUm = cfg.advisoryFeatureMM === undefined || cfg.advisoryFeatureMM === null ? mfUm : Math.round(cfg.advisoryFeatureMM * 1000);
+    const checks = !cfg.graphOnly;
+    const perLayer = layers.map(() => []), edges = [], reach = layers.map((L, k) => (k === 0 ? L.parts.map(() => true) : []));
+    const unsupportedLayer = new Array(n).fill(false);
+
+    // D-4.7: an empty layer under a non-empty one
+    if (checks) {
+      let above = false;
+      for (let j = n - 1; j >= 0; j--) {
+        if (nonEmpty[j]) { above = true; continue; }
+        if (above) perLayer[j].push(make("BOND_EMPTY_UNDER", { layer: j, detail: "layer " + j + " is empty under non-empty layers" }));
+      }
+    }
+    for (let k = 1; k < n; k++) {
+      const up = layers[k], lo = layers[k - 1];
+      // SUP-02: exact containment on polygons (GEO-07)
+      const U = cfg.unsupported ? cfg.unsupported[k] || [] : !checks ? null : nonEmpty[k] ? G.difference(up.material, lo.material) : [];
+      if (checks) {
+        if (!G.isEmpty(U)) {
+          const areaMM2 = G.area(U) / 1e6;
+          unsupportedLayer[k] = true;
+          perLayer[k].push(make("BOND_UNSUPPORTED", { layer: k, areaMM2, region: regionMM(bboxOf(U)),
+            measured: { value: areaMM2, unit: "mm2" }, limit: { value: 0, unit: "mm2" } }));
+        }
+      }
+      if (!nonEmpty[k]) continue;
+      // SUP-03: one layer-level boolean; classify, then attribute the non-blocking pieces. With the containment
+      // difference U at hand (computed above or reused from the caller), Final[k] ∩ Final[k−1] = Final[k] − U, which is
+      // Final[k] itself when U is empty (the normal bonded case: no boolean at all).
+      const pieces = !nonEmpty[k - 1] ? [] : U === null ? G.intersection(up.material, lo.material) : G.isEmpty(U) ? up.material : G.difference(up.material, U);
+      const items = [];
+      for (const piece of pieces) {
+        const c = classify(piece, mfUm, advUm);
+        if (c.level !== "block") items.push({ piece, b: G.bbox(piece), witness: c.witness, level: c.level });
+      }
+      const ua = attribute(items, up.parts), la = attribute(items, lo.parts);
+      const pairs = new Map(); // upper index → Map(lower index → {area, level, boxes})
+      items.forEach((it, j) => {
+        if (ua[j] === null || la[j] === null) return;
+        let m = pairs.get(ua[j]); if (!m) pairs.set(ua[j], (m = new Map()));
+        let e = m.get(la[j]); if (!e) m.set(la[j], (e = { area: 0, level: "block", pieces: [] }));
+        e.area += G.area([it.piece]); e.pieces.push(it.piece);
+        if (LEVEL[it.level] > LEVEL[e.level]) e.level = it.level;
+      });
+      reach[k] = up.parts.map(() => false);
+      up.parts.forEach((p, i) => {
+        const m = pairs.get(i), lows = m ? [...m.keys()].sort((a, b) => a - b) : [];
+        edges.push({ layer: k, part: p.id, supports: lows.map((q) => ({ layer: k - 1, part: lo.parts[q].id, areaUm2: m.get(q).area })) });
+        reach[k][i] = lows.some((q) => reach[k - 1][q]);
+        for (const q of lows) {
+          const e = m.get(q);
+          if (e.level !== "warn" && e.level !== "marginal") continue;
+          const areaMM2 = e.area / 1e6, region = regionMM(bboxOf(e.pieces));
+          if (e.level === "warn") perLayer[k].push(make("SUPPORT_NARROW", { layer: k, part: p.id, areaMM2, region,
+            limit: { value: mfUm / 1000, unit: "mm" }, detail: "rests on " + lo.parts[q].id + " along a contact narrower than " + mfUm / 1000 + " mm" }));
+          else perLayer[k].push(make("FEATURE_MARGINAL", { layer: k, part: p.id, areaMM2, region,
+            limit: { value: advUm / 1000, unit: "mm" }, detail: { kind: "contact", text: "rests on " + lo.parts[q].id + " along a contact narrower than " + advUm / 1000 + " mm" } }));
+        }
+        // a part with no support although containment held (sub-µm contact only)
+        if (checks && !lows.length && !unsupportedLayer[k]) {
+          const areaMM2 = G.area([p.polygon]) / 1e6;
+          perLayer[k].push(make("BOND_UNSUPPORTED", { layer: k, part: p.id, areaMM2, region: regionMM(G.bbox(p.polygon)),
+            measured: { value: areaMM2, unit: "mm2" }, limit: { value: 0, unit: "mm2" }, detail: "no support path to the layer below" }));
+        }
+      });
+      // LYR-05: identical consecutive layers are kept and reported
+      if (nonEmpty[k - 1] && sameMaterial(up.material, lo.material))
+        perLayer[k].push(make("IDENTICAL_LAYERS", { layer: k, detail: "layer " + k + " is identical to layer " + (k - 1) }));
+    }
+    const reachesBase = reach.every((r, k) => k === 0 || layers[k].parts.length === 0 || r.every(Boolean)) &&
+      (layers[0].parts.length > 0 || layers.every((L) => L.parts.length === 0));
+    return { diagnostics: D.aggregate([].concat(...perLayer)), supportGraph: { edges, reachesBase } };
+  }
+
+  function validateConnected(layers, dOpts) {
+    const D = global.SBDiag, diags = [];
+    layers.forEach((L, k) => {
+      const c = L.parts.length;
+      if (L.material.length && c > 1) diags.push(D.make("CONNECTED_SPLIT", Object.assign({}, dOpts, { layer: k,
+        measured: { value: c, unit: "parts" }, limit: { value: 1, unit: "parts" }, detail: "layer " + k + " has " + c + " separate pieces" })));
+    });
+    return { diagnostics: D.aggregate(diags), supportGraph: { edges: [], reachesBase: true } };
+  }
+
+  S.validate = function (layers, mode, cfg) {
+    checkArgs(layers, mode, cfg);
+    const dOpts = { revision: cfg.revision === undefined ? 0 : cfg.revision, quality: cfg.quality || "draft" };
+    return mode === "bonded-relief" ? validateBonded(layers, cfg, dOpts) : validateConnected(layers, dOpts);
+  };
+
+  S.annotate = function (layers, graph) {
+    if (!Array.isArray(layers) || !graph || !Array.isArray(graph.edges)) throw sfail("annotate needs layers and a supportGraph");
+    const by = new Map(graph.edges.map((e) => [e.layer + "|" + e.part, e.supports.map((s) => s.part)]));
+    return layers.map((L) => Object.assign({}, L, { parts: L.parts.map((p) => Object.assign({}, p, { supports: (by.get(L.index + "|" + p.id) || []).slice() })) }));
+  };
+
+  global.SBSupport = S;
 })(typeof window !== "undefined" ? window : globalThis);
 
 </script>

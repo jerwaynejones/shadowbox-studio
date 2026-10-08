@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **G2.7, final-polygon validation (engine; the app path is unchanged):** new module `SBSupport`
+  (`js/support.js`). `SBSupport.validate(layers, mode, cfg)` checks the final MaterialLayer
+  polygons, never the masks. In bonded-relief mode it reports `BOND_UNSUPPORTED` with the
+  measured unsupported area (SUP-02, GEO-07) and `BOND_EMPTY_UNDER` (D-4.7). It builds the support
+  graph to the base (SUP-03) from one layer-level boolean per adjacent pair, with D3 contact
+  widths. A contact narrower than the minimum feature gives `SUPPORT_NARROW`; one below the
+  advisory width gives the new warning `FEATURE_MARGINAL` with `detail.kind: "contact"`
+  (PO-LASER-6: 1.5 / 2.0 mm on plywood). Identical consecutive layers give `IDENTICAL_LAYERS`.
+  In connected-sheet mode it reports `CONNECTED_SPLIT`. `SBSupport.annotate` writes
+  `Part.supports[]`. `SBDiag.make` accepts `detail: {kind, text?}`.
+  `SBGeom.insetStatus` gained a quick witness search and an exact erosion failure certificate
+  (no trig), with verdict semantics unchanged. The dense support benchmark B3b now takes
+  p95 1.32 s against the 3 s budget (previously provisional at 6 s); `node test/bench.js support`
+  is new.
+
 - **G2.6, construction strategies (engine; the app path is unchanged):** new module `SBConstruct`
   (`js/construct.js`). `SBConstruct.connected(masks, w, h, px)` is the v1.1.0 per-sheet chain
   (open → close → removeSpecks → fillHoles → `SBIslands.resolve`), byte-identical; `legacyRun`

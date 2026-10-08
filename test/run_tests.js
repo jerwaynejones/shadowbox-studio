@@ -410,6 +410,127 @@ suite("construct.js — G2.6 extended (shape, purity, culling, legacy identity)"
     bad(() => SBConstruct.connected([new Uint8Array(3)], w, h, px)) && bad(() => SBConstruct.bonded(lb.layers, w, h, null)));
 });
 
+// ------------------------------------------------ final validation (G2.7)
+suite("support.js — final validation (D-4.5, SUP-02/03, GEO-07, AT-08/09)", () => {
+  const F = require("./fixtures.js");
+  // st.mmPerPx (default 1) sets the pitch: stripOnBase is drawn at 0.1 mm/px (G2.7 deviation from the plan's mk, which fixed 1 mm/px)
+  const mk = (st) => SBMaterial.assignParts(SBMaterial.fromMasks(st.layers, st.w, st.h, { artWMM: st.w * (st.mmPerPx || 1), artHMM: st.h * (st.mmPerPx || 1), frameMM: 0 }, {}));
+  const codes = (r) => r.diagnostics.map((d) => d.code);
+  const hole = SBSupport.validate(mk(F.MASKS.lowerHoleUnderPart), "bonded-relief", { minFeatureMM: 3 });
+  check("AT-08 part over lower hole → BOND_UNSUPPORTED blocking", codes(hole).includes("BOND_UNSUPPORTED"));
+  const d0 = hole.diagnostics.find((d) => d.code === "BOND_UNSUPPORTED");
+  check("AT-08 measured unsupported area (1 mm² ±1%) with measured/limit fields", Math.abs(d0.areaMM2 - 1) <= 0.01 && d0.measured && d0.limit);
+  const empty = SBSupport.validate(mk(F.MASKS.emptyIntermediate), "bonded-relief", { minFeatureMM: 3 });
+  check("D-4.7 empty under non-empty blocks", codes(empty).includes("BOND_EMPTY_UNDER"));
+  const donut = SBSupport.validate(mk(F.MASKS.donutIsland), "bonded-relief", { minFeatureMM: 0.5 });
+  check("AT-08 fully supported loose island accepted without bridge", !codes(donut).includes("BOND_UNSUPPORTED") && donut.supportGraph.reachesBase);
+  // GEO-07: masks nested but polygons are not (interior fixture; miter offset is deterministic). G2.7 deviation: the plan grew
+  // layer 1 of the 2-layer crescentInterior, which stays inside the full base; the crescent is repeated as layer 2 and layer 2
+  // is grown, so it overhangs layer 1 on polygons while the masks stay nested.
+  const ci = F.MASKS.crescentInterior;
+  const nested = mk({ ...ci, layers: [ci.layers[0], ci.layers[1], ci.layers[1]] }); const grown = JSON.parse(JSON.stringify(nested));
+  grown[2].material = SBGeom.offset(grown[2].material, 300, "miter");
+  check("GEO-07 interior overhang caught on polygons although masks nested", SBSupport.validate(grown, "bonded-relief", { minFeatureMM: 0.5 }).diagnostics
+    .some((d) => d.code === "BOND_UNSUPPORTED" && d.layer === 2 && d.part === null && d.areaMM2 > 0));
+  const diag = SBSupport.validate(mk({ ...F.MASKS.diagonalTouch, layers: [F.MASKS.diagonalTouch.layers[0], F.MASKS.diagonalTouch.layers[1]] }), "connected-sheet", {});
+  check("GEO-02 diagonal-only contact → CONNECTED_SPLIT in connected mode", codes(diag).includes("CONNECTED_SPLIT"));
+  // D3 width thresholds on the contact itself (exactly as pinned in suite "spike S5 — finite-width contact")
+  const sq = (x0, y0, x1, y1) => ({ outer: [x0, y0, x1, y0, x1, y1, x0, y1], holes: [] }), lo = [sq(0, 0, 10000, 10000)];
+  check("D3 1 µm axis overlap is support (w ≥ 0.5 µm) but SUPPORT_NARROW for minFeature 3 mm", SBGeom.classifyContact(SBGeom.intersection([sq(9999, 0, 20000, 10000)], lo), 3000).level === "warn");
+  check("D3 3000 µm overlap with minFeature 3 mm → no SUPPORT_NARROW (tie passes)", SBGeom.classifyContact(SBGeom.intersection([sq(7000, 0, 20000, 10000)], lo), 3000).level === "ok");
+  // PO-LASER-6 plywood defaults: 1.5 mm minimum, 2.0 mm advisory. F.MASKS.stripOnBase(widthMM): a 2-layer stack at 0.1 mm/px
+  // whose upper part rests on the full base along a strip of the given width.
+  const strip = (w) => SBSupport.validate(mk(F.MASKS.stripOnBase(w)), "bonded-relief", { minFeatureMM: 1.5, advisoryFeatureMM: 2 });
+  check("PO-LASER-6 1.4 mm contact → SUPPORT_NARROW", codes(strip(1.4)).includes("SUPPORT_NARROW"));
+  check("PO-LASER-6 1.8 mm contact → FEATURE_MARGINAL, no SUPPORT_NARROW", codes(strip(1.8)).includes("FEATURE_MARGINAL") && !codes(strip(1.8)).includes("SUPPORT_NARROW"));
+  check("PO-LASER-6 2.0 mm contact → neither (tie passes)", !codes(strip(2.0)).some((c) => c === "SUPPORT_NARROW" || c === "FEATURE_MARGINAL"));
+
+  const rng = F.lcg(7); let allClean = true;
+  for (let t = 0; t < 50; t++) { const st = F.randomNestedStack(rng, 24, 18, 5);
+    const fin = SBConstruct.bonded(st, 24, 18, { featR: 1, bridgeR: 0, cullPx: 0, maxBridgePx: 0, speckPx: 0, holePx: 8, frameAnchored: false, cullEnabled: false }).final;
+    if (SBSupport.validate(SBMaterial.fromMasks(fin, 24, 18, { artWMM: 24, artHMM: 18, frameMM: 0 }, {}), "bonded-relief", { minFeatureMM: 0.01 })
+      .diagnostics.some((d) => d.code === "BOND_UNSUPPORTED")) allClean = false; }
+  check("D-4.5 property: bonded(nested stack, featR 1) never reports unsupported (50 seeds)", allClean);
+});
+
+suite("support.js — G2.7 extended (graph, advisory tier, reuse, determinism)", () => {
+  const F = require("./fixtures.js"), D = SBDiag;
+  const mk = (st) => SBMaterial.fromMasks(st.layers, st.w, st.h, { artWMM: st.w * (st.mmPerPx || 1), artHMM: st.h * (st.mmPerPx || 1), frameMM: 0 }, {});
+  const codes = (r) => r.diagnostics.map((d) => d.code);
+  check("§4 module order: support.js directly after material.js", (() => { const L = require("./modules.js").NODE_MODULES; return L.indexOf("support.js") === L.indexOf("material.js") + 1; })());
+  check("PO-LASER-6 FEATURE_MARGINAL registered (warning, fabrication)", D.CODES.FEATURE_MARGINAL && D.CODES.FEATURE_MARGINAL.severity === "warning" && D.CODES.FEATURE_MARGINAL.kind === "fabrication");
+  const s18 = SBSupport.validate(mk(F.MASKS.stripOnBase(1.8)), "bonded-relief", { minFeatureMM: 1.5, advisoryFeatureMM: 2 });
+  const fm = s18.diagnostics.find((d) => d.code === "FEATURE_MARGINAL");
+  check("PO-LASER-6 contact FEATURE_MARGINAL (aggregated per layer and kind) carries detail.kind \"contact\", the upper part, region and the advisory limit",
+    !!fm && fm.detail && fm.detail.kind === "contact" && fm.layer === 1 && fm.parts.join() === "L01-P001" && fm.count === 1 && Array.isArray(fm.region) && fm.limit.value === 2 && fm.limit.unit === "mm");
+  const s14 = SBSupport.validate(mk(F.MASKS.stripOnBase(1.4)), "bonded-relief", { minFeatureMM: 1.5, advisoryFeatureMM: 2 });
+  const sn = s14.diagnostics.find((d) => d.code === "SUPPORT_NARROW");
+  check("D3 SUPPORT_NARROW names the part and the lower part, limit = minFeature; no FEATURE_MARGINAL as well",
+    sn.part === "L01-P001" && /L00-P001/.test(sn.message) && sn.limit.value === 1.5 && !codes(s14).includes("FEATURE_MARGINAL"));
+  check("PO-LASER-6 advisory defaults to minFeature when absent (no advisory tier)",
+    !codes(SBSupport.validate(mk(F.MASKS.stripOnBase(1.8)), "bonded-relief", { minFeatureMM: 1.5 })).includes("FEATURE_MARGINAL"));
+  check("D3 minFeature rounded to integer µm before halving (1.4996 mm → 1500 µm: 1.5 mm strip passes)",
+    !codes(SBSupport.validate(mk(F.MASKS.stripOnBase(1.5)), "bonded-relief", { minFeatureMM: 1.4996 })).includes("SUPPORT_NARROW"));
+  check("D-4.5 FEATURE_MARGINAL aggregates per (code, layer, kind)", (() => {
+    const mkd = (p, kind) => D.make("FEATURE_MARGINAL", { layer: 1, part: p, detail: { kind } });
+    const a = D.aggregate([mkd("L01-P001", "contact"), mkd("L01-P002", "contact"), mkd("L01-P003", "part")]);
+    return a.length === 2 && a[0].count === 2 && a[0].detail.kind === "contact" && a[1].detail.kind === "part"; })());
+  // support graph (SUP-03)
+  const dn = SBSupport.validate(mk(F.MASKS.donutIsland), "bonded-relief", { minFeatureMM: 0.5 });
+  const e = dn.supportGraph.edges;
+  check("SUP-03 one edge per part above the base; each loose part rests on the base part with its own area",
+    e.length === 2 && e.every((x) => x.layer === 1 && x.supports.length === 1 && x.supports[0].layer === 0 && x.supports[0].part === "L00-P001") &&
+    e.map((x) => x.supports[0].areaUm2).sort((a, b) => a - b).join() === [1e6, 24e6].join());
+  const hole = SBSupport.validate(mk(F.MASKS.lowerHoleUnderPart), "bonded-relief", { minFeatureMM: 0.5 });
+  check("SUP-03 a part over a lower hole has no support and the graph does not reach the base",
+    !hole.supportGraph.reachesBase && hole.supportGraph.edges.find((x) => x.layer === 2).supports.length === 0);
+  const lbv = SBSupport.validate(mk(F.MASKS.looseBridge), "bonded-relief", { minFeatureMM: 0.5 });
+  check("LYR-05 identical consecutive layers → IDENTICAL_LAYERS info (layer 2), no other code", codes(lbv).join() === "IDENTICAL_LAYERS" &&
+    lbv.diagnostics[0].layer === 2 && lbv.diagnostics[0].severity === "info" && lbv.supportGraph.reachesBase);
+  check("LYR-05 identical layers not reported in connected mode", !codes(SBSupport.validate(mk(F.MASKS.looseBridge), "connected-sheet", {})).includes("IDENTICAL_LAYERS"));
+  const em = SBSupport.validate(mk(F.MASKS.emptyIntermediate), "bonded-relief", { minFeatureMM: 0.5 });
+  check("D-4.7 BOND_EMPTY_UNDER names the empty layer; the graph does not reach the base", em.diagnostics.find((d) => d.code === "BOND_EMPTY_UNDER").layer === 1 && !em.supportGraph.reachesBase);
+  const trailing = mk({ ...F.MASKS.emptyIntermediate, layers: [F.MASKS.emptyIntermediate.layers[0], F.MASKS.emptyIntermediate.layers[2], F.MASKS.emptyIntermediate.layers[1]] });
+  check("D-4.7 a trailing empty layer is not BOND_EMPTY_UNDER", !codes(SBSupport.validate(trailing, "bonded-relief", { minFeatureMM: 0.5 })).includes("BOND_EMPTY_UNDER"));
+  // connected rules
+  check("SUP-06 one part per layer passes connected validation", SBSupport.validate(mk(F.MASKS.borderTouch), "connected-sheet", {}).diagnostics.length === 0);
+  const split = SBSupport.validate(mk(F.MASKS.diagonalTouch), "connected-sheet", {}).diagnostics.find((d) => d.code === "CONNECTED_SPLIT");
+  check("SUP-06 CONNECTED_SPLIT carries layer, measured parts and limit 1", split.layer === 1 && split.measured.value === 2 && split.limit.value === 1);
+  // reuse (B3b): precomputed differences and graph-only
+  const st = F.randomNestedStack(F.lcg(5), 40, 30, 6), L = mk({ layers: st, w: 40, h: 30 });
+  const full = SBSupport.validate(L, "bonded-relief", { minFeatureMM: 2, advisoryFeatureMM: 3 });
+  const diffs = L.map((l, k) => (k ? SBGeom.difference(l.material, L[k - 1].material) : null));
+  const reused = SBSupport.validate(L, "bonded-relief", { minFeatureMM: 2, advisoryFeatureMM: 3, unsupported: diffs });
+  const graph = SBSupport.validate(L, "bonded-relief", { minFeatureMM: 2, advisoryFeatureMM: 3, graphOnly: true });
+  check("Appendix C reuse: precomputed differences give the same result", JSON.stringify(reused) === JSON.stringify(full));
+  check("Appendix C graphOnly: same support graph, no containment diagnostics", JSON.stringify(graph.supportGraph) === JSON.stringify(full.supportGraph) &&
+    !codes(graph).some((c) => c === "BOND_UNSUPPORTED" || c === "BOND_EMPTY_UNDER"));
+  // support graph agrees with a per-part-pair oracle (D3 block threshold) on random stacks
+  let oracle = true;
+  for (let s = 1; s <= 12; s++) {
+    const S = mk({ layers: F.randomNestedStack(F.lcg(100 + s), 30, 20, 5), w: 30, h: 20 }), r = SBSupport.validate(S, "bonded-relief", { minFeatureMM: 1 });
+    for (const edge of r.supportGraph.edges) {
+      const p = S[edge.layer].parts.find((x) => x.id === edge.part);
+      const want = S[edge.layer - 1].parts.filter((q) => SBGeom.classifyContact(SBGeom.intersection([p.polygon], [q.polygon]), 1000).level !== "block").map((q) => q.id);
+      if (want.join() !== edge.supports.map((x) => x.part).join()) oracle = false;
+    }
+  }
+  check("SUP-03 support graph == per-part-pair classifyContact oracle (12 seeds)", oracle);
+  // determinism and purity
+  const before = JSON.stringify(L);
+  const again = SBSupport.validate(L, "bonded-relief", { minFeatureMM: 2, advisoryFeatureMM: 3 });
+  check("NFR-05 validate is deterministic and does not mutate its input", JSON.stringify(again) === JSON.stringify(full) && JSON.stringify(L) === before);
+  check("§9.1 diagnostics carry revision and quality from cfg", SBSupport.validate(mk(F.MASKS.emptyIntermediate), "bonded-relief", { minFeatureMM: 1, revision: 4, quality: "fabrication" })
+    .diagnostics.every((d) => d.revision === 4 && d.quality === "fabrication"));
+  // annotate: Part.supports[] rewritten to IDs (§3)
+  const ann = SBSupport.annotate(mk(F.MASKS.donutIsland), dn.supportGraph);
+  check("§3 annotate writes supports[] as part IDs", ann[1].parts.every((p) => p.supports.join() === "L00-P001") && ann[0].parts[0].supports.length === 0);
+  const bad = (f) => { try { f(); return false; } catch (x) { return x.code === "SUPPORT_ARG"; } };
+  check("G2.7 bad arguments are SUPPORT_ARG", bad(() => SBSupport.validate(L, "stacked", { minFeatureMM: 1 })) && bad(() => SBSupport.validate(L, "bonded-relief", {})) &&
+    bad(() => SBSupport.validate(L, "bonded-relief", { minFeatureMM: 2, advisoryFeatureMM: 1 })) && bad(() => SBSupport.validate(null, "bonded-relief", { minFeatureMM: 1 })) &&
+    bad(() => SBSupport.validate(L, "bonded-relief", { minFeatureMM: 1, unsupported: [] })));
+});
+
 // ------------------------------------------------ engine seam (T0.5)
 suite("engine.js — legacyRun seam (NFR-10, DEP-04)", () => {
   const G = require("./golden/oldrun.json"), H = (u8) => require("crypto").createHash("sha256").update(Buffer.from(u8)).digest("hex");
@@ -645,13 +766,25 @@ suite("spike S1 — test/bench.js geom smoke (--quick)", () => {
   } catch (e) { /* r stays null */ } finally { try { fs.unlinkSync(out); } catch (e) { /* none */ } }
   check("bench geom --quick runs and writes JSON", !!r && r.stage === "geom" && r.backend === SBGeom.backend);
   check("bench geom: B1 input nested and areas exact", !!r && r.sanityB1.contained && r.sanityB1.areasExact);
-  check("bench geom: reports B1, B2, B3 and B3b with budgets 2 s / 3 s / 6 s", !!r &&
-    ["B1_difference", "B2_offset_inset1500", "B2_offset_grow300", "B3_supportPairs", "B3b_supportPairs_dense"].every((k) => r[k] && r[k].p95Ms >= 0) &&
-    r.budgetsMs.B1 === 2000 && r.budgetsMs.B3 === 3000 && r.budgetsMs.B3b === 6000);
+  check("bench geom: reports B1, B2, B3 and B3b with budgets 2 s / 3 s / 3 s (B3b provisional 6 s removed in G2.7)", !!r &&
+    ["B1_difference", "B2_offset_inset1500", "B2_offset_grow300", "B3_supportPass", "B3b_supportPass_dense"].every((k) => r[k] && r[k].p95Ms >= 0) &&
+    r.budgetsMs.B1 === 2000 && r.budgetsMs.B3 === 3000 && r.budgetsMs.B3b === 3000);
   check("bench geom: B1 overrun is tracked (KI-B1, G4.4) as KNOWN-OVER, never in overBudget", !!r && r.tracked && r.tracked.B1 && r.tracked.B1.id === "KI-B1" &&
     /G4\.4/.test(r.tracked.B1.ref) && Array.isArray(r.knownOver) && !r.overBudget.includes("B1"));
-  check("bench geom: support pass finds pairs and containment on the dense stack", !!r && r.B3b_supportPairs_dense.pairs > 0 && r.B3b_supportPairs_dense.contained &&
-    r.B3b_supportPairs_dense_partsGiven.pairs === r.B3b_supportPairs_dense.pairs);
+  check("bench geom: G2.7 support pass (SBSupport.validate) finds pairs and containment on the dense stack; reuse == full", !!r && r.B3b_supportPass_dense.pairs > 0 &&
+    r.B3b_supportPass_dense.contained && r.B3b_supportPass_dense.reachesBase && r.inputB3b.sameMaterialAsB1 &&
+    JSON.stringify([r.B3b_supportPass_dense_full.pairs, r.B3b_supportPass_dense_full.diagnostics]) === JSON.stringify([r.B3b_supportPass_dense.pairs, r.B3b_supportPass_dense.diagnostics]));
+});
+
+suite("G2.7 — test/bench.js support smoke (--quick)", () => {
+  const out = path.join(require("os").tmpdir(), "sb-bench-support-" + process.pid + ".json");
+  let r = null;
+  try {
+    require("child_process").execFileSync(process.execPath, [path.join(__dirname, "bench.js"), "support", "--quick", "--json", out], { stdio: "ignore" });
+    r = JSON.parse(fs.readFileSync(out, "utf8"));
+  } catch (e) { /* r stays null */ } finally { try { fs.unlinkSync(out); } catch (e) { /* none */ } }
+  check("bench support --quick runs B3 and B3b (budgets 3 s / 3 s)", !!r && r.stage === "support" && r.B3_supportPass.p95Ms >= 0 && r.B3b_supportPass_dense.p95Ms >= 0 &&
+    r.budgetsMs.B3 === 3000 && r.budgetsMs.B3b === 3000 && r.B3b_supportPass_dense.pairs > 0 && r.B3_supportPass.reachesBase);
 });
 
 // ------------------------------------------------ canonical bytes and hash scope (spike S6, decision D4)
