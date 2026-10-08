@@ -430,7 +430,7 @@ GenerateResponse = { requestId, revision, engineVersion,
 - Each ring starts at its lexicographically smallest `(x, y)` vertex.
 - Collinear vertices are removed.
 - Booleans use the **NonZero** fill rule on normalized input. `fromPixelLoops` output (outer positive, holes negative) is NonZero-safe.
-- Rings that touch at a single vertex (pixel saddles) are **split into separate simple rings** during normalization (D3), so `validate()` never reports `GEO_SELF_INTERSECT` for ordinary checkerboard art.
+- Normalization (D3) runs globally on the ring set of every boolean or offset result: T-contacts are noded, every shared vertex is **re-paired with the material-separating turn** (Clipper2's ring pairing is never trusted), only then are rings that still repeat a vertex (pixel saddles) **split into simple rings**, and rings are cleaned, oriented, rotated, nested and sorted. Point contact never connects material: each polygon is exactly one part (`SBGeom.interiorConnected`), so `validate()` never reports `GEO_SELF_INTERSECT` for ordinary checkerboard art and reports `GEO_MULTIPART` for a polygon whose interior is disconnected.
 
 ## 4. Module map and load order
 
