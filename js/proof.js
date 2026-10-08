@@ -7,6 +7,7 @@
  *   section(layers, yMM, {tMM, gMM})     → [{layerIndex, z0, z1, intervals: [[x0MM, x1MM]]}]
  *   drawParams(mode)                     → {smoothing, shadows, parallax, illustrative}
  *   modelHash(model)                     → sha256 hex of the model
+ *   cards(layers, page)                  → [{layerIndex, role, empty, retainedMM2, wasteMM2, retainedPct}]  (G2.13a)
  *
  * Everything is read from layer.material (the canonical polygons that also feed layerSVG and assemblySVG),
  * so the on-screen proof, the section and the cut files share one source. Fill and edge-stroke rules come from
@@ -82,6 +83,34 @@
       }
       const z0 = l.index * pitch;
       return { layerIndex: l.index, z0: z0 / 1000, z1: (z0 + tU) / 1000, intervals: iv.map(([a, b]) => [a / 1000, b / 1000]) };
+    });
+  };
+
+  /**
+   * Retained/waste figures for the Layers cards (G2.13a), one per layer (empty ones too), back to front by index.
+   * retainedMM2 is SBGeom.area(layer.material) (the same polygons the proof and the cut files draw); wasteMM2 is
+   * the rest of the shared page (frame included), so retained + waste = page area. role: the first card is the
+   * backing, the last the front, the others mid.
+   */
+  P.cards = function (layers, page) {
+    const pg = page || {};
+    if (!(Number.isFinite(pg.wMM) && pg.wMM > 0 && Number.isFinite(pg.hMM) && pg.hMM > 0))
+      throw new Error("SBProof.cards: NONFINITE — page wMM and hMM must be finite and > 0");
+    const L = (layers || []).filter(Boolean).slice();
+    for (const l of L) if (!Number.isInteger(l.index)) throw new Error("SBProof.cards: NONINTEGER — layer.index must be an integer");
+    L.sort((a, b) => a.index - b.index);
+    const pageMM2 = pg.wMM * pg.hMM, n = L.length;
+    return L.map((l, k) => {
+      const mat = l.material || [];
+      const retainedMM2 = Math.min(pageMM2, global.SBGeom.area(mat) / 1e6);
+      return {
+        layerIndex: l.index,
+        role: k === 0 ? "backing" : k === n - 1 ? "front" : "mid",
+        empty: retainedMM2 === 0,
+        retainedMM2,
+        wasteMM2: pageMM2 - retainedMM2,
+        retainedPct: (100 * retainedMM2) / pageMM2,
+      };
     });
   };
 

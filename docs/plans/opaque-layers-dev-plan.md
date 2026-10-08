@@ -2511,7 +2511,15 @@ Runs right after G2.7 (Appendix D.4, D.9). **Why:** G2.2b showed that the pixel 
 
 **Interfaces:**
 - Per-layer cards are drawn from `layer.material`, using the per-snapshot offscreen cache, with a waste hatch.
-- **QA:** the cards match the proof. **Commit.**
+- [x] **QA:** the cards match the proof. **Commit.**
+
+**Result (2026-10-08):**
+- **Pure part.** `SBProof.cards(layers, page) → [{layerIndex, role, empty, retainedMM2, wasteMM2, retainedPct}]`, one per layer (empty ones too), back to front; retained = `SBGeom.area(layer.material)`, waste = page area − retained (frame included); roles backing / mid / front; `NONFINITE` on a bad page, `NONINTEGER` on a bad index; layers are not mutated.
+- **Preview.** `SBPreview.drawWasteHatch(ctx, w, h)` (bed colour plus 45° strokes, so waste is not colour-only); the controller gains `drawCard(canvas, layerIndex, {maxPx})` (page aspect, long side 480 px by default) that draws the hatch and then the layer's image from the per-snapshot offscreen cache with the proof draw parameters (no smoothing, no re-rasterization; a layer with no material is hatch only; `false` without a snapshot) and `hasSnapshot()`.
+- **App.** `renderSheetGrid` draws each card through `preview.drawCard` once the polygon snapshot is set and labels it with retained / waste cm² and % (a legend swatch for each; `role="img"` with an `aria-label`); `showView` re-renders the cards after `setSnapshot`. Before the polygons are built (KI-CONN-PERF interim) or when the proof is unavailable, `rasterCard` draws the masks over the same waste hatch. `.sheetcard .sw`/`.sw-waste` in `css/style.css`.
+- **Tests.** 17 checks in the G2.13a suite (card areas and roles, drawCard from the cache with no new rasterization, hatch under material, no smoothing, empty layer hatch only, setSheets drops the snapshot, wiring and CSS). The G2.12 KI-CONN-PERF check's slice anchor moved to `function renderSheetGrid(`. Full suite 1285 passed.
+- **QA.** Headless Chromium on `dist`: Demo → five raster cards at once, then polygon cards after the proof build (480 × 371 px, page aspect 324 × 250.7 mm); each card shows the frame, the four mounting holes and the same layer outlines as the Proof, waste hatched; labels 100 / 83 / 67 / 55 / 30 % retained; no page errors.
+- **Deviations.** None in scope. The cards are drawn from the snapshot built by `SBEngine.connectedLayers` (as for G2.12), not an `SBEngine.generate` snapshot.
 
 ### Task G2.13b: Overlays and state badges (GEO-08, UI-05)
 

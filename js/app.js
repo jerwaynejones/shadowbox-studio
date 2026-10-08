@@ -207,9 +207,12 @@
       preview.setSnapshot({ page: run.view.page, layers: run.view.layers, tMM: project.material.thicknessMM, gMM: bonded ? 0 : project.construction.gapMM },
         colors, { bridges: { masks: run.sheets.map((sh) => sh.bridges || null), w: run.procW, h: run.procH } });
       setStatus(run.report);
+      try { renderSheetGrid(colors); }   // G2.13a: the cards now come from the polygon snapshot
+      catch (err) { setStatus(`${run.report} · layer cards unavailable: ${err.message || err}`); }
     } catch (err) {
       setStatus(`${run.report} · proof unavailable: ${err.message || err}`);
       showRaster(colors);
+      try { renderSheetGrid(colors); } catch (_) { /* the status line already reports the failure */ }   // raster cards
     }
   }
 
@@ -218,37 +221,40 @@
     try { preview.setSheets(run.sheets, colors, run.procW, run.procH); } catch (_) { /* reported by the caller */ }
   }
 
-  /** The "Layer sheets" tab: one card per sheet with its cut preview + stats. */
+  /**
+   * The "Layers" tab: one card per sheet showing what is retained (material) and what is waste (G2.13a).
+   * Once the polygon snapshot is set, each card is drawn from layer.material through the preview's per-snapshot
+   * offscreen cache (preview.drawCard: waste hatch, then the cached layer image, no smoothing), so the cards
+   * match the Proof, and the label adds SBProof.cards retained/waste mm². Until then (KI-CONN-PERF interim) or
+   * when the proof is unavailable, the card falls back to the raster masks over the same waste hatch.
+   */
   function renderSheetGrid(colors) {
     const grid = $("sheetgrid");
     grid.innerHTML = "";
+    const poly = preview.hasSnapshot() && run.view ? run.view : null;
+    const stats = poly ? SBProof.cards(poly.layers, poly.page) : null;
     run.sheets.forEach((sheet, s) => {
       const card = document.createElement("div");
       card.className = "sheetcard";
 
       const cvs = document.createElement("canvas");
-      const w = run.procW, h = run.procH;
-      cvs.width = w; cvs.height = h;
-      const c = cvs.getContext("2d");
-      // waste = dark bed, material = sheet color, bridges = amber
-      c.fillStyle = "#171D24";
-      c.fillRect(0, 0, w, h);
-      const img = c.getImageData(0, 0, w, h);
-      const [r, g, b] = SBUtil.hexToRgb(colors[s]);
-      for (let i = 0, p = 0; i < w * h; i++, p += 4) {
-        const on = s === 0 || sheet.mask[i];
-        if (on) { img.data[p] = r; img.data[p + 1] = g; img.data[p + 2] = b; }
-        if (sheet.bridges && sheet.bridges[i]) {
-          img.data[p] = 240; img.data[p + 1] = 162; img.data[p + 2] = 39;
-        }
-      }
-      c.putImageData(img, 0, 0);
+      const layer = poly ? poly.layers.find((l) => l.index === s) : null;
+      if (!poly || !preview.drawCard(cvs, layer ? layer.index : s)) rasterCard(cvs, sheet, colors[s], s === 0);
+      const st = stats ? stats.find((c) => c.layerIndex === s) : null;
+      cvs.setAttribute("role", "img");
+      cvs.setAttribute("aria-label", `Sheet ${s + 1}: ` + (st
+        ? `${SBUtil.fmt(st.retainedPct, 0)}% retained material, ${SBUtil.fmt(100 - st.retainedPct, 0)}% waste (hatched)`
+        : "material in the sheet colour, waste hatched"));
 
       const label = document.createElement("div");
       label.className = "sheetlabel";
       const role = s === 0 ? "backing" : s === run.sheets.length - 1 ? "front" : "mid";
       label.innerHTML =
         `<b>SHEET ${s + 1}</b> <span class="muted">${role}</span><br>` +
+        `<span class="sw sw-retained" style="background:${colors[s]}"></span>retained ` +
+        (st ? `${SBUtil.fmt(st.retainedMM2 / 100, 1)} cm² (${SBUtil.fmt(st.retainedPct, 0)}%)` : "") +
+        ` · <span class="sw sw-waste"></span>waste` +
+        (st ? ` ${SBUtil.fmt(st.wasteMM2 / 100, 1)} cm²` : "") + `<br>` +
         (s === 0
           ? `solid panel — frame + holes only`
           : `${sheet.stats.loops} contours · ${SBUtil.fmt(sheet.stats.cutMM / 10, 1)} cm cut` +
@@ -257,6 +263,21 @@
       card.append(cvs, label);
       grid.appendChild(card);
     });
+  }
+
+  /** Interim/fallback card from the raster mask: waste hatch (SBPreview.drawWasteHatch), material in the sheet colour, bridges amber. */
+  function rasterCard(cvs, sheet, color, solid) {
+    const w = run.procW, h = run.procH;
+    cvs.width = w; cvs.height = h;
+    const c = cvs.getContext("2d");
+    SBPreview.drawWasteHatch(c, w, h);
+    const img = c.getImageData(0, 0, w, h);
+    const [r, g, b] = SBUtil.hexToRgb(color);
+    for (let i = 0, p = 0; i < w * h; i++, p += 4) {
+      if (solid || sheet.mask[i]) { img.data[p] = r; img.data[p + 1] = g; img.data[p + 2] = b; }
+      if (sheet.bridges && sheet.bridges[i]) { img.data[p] = 240; img.data[p + 1] = 162; img.data[p + 2] = 39; }
+    }
+    c.putImageData(img, 0, 0);
   }
 
   function renderPaletteChips(colors) {

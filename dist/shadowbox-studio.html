@@ -389,6 +389,15 @@ select {
 }
 .sheetlabel .muted { color: rgba(255,255,255,0.45); }
 .sheetlabel .amber { color: var(--amber); }
+.sheetcard .sw {
+  display: inline-block;
+  width: 10px; height: 10px;
+  margin: 0 4px -1px 0;
+  border: 1px solid rgba(255,255,255,0.45);
+}
+.sheetcard .sw-waste {
+  background: #171D24 repeating-linear-gradient(135deg, rgba(255,255,255,0.32) 0 1px, transparent 1px 4px);
+}
 
 .statusbar {
   padding: 6px 14px;
@@ -6747,6 +6756,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *   section(layers, yMM, {tMM, gMM})     → [{layerIndex, z0, z1, intervals: [[x0MM, x1MM]]}]
  *   drawParams(mode)                     → {smoothing, shadows, parallax, illustrative}
  *   modelHash(model)                     → sha256 hex of the model
+ *   cards(layers, page)                  → [{layerIndex, role, empty, retainedMM2, wasteMM2, retainedPct}]  (G2.13a)
  *
  * Everything is read from layer.material (the canonical polygons that also feed layerSVG and assemblySVG),
  * so the on-screen proof, the section and the cut files share one source. Fill and edge-stroke rules come from
@@ -6822,6 +6832,34 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       }
       const z0 = l.index * pitch;
       return { layerIndex: l.index, z0: z0 / 1000, z1: (z0 + tU) / 1000, intervals: iv.map(([a, b]) => [a / 1000, b / 1000]) };
+    });
+  };
+
+  /**
+   * Retained/waste figures for the Layers cards (G2.13a), one per layer (empty ones too), back to front by index.
+   * retainedMM2 is SBGeom.area(layer.material) (the same polygons the proof and the cut files draw); wasteMM2 is
+   * the rest of the shared page (frame included), so retained + waste = page area. role: the first card is the
+   * backing, the last the front, the others mid.
+   */
+  P.cards = function (layers, page) {
+    const pg = page || {};
+    if (!(Number.isFinite(pg.wMM) && pg.wMM > 0 && Number.isFinite(pg.hMM) && pg.hMM > 0))
+      throw new Error("SBProof.cards: NONFINITE — page wMM and hMM must be finite and > 0");
+    const L = (layers || []).filter(Boolean).slice();
+    for (const l of L) if (!Number.isInteger(l.index)) throw new Error("SBProof.cards: NONINTEGER — layer.index must be an integer");
+    L.sort((a, b) => a.index - b.index);
+    const pageMM2 = pg.wMM * pg.hMM, n = L.length;
+    return L.map((l, k) => {
+      const mat = l.material || [];
+      const retainedMM2 = Math.min(pageMM2, global.SBGeom.area(mat) / 1e6);
+      return {
+        layerIndex: l.index,
+        role: k === 0 ? "backing" : k === n - 1 ? "front" : "mid",
+        empty: retainedMM2 === 0,
+        retainedMM2,
+        wasteMM2: pageMM2 - retainedMM2,
+        retainedPct: (100 * retainedMM2) / pageMM2,
+      };
     });
   };
 
@@ -7671,6 +7709,25 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   const RASTER_MAX_PX = 1600;           // long side of each per-layer offscreen canvas
   const BED = "#171D24";                // waste / laser bed
   const AMBER = "#F0A227";
+  const HATCH = "rgba(255,255,255,0.16)";   // waste hatch strokes on the bed colour
+  const HATCH_PX = 7;                       // hatch pitch in card pixels
+  const CARD_MAX_PX = 480;                  // long side of a layer card canvas
+
+  /**
+   * The waste hatch (G2.13a): the bed colour with 45° strokes, so waste reads as waste without relying on
+   * colour alone. Material is drawn over it; wherever the layer image is transparent the hatch shows.
+   */
+  P.drawWasteHatch = function (c, w, h) {
+    c.fillStyle = BED;
+    c.fillRect(0, 0, w, h);
+    c.save();
+    c.strokeStyle = HATCH;
+    c.lineWidth = 1;
+    c.beginPath();
+    for (let d = -h; d < w; d += HATCH_PX) { c.moveTo(d, h); c.lineTo(d + h, 0); }
+    c.stroke();
+    c.restore();
+  };
 
   /**
    * Create a preview controller bound to a canvas element.
@@ -7757,6 +7814,29 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       state.snap = { page, tMM: snap.tMM, gMM: snap.gMM, layers: snap.layers, model, fills, images, bridges, sectionY: prevY, section: null };
       setSectionY(prevY);
       state.dirty = true;
+    }
+
+    /**
+     * G2.13a: draw one layer's card from the per-snapshot offscreen cache (no re-rasterization): the waste as a
+     * hatch on the bed colour, then the layer's cached material image, with the proof's draw parameters (no
+     * smoothing). The card canvas takes the page aspect, long side opts.maxPx (default 480). A layer with no
+     * material is hatch only. Returns false (and draws nothing) when there is no polygon snapshot.
+     */
+    function drawCard(cardCanvas, layerIndex, opts) {
+      const s = state.snap;
+      if (!s) return false;
+      const maxPx = (opts && opts.maxPx) || CARD_MAX_PX;
+      const k = maxPx / Math.max(s.page.wMM, s.page.hMM);
+      const w = Math.max(1, Math.round(s.page.wMM * k)), h = Math.max(1, Math.round(s.page.hMM * k));
+      cardCanvas.width = w; cardCanvas.height = h;
+      const c = cardCanvas.getContext("2d");
+      P.drawWasteHatch(c, w, h);
+      const im = s.images.find((e) => e.layerIndex === layerIndex);
+      if (im) {
+        c.imageSmoothingEnabled = global.SBProof.drawParams("proof").smoothing;
+        c.drawImage(im.canvas, 0, 0, w, h);
+      }
+      return true;
     }
 
     function setSectionY(yMM) {
@@ -7944,6 +8024,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     return {
       setSheets,
       setSnapshot,
+      drawCard,
+      /** True while the polygon snapshot (not the interim raster) is the source of the views and cards. */
+      hasSnapshot() { return !!state.snap; },
       /** "proof" | "section" | "tilt" (SBProof.drawParams validates the name). */
       setMode(mode) { global.SBProof.drawParams(mode); state.mode = mode; state.dirty = true; },
       getMode() { return state.mode; },
@@ -8184,9 +8267,12 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       preview.setSnapshot({ page: run.view.page, layers: run.view.layers, tMM: project.material.thicknessMM, gMM: bonded ? 0 : project.construction.gapMM },
         colors, { bridges: { masks: run.sheets.map((sh) => sh.bridges || null), w: run.procW, h: run.procH } });
       setStatus(run.report);
+      try { renderSheetGrid(colors); }   // G2.13a: the cards now come from the polygon snapshot
+      catch (err) { setStatus(`${run.report} · layer cards unavailable: ${err.message || err}`); }
     } catch (err) {
       setStatus(`${run.report} · proof unavailable: ${err.message || err}`);
       showRaster(colors);
+      try { renderSheetGrid(colors); } catch (_) { /* the status line already reports the failure */ }   // raster cards
     }
   }
 
@@ -8195,37 +8281,40 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     try { preview.setSheets(run.sheets, colors, run.procW, run.procH); } catch (_) { /* reported by the caller */ }
   }
 
-  /** The "Layer sheets" tab: one card per sheet with its cut preview + stats. */
+  /**
+   * The "Layers" tab: one card per sheet showing what is retained (material) and what is waste (G2.13a).
+   * Once the polygon snapshot is set, each card is drawn from layer.material through the preview's per-snapshot
+   * offscreen cache (preview.drawCard: waste hatch, then the cached layer image, no smoothing), so the cards
+   * match the Proof, and the label adds SBProof.cards retained/waste mm². Until then (KI-CONN-PERF interim) or
+   * when the proof is unavailable, the card falls back to the raster masks over the same waste hatch.
+   */
   function renderSheetGrid(colors) {
     const grid = $("sheetgrid");
     grid.innerHTML = "";
+    const poly = preview.hasSnapshot() && run.view ? run.view : null;
+    const stats = poly ? SBProof.cards(poly.layers, poly.page) : null;
     run.sheets.forEach((sheet, s) => {
       const card = document.createElement("div");
       card.className = "sheetcard";
 
       const cvs = document.createElement("canvas");
-      const w = run.procW, h = run.procH;
-      cvs.width = w; cvs.height = h;
-      const c = cvs.getContext("2d");
-      // waste = dark bed, material = sheet color, bridges = amber
-      c.fillStyle = "#171D24";
-      c.fillRect(0, 0, w, h);
-      const img = c.getImageData(0, 0, w, h);
-      const [r, g, b] = SBUtil.hexToRgb(colors[s]);
-      for (let i = 0, p = 0; i < w * h; i++, p += 4) {
-        const on = s === 0 || sheet.mask[i];
-        if (on) { img.data[p] = r; img.data[p + 1] = g; img.data[p + 2] = b; }
-        if (sheet.bridges && sheet.bridges[i]) {
-          img.data[p] = 240; img.data[p + 1] = 162; img.data[p + 2] = 39;
-        }
-      }
-      c.putImageData(img, 0, 0);
+      const layer = poly ? poly.layers.find((l) => l.index === s) : null;
+      if (!poly || !preview.drawCard(cvs, layer ? layer.index : s)) rasterCard(cvs, sheet, colors[s], s === 0);
+      const st = stats ? stats.find((c) => c.layerIndex === s) : null;
+      cvs.setAttribute("role", "img");
+      cvs.setAttribute("aria-label", `Sheet ${s + 1}: ` + (st
+        ? `${SBUtil.fmt(st.retainedPct, 0)}% retained material, ${SBUtil.fmt(100 - st.retainedPct, 0)}% waste (hatched)`
+        : "material in the sheet colour, waste hatched"));
 
       const label = document.createElement("div");
       label.className = "sheetlabel";
       const role = s === 0 ? "backing" : s === run.sheets.length - 1 ? "front" : "mid";
       label.innerHTML =
         `<b>SHEET ${s + 1}</b> <span class="muted">${role}</span><br>` +
+        `<span class="sw sw-retained" style="background:${colors[s]}"></span>retained ` +
+        (st ? `${SBUtil.fmt(st.retainedMM2 / 100, 1)} cm² (${SBUtil.fmt(st.retainedPct, 0)}%)` : "") +
+        ` · <span class="sw sw-waste"></span>waste` +
+        (st ? ` ${SBUtil.fmt(st.wasteMM2 / 100, 1)} cm²` : "") + `<br>` +
         (s === 0
           ? `solid panel — frame + holes only`
           : `${sheet.stats.loops} contours · ${SBUtil.fmt(sheet.stats.cutMM / 10, 1)} cm cut` +
@@ -8234,6 +8323,21 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       card.append(cvs, label);
       grid.appendChild(card);
     });
+  }
+
+  /** Interim/fallback card from the raster mask: waste hatch (SBPreview.drawWasteHatch), material in the sheet colour, bridges amber. */
+  function rasterCard(cvs, sheet, color, solid) {
+    const w = run.procW, h = run.procH;
+    cvs.width = w; cvs.height = h;
+    const c = cvs.getContext("2d");
+    SBPreview.drawWasteHatch(c, w, h);
+    const img = c.getImageData(0, 0, w, h);
+    const [r, g, b] = SBUtil.hexToRgb(color);
+    for (let i = 0, p = 0; i < w * h; i++, p += 4) {
+      if (solid || sheet.mask[i]) { img.data[p] = r; img.data[p + 1] = g; img.data[p + 2] = b; }
+      if (sheet.bridges && sheet.bridges[i]) { img.data[p] = 240; img.data[p + 1] = 162; img.data[p + 2] = 39; }
+    }
+    c.putImageData(img, 0, 0);
   }
 
   function renderPaletteChips(colors) {

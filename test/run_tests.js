@@ -4546,12 +4546,93 @@ suite("proof.js/preview.js/index.html/app.js — G2.12 opaque proof, stack secti
   check("UI-02 app.js: switchTab sets the preview mode; renderAll feeds setSnapshot from canonical polygons",
     /preview\.setMode\(/.test(appSrc) && /preview\.setSnapshot\(/.test(appSrc) && /SBEngine\.connectedLayers\(/.test(appSrc));
   check("KI-CONN-PERF app.js: renderAll defers the polygon build (raster first, rAF + task, superseded by viewToken) and reports failures",
-    (() => { const ra = appSrc.slice(appSrc.indexOf("function renderAll()"), appSrc.indexOf("/** The \"Layer sheets\" tab")); return /requestAnimationFrame\(\(\) => setTimeout\(/.test(ra) &&
+    (() => { const ra = appSrc.slice(appSrc.indexOf("function renderAll()"), appSrc.indexOf("function renderSheetGrid(")); return /requestAnimationFrame\(\(\) => setTimeout\(/.test(ra) &&
       /token !== run\.viewToken/.test(ra) && /preview\.setSheets\(/.test(ra) && /proof unavailable/.test(ra) && /catch \(err\)/.test(ra) &&
       ra.indexOf("renderSheetGrid(") < ra.indexOf("connectedLayers("); })());
   check("G2.12 app.js: the export bundle image is the proof (preview.snapshot(\"proof\"))", /preview\.snapshot\("proof"\)/.test(appSrc));
   check("UI-02 the draft badge is gone; the tilt view carries an Illustrative note",
     !/Draft preview: cut files come from polygons/.test(html) && /id="tiltnote"[^>]*>[^<]*Illustrative/.test(html));
+});
+
+suite("proof.js/preview.js/app.js/style.css — G2.13a retained/waste layer cards (UI-02, MAT-04)", () => {
+  const F = require("./fixtures.js"), M = SBMaterial, G = SBGeom, P = globalThis.SBProof;
+  check("G2.13a SBProof.cards present", !!P && typeof P.cards === "function");
+  if (!P || typeof P.cards !== "function") return;
+  const throws = (f, re) => { try { f(); return false; } catch (x) { return !re || re.test(x.message); } };
+  const bt = F.MASKS.borderTouch, di = F.MASKS.donutIsland;
+  const pgC = M.page({ artWMM: 80, artHMM: 50, frameMM: 10 });
+  const LC = M.fromMasks(bt.layers, 8, 5, pgC, { frame: true, holes: [{ cxUm: 5000, cyUm: 5000, rUm: 1500 }] });
+  const pgB = M.page({ artWMM: 90, artHMM: 90, frame: { enabled: false, widthMM: 10 } }), LB = M.fromMasks(di.layers, 9, 9, pgB, {});
+  const pal = ["#ffffff", "#336699", "#000000", "#cc0000"];
+
+  // ---- pure card model
+  const cards = P.cards(LC.slice().reverse(), pgC);
+  const pageMM2 = pgC.wMM * pgC.hMM;
+  check("UI-02 cards: one per layer (empty ones too), back to front by index",
+    cards.length === LC.length && cards.every((c, j) => c.layerIndex === LC.slice().sort((a, b) => a.index - b.index)[j].index));
+  check("UI-02 cards: retained mm² = SBGeom.area(layer.material); retained + waste = page area",
+    cards.every((c) => { const l = LC.find((x) => x.index === c.layerIndex);
+      return Math.abs(c.retainedMM2 - G.area(l.material) / 1e6) < 1e-9 && Math.abs(c.retainedMM2 + c.wasteMM2 - pageMM2) < 1e-6; }));
+  check("UI-02 cards: retainedPct in [0, 100]; an empty layer is all waste",
+    cards.every((c) => c.retainedPct >= 0 && c.retainedPct <= 100) &&
+    (() => { const e = P.cards([{ index: 0, material: [] }], pgB)[0]; return e.retainedMM2 === 0 && e.wasteMM2 === pgB.wMM * pgB.hMM && e.retainedPct === 0 && e.empty === true; })());
+  check("UI-02 cards: roles backing / mid / front (one layer: backing)",
+    JSON.stringify(P.cards(LC, pgC).map((c) => c.role)) === JSON.stringify(LC.map((_, k) => (k === 0 ? "backing" : k === LC.length - 1 ? "front" : "mid"))) &&
+    P.cards([LB[0]], pgB)[0].role === "backing");
+  check("UI-02 donutIsland layer 1 card: retained = ring + island area", (() => {
+    const c = P.cards(LB, pgB)[1]; return Math.abs(c.retainedMM2 - G.area(LB[1].material) / 1e6) < 1e-9 && c.retainedMM2 > 0 && c.wasteMM2 > 0; })());
+  check("G2.13a cards refuse a bad page or a non-integer index; do not mutate layers", (() => {
+    const before = JSON.stringify(LC);
+    return throws(() => P.cards(LC, { wMM: 0, hMM: 10 }), /NONFINITE/) && throws(() => P.cards([{ index: 0.5, material: [] }], pgC), /NONINTEGER/) &&
+      JSON.stringify(LC) === before; })());
+
+  // ---- preview.js drawCard from the per-snapshot cache (recording 2D context, no DOM)
+  const log = { canvases: 0, fills: 0, draws: [], strokes: 0, rects: [] };
+  const mkCtx = () => { const st = { imageSmoothingEnabled: true, fillStyle: "#000", strokeStyle: "#000", lineWidth: 1 }; const stack = [];
+    return Object.assign(st, { setTransform() {}, clearRect() {}, save() { stack.push(Object.assign({}, st)); }, restore() { Object.assign(st, stack.pop() || {}); },
+      fillRect(x, y, w, h) { log.rects.push({ fill: st.fillStyle, w, h }); }, strokeRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, rect() {}, clip() {},
+      stroke() { log.strokes++; }, fillText() {}, fill() { log.fills++; },
+      createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData() {},
+      drawImage(img, x, y, w, h) { log.draws.push({ img, x, y, w, h, smoothing: st.imageSmoothingEnabled }); } }); };
+  const mkCanvas = () => { log.canvases++; return { width: 0, height: 0, clientWidth: 400, clientHeight: 300, _ctx: null,
+    getContext() { return this._ctx || (this._ctx = mkCtx()); }, addEventListener() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 300 }), toBlob(cb) { cb(null); } }; };
+  const ctx = vm.createContext({ console, Math, Uint8Array, Uint8ClampedArray, Promise, SBUtil, SBProof: P, devicePixelRatio: 1,
+    document: { createElement: () => mkCanvas() }, addEventListener() {}, requestAnimationFrame() {},
+    Path2D: function () { this.moveTo = () => {}; this.lineTo = () => {}; this.closePath = () => {}; } });
+  ctx.globalThis = ctx; ctx.window = ctx;
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "js", "preview.js"), "utf8"), ctx, { filename: "preview.js" });
+  const pv = ctx.SBPreview.create(mkCanvas());
+  check("UI-02 preview exposes drawCard and hasSnapshot", typeof pv.drawCard === "function" && typeof pv.hasSnapshot === "function");
+  if (typeof pv.drawCard !== "function") return;
+  check("UI-02 drawCard without a snapshot draws nothing and returns false", pv.hasSnapshot() === false && pv.drawCard(mkCanvas(), 1) === false);
+  pv.setSnapshot({ page: pgC, layers: LC, tMM: 3, gMM: 2 }, pal);
+  const nonEmpty = LC.filter((l) => l.material.length);
+  const c0 = log.canvases, f0 = log.fills;
+  const card = mkCanvas();
+  log.draws = []; log.strokes = 0; log.rects = [];
+  const ok = pv.drawCard(card, nonEmpty[1].index, { maxPx: 300 });
+  check("UI-02 drawCard sizes the card to the page aspect (long side maxPx)",
+    ok === true && Math.max(card.width, card.height) === 300 && Math.abs(card.width / card.height - pgC.wMM / pgC.hMM) < 0.02);
+  check("UI-02 layer card reuses the per-snapshot offscreen cache (no re-rasterization)",
+    log.canvases - c0 === 1 && log.fills === f0 && log.draws.length === 1 && log.draws[0].img.width > 0 && log.draws[0].w === card.width && log.draws[0].h === card.height);
+  check("UI-02 layer card: waste hatch (bed fill plus hatch strokes) under the material, no smoothing (matches the proof)",
+    log.rects.length >= 1 && log.rects[0].fill.toUpperCase() === "#171D24" && log.strokes >= 1 && log.draws[0].smoothing === false);
+  log.draws = []; log.strokes = 0;
+  pv.drawCard(card, 99);
+  check("UI-02 a layer with no material is drawn as hatch only", log.draws.length === 0 && log.strokes >= 1);
+  pv.setSheets([{ mask: new Uint8Array(4), bridges: null }], ["#808080"], 2, 2);
+  check("UI-02 setSheets drops the snapshot, so cards fall back to the raster", pv.hasSnapshot() === false);
+
+  // ---- wiring
+  const root = path.join(__dirname, "..");
+  const appSrc = fs.readFileSync(path.join(root, "js", "app.js"), "utf8"), css = fs.readFileSync(path.join(root, "css", "style.css"), "utf8");
+  const grid = appSrc.slice(appSrc.indexOf("function renderSheetGrid("), appSrc.indexOf("function renderPaletteChips("));
+  check("UI-02 app.js: renderSheetGrid draws polygon cards via preview.drawCard with SBProof.cards stats, raster hatch fallback",
+    /preview\.drawCard\(/.test(grid) && /SBProof\.cards\(/.test(grid) && /hatch/i.test(grid) && /retained/.test(grid) && /waste/.test(grid));
+  check("UI-02 app.js: showView re-renders the cards once the snapshot is set",
+    (() => { const sv = appSrc.slice(appSrc.indexOf("function showView("), appSrc.indexOf("function showRaster(")); return sv.indexOf("setSnapshot(") < sv.indexOf("renderSheetGrid("); })());
+  check("UI-02 style.css: .sheetcard legend swatches for retained and waste (hatch, not colour alone)",
+    /\.sheetcard[^{]*\.sw-waste\s*\{[^}]*repeating-linear-gradient/.test(css));
 });
 
 // ------------------------------------------------------------------ report

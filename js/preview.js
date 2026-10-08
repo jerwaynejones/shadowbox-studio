@@ -27,6 +27,25 @@
   const RASTER_MAX_PX = 1600;           // long side of each per-layer offscreen canvas
   const BED = "#171D24";                // waste / laser bed
   const AMBER = "#F0A227";
+  const HATCH = "rgba(255,255,255,0.16)";   // waste hatch strokes on the bed colour
+  const HATCH_PX = 7;                       // hatch pitch in card pixels
+  const CARD_MAX_PX = 480;                  // long side of a layer card canvas
+
+  /**
+   * The waste hatch (G2.13a): the bed colour with 45° strokes, so waste reads as waste without relying on
+   * colour alone. Material is drawn over it; wherever the layer image is transparent the hatch shows.
+   */
+  P.drawWasteHatch = function (c, w, h) {
+    c.fillStyle = BED;
+    c.fillRect(0, 0, w, h);
+    c.save();
+    c.strokeStyle = HATCH;
+    c.lineWidth = 1;
+    c.beginPath();
+    for (let d = -h; d < w; d += HATCH_PX) { c.moveTo(d, h); c.lineTo(d + h, 0); }
+    c.stroke();
+    c.restore();
+  };
 
   /**
    * Create a preview controller bound to a canvas element.
@@ -113,6 +132,29 @@
       state.snap = { page, tMM: snap.tMM, gMM: snap.gMM, layers: snap.layers, model, fills, images, bridges, sectionY: prevY, section: null };
       setSectionY(prevY);
       state.dirty = true;
+    }
+
+    /**
+     * G2.13a: draw one layer's card from the per-snapshot offscreen cache (no re-rasterization): the waste as a
+     * hatch on the bed colour, then the layer's cached material image, with the proof's draw parameters (no
+     * smoothing). The card canvas takes the page aspect, long side opts.maxPx (default 480). A layer with no
+     * material is hatch only. Returns false (and draws nothing) when there is no polygon snapshot.
+     */
+    function drawCard(cardCanvas, layerIndex, opts) {
+      const s = state.snap;
+      if (!s) return false;
+      const maxPx = (opts && opts.maxPx) || CARD_MAX_PX;
+      const k = maxPx / Math.max(s.page.wMM, s.page.hMM);
+      const w = Math.max(1, Math.round(s.page.wMM * k)), h = Math.max(1, Math.round(s.page.hMM * k));
+      cardCanvas.width = w; cardCanvas.height = h;
+      const c = cardCanvas.getContext("2d");
+      P.drawWasteHatch(c, w, h);
+      const im = s.images.find((e) => e.layerIndex === layerIndex);
+      if (im) {
+        c.imageSmoothingEnabled = global.SBProof.drawParams("proof").smoothing;
+        c.drawImage(im.canvas, 0, 0, w, h);
+      }
+      return true;
     }
 
     function setSectionY(yMM) {
@@ -300,6 +342,9 @@
     return {
       setSheets,
       setSnapshot,
+      drawCard,
+      /** True while the polygon snapshot (not the interim raster) is the source of the views and cards. */
+      hasSnapshot() { return !!state.snap; },
       /** "proof" | "section" | "tilt" (SBProof.drawParams validates the name). */
       setMode(mode) { global.SBProof.drawParams(mode); state.mode = mode; state.dirty = true; },
       getMode() { return state.mode; },
