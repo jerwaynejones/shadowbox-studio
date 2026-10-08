@@ -174,7 +174,7 @@ Every opaque-layer requirement in the SRS maps to the task IDs defined in §5–
 | GEO-01 | Polygons with holes are the single source for every consumer; carrier boundaries representable | S1, G1.1, G1.6, G2.12 | AT-06, AT-07, AT-11 |
 | GEO-02 | Bounded smoothing, then frame union, then hole subtraction, before checks; finite-width attachment | S5, G1.3, G2.7, G2.10a | AT-06, AT-09 |
 | GEO-03 | Closed, simple, hierarchical rings; saddles split; degenerate loops block export | S1, G1.1 | AT-07, AT-09, AT-13 |
-| GEO-04 | 0.05 mm measured (densified Hausdorff) smoothing tolerance; topology and containment fallback | S2, G1.2 | AT-09, AT-10 |
+| GEO-04 | 0.05 mm measured (densified Hausdorff) smoothing tolerance; topology fallback; bonded unsmoothed (D1) | S2, G1.2 | AT-09, AT-10 |
 | GEO-05 | Small-part and narrow-neck warnings via erosion by half the width (disappear or split) | G2.8 | AT-10 |
 | GEO-06 | ≥3 samples across the minimum feature, from real (not upsampled) samples; show mm/px; refuse export | G1.1, G2.8, G2.14 | AT-10, AT-24 |
 | GEO-07 | Final-polygon validation (support, holes, guides) after every change | G2.7, G2.9, G3.1 | AT-08, AT-09, AT-14 |
@@ -246,7 +246,9 @@ Questions marked ● block the task named in brackets. Each has a proposed defau
 2. ● **Smoothing vs exact containment [S2 → G1.2].** *Default (changed in rev 2):* **no automatic conformance.** Bounded smoothing is containment-aware: for each loop it falls back Chaikin → RDP → raw until the layer is contained in the smoothed layer below. Raw nested masks are always contained, so this fixpoint terminates (see G1.2). Clip-to-lower is offered **only** as a reviewed repair (SRS:L180, SUP-04).
 
    *Question:* is that acceptable, or do you prefer bonded mode to be unsmoothed only?
-3. ● **"Finite-width connection" (GEO-02) [G2.7].** The SRS gives no number. *Default:* blocking if the support intersection does not survive an inward offset of 0.5 µm (it is a line or point contact). A warning if it does not survive an inward offset of `minFeatureMM/2`.
+
+   **Decided 2026-10-07 (D1, Appendix B.2):** bonded mode is **unsmoothed** (raw lattice contours, S2 option (b)); connected mode keeps the bounded smoothing of G1.2. Per-vertex lazy pinning (S2 option (c)) is a deferred, performance-gated enhancement, not in G1 scope.
+3. ● **"Finite-width connection" (GEO-02) [G2.7].** The SRS gives no number. *Decided 2026-10-07 (D3, Appendix B.3; spike S5):* the contact **width** is w = 2·r\*, r\* the radius of the largest disk inside the support intersection. Blocking if **w < 0.5 µm**, i.e. the intersection does not survive an inward offset of **0.25 µm** (line and point contact have an empty intersection and are covered). A warning (`SUPPORT_NARROW`) if **w < `minFeatureUm`**, i.e. it does not survive an inward offset of `minFeatureUm/2`, with `minFeatureUm` rounded to an integer µm before halving. "Survives" is certified by an exact witness (`SBGeom.survivesInset`); an undecided result counts as not surviving; never computed with `SBGeom.offset`.
 4. **Tonal + bonded mapping.** *Default:* `added = N-1-b'`, where `b'` is the darkness-oriented band. This reproduces today's `R.sheetMasks` exactly (verified), and light-front/dark-front replaces the `darkFront` checkbox wording.
 5. **Bonded frame when enabled.** *Default:* frame material on **every** layer (a solid border stack), so containment holds trivially.
 6. **Base cut outline.** *Default:* the base is always B (the full rectangle) even when the alpha domain A is smaller. A affects only layers ≥ 1.
@@ -1254,7 +1256,7 @@ Rule (default): **containment-aware bounded smoothing; no automatic conformance.
 
 Levels only decrease, and the all-raw stack is nested (G2.7 property). So the fixpoint terminates in at most `3 × loops` steps. Every fallback is reported as `SMOOTH_FALLBACK` (warning) with the loop's layer and region.
 
-Clip-to-lower stays a reviewed repair only (G2.9). If the product owner rejects smoothing in bonded mode (open question 2), bonded forces `cornerStyle: "sharp"` with collinear-only simplification.
+Clip-to-lower stays a reviewed repair only (G2.9). If the product owner rejects smoothing in bonded mode (open question 2), bonded forces `cornerStyle: "sharp"` with collinear-only simplification. **Outcome (2026-10-07):** the product owner chose exactly that (D1 option (b)); the containment-aware rule above is not implemented in G1 (see G1.2 and Appendix C, S2 bullets).
 - [ ] **Step 4: Commit** with `spike(S2): smoothing vs containment measurement and rule D1`.
 
 ### Task S4: Raw PNG decode and header inspection (`SBPng`) (1.5 days; parallel with G1)
@@ -1458,7 +1460,9 @@ suite("material.js — canonical polygons (GEO-01/03, D-4.2, SUP-05)", () => {
 
 **Commit.**
 
-### Task G1.2: Containment-aware bounded smoothing on pixel loops (GEO-04, D1)
+### Task G1.2: Bounded smoothing on pixel loops, connected mode only; bonded unsmoothed (GEO-04, D1)
+
+D1 (decided 2026-10-07, `docs/ARCHITECTURE.md`): **bonded mode is unsmoothed** — its layers keep the raw lattice contours, so nesting holds by construction and there is no containment fixpoint. **Connected mode** keeps per-loop, deviation-bounded smoothing. Per-vertex lazy pinning (S2 option (c)) is deferred and perf-gated (Appendix C, S2 bullets); it is not part of this task.
 
 **Files:**
 - Modify:
@@ -1470,22 +1474,22 @@ suite("material.js — canonical polygons (GEO-01/03, D-4.2, SUP-05)", () => {
 - Produces:
   - `SBGeom.maxDeviationUm(ringA, ringB, stepUm = 10) → number`. This is the symmetric Hausdorff distance with **both rings densified** at `stepUm` (point to segment, with `Math.sqrt` only), so peaks inside segments are measured.
   - `SBGeom.ringTopology(polys) → string`, a canonical signature of the ring count and outer/hole nesting.
-  - `SBTrace.smoothLevel(loopPx, level: "chaikin"|"rdp"|"raw", pinned: (pt) => boolean) → loopPx'`. Vertices on the art-rectangle boundary are **pinned**, so the frame union stays exact.
-  - `SBMaterial.smoothStack(loopsByLayer, {tolUm, sxUm, syUm, containment: boolean}) → {loopsByLayer, levels, fallbacks: [{layer, loopIndex, from, to, reason: "deviation"|"topology"|"containment", devUm}]}`. It implements D1:
-    1. Each loop starts at the highest level whose deviation is ≤ `tolUm` and whose layer topology is unchanged.
-    2. With `containment` set (bonded), the layers are walked from the base upward to a fixpoint, as specified in S2.
-  - It reports `SMOOTH_FALLBACK` diagnostics. **There is no `conform` function and no automatic clip.**
+  - `SBTrace.smoothLevel(loopPx, level: "chaikin"|"rdp"|"raw", pinned: (pt) => boolean, epsPx) → loopPx'`. `"chaikin"` is **Chaikin(2)∘RDP(ε)** (RDP before Chaikin, S1 amendment), `"rdp"` is RDP(ε) alone, with ε = `tolUm / pitchUm` in pixels. Vertices on the art-rectangle boundary are **pinned**, so the frame union stays exact.
+  - `SBMaterial.smoothStack(loopsByLayer, {tolUm, sxUm, syUm, mode: "connected"|"bonded"}) → {loopsByLayer, levels, fallbacks: [{layer, loopIndex, from, to, reason: "deviation"|"topology", devUm}]}`. It implements D1:
+    1. `mode: "bonded"` returns the loops unchanged: every level is `"raw"` and there are no fallbacks (D1 option (b)).
+    2. `mode: "connected"`: each loop independently starts at the highest level whose deviation is ≤ `tolUm` and whose layer topology is unchanged; the tolerance loop runs per loop, not per layer.
+  - It reports `SMOOTH_FALLBACK` diagnostics (connected mode). **There is no `conform` function, no containment fixpoint and no automatic clip.**
 
 - [ ] **Step 1: Tests**
 
 ```js
-suite("smoothing — bounded and containment-aware (GEO-04, D1, AT-09)", () => {
+suite("smoothing — bounded, connected mode; bonded unsmoothed (GEO-04, D1, AT-09)", () => {
   const F = require("./fixtures.js"), G = SBGeom;
   const stair = [[0,0],[1,0],[1,1],[2,1],[2,2],[3,2],[3,3],[0,3]];
   const toUm = (lp, s) => lp.flatMap(([x, y]) => [Math.round(x * s), Math.round(y * s)]);
-  const dev = G.maxDeviationUm(toUm(stair, 1000), toUm(SBTrace.smoothLevel(stair, "chaikin", () => false), 1000));
+  const dev = G.maxDeviationUm(toUm(stair, 1000), toUm(SBTrace.smoothLevel(stair, "chaikin", () => false, 0), 1000));
   check("GEO-04 deviation of chaikin(staircase) at 1 mm/px within 1 µm of 176.78", Math.abs(dev - 176.78) <= 1);
-  const r = SBMaterial.smoothStack([[], [stair]], { tolUm: 1, sxUm: 250, syUm: 250, containment: false });
+  const r = SBMaterial.smoothStack([[], [stair]], { tolUm: 1, sxUm: 250, syUm: 250, mode: "connected" });
   check("GEO-04 tolerance exceeded (1 µm @ 250 µm/px) → fallback recorded", r.levels[1][0] !== "chaikin" && r.fallbacks.length > 0);
   // densified measurement is never below a brute-force sampled distance
   const rng = F.lcg(3); let okDense = true;
@@ -1497,19 +1501,23 @@ suite("smoothing — bounded and containment-aware (GEO-04, D1, AT-09)", () => {
           best = Math.min(best, Math.hypot(x - Q[k] - u * dx, y - Q[k + 1] - u * dy)); } m = Math.max(m, best); } } return m; };
     if (G.maxDeviationUm(A, B) + 1 < Math.max(brute(A, B), brute(B, A))) okDense = false; }
   check("GEO-04 deviation measured at segment interiors (densified ≥ sampled)", okDense);
-  const ci = F.MASKS.crescentInterior;
-  const L = SBMaterial.fromMasks(ci.layers, ci.w, ci.h, { artWMM: ci.w * 0.25, artHMM: ci.h * 0.25, frameMM: 0 },
-    { smooth: { tolUm: 50, containment: true } });
-  check("D1/SUP-02 containment-aware smoothing leaves no overhang", G.isEmpty(G.difference(L[1].material, L[0].material)));
+  const ci = F.MASKS.crescentInterior, page = { artWMM: ci.w * 0.25, artHMM: ci.h * 0.25, frameMM: 0 };
+  const Lb = SBMaterial.fromMasks(ci.layers, ci.w, ci.h, page, { smooth: { tolUm: 50, mode: "bonded" } });
+  const Lraw = SBMaterial.fromMasks(ci.layers, ci.w, ci.h, page, {});
+  check("D1 bonded mode is unsmoothed: material equals the raw lattice contours", JSON.stringify(Lb.map((l) => l.material)) === JSON.stringify(Lraw.map((l) => l.material)));
+  check("D1/SUP-02 bonded (unsmoothed) leaves no overhang", G.isEmpty(G.difference(Lb[1].material, Lb[0].material)));
+  check("D1 bonded smoothStack reports no SMOOTH_FALLBACK", SBMaterial.smoothStack([[], [stair]], { tolUm: 50, sxUm: 250, syUm: 250, mode: "bonded" }).fallbacks.length === 0);
   const bt = F.MASKS.borderTouch;
-  const Lb = SBMaterial.fromMasks(bt.layers, bt.w, bt.h, { artWMM: 8, artHMM: 5, frameMM: 0 }, { smooth: { tolUm: 50, containment: true } });
-  check("GEO-02 art-boundary vertices pinned (x=0 edge kept exact)", Lb[1].material[0].outer.some((v, i) => i % 2 === 0 && v === 0));
+  const Lc = SBMaterial.fromMasks(bt.layers, bt.w, bt.h, { artWMM: 8, artHMM: 5, frameMM: 0 }, { smooth: { tolUm: 50, mode: "connected" } });
+  check("GEO-02 art-boundary vertices pinned (x=0 edge kept exact)", Lc[1].material[0].outer.some((v, i) => i % 2 === 0 && v === 0));
   check("GEO-04 topology unchanged after smoothing (donut keeps its hole)", (() => { const d = F.MASKS.donutIsland;
     const a = SBMaterial.fromMasks(d.layers, d.w, d.h, { artWMM: 9, artHMM: 9, frameMM: 0 }, {});
-    const b = SBMaterial.fromMasks(d.layers, d.w, d.h, { artWMM: 9, artHMM: 9, frameMM: 0 }, { smooth: { tolUm: 50, containment: true } });
+    const b = SBMaterial.fromMasks(d.layers, d.w, d.h, { artWMM: 9, artHMM: 9, frameMM: 0 }, { smooth: { tolUm: 50, mode: "connected" } });
     return G.ringTopology(a[1].material) === G.ringTopology(b[1].material); })());
 });
 ```
+
+S5 F3 (frame-edge slivers from unpinned per-loop smoothing) applies to connected mode: G1.3 adds `GEO-02 connected smoothing leaves no frame-edge hole below 1 px²`.
 
 For the staircase analytic value: a 2-iteration Chaikin on a unit stair at 1 mm/px has a maximum corner deviation of 0.25·√2/2 mm ≈ 176.8 µm (measured 176.78 by the code-accuracy review). Confirm it with the S2 script before committing.
 
@@ -1630,7 +1638,7 @@ Holes and labels are unchanged.
 
 - [ ] **Step 4:** run `node build.js` and commit.
 
-**G1 exit (SRS §13.1):** AT-06, AT-07, AT-11 (round trip), AT-12 and AT-13 sections are green on the core fixtures. The AT-09 geometry part is green via G1.2's containment and topology checks.
+**G1 exit (SRS §13.1):** AT-06, AT-07, AT-11 (round trip), AT-12 and AT-13 sections are green on the core fixtures. The AT-09 geometry part is green via G1.2's checks (bonded unsmoothed and nested; connected topology and tolerance).
 
 ---
 
@@ -1942,13 +1950,13 @@ Delete the T0.4 `KNOWN-DEFECT SUP-01` and `KNOWN-DEFECT GEO-07 (bridge)` checks;
 - Create: `js/support.js`
 
 **Interfaces:**
-- Consumes: `SBGeom.difference`, `intersection`, `offset` (miter), `area`, `isEmpty`, `bbox`; `SBDiag.make`, `aggregate`.
+- Consumes: `SBGeom.difference`, `intersection`, `classifyContact` / `survivesInset` (D3), `area`, `isEmpty`, `bbox`; `SBDiag.make`, `aggregate`.
 - Produces:
   - `SBSupport.validate(layers: MaterialLayer[], mode, cfg) → {diagnostics, supportGraph: {edges: [{layer, part, supports: [{layer, part, areaUm2}]}], reachesBase: boolean}}`.
   - Bonded rules:
     - `unsupported(k) = difference(Final[k], Final[k−1])`; a non-empty result gives `BOND_UNSUPPORTED` (blocking), with `areaMM2`, `region`, `measured` (area) and `limit` (0).
     - Candidate support pairs are found by a **bbox sort-and-sweep**; only overlapping pairs are intersected.
-    - Lower part q supports upper part p iff `intersection(p, q)` survives `offset(−0.5 µm)` (D3; line and point contact do not count). `SUPPORT_NARROW` (warning) if it does not survive `offset(−minFeatureUm/2)`.
+    - Lower part q supports upper part p iff the contact `I = intersection(p, q)` has width w = 2·r\* **≥ 0.5 µm**, i.e. `SBGeom.survivesInset(I, 0.25)` (D3; empty, line and point contact do not count). `SUPPORT_NARROW` (warning) if w < `minFeatureUm`, i.e. `!SBGeom.survivesInset(I, minFeatureUm/2)` with `minFeatureUm = Math.round(minFeatureMM·1000)` rounded **before** halving. Use `SBGeom.classifyContact(I, minFeatureUm)` (`block | warn | ok`). "Survives" is certified by an exact witness; `undecided` counts as not surviving. **Never** test this with `SBGeom.offset`, which refuses sub-µm deltas (S5 F4).
     - Every part's support path must reach layer 0.
     - An empty layer under a non-empty one gives `BOND_EMPTY_UNDER`.
     - Identical consecutive layers give `IDENTICAL_LAYERS` (info).
@@ -1975,6 +1983,10 @@ suite("support.js — final validation (D-4.5, SUP-02/03, GEO-07, AT-08/09)", ()
   check("GEO-07 interior overhang caught on polygons although masks nested", codes(SBSupport.validate(grown, "bonded-relief", { minFeatureMM: 0.5 })).includes("BOND_UNSUPPORTED"));
   const diag = SBSupport.validate(mk({ ...F.MASKS.diagonalTouch, layers: [F.MASKS.diagonalTouch.layers[0], F.MASKS.diagonalTouch.layers[1]] }), "connected-sheet", {});
   check("GEO-02 diagonal-only contact → CONNECTED_SPLIT in connected mode", codes(diag).includes("CONNECTED_SPLIT"));
+  // D3 width thresholds on the contact itself (exactly as pinned in suite "spike S5 — finite-width contact")
+  const sq = (x0, y0, x1, y1) => ({ outer: [x0, y0, x1, y0, x1, y1, x0, y1], holes: [] }), lo = [sq(0, 0, 10000, 10000)];
+  check("D3 1 µm axis overlap is support (w ≥ 0.5 µm) but SUPPORT_NARROW for minFeature 3 mm", SBGeom.classifyContact(SBGeom.intersection([sq(9999, 0, 20000, 10000)], lo), 3000).level === "warn");
+  check("D3 3000 µm overlap with minFeature 3 mm → no SUPPORT_NARROW (tie passes)", SBGeom.classifyContact(SBGeom.intersection([sq(7000, 0, 20000, 10000)], lo), 3000).level === "ok");
 });
 ```
 
@@ -2004,7 +2016,7 @@ Add `test/bench.js support`, which runs on `randomNestedStack(lcg(1), 1536, 1024
 **Interfaces:**
 - Produces `SBSupport.featureChecks(layers, {minFeatureMM, minPartMM2, mmPerPxMax, calibrated}) → Diagnostic[]` (aggregated per layer):
   - `SAMPLING_LOW` (blocking) when `minFeatureMM / mmPerPxMax < 3`, with measured = samples across the feature and limit = 3;
-  - per part, `e = offset(part, −minFeatureUm/2, "miter")`:
+  - per part, `e = offset(part, −halfUm, "miter")` with **integer** `halfUm = Math.floor(minFeatureUm / 2)` and `minFeatureUm = Math.round(minFeatureMM·1000)` (D3: `SBGeom.offset` refuses non-integer deltas, so an odd `minFeatureUm` must not be halved to x.5; on integer-µm geometry the floor is exact: a width w ≤ 2·halfUm vanishes, so w < `minFeatureUm` warns and w ≥ `minFeatureUm` survives for odd `minFeatureUm`):
     - if `isEmpty(e)`, emit `PART_THIN` (warning; the part disappears);
     - if `components(e).length > 1`, emit `NECK_NARROW` (warning; separated residual regions);
   - `PART_SMALL` (warning) when a part's area is below `minPartMM2`;
@@ -2016,6 +2028,7 @@ Add `test/bench.js support`, which runs on `randomNestedStack(lcg(1), 1536, 1024
   - `AT-10 1mm feature @0.25mm/px → no SAMPLING_LOW` (1/0.25 = 4 ≥ 3)
   - `AT-10/GEO-05 neck 2.9 mm with min 3 mm → NECK_NARROW` (narrowBridge, 29 px)
   - `AT-10/GEO-05 neck 3.1 mm with min 3 mm → none` (31 px)
+  - `D3 featureChecks with minFeatureMM 2.999 (odd µm) uses integer halfUm 1499 and does not throw`
   - `GEO-05 2.9 mm-wide isolated strip → PART_THIN`
   - `AT-10 part 24.9 mm² → PART_SMALL; 25.1 mm² → none`
   - `GEO-05 message labelled conservative, not structural`
@@ -2065,7 +2078,7 @@ Add `test/bench.js support`, which runs on `randomNestedStack(lcg(1), 1536, 1024
      - tonal: `R.luminance`, then Kuwahara (domain-aware), then `R.thresholds` (domain-aware) and `R.bands`, then `tonalAdded`.
   5. `cumulativeMasks`
   6. construct strategy (cleanup report in mm²; bridge polygons kept for the overlay)
-  7. per layer: trace, then bounded smoothing **on pixel loops, art only** (G1.2; containment-aware in bonded mode), then `fromPixelLoops` to µm, then normalize
+  7. per layer: trace, then bounded smoothing **on pixel loops, art only** (G1.2; connected mode only — bonded layers stay raw, D1), then `fromPixelLoops` to µm, then normalize
   8. frame union (exact rectangle ring)
   9. replay `repairs[]` (G2.9)
   10. registration holes are proposed from the pre-hole material, then subtracted (G3.1 inserts this; until then, the legacy connected corners from G1.7)
@@ -2075,15 +2088,15 @@ Add `test/bench.js support`, which runs on `randomNestedStack(lcg(1), 1536, 1024
   14. guides plus guide-containment validation (G3.1 inserts this)
 
   `isCanceled()` is checked between stages and inside per-layer loops; it gives `status: "canceled"`. `onProgress(stage, frac)` maps to `status: "progress"` messages in the worker (G4.1).
-- **Test-only hook:** `req.debug = {disableContainmentFallback: true}` is accepted only when `SBEngine.TEST_HOOKS` is set. The Node runner sets it; it is never set in the browser and never persisted. AT-09 uses it to show that final validation catches a smoothing overhang end to end.
+- **Test-only hook:** `req.debug = {smoothBonded: true}` (applies connected-mode smoothing to bonded layers, which D1 never does) is accepted only when `SBEngine.TEST_HOOKS` is set. The Node runner sets it; it is never set in the browser and never persisted. AT-09 uses it to show that final validation catches a smoothing overhang end to end.
 
 - [ ] **Tests:**
   - `NFR-10 generate runs in Node from PNG bytes (via SBPng) to Snapshot`
   - `§9.3 engineVersion mismatch → status error ENGINE_MISMATCH`
   - `GEO-02 stage order: frame and base rings are exact rectangles after smoothing (cornerStyle smooth)`
-  - `AT-09 crescentInterior, cornerStyle smooth, containment fallback disabled → final validation reports BOND_UNSUPPORTED although masks nested`
-  - `AT-09 same with fallback enabled → no BOND_UNSUPPORTED, SMOOTH_FALLBACK reported`
-  - `AT-09 proposeClip on the disabled-fallback result removes exactly the overhang, then rerun reports none`
+  - `AT-09 crescentInterior, bonded, cornerStyle smooth, smoothBonded hook → final validation reports BOND_UNSUPPORTED although masks nested`
+  - `AT-09/D1 same without the hook → bonded layers are raw lattice contours, no BOND_UNSUPPORTED, no SMOOTH_FALLBACK`
+  - `AT-09 proposeClip on the hooked result removes exactly the overhang, then rerun reports none`
   - `IMG-03 height mode does not smooth unless heightFilter is set` (spy on kuwahara, thresholds and applyFilter)
   - `§12.3 30k-part noise input → COMPLEXITY_LIMIT, no layers returned`
   - `§9.3 isCanceled → status canceled`
@@ -2331,7 +2344,7 @@ Each task below is fully specified. It is expanded into step-level TDD before ex
 | **G4.1** Worker, cancel and stale handling (§9.3) | `js/worker.js` `importScripts`s the pure modules in §4 order and runs `SBEngine.generate`. Messages follow §3 `GenerateRequest`/`GenerateResponse`: `engineVersion` is checked both ways (a mismatch rejects and reloads the worker), `status: "progress"` messages are posted per stage, and the response carries `validatedLayers`, `diagnostics` and `geometryHash`. The controller accepts a response only if `requestId` and `revision` match. It **transfers a copy** of `normalizedSource.pixels`, so the project keeps its own copy. Cancel = `worker.terminate()` plus respawn (< 500 ms). Packaging runs in the worker. `build.js` **changes**: it emits the worker modules as `<script type="text/sb-worker">` and starts a Blob worker in `dist/`. On `file://` failure it falls back to chunked main-thread execution with a notice. | `SBDiag.acceptResult(active, response) → boolean` (pure) | `AT-15 stale response discarded`; `§9.3 engineVersion mismatch rejected`; `AT-15 cancel during export keeps last revision and source`; `§9.3 progress messages precede done`; four-list consistency extended to `worker.js` | NFR-02, UI-06, §9.3, NFR-09 |
 | **G4.2** Draft vs fabrication pipelining | The G2.10b rule is already enforced. This task makes the fab generation run in the worker while the UI stays responsive, caches the last fab snapshot per revision, and shows "Preparing fabrication geometry…" in the export flow. | `js/app.js`, `js/worker.js` | `LYR-06 export regenerates at fabPx in worker`; `LYR-06 cached fab snapshot reused only for the same revision` | LYR-06 |
 | **G4.3** Resource envelope and complexity caps | `deviceClass()` uses `deviceMemory` plus coarse pointer, with a user override. The working-set estimate is `w·h·bytesPerStage`; over budget means reject or offer an explicit downsample. Complexity caps per device class (parts per layer, total vertices; mobile: 100 parts/layer, 20,000 vertices per SRS:L562) feed `COMPLEXITY_LIMIT`. Also applies the mobile `.sbrproj` 64 MiB limit. | `SBSchema.estimateWorkingSet(w, h, N)`, `SBSchema.limits(deviceClass)` | `NFR-04 estimate > 192 MiB on mobile → reject code`; `§12.3 mobile caps 100 parts / 20k vertices`; `§9.4 mobile maxBytes 64 MiB` | IMG-07, NFR-04, §12.3 |
-| **G4.4** Benchmarks | `test/bench.js <stage>`: 5 warmups then 30 runs, reporting p50/p95/max as JSON in `docs/perf/`, plus an in-app `?bench`. Two workloads: the desktop reference, and the **mobile reference (768 × 768 samples, 6 layers, ≤100 parts/layer, ≤20,000 vertices)**. Cancellation latency is measured in both. | — | Desktop p95: draft ≤ 1.5 s, final plus validation ≤ 10 s, package ≤ 5 s. **Mobile p95: final plus validation ≤ 8 s**, measured on the recorded ≥4 GB device. Cancel ≤ 500 ms on both. | NFR-02, NFR-03, AT-24 |
+| **G4.4** Benchmarks | `test/bench.js <stage>`: 5 warmups then 30 runs, reporting p50/p95/max as JSON in `docs/perf/`, plus an in-app `?bench`. Two workloads: the desktop reference, and the **mobile reference (768 × 768 samples, 6 layers, ≤100 parts/layer, ≤20,000 vertices)**. Cancellation latency is measured in both. **KI-B1 (tracked):** B1 keeps its 2 s budget; G4.4 resolves the ≈2.14 s p95 overrun from the S6 T-split by optimizing `SBGeom` normalize (numeric vertex keys, skip noding when no collinear contact exists, normalize once per boolean; S5 F5 measured worst-case union + normalize 19 s vs 5.9 s for the union alone), then removes the `TRACKED.B1` entry from `test/bench.js`. | — | Desktop p95: draft ≤ 1.5 s, final plus validation ≤ 10 s, package ≤ 5 s. **Mobile p95: final plus validation ≤ 8 s**, measured on the recorded ≥4 GB device. Cancel ≤ 500 ms on both. | NFR-02, NFR-03, AT-24 |
 | **G4.5** Accessibility | Keyboard path through stages, tabs, diagnostics and dialogs; `aria-live` status; focus styles; `prefers-reduced-motion` disables the tilt animation; **200% zoom** layout check; audit in `docs/A11Y_AUDIT.md`; browser matrix in `docs/ACCEPTANCE.md` | `index.html`, `css/style.css`, `app.js` | AT-20 evidence, including 200% zoom and reduced motion, and proof/section available without tilt | NFR-07, NFR-08, UI-04 |
 | **G4.6** Local server path and deployment docs | README (replacing "No server" at `README.md:18`): serve locally with `python3 -m http.server 8000` (or any static server) and open `http://localhost:8000`. Production needs HTTPS for the service worker and workers. `file://` gives reduced responsiveness (open question 10). The T0.2 four-list test stays the only `SHELL` guard; there is no generated `SHELL`. | `README.md`, `docs/DEPLOY.md` | `DEP-01 README documents local server and HTTPS`; AT-23 evidence | DEP-01 |
 | **G4.7** Locality and reproducible build | A test checks that no remote URL appears in `index.html` or `dist/` in a **loading context** (`src=`, `href=`, `url(`, `fetch(`, `importScripts(`, `import(`), plus any literal `https?://` outside an allow-list of XML namespace URIs (`http://www.w3.org/2000/svg`, `http://www.w3.org/1999/xlink`) and comments. `build.js` writes `dist/BUILD.json` with a **source-tree content hash** (SHA-256 over the inlined inputs in order), the per-file hashes and the component list. It records no git commit. | `build.js`, `run_tests.js` | `NFR-01 no remote URLs in bundle (namespaces allow-listed)`; `DEP-03 build twice → identical dist and BUILD.json`; `NFR-11 every vendor file listed in COMPONENTS.md with matching SHA-256` | NFR-01, NFR-11, DEP-03 |
@@ -2347,7 +2360,7 @@ Each task below is fully specified. It is expanded into step-level TDD before ex
 | # | Risk | Impact | Mitigation | Kill / fallback |
 |---|---|---|---|---|
 | R1 | Geometry backend is not robust, too slow, too large, or not loadable as a classic script | Blocks G1 and every GEO/SUP/ASM requirement | S1 battery, load-form checks and benchmarks (difference, offset, support pairs); all calls go through the `SBGeom` adapter; the battery becomes the regression suite | Exact orthogonal booleans and lattice offsets (bonded edges stay faceted) |
-| R2 | Containment-aware smoothing falls back to raw so often that smoothing is useless in bonded mode | Faceted bonded edges | S2 measures the fallback rate; fallbacks are reported per loop | Bonded is unsmoothed only (open question 2); nesting holds by construction |
+| R2 | Containment-aware smoothing falls back to raw so often that smoothing is useless in bonded mode | Faceted bonded edges | **Realized and decided (S2, D1, 2026-10-07):** whole-loop fallback rounds 2.8 % of bonded corners on real images. Bonded ships unsmoothed; connected keeps G1.2 smoothing. Per-vertex lazy pinning (S2 option (c), 70–84 % rounded) is a deferred enhancement gated on NFR-03 (final + validation p95 ≤ 10 s desktop, ≤ 8 s mobile at fabrication pitch; prototype 13.4 s on busy-1536) | **Active:** bonded is unsmoothed (option (b)); nesting holds by construction |
 | R3 | Cross-browser non-determinism (decode, transcendental math, joins) | AT-16/17/23 fail; NFR-05 broken | Raw PNG decoder; hard-coded hash constants; miter/square joins only; integer circle table; integer resampler; `.sbrproj` stores samples; G4.8 cross-browser hash comparison | Store canonical geometry in `.sbrproj` and treat it as authoritative on reopen |
 | R4 | Engine extraction or resampling changes connected-mode output | AT-21 regression | Persisted goldens (sheetMasks, thresholds, oldRun, legacy SVG); the resample change is documented; DEP-04 table | Revert to `legacyRun` for connected mode |
 | R5 | Fabrication resolution plus booleans exceed 10 s (desktop) or 8 s (mobile) p95, or the memory budget | NFR-03 and NFR-04 fail | Support benchmark from G2.7; bbox sweep; diagnostic aggregation; worker; per-device complexity caps with `COMPLEXITY_LIMIT` | Lower the default `fabPx` only through an explicit UI choice |
@@ -2420,11 +2433,20 @@ Three reviews (coverage, code-accuracy, execution) were checked against the SRS 
 The product owner accepted all proposed defaults for the blocking open questions:
 
 1. Geometry library: Clipper2 JS port (UMD/IIFE or wrapped); fallback in-house exact orthogonal booleans + square-join offsets.
-2. Bonded smoothing: containment-aware per-loop fallback (Chaikin → RDP → raw); clip-to-lower only as a reviewed repair.
-3. GEO-02 finite-width contact: < 0.5 µm overlap blocks export; warns when the contact does not survive `offset(−minFeatureUm/2)`, i.e. contact width below the full minimum feature width.
+2. Bonded smoothing: containment-aware per-loop fallback (Chaikin → RDP → raw); clip-to-lower only as a reviewed repair. **Superseded for bonded mode by D1 (2026-10-07, below).**
+3. GEO-02 finite-width contact: < 0.5 µm overlap blocks export; warns when the contact does not survive `offset(−minFeatureUm/2)`, i.e. contact width below the full minimum feature width. **Made precise by D3 (2026-10-07, below):** both clauses are contact *widths* w = 2·r\*. Block if w < 0.5 µm (the contact does not survive an inset of 0.25 µm); warn `SUPPORT_NARROW` if w < `minFeatureUm` (inset `minFeatureUm/2`, `minFeatureUm` rounded to an integer µm before halving). Survival is certified by an exact BigInt witness, an undecided result counts as not surviving, and it is never computed with `SBGeom.offset`.
 4. NFR-10 browser integration: in-repo headless-Chrome harness, no npm.
 
 All non-blocking defaults (guide dimensions, resolutions, Plywood preset, EXIF handling, upstream patches) are accepted as proposed.
+
+### Spike decisions (accepted 2026-10-07)
+
+After spikes S2 and S5 the product owner decided (full text and evidence in `docs/ARCHITECTURE.md`, Decisions):
+
+- **D1 (S2) — option (b).** Bonded mode is **unsmoothed** (raw lattice contours); connected mode keeps smoothing per G1.2, with the RDP-before-Chaikin amendment. Per-vertex lazy pinning (S2 option (c)) is a **deferred**, performance-gated enhancement: it may land only when it fits the NFR-03 totals at fabrication pitch (final + validation p95 ≤ 10 s desktop, ≤ 8 s mobile). Not in G1 scope. Evidence: `docs/spikes/S2.md`.
+- **D3 (S5 revision 2, passed adversarial review).** Global normalize: node T-contacts; re-pair shared vertices by the material-separating turn with exact tests; then split repeated vertices; drop collinear; orient, rotate, nest, sort; never trust Clipper2's ring pairing. `components()` asserts `interiorConnected`; `validate()` reports `GEO_MULTIPART`. Finite width as in B.3 above. `SBGeom.offset` refuses non-integer and sub-µm deltas. Evidence: `docs/spikes/S5.md`.
+- **KI-B1 (B1 budget).** B1 keeps its 2 s budget; the ≈2.14 s p95 overrun from the S6 T-split is a tracked known item resolved in G4.4 by optimizing normalize. `test/bench.js` reports it as `KNOWN-OVER (tracked)`.
+- **Gate:** with D1 and D3 recorded, G1 is open.
 
 ## Appendix C — Spike amendments
 
@@ -2435,12 +2457,17 @@ Plan changes implied by the spike results. Each bullet names the affected tasks;
 - **S1 → T0.2, G4.7 (NFR-11):** `build.js` now embeds every `js/vendor/LICENSE-*.txt` verbatim in a leading comment of `dist/shadowbox-studio.html`, because the bundle ships third-party code as source text; T0.2 hygiene checks it.
 - **S1 → G4.1:** `js/worker.js` must `importScripts("vendor/clipper2.js", "geom.js")` in that order after `hash.js` (fourth list of the four-list rule); the vendor file already loads in a worker-like global.
 - **S1 → AT-23, G4.8:** the geometry backend requires ES2020 `BigInt` at runtime; add it to the browser matrix prerequisites.
-- **S1 → D3, S5, S6 (D4):** `SBGeom.normalize` (and every boolean result) re-chains boundary edges canonically at shared vertices (sharpest left turn) before splitting saddles, so canonical bytes depend only on the edge set. S5/S6 must keep this inside normalization and keep the 240-case `components` property check. T-contacts (a vertex on another ring's edge interior) are not re-chained; S5 confirms whether they occur.
+- **S1 → D3, S5, S6 (D4):** `SBGeom.normalize` (and every boolean result) re-chains boundary edges canonically at shared vertices (sharpest left turn) before splitting saddles, so canonical bytes depend only on the edge set. S5/S6 must keep this inside normalization and keep the 240-case `components` property check. T-contacts (a vertex on another ring's edge interior) are not re-chained; S5 confirms whether they occur. *(Resolved: S6 nodes T-contacts; D3 confirms that the "sharpest left turn" in the math frame is S5's right-most, material-separating turn in Y-down — one rule, pinned by suite "spike S5 — D3 turn rule".)*
 - **S1 → GEO-05, D3, G2.7, G2.8, G3.3 (guides):** `"miter"` (limit 2.0) is the join with exact lattice semantics; `"square"` is Clipper2's chamfered corner (not Chebyshev). Every lattice-exact offset (GEO-02 contact survival, feature checks, guide insets) uses `"miter"`.
 - **S1 → S1 interface, G1.7, G3.4, G5.1 (`SBGeom.circle`):** the vertex rule changes from `Math.round(cx + r*t/1e6)` to `cx + roundHalfAwayFromZero(r*t/1e6)` in exact integer arithmetic (keeps 8-fold symmetry on .5 ties); centre and radius must be integers; the ring is cleaned, so radii < 232 µm yield fewer than 64 vertices. `ASM-04 subtractHoles leaves hole rings equal to SBGeom.circle` compares against this normalized ring.
 - **S1 → S1 Step 2, G4.4 (benchmarks):** "8 layers × 50k vertices pairwise difference" is defined as the 7 adjacent layer pairs in both directions (14 differences per run). B1 passed narrowly (p95 1.58 s in the spike; 2.16 s on a heavily loaded re-run), so G4.4 re-measures it on the reference machines and G4.1 moves it off the main thread.
 - **S1 → G2.7, G4.4 (support benchmark):** `test/bench.js geom` adds **B3b**, the support pass on the dense B1 noise stack (3,407 pairs), with a provisional budget p95 < 6 s (measured 4.55 s). The G2.7 support pass must use one layer-level `intersection` per adjacent pair with piece-to-part attribution (never per part pair: 39 s), and must bring B3b under the 3 s B3 budget (worker, skip containment `difference` when only the graph is needed, reuse B1 differences). `test/bench.js support` (G2.7) runs B3 and B3b.
-- **S1 → G1.2 (smoothing):** Chaikin ×2 roughly triples vertex counts and B1 on smoothed layers takes 5.3 s; apply RDP before Chaikin and re-run the tolerance loop per loop, not per layer.
+- **S1 → G1.2 (smoothing):** Chaikin ×2 roughly triples vertex counts and B1 on smoothed layers takes 5.3 s; apply RDP before Chaikin and re-run the tolerance loop per loop, not per layer. Under D1 this applies to **connected-mode** smoothing (bonded is unsmoothed).
+- **S2 → D1, G1.2, G2.10a (decided 2026-10-07):** bonded mode ships **unsmoothed** (option (b)): `smoothStack(…, {mode: "bonded"})` is the identity, there is no containment fixpoint, and bonded never reports `SMOOTH_FALLBACK`. Connected mode keeps per-loop deviation-bounded smoothing (Chaikin(2)∘RDP → RDP → raw, art rectangle pinned). G2.10a's AT-09 hook becomes `req.debug = {smoothBonded: true}`.
+- **S2 → deferred enhancement (not G1):** per-vertex lazy pinning (S2 option (c); `docs/spikes/S2.md` §3.2, §7) may replace whole-loop fallback in both modes only after it fits NFR-03 at fabrication pitch: final + validation p95 ≤ 10 s desktop and ≤ 8 s mobile on the G4.4 workloads (prototype: 13.4 s on busy-1536 bonded). It would change the Appendix B.2 fallback unit to a vertex and report `SMOOTH_FALLBACK` as "n of m corners kept sharp". The F3 pitch/tolerance question (no corner rounds at 417 µm/px with tol 50 µm) stays a separate product decision.
+- **S5 → D3, §3, S1 interface (decided 2026-10-07; implemented in `js/geom.js`):** the §3 normalization bullet is replaced by the global re-pair-then-split rule. `SBGeom` adds `interiorConnected(poly)`, `insetStatus(I, d)`, `survivesInset(I, d)` and `classifyContact(I, minFeatureUm)`, and exposes `rechain`/`splitTJunctions` for the turn-rule check. `components()` throws `GEO_MULTIPART_POLYGON` if a normalized polygon is not one part; `validate()` reports `GEO_MULTIPART`. `offset` throws `GEO_OFFSET_NONINTEGER` for any non-integer delta. S5's Round-join failure certificate is not shipped (NFR-05); undecided counts as not surviving, so the boolean is unchanged.
+- **S5 → G2.7, G2.8 (thresholds):** G2.7's support predicate is `survivesInset(I, 0.25)` (width ≥ 0.5 µm) and `SUPPORT_NARROW` is `!survivesInset(I, minFeatureUm/2)` with `minFeatureUm` rounded to an integer µm first; never `SBGeom.offset`. G2.8 `featureChecks` offsets by the integer `Math.floor(minFeatureUm/2)`.
+- **S5 → G1.1, G1.3, S1 battery (ported checks):** suites "spike S5 — …" in `test/run_tests.js` carry the cyclic-saddle case, the pixel-exact bijection with BFS 4-components (independent oracle `test/oracle_raster.js`), T-contact `interiorConnected` cases, the frame-union checks (G1.3), the B.3 classification and exact-oracle families (G2.7) and the sub-µm offset refusal (S1). Sweeps run reduced by default; `--s5-full` runs the spike sizes. G1.3 adds the frame-edge micro-hole check for connected-mode smoothing (no frame-edge hole below 1 px², S5 F3).
 - **S1 → G2.8 (feature checks):** offsets are the slowest primitive (−1500 µm on 8 dense layers: 2.7 s); offset only parts whose bbox can be affected, or run in the worker.
 - **S1 → R1 fallback:** the lattice backend (c) is exact and byte-identical to (a) on orthogonal input but cannot represent circles or smoothed contours (blocks G1.2, G1.3, G5.1); it remains the documented design in `spikes/S1/geom_lattice.js`, not shipped code.
 - **S4 → S4 interface, G1.0 (error codes):** `SBPng` throws five codes beyond the plan's seven: `PNG_HEADER` (missing/invalid IHDR, illegal depth/type pair, non-consecutive IDAT, unknown filter type, palette index out of range), `PNG_INFLATE` (zlib stream rejected: bad Adler-32, trailing junk), `PNG_BITDEPTH`, `PNG_TOO_LARGE` and `PNG_NO_INFLATE` (R8). All twelve are exported as the frozen `SBPng.CODES`; G1.0 registers each one with title and fix text. `inspect` throws on structural faults rather than returning partial info.
@@ -2464,6 +2491,6 @@ Plan changes implied by the spike results. Each bullet names the affected tasks;
 - **S6 → G2.10b (hash wiring):** use `SBGeom.layerHashes(layer) → {materialHash, layerHash}` (one normalization for both); `geometryHash.layers` holds one `layerHash` per index 0..N−1, including empty and omitted-trailing layers; `guideHash` covers only labels, omissions with reasons and the map (score polylines are already in `layerHash`); the full multi-layer `canonicalBytes` is not hashed for `geometryHash`. Excluded from every geometry hash: `parts`/IDs, `cutPaths`, `stats`, `diagnostics`, `zBottomMM`/`zTopMM` (via `geometryKey`), `appearance`, `view`, `acks`, `extras`, `title`, `units`; populating `carriers` needs a new section and an `engine.version` bump.
 - **S6 → S6 interface, G2.10b, G4.1 (determinism guard, D4 amendment C):** `canonicalBytes` and the hash functions throw on a non-integer coordinate, layer index or hole field and on |v| > 2^25 µm (`SBGeom.COORD_LIMIT`, 33.5 m; int32 alone does not keep cross products exact). The engine must keep page geometry inside that bound and surface the throw as a coded error, never truncate. Any change to normalization or byte layout bumps `engine.version`; stale persisted `materialHash` values then fail closed as `REPAIR_STALE` (G2.9).
 - **S6 → D2/D3, S5, G1.1, G2.7 (T-contacts):** S1's known limit is closed: Clipper2 `difference` does emit vertex-on-edge (T) contacts, so `SBGeom` inserts every T-contact vertex into the edge it touches (whole layer, own ring included) before re-chaining. Every boolean result, `fromPixelLoops` and `normalize` are therefore canonical for vertex and T contacts, and a T-contact never connects material (same D3 rule as a saddle). S5 no longer needs to confirm whether T-contacts occur; its contact-width work is unaffected.
-- **S6 → G4.4 (B1 budget) — OPEN, needs an explicit plan-owner decision:** the T-split adds 12–18 % to B1 (A/B in one process: median 1.61–1.88 s → 1.88–2.16 s under load 6–8; ≈17 ms per 50k-vertex layer). The repo's own gate now fails under load: `node test/bench.js geom --runs 5` gave B1 p95 2032.6 ms (median 1953.9 ms) at load 5–7, `overBudget: ["B1"]`, exit 1 without `--no-fail` (fingerprint `27fa97ef…` unchanged). Options for the owner: (a) accept and raise or re-scope the B1 budget, (b) require a faster T-split (or a proven-safe skip) before G4.4, (c) keep the 2 s budget and treat a reference-machine re-measure in G4.4 as the gate. Until decided, G4.4 re-measures B1 on the reference machines with the T-split in place, and G4.1 keeps booleans off the main thread.
+- **S6 → G4.4 (B1 budget) — DECIDED 2026-10-07 as tracked known item KI-B1:** B1 keeps the 2 s budget; the overrun is tracked and G4.4 resolves it by optimizing normalize (see the G4.4 row; S5 F5: worst-case union + normalize 19 s vs 5.9 s for the union alone). `node test/bench.js geom` reports B1 over budget as `KNOWN-OVER (tracked)` (`knownOver`, id `KI-B1`) instead of failing; untracked overruns still exit 1. Measured after the D3 commits: p95 2126.6 ms at load 5–6, fingerprint unchanged. Original record: the T-split adds 12–18 % to B1 (A/B in one process: median 1.61–1.88 s → 1.88–2.16 s under load 6–8; ≈17 ms per 50k-vertex layer). The repo's own gate now fails under load: `node test/bench.js geom --runs 5` gave B1 p95 2032.6 ms (median 1953.9 ms) at load 5–7, `overBudget: ["B1"]`, exit 1 without `--no-fail` (fingerprint `27fa97ef…` unchanged). Options for the owner: (a) accept and raise or re-scope the B1 budget, (b) require a faster T-split (or a proven-safe skip) before G4.4, (c) keep the 2 s budget and treat a reference-machine re-measure in G4.4 as the gate. Until decided, G4.4 re-measures B1 on the reference machines with the T-split in place, and G4.1 keeps booleans off the main thread.
 - **S6 → G4.8 (cross-engine fixture):** add `spikes/S6/fixture_draft.json` (draft 8-layer project, 1,660 parts, 70 of them on the contact path; project hash `ee31340d…694a` under the spike reference) to the browser harness. Recompute its expected hashes with the shipped `SBGeom` before pinning, because the backend differs from the spike's dev-only `clipper2-js` 1.2.4.
 - **S6 → G1.1, G2.10b (engine input):** `normalize` does not merge overlapping or edge-sharing parts; it canonicalizes representation only. Material handed to `canonicalBytes` must be boolean-resolved (a `union`/`difference` result or `fromPixelLoops` of one mask), which the §11.1 chain already guarantees.
