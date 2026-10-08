@@ -327,9 +327,8 @@ suite("baseline — characterization (KNOWN-DEFECT checks invert when fixed)", (
   // the shim version was deleted, not edited, because T0.7 freezes sheetSVG.
   check("KNOWN-DEFECT EXP-03: label is live <text>", /<text /.test(svgUp));
   check("G0 backing sheet emits only rect (+label), no paths", !/<path /.test(svgBack) && /<rect /.test(svgBack));
-  const proof = SBSvg.proofSVG([{ loops: [] }, { loops: [] }], 8, 5, 80, ["#fff", "#000"]);
-  check("KNOWN-DEFECT GEO-01 proof extent: proof viewBox != sheet viewBox when margin>0",
-    proof.match(/viewBox="([^"]+)"/)[1] !== svgUp.match(/viewBox="([^"]+)"/)[1]);
+  // KNOWN-DEFECT GEO-01 proof extent was fixed in G1.6: the check now lives on SBSvg.assemblySVG (suite "svgout.js — assemblySVG …");
+  // the shim version was deleted, not edited, because T0.7 freezes proofSVG.
   // GEO-07 raster source: islands.resolve adds bridge material where layer k-1 is void.
   const lb = F.MASKS.looseBridge, lower = lb.layers[1], m = lb.layers[2].slice();
   SBIslands.resolve(m, lb.w, lb.h, { frameAnchored: true, bridgeRadius: 0.6, cullBelowPx: 0, maxBridgePx: 10 });
@@ -2036,6 +2035,68 @@ suite("svgread.js — SBSvgRead parse and round trip (GEO-09, AT-11/12/13, AT-05
     const p = R.parse(doc(cutG('<path d="M 0,0 1,0 1,1 0,0 Z"/>'))); return p.unsupported.length === 0 && JSON.stringify(p.cut) === "[[0,0,1000,0,1000,1000]]"; })());
   check("parse refuses a document with no <svg> root", throws(() => R.parse("<html></html>"), /SVGREAD_NOT_SVG/));
   check("G1.5 parse is pure and deterministic", (() => { const s = S.layerSVG(variants[1].layers[1], variants[1].pg, {}); return JSON.stringify(R.parse(s)) === JSON.stringify(R.parse(s)); })());
+});
+
+// ------------------------------------------------ opaque proof (G1.6)
+suite("svgout.js — assemblySVG: opaque proof from material in the shared page frame (GEO-01, MAT-04, UI-02; G1.6)", () => {
+  const F = require("./fixtures.js"), M = SBMaterial, S = SBSvg, G = SBGeom;
+  check("G1.6 API present", typeof S.assemblySVG === "function");
+  if (typeof S.assemblySVG !== "function") return;
+  const throws = (f, re) => { try { f(); return false; } catch (x) { return !re || re.test(x.message); } };
+  const ringsOf = (l) => { const o = []; for (const p of l.material) o.push(p.outer, ...p.holes); return o; };
+  const vb = (s) => (s.match(/viewBox="([^"]+)"/) || [])[1];
+  const paths = (s) => [...s.matchAll(/<path ([^>]*)\/>/g)].map((m) => m[1]);
+  const attr = (a, k) => (a.match(new RegExp(k + '="([^"]*)"')) || [])[1];
+  /** "M x y L … Z M …" → rings of integer µm. */
+  const subRings = (d) => d.split(/(?=M )/).map((sp) => sp.replace(/[MLZ]/g, " ").trim().split(/\s+/).map((t) => Math.round(Number(t) * 1000)));
+  const bt = F.MASKS.borderTouch, di = F.MASKS.donutIsland;
+  const pgC = M.page({ artWMM: 80, artHMM: 50, frameMM: 10 });
+  const LC = M.fromMasks(bt.layers, 8, 5, pgC, { frame: true, holes: [{ cxUm: 5000, cyUm: 5000, rUm: 1500 }] });
+  const pgB = M.page({ artWMM: 90, artHMM: 90, frame: { enabled: false, widthMM: 10 } }), LB = M.fromMasks(di.layers, 9, 9, pgB, {});
+  const pal = ["#ffffff", "#336699", "#000000", "#cc0000"];
+  const pC = S.assemblySVG(LC, pgC, pal), pB = S.assemblySVG(LB, pgB, pal);
+  // ---- GEO-01: shared page frame and material authority
+  check("GEO-01 FIXED: assemblySVG viewBox == layerSVG viewBox (framed borderTouch, margin 10)",
+    vb(pC) === "0 0 100 70" && LC.every((l) => vb(S.layerSVG(l, pgC, {})) === vb(pC)) && vb(pB) === vb(S.layerSVG(LB[0], pgB, {})) &&
+    /<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" width="100mm" height="70mm" viewBox="0 0 100 70">/.test(pC));
+  check("GEO-01 proof path rings == material rings (one evenodd path per non-empty layer, back to front, exact µm)", [[LC, pC], [LB, pB]].every(([L, s]) => {
+    const ps = paths(s), nonEmpty = L.filter((l) => l.material.length);
+    return ps.length === nonEmpty.length && ps.every((a, j) => attr(a, "fill-rule") === "evenodd" &&
+      JSON.stringify(subRings(attr(a, "d"))) === JSON.stringify(ringsOf(nonEmpty[j]))); }));
+  check("GEO-01 layers painted back to front by index (input order irrelevant)", S.assemblySVG(LC.slice().reverse(), pgC, pal) === pC);
+  check("UI-02 proof carries <!-- proof: not for cutting --> and no CUT/SCORE groups, no <rect>", [pC, pB].every((s) =>
+    s.includes("<!-- proof: not for cutting -->") && !/id="(CUT|SCORE)"/.test(s) && !/<rect/.test(s)));
+  check("EXP-03 proof is pure vector (no text|image|style|clipPath|filter|transform)", [pC, pB].every((s) => !/<(text|image|style|clipPath|filter)|transform=/.test(s)));
+  // ---- MAT-04: appearance never touches geometry
+  check("MAT-04 palette fills: layer k is filled with colors[layer.index]", (() => {
+    const ps = paths(pC), nonEmpty = LC.filter((l) => l.material.length); return ps.every((a, j) => attr(a, "fill") === pal[nonEmpty[j].index]); })());
+  check("MAT-04 proof colors do not change any layer canonicalHash (= SBGeom.materialHash) and do not mutate layers", (() => {
+    const L = M.fromMasks(bt.layers, 8, 5, pgC, { frame: true }), before = JSON.stringify(L), h0 = L.map((l) => l.canonicalHash);
+    S.assemblySVG(L, pgC, pal); S.assemblySVG(L, pgC, "#808080"); S.assemblySVG(L, pgC, ["#123456", "#abcdef"], { edgeStroke: true });
+    return JSON.stringify(L) === before && L.every((l, k) => l.canonicalHash === h0[k] && l.canonicalHash === G.materialHash(l)); })());
+  check("MAT-04 changing colors changes only fill/stroke attributes", (() => {
+    const strip = (s) => s.replace(/ (fill|stroke(-[a-z]+)?)="[^"]*"/g, "");
+    return strip(S.assemblySVG(LC, pgC, "#808080")) === strip(pC) && S.assemblySVG(LC, pgC, "#808080") !== pC; })());
+  const uni = S.assemblySVG(LC, pgC, "#808080");
+  check("MAT-04 uniform proof strokes layer edges (every layer path has a darker stroke than its fill)", (() => {
+    const lum = (h) => parseInt(h.slice(1, 3), 16) + parseInt(h.slice(3, 5), 16) + parseInt(h.slice(5, 7), 16);
+    const ps = paths(uni); return ps.length > 0 && ps.every((a) => attr(a, "fill") === "#808080" && /^#[0-9a-f]{6}$/.test(attr(a, "stroke") || "") &&
+      lum(attr(a, "stroke")) < lum("#808080") && Number(attr(a, "stroke-width")) > 0); })());
+  check("MAT-04 a palette array of one repeated color counts as uniform (stroked)",
+    paths(S.assemblySVG(LC, pgC, ["#808080", "#808080", "#808080"])).every((a) => !!attr(a, "stroke")));
+  check("MAT-04 palette proof has no edge stroke by default; {edgeStroke} overrides both ways",
+    paths(pC).every((a) => !attr(a, "stroke")) && paths(S.assemblySVG(LC, pgC, pal, { edgeStroke: true })).every((a) => !!attr(a, "stroke")) &&
+    paths(S.assemblySVG(LC, pgC, "#808080", { edgeStroke: false })).every((a) => !attr(a, "stroke")));
+  // ---- determinism and guards
+  check("AT-16 assemblySVG is deterministic (byte-identical on repeat)", S.assemblySVG(LC, pgC, pal) === pC);
+  check("empty stack → valid document with no paths", (() => { const s = S.assemblySVG([], pgB, pal); return paths(s).length === 0 && /<\/svg>\s*$/.test(s) && vb(s) === "0 0 90 90"; })());
+  check("NFR-06 assemblySVG refuses a non-hex color (no attribute injection)",
+    throws(() => S.assemblySVG(LC, pgC, ['#fff" onload="x', "#000"]), /COLOR/) && throws(() => S.assemblySVG(LC, pgC, "red"), /COLOR/) &&
+    throws(() => S.assemblySVG(LC, pgC, ["#fff"]), /COLOR/));
+  check("GEO-09 assemblySVG refuses non-integer coordinates and an invalid page",
+    throws(() => S.assemblySVG([{ index: 0, material: [{ outer: [0, 0, 10.5, 0, 10, 10], holes: [] }] }], pgB, "#808080"), /NONINTEGER/) &&
+    throws(() => S.assemblySVG(LB, { wMM: 0, hMM: 5 }, "#808080"), /NONFINITE/));
+  check("G1.6 legacy proofSVG shim still exported (frozen by T0.7)", typeof S.proofSVG === "function");
 });
 
 // ------------------------------------------------------------------ report

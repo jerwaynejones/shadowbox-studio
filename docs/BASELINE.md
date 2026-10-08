@@ -62,7 +62,7 @@ fixes it retargets the check to the new function and inverts it.
 | `KNOWN-DEFECT GEO-02` | `borderTouch` layer 1, 10 mm/px, margin 10 | art edge cut separately from frame: segment `M 10 10 L 10 30` | G1.3 (`SBMaterial`) — **fixed**: `SBMaterial.applyFrame`; shim check deleted |
 | `KNOWN-DEFECT EXP-02` | `borderTouch` layer 1, `sheetSVG` | cut group has no `id` | G1.4 (`layerSVG`) — **fixed**: `SBSvg.layerSVG` groups `id="CUT"` `#FF0000` / `id="SCORE"` `#0000FF`, no fill on cuts; shim check deleted |
 | `KNOWN-DEFECT EXP-03` | `borderTouch` layer 1, `sheetSVG` | label is live `<text>` | G3.2 (vector labels) |
-| `KNOWN-DEFECT GEO-01 proof extent` | `proofSVG` of 2 empty layers vs `borderTouch` sheet | proof viewBox excludes the frame margin | G1.6 (`assemblySVG`) |
+| `KNOWN-DEFECT GEO-01 proof extent` | `proofSVG` of 2 empty layers vs `borderTouch` sheet | proof viewBox excludes the frame margin | G1.6 (`assemblySVG`) — **fixed**: `SBSvg.assemblySVG` paints `layer.material` rings in the shared page viewBox (same as `layerSVG`); shim check deleted |
 | `KNOWN-DEFECT GEO-07 (bridge)` | `looseBridge`, `islands.resolve` | bridge material added where layer k−1 is void | G2.6 (`SBConstruct.bonded`) |
 | `KNOWN-DEFECT SUP-01` | `looseBridge`, `islands.resolve` | a loose part is bridged instead of reported | G2.6 (`SBConstruct.bonded`/`connected`) |
 

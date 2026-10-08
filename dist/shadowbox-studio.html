@@ -3828,11 +3828,72 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     );
   };
 
+  /**
+   * Opaque proof of the assembled stack (GEO-01, MAT-04, UI-02). Not a cut file.
+   *
+   *   assemblySVG(layers: MaterialLayer[], page: {wMM, hMM}, colors: string | string[], {edgeStroke?}) → string
+   *
+   * - Same root element and viewBox as layerSVG (the shared page frame), so the proof aligns with every cut file.
+   * - Layers are painted back to front by layer.index, one filled <path fill-rule="evenodd"> per non-empty layer
+   *   whose subpaths are exactly the layer.material rings (outer rings and holes, normalized order). Empty layers
+   *   emit nothing.
+   * - colors: one "#rgb"/"#rrggbb" for a uniform appearance, or a palette indexed by layer.index. Anything else
+   *   is refused (COLOR) so no attribute text can be injected.
+   * - edgeStroke: default true when the appearance is uniform (one color, or every painted layer the same color):
+   *   each layer edge gets a thin stroke darker than its fill so the layers stay readable. false/true override.
+   * Pure: appearance never touches geometry; layers are not mutated and nothing here enters a hash (MAT-04).
+   */
+  S.assemblySVG = function (layers, page, colors, opts) {
+    const o = opts || {};
+    const wUm = pageUm(page && page.wMM, "wMM", "assemblySVG"), hUm = pageUm(page && page.hMM, "hMM", "assemblySVG");
+    const W = S.fmtUm(wUm), H = S.fmtUm(hUm);
+    const uniform = typeof colors === "string";
+    const fillOf = (k) => hexColor(uniform ? colors : (Array.isArray(colors) ? colors[k] : undefined), k);
+
+    const L = (layers || []).filter((l) => l && l.material && l.material.length).slice();
+    for (const l of L) if (!Number.isInteger(l.index)) throw new Error("SBSvg.assemblySVG: NONINTEGER — layer.index must be an integer (got " + l.index + ")");
+    L.sort((a, b) => a.index - b.index);
+    const fills = L.map((l) => fillOf(l.index));
+    const same = uniform || fills.every((c) => c === fills[0]);
+    const stroke = o.edgeStroke === undefined ? same : !!o.edgeStroke;
+
+    const body = L.map((l, j) => {
+      const d = [];
+      for (const p of l.material) for (const r of [p.outer, ...(p.holes || [])]) d.push(ringD(r, true));
+      const st = stroke ? ` stroke="${darker(fills[j])}" stroke-width="0.2" stroke-linejoin="round"` : "";
+      return `<path d="${d.join(" ")}" fill="${fills[j]}" fill-rule="evenodd"${st}/>`;
+    });
+
+    return (
+      `<?xml version="1.0" encoding="UTF-8"?>\n` +
+      `<!-- proof: not for cutting -->\n` +
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${W}mm" height="${H}mm" viewBox="0 0 ${W} ${H}">\n` +
+      `<desc>Shadowbox Studio opaque proof; layers back to front; units mm; origin top-left; Y-down; not mirrored</desc>\n` +
+      (body.length ? body.join("\n") + "\n" : "") +
+      `</svg>\n`
+    );
+  };
+
+  /** "#rgb" / "#rrggbb" → lowercase "#rrggbb"; anything else is refused (NFR-06: no attribute injection). */
+  function hexColor(c, k) {
+    if (typeof c === "string" && /^#[0-9a-fA-F]{6}$/.test(c)) return c.toLowerCase();
+    if (typeof c === "string" && /^#[0-9a-fA-F]{3}$/.test(c)) return ("#" + c[1] + c[1] + c[2] + c[2] + c[3] + c[3]).toLowerCase();
+    throw new Error("SBSvg.assemblySVG: COLOR — color for layer " + k + " must be #rgb or #rrggbb (got " + JSON.stringify(c) + ")");
+  }
+
+  /** Edge stroke: each channel scaled to 60 % (integer math), so it is darker than any non-black fill. */
+  function darker(hex) {
+    let out = "#";
+    for (let i = 1; i < 7; i += 2) out += Math.floor((parseInt(hex.slice(i, i + 2), 16) * 3) / 5).toString(16).padStart(2, "0");
+    return out;
+  }
+
   /** Page dimension (mm on the 1 µm grid, as SBMaterial.page produces) → integer µm; anything else is refused. */
-  function pageUm(mm, name) {
-    if (!(Number.isFinite(mm) && mm > 0)) throw new Error("SBSvg.layerSVG: NONFINITE — page." + name + " must be finite and > 0 mm");
+  function pageUm(mm, name, fn) {
+    const who = "SBSvg." + (fn || "layerSVG");
+    if (!(Number.isFinite(mm) && mm > 0)) throw new Error(who + ": NONFINITE — page." + name + " must be finite and > 0 mm");
     const u = Math.round(mm * 1000);
-    if (Math.abs(mm * 1000 - u) > 1e-6) throw new Error("SBSvg.layerSVG: NONFINITE — page." + name + " is not on the 1 µm grid (" + mm + ")");
+    if (Math.abs(mm * 1000 - u) > 1e-6) throw new Error(who + ": NONFINITE — page." + name + " is not on the 1 µm grid (" + mm + ")");
     return u;
   }
 
