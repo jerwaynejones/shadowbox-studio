@@ -3997,6 +3997,77 @@ suite("engine.js — G2.10b Z model, accounting, hashes, freeze and the draft/fa
     E.guideHash({ labels: [], omitted: [], map: null }) !== E.guideHash(null));
 });
 
+suite("schema.js/app.js — G2.11a controller state adapter: legacyState, applyLegacy, canGenerate; no auto-demo (PRJ-01, PRJ-02)", () => {
+  const S = SBSchema;
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8");
+  const keepM = /function settingsJSON\(\)\s*\{\s*const keep = \[([\s\S]*?)\];/.exec(appSrc);
+  const KEYS = keepM ? Array.from(keepM[1].matchAll(/"([A-Za-z0-9]+)"/g), (m) => m[1]) : [];
+  // v1.1.0 app.js `state` defaults (the settings keys), as shipped in v1.1.0.
+  const V110 = { projectName: "untitled", sourceName: null, procRes: 720, smoothRadius: 4, smoothPasses: 2, nSheets: 5,
+    thresholdMode: "balanced", darkFront: true, palette: "Midnight (Starry Night)", widthMM: 300, marginMM: 12, minFeatureMM: 1.2,
+    bridgeMM: 1.8, cullBelowMM2: 9, maxBridgeMM: 40, holes: true, holeDiaMM: 4, cornerStyle: "smooth", detailEps: 0.8 };
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const sorted = (o) => Object.fromEntries(Object.keys(o).sort().map((k) => [k, o[k]]));
+  const codeOf = (f) => { try { f(); return null; } catch (e) { return e.code; } };
+
+  const A = S.defaults("acrylic"), A0 = JSON.stringify(A);
+  check("PRJ-01 legacyState(defaults(\"acrylic\")) reproduces v1.1.0 state keys",
+    KEYS.length === 19 && same(Object.keys(S.legacyState(A)).sort(), KEYS.slice().sort()) && same(sorted(S.legacyState(A)), sorted(V110)));
+  check("PRJ-01 legacyState is pure (input not mutated, fresh object each call)",
+    JSON.stringify(A) === A0 && S.legacyState(A) !== S.legacyState(A));
+
+  // Round trip with the G2.4b importer: every mapped v1.1.0 value comes back.
+  const ALT = { projectName: "Renamed", sourceName: "x.png", procRes: 720, smoothRadius: 6, smoothPasses: 3, nSheets: 7, thresholdMode: "linear",
+    darkFront: false, palette: "Ember", widthMM: 420, marginMM: 0, minFeatureMM: 2, bridgeMM: 2.5, cullBelowMM2: 20, maxBridgeMM: 60,
+    holes: false, holeDiaMM: 6, cornerStyle: "faceted", detailEps: 1.6 };
+  check("DEP-04 legacyState(fromLegacySettings(x).project) === x (defaults and every key changed)",
+    same(sorted(S.legacyState(S.fromLegacySettings(V110).project)), sorted(V110)) &&
+    same(sorted(S.legacyState(S.fromLegacySettings(ALT).project)), sorted(ALT)));
+
+  const P = S.defaults("plywood"), LP = S.legacyState(P), LP2 = S.legacyState(P, 600, 400);
+  check("PRJ-01 legacyState(plywood): height sizing needs the source for widthMM; white-high → darkFront false; sharp → faceted; no frame, no holes",
+    LP.widthMM === null && LP2.widthMM === 450 && LP.darkFront === false && LP.cornerStyle === "faceted" && LP.marginMM === 0 &&
+    LP.holes === false && LP.nSheets === 8 && LP.minFeatureMM === 1.5 && LP.smoothRadius === 0);
+  check("PRJ-01 legacyState: black-high and dark-front both map to darkFront true", (() => {
+    const q = JSON.parse(JSON.stringify(P)); q.interpretation.polarity = "black-high"; return S.legacyState(q).darkFront === true; })());
+
+  // applyLegacy: the controller's one write path from a v1.1.0 control to the project.
+  const SET = { projectName: "Renamed", procRes: 1000, smoothRadius: 6, smoothPasses: 3, nSheets: 7, thresholdMode: "linear", darkFront: false,
+    palette: "Ember", widthMM: 420, marginMM: 20, minFeatureMM: 2, bridgeMM: 2.5, cullBelowMM2: 20, maxBridgeMM: 60, holes: false,
+    holeDiaMM: 6, cornerStyle: "faceted" };
+  check("PRJ-01 applyLegacy: every control key reads back through legacyState, the result validates, input not mutated",
+    Object.keys(SET).every((k) => { const q = S.applyLegacy(A, k, SET[k]); return S.legacyState(q)[k] === SET[k] && S.validate(q).ok; }) &&
+    JSON.stringify(A) === A0);
+  check("PRJ-02 applyLegacy bumps revision exactly when the geometry key changes (title and palette do not)",
+    Object.keys(SET).every((k) => S.applyLegacy(A, k, SET[k]).revision === (k === "projectName" || k === "palette" ? 0 : 1)) &&
+    S.applyLegacy(A, "nSheets", 5).revision === 0);
+  check("PRJ-01 applyLegacy widthMM keeps the frame; marginMM keeps the art width (targetMM = art + 2·frame)", (() => {
+    const w = S.applyLegacy(A, "widthMM", 420), m = S.applyLegacy(A, "marginMM", 20), z = S.applyLegacy(A, "marginMM", 0);
+    return w.geometry.targetMM === 444 && S.legacyState(w).marginMM === 12 && m.geometry.targetMM === 340 && S.legacyState(m).widthMM === 300 &&
+      z.construction.frame.enabled === false && z.geometry.targetMM === 300 && S.legacyState(z).widthMM === 300; })());
+  check("PRJ-01 applyLegacy keeps the v1.1.0 derivations (speck = cull·0.5, hole fill = minFeature²·2, advisory ≥ minimum)", (() => {
+    const c = S.applyLegacy(A, "cullBelowMM2", 20), f = S.applyLegacy(A, "minFeatureMM", 2);
+    return c.construction.cleanup.speckMM2 === 10 && c.material.minPartMM2 === 20 && f.construction.cleanup.holeMM2 === 8 &&
+      f.material.minFeatureMM === 2 && f.material.advisoryFeatureMM === 2; })());
+  check("PRJ-01 applyLegacy darkFront follows the interpretation mode (height → black-high / white-high)",
+    S.applyLegacy(P, "darkFront", true).interpretation.polarity === "black-high" && S.applyLegacy(A, "darkFront", false).interpretation.polarity === "light-front");
+  check("PRJ-01 applyLegacy rejects keys that are not project state (sourceName, detailEps, unknown) with SCHEMA_LEGACY",
+    ["sourceName", "detailEps", "sheets"].every((k) => codeOf(() => S.applyLegacy(A, k, 1)) === "SCHEMA_LEGACY"));
+
+  // canGenerate: the pure guard in front of regenerate().
+  const src = { w: 600, h: 400 };
+  check("PRJ-01 regenerate is not callable without a source", (() => {
+    const g = S.canGenerate(A, null), u = S.canGenerate(A, undefined), ok = S.canGenerate(A, src);
+    return g.ok === false && g.reason === "Choose a source" && u.ok === false && ok.ok === true && ok.reason === null; })());
+  check("PRJ-01 canGenerate refuses an invalid project with the failing path", (() => {
+    const q = JSON.parse(JSON.stringify(A)); q.construction.sheets = 40; const g = S.canGenerate(q, src);
+    return g.ok === false && /construction\.sheets/.test(g.reason); })());
+  check("PRJ-01 app.js: project replaces state, regenerate() is guarded by SBSchema.canGenerate, no auto-demo click",
+    /let project = SBSchema\.defaults\(/.test(appSrc) && !/const state = \{/.test(appSrc) && !/runPipeline/.test(appSrc) &&
+    /function regenerate\(\)\s*\{[\s\S]{0,400}SBSchema\.canGenerate\(/.test(appSrc) && !/\$\("btn-demo"\)\.click\(\)/.test(appSrc) &&
+    /SBSchema\.legacyState\(/.test(appSrc) && /SBSchema\.applyLegacy\(/.test(appSrc));
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

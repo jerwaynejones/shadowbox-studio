@@ -31,69 +31,83 @@
     "Monochrome": ["#F4F4F2", "#C4C6C8", "#8B8F94", "#4A4E55", "#15181D"],
   };
 
-  const state = {
-    projectName: "untitled",
+  // G2.11a (PRJ-01): the project (schema v1) is the single source of truth for every setting. The legacy pipeline
+  // reads the v1.1.0 view of it through SBSchema.legacyState, and every control writes through SBSchema.applyLegacy
+  // (revision + 1 exactly when the geometry changes). Acrylic keeps today's connected tonal behaviour until the
+  // G2.11b–e stages expose the plywood/bonded path.
+  let project = SBSchema.defaults("acrylic");
+
+  // Runtime only, never saved: the loaded source and the last pipeline result.
+  const run = {
     sourceName: null,
-    sourceImage: null,   // HTMLImageElement or canvas
-    // — cartoonize —
-    procRes: 720,        // long-side working resolution, px
-    smoothRadius: 4,     // Kuwahara radius, px
-    smoothPasses: 2,
-    // — layers —
-    nSheets: 5,
-    thresholdMode: "balanced",
-    darkFront: true,
-    palette: "Midnight (Starry Night)",
-    // — fabrication (all mm) —
-    widthMM: 300,
-    marginMM: 12,
-    minFeatureMM: 1.2,
-    bridgeMM: 1.8,
-    cullBelowMM2: 9,
-    maxBridgeMM: 40,
-    holes: true,
-    holeDiaMM: 4,
-    cornerStyle: "smooth", // smooth | faceted
-    detailEps: 0.8,        // RDP epsilon, px
-    // — results —
-    sheets: [],            // [{mask, bridges, loops, stats}]
+    sourceImage: null,   // HTMLImageElement or canvas; null until the user chooses a source (no auto-demo)
+    sheets: [],          // [{mask, bridges, loops, stats}]
     procW: 0, procH: 0,
     report: "",
   };
+
+  /** The v1.1.0 settings view of the project (plus the runtime source name), for legacyRun and the exporters. */
+  function cfg() {
+    const src = run.sourceImage;
+    const c = src ? SBSchema.legacyState(project, src.width, src.height) : SBSchema.legacyState(project);
+    c.sourceName = run.sourceName;
+    return c;
+  }
+
+  /** Set one v1.1.0 control on the project. */
+  function setLegacy(key, value) {
+    project = SBSchema.applyLegacy(project, key, value);
+  }
 
   let preview = null;
   const $ = (id) => document.getElementById(id);
 
   // ------------------------------------------------------------- pipeline
-  const recompute = SBUtil.debounce(runPipeline, 160);
+  const recompute = SBUtil.debounce(regenerate, 160);
 
-  function runPipeline() {
-    if (!state.sourceImage) return;
+  /** Enable Export only when generation is possible, and say why not otherwise (PRJ-01). */
+  function updateGate(gate) {
+    const btn = $("btn-export"), why = $("why-export");
+    if (!btn || btn.dataset.busy === "1") return;
+    const blocked = !gate.ok || !run.sheets.length;
+    btn.disabled = blocked;
+    if (why) { why.textContent = blocked ? (gate.reason || "Generating…") : ""; why.hidden = !blocked; }
+  }
+
+  function regenerate() {
+    const gate = SBSchema.canGenerate(project, run.sourceImage);
+    if (!gate.ok) {
+      updateGate(gate);
+      setStatus(gate.reason === "Choose a source" ? "Choose a source: load a photo or the Demo scene" : gate.reason);
+      return;
+    }
+    const state = cfg();
     const t0 = performance.now();
 
     // 1. Scale source to working resolution.
-    const iw = state.sourceImage.width, ih = state.sourceImage.height;
+    const iw = run.sourceImage.width, ih = run.sourceImage.height;
     const k = state.procRes / Math.max(iw, ih);
     const w = Math.max(32, Math.round(iw * k));
     const h = Math.max(32, Math.round(ih * k));
     const cv = document.createElement("canvas");
     cv.width = w; cv.height = h;
     const cx = cv.getContext("2d", { willReadFrequently: true });
-    cx.drawImage(state.sourceImage, 0, 0, w, h);
+    cx.drawImage(run.sourceImage, 0, 0, w, h);
     const rgba = cx.getImageData(0, 0, w, h).data;
 
     // 2-5. DOM-free engine (T0.5 seam).
     const { sheets, totals } = SBEngine.legacyRun(rgba, w, h, state);
-    state.sheets = sheets;
+    run.sheets = sheets;
     let totalBridged = totals.bridged, totalCulled = totals.culled, totalCutMM = totals.cutMM;
-    state.procW = w; state.procH = h;
+    run.procW = w; run.procH = h;
 
     const ms = performance.now() - t0;
-    state.report =
+    run.report =
       `${w}×${h}px · ${state.nSheets} sheets · ` +
       `${totalBridged} bridged · ${totalCulled} culled · ` +
       `${SBUtil.fmt(totalCutMM / 1000, 2)} m of cuts · ${ms.toFixed(0)} ms`;
-    setStatus(state.report);
+    setStatus(run.report);
+    updateGate(gate);
 
     renderAll();
   }
@@ -108,18 +122,18 @@
     const el = $("statusline");
     if (el) el.textContent = text;
     clearTimeout(statusRevertTimer);
-    if (transient && state.report) {
+    if (transient && run.report) {
       statusRevertTimer = setTimeout(() => {
         const cur = $("statusline");
-        if (cur) cur.textContent = state.report;
+        if (cur) cur.textContent = run.report;
       }, 6000);
     }
   }
 
   // ------------------------------------------------------------- rendering
   function sheetColors() {
-    const stops = PALETTES[state.palette];
-    const n = state.nSheets;
+    const stops = PALETTES[project.appearance.palette] || PALETTES["Midnight (Starry Night)"];
+    const n = project.construction.sheets;
     // Back sheet = lightest, front = darkest (matches dark-front stacking).
     return Array.from({ length: n }, (_, s) =>
       SBUtil.samplePalette(stops, 1 - (n === 1 ? 0 : s / (n - 1)))
@@ -127,9 +141,9 @@
   }
 
   function renderAll() {
-    if (!state.sheets.length) return;
+    if (!run.sheets.length) return;
     const colors = sheetColors();
-    preview.setSheets(state.sheets, colors, state.procW, state.procH);
+    preview.setSheets(run.sheets, colors, run.procW, run.procH);
     renderSheetGrid(colors);
     renderPaletteChips(colors);
   }
@@ -138,12 +152,12 @@
   function renderSheetGrid(colors) {
     const grid = $("sheetgrid");
     grid.innerHTML = "";
-    state.sheets.forEach((sheet, s) => {
+    run.sheets.forEach((sheet, s) => {
       const card = document.createElement("div");
       card.className = "sheetcard";
 
       const cvs = document.createElement("canvas");
-      const w = state.procW, h = state.procH;
+      const w = run.procW, h = run.procH;
       cvs.width = w; cvs.height = h;
       const c = cvs.getContext("2d");
       // waste = dark bed, material = sheet color, bridges = amber
@@ -162,7 +176,7 @@
 
       const label = document.createElement("div");
       label.className = "sheetlabel";
-      const role = s === 0 ? "backing" : s === state.sheets.length - 1 ? "front" : "mid";
+      const role = s === 0 ? "backing" : s === run.sheets.length - 1 ? "front" : "mid";
       label.innerHTML =
         `<b>SHEET ${s + 1}</b> <span class="muted">${role}</span><br>` +
         (s === 0
@@ -261,8 +275,9 @@
 
   // ------------------------------------------------------------- exporting
   function buildAssemblyMD(colors) {
-    const mmPerPx = state.widthMM / state.procW;
-    const artH = state.procH * mmPerPx;
+    const state = cfg();
+    const mmPerPx = state.widthMM / run.procW;
+    const artH = run.procH * mmPerPx;
     const lines = [
       `# ${state.projectName} — assembly guide`,
       ``,
@@ -278,8 +293,8 @@
       `| # | Role | Suggested color | File |`,
       `|---|------|-----------------|------|`,
     ];
-    state.sheets.forEach((s, i) => {
-      const role = i === 0 ? "backing (solid)" : i === state.sheets.length - 1 ? "front" : "mid";
+    run.sheets.forEach((s, i) => {
+      const role = i === 0 ? "backing (solid)" : i === run.sheets.length - 1 ? "front" : "mid";
       lines.push(`| ${i + 1} | ${role} | \`${colors[i]}\` | \`sheet_${String(i + 1).padStart(2, "0")}.svg\` |`);
     });
     lines.push(
@@ -320,14 +335,14 @@
       "minFeatureMM", "bridgeMM", "cullBelowMM2", "maxBridgeMM", "holes",
       "holeDiaMM", "cornerStyle", "detailEps",
     ];
-    const o = {};
+    const state = cfg(), o = {};
     keep.forEach((k) => (o[k] = state[k]));
     return JSON.stringify(o, null, 2);
   }
 
   async function exportBundle() {
-    if (!state.sheets.length) {
-      setStatus("nothing to export yet — load a photo or the demo first", true);
+    if (!run.sheets.length) {
+      setStatus("Choose a source: load a photo or the Demo scene", true);
       return;
     }
     const btn = $("btn-export");
@@ -342,9 +357,9 @@
     } catch (err) {
       setStatus(`export failed: ${err.message || err}`, true);
     } finally {
-      btn.disabled = false;
       btn.dataset.busy = "0";
       btn.textContent = label;
+      updateGate(SBSchema.canGenerate(project, run.sourceImage));
     }
   }
 
@@ -352,7 +367,8 @@
     const colors = sheetColors();
     // G1.7: cut files and proof come from canonical polygons (SBMaterial → layerSVG/assemblySVG):
     // frame unioned with edge art, v1.1.0 corner holes and text label kept, legacy file names.
-    const files = SBEngine.connectedFiles(state.sheets, state.procW, state.procH, state, colors);
+    const state = cfg();
+    const files = SBEngine.connectedFiles(run.sheets, run.procW, run.procH, state, colors);
     files.push({ name: "ASSEMBLY.md", data: buildAssemblyMD(colors) });
     files.push({ name: "settings.json", data: settingsJSON() });
 
@@ -428,29 +444,30 @@
   // ------------------------------------------------------------- UI wiring
   function bindRange(id, key, out, fmt = (v) => v) {
     const el = $(id);
-    el.value = state[key];
-    if (out) $(out).textContent = fmt(state[key]);
+    const v0 = cfg()[key];
+    el.value = v0;
+    if (out) $(out).textContent = fmt(v0);
     el.addEventListener("input", () => {
-      state[key] = parseFloat(el.value);
-      if (out) $(out).textContent = fmt(state[key]);
+      setLegacy(key, parseFloat(el.value));
+      if (out) $(out).textContent = fmt(cfg()[key]);
       recompute();
     });
   }
 
   function bindSelect(id, key) {
     const el = $(id);
-    el.value = String(state[key]);
+    el.value = String(cfg()[key]);
     el.addEventListener("change", () => {
-      state[key] = el.type === "checkbox" ? el.checked
-        : isNaN(+el.value) ? el.value : +el.value;
+      setLegacy(key, el.type === "checkbox" ? el.checked
+        : isNaN(+el.value) ? el.value : +el.value);
       recompute();
     });
   }
 
   function bindCheck(id, key) {
     const el = $(id);
-    el.checked = state[key];
-    el.addEventListener("change", () => { state[key] = el.checked; recompute(); });
+    el.checked = cfg()[key];
+    el.addEventListener("change", () => { setLegacy(key, el.checked); recompute(); });
   }
 
   function loadFile(file) {
@@ -471,11 +488,11 @@
         setStatus("couldn’t read that image", true);
         return;
       }
-      state.sourceImage = downscaleIfHuge(img);
-      state.sourceName = file.name;
-      if (state.projectName === "untitled")
+      run.sourceImage = downscaleIfHuge(img);
+      run.sourceName = file.name;
+      if (project.title === "untitled")
         setProjectName(file.name.replace(/\.[^.]+$/, ""));
-      runPipeline();
+      regenerate();
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
@@ -503,7 +520,7 @@
   }
 
   function setProjectName(n) {
-    state.projectName = n;
+    setLegacy("projectName", n);
     $("projname").value = n;
   }
 
@@ -520,18 +537,19 @@
     preview.start();
 
     // header
-    $("projname").addEventListener("input", (e) => (state.projectName = e.target.value));
+    $("projname").addEventListener("input", (e) => setLegacy("projectName", e.target.value));
     $("meta-date").textContent = new Date().toISOString().slice(0, 10);
 
     // photo
     $("filein").addEventListener("change", (e) => {
       if (e.target.files[0]) loadFile(e.target.files[0]);
     });
+    // PRJ-01: the demo is an explicit source button; nothing loads it automatically.
     $("btn-demo").addEventListener("click", () => {
-      state.sourceImage = demoScene();
-      state.sourceName = "demo scene";
-      if (state.projectName === "untitled") setProjectName("night-over-the-valley");
-      runPipeline();
+      run.sourceImage = demoScene();
+      run.sourceName = "demo scene";
+      if (project.title === "untitled") setProjectName("night-over-the-valley");
+      regenerate();
     });
     bindRange("in-res", "procRes", "out-res", (v) => v + " px");
     bindRange("in-smooth", "smoothRadius", "out-smooth", (v) => v + " px");
@@ -547,8 +565,9 @@
       o.value = k; o.textContent = k;
       pal.appendChild(o);
     });
-    pal.value = state.palette;
-    pal.addEventListener("change", () => { state.palette = pal.value; renderAll(); });
+    pal.value = project.appearance.palette;
+    // Appearance only: no revision change, no regeneration (PRJ-02).
+    pal.addEventListener("change", () => { setLegacy("palette", pal.value); renderAll(); });
 
     // fabrication
     bindRange("in-width", "widthMM", "out-width", (v) => v + " mm");
@@ -586,8 +605,8 @@
     const verEl = $("meta-version");
     if (verEl) verEl.textContent = "v" + APP_VERSION;
 
-    // Start with the demo so the app never opens empty.
-    $("btn-demo").click();
+    // PRJ-01: open empty. Export stays disabled with "Choose a source" until a photo or the Demo scene is chosen.
+    regenerate();
 
     registerServiceWorker();
     requestPersistentStorage();

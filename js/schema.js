@@ -36,6 +36,11 @@
  *   SBSchema.toMM / fromMM           lossless units, quantized to 0.001 mm.
  *   SBSchema.modeChangeDiff(p, patch) → [{path, from, to, reason}] (G2.11e).
  *   SBSchema.sourceTemplate()        a valid placeholder `source` record.
+ *   SBSchema.legacyState(p, w?, h?)  → the 19 v1.1.0 settings keys (G2.11a
+ *                                    controller adapter for legacyRun).
+ *   SBSchema.applyLegacy(p, key, v)  → new project with one v1.1.0 control
+ *                                    set; revision + 1 iff geometryKey changes.
+ *   SBSchema.canGenerate(p, source)  → {ok, reason}; "Choose a source" (PRJ-01).
  *   SBSchema.fromLegacySettings(json) → {project, diagnostics}: v1.1.0
  *                                    settings.json → tonal + connected-sheet
  *                                    (DEP-04, G2.4b); heightMM null raises
@@ -457,6 +462,99 @@
     const workW = Math.max(32, Math.round(srcW * leg.procRes / Math.max(srcW, srcH)));
     p.construction.cleanup.toleranceMM = grid(Math.max(0.05, leg.detailEps * sz.artWMM / workW));
     return p;
+  };
+
+  // ------------------------------------------------------------ controller adapter (G2.11a, PRJ-01)
+  // The v1.1.0 `state` view of a project, for the legacy pipeline (SBEngine.legacyRun/connectedFiles) and the v1.1.0
+  // controls until the G2.11b–e stages replace them. `project` is the only source of truth; the app never keeps a copy.
+  const frameMMOf = (p) => p.construction.frame.enabled ? p.construction.frame.widthMM : 0;
+  /**
+   * project → the 19 v1.1.0 settings keys (settingsJSON keep list). Pure. widthMM is the art width: targetMM − 2·frame in
+   * width sizing, geometry.widthMM with lockAspect off, and in height sizing the width derived from the source size
+   * (srcW, srcH) — null without one. procRes is geometry.draftPx; sourceName and detailEps (not project fields) come from
+   * extras.legacy when the project was imported from settings.json, else their v1.1.0 defaults.
+   */
+  S.legacyState = function (project, srcW, srcH) {
+    const p = project, it = p.interpretation, c = p.construction, g = p.geometry, f = frameMMOf(p);
+    const leg = isLegacy(p) ? p.extras.legacy : {};
+    let widthMM = null;
+    if (!g.lockAspect) widthMM = g.widthMM;
+    else if (g.sizeBy === "width") widthMM = grid(g.targetMM - 2 * f);
+    else if (srcW !== undefined && srcH !== undefined) widthMM = S.resolveSize(p, srcW, srcH).artWMM;
+    return {
+      projectName: p.title,
+      sourceName: leg.sourceName !== undefined ? leg.sourceName : LEGACY_DEFAULTS.sourceName,
+      procRes: g.draftPx,
+      smoothRadius: it.smoothing.radius, smoothPasses: it.smoothing.passes,
+      nSheets: c.sheets,
+      thresholdMode: it.thresholdRule === "linear" ? "linear" : "balanced",   // manual has no v1.1.0 equivalent
+      darkFront: it.polarity === "dark-front" || it.polarity === "black-high",
+      palette: p.appearance.palette,
+      widthMM, marginMM: f,
+      minFeatureMM: c.cleanup.minFeatureMM,
+      bridgeMM: c.bridge.bridgeMM, cullBelowMM2: c.bridge.cullBelowMM2, maxBridgeMM: c.bridge.maxBridgeMM,
+      holes: c.registration.enabled, holeDiaMM: c.registration.diaMM,
+      cornerStyle: c.cleanup.cornerStyle === "sharp" ? "faceted" : "smooth",
+      detailEps: typeof leg.detailEps === "number" ? leg.detailEps : LEGACY_DEFAULTS.detailEps,
+    };
+  };
+
+  /**
+   * Set one v1.1.0 control key on a project → a new project (input not mutated). The derivations follow
+   * fromLegacySettings (speck = cull·0.5, hole fill = minFeature²·2). widthMM switches to width sizing and keeps the
+   * frame; marginMM keeps the art width. revision + 1 exactly when geometryKey changes (PRJ-02: title and palette do not).
+   * Throws SCHEMA_LEGACY for a key that is not project state (sourceName, detailEps) or unknown.
+   */
+  S.applyLegacy = function (project, key, value) {
+    const p = clone(project), it = p.interpretation, c = p.construction, g = p.geometry, m = p.material;
+    switch (key) {
+      case "projectName": p.title = String(value); break;
+      case "procRes": g.draftPx = value; break;
+      case "smoothRadius": it.smoothing.radius = value; break;
+      case "smoothPasses": it.smoothing.passes = value; break;
+      case "nSheets": c.sheets = value; break;
+      case "thresholdMode": it.thresholdRule = value === "linear" ? "linear" : "balanced"; break;
+      case "darkFront": it.polarity = it.mode === "height" ? (value ? "black-high" : "white-high") : (value ? "dark-front" : "light-front"); break;
+      case "palette": p.appearance.palette = String(value); break;
+      case "widthMM": {
+        g.sizeBy = "width"; g.lockAspect = true; g.widthMM = value; g.heightMM = null;
+        g.targetMM = grid(value + 2 * frameMMOf(p));
+        break;
+      }
+      case "marginMM": {
+        const art = S.legacyState(project).widthMM;
+        c.frame = { enabled: value > 0, widthMM: value };
+        if (g.lockAspect && g.sizeBy === "width") g.targetMM = grid(art + 2 * value);
+        else if (g.lockAspect) g.targetMM = grid(g.targetMM - 2 * frameMMOf(project) + 2 * value);   // height sizing keeps the art height
+        break;
+      }
+      case "minFeatureMM": {
+        const tracked = m.advisoryFeatureMM === m.minFeatureMM;
+        c.cleanup.minFeatureMM = value; c.cleanup.holeMM2 = r6(value * value * 2);
+        m.minFeatureMM = value; m.advisoryFeatureMM = tracked ? value : Math.max(m.advisoryFeatureMM, value);
+        break;
+      }
+      case "bridgeMM": c.bridge.bridgeMM = value; break;
+      case "cullBelowMM2": c.bridge.cullBelowMM2 = value; c.cleanup.speckMM2 = r6(value * 0.5); m.minPartMM2 = value; break;
+      case "maxBridgeMM": c.bridge.maxBridgeMM = value; break;
+      case "holes": c.registration.enabled = !!value; break;
+      case "holeDiaMM": c.registration.diaMM = value; break;
+      case "cornerStyle": c.cleanup.cornerStyle = value === "faceted" ? "sharp" : "smooth"; break;
+      default: throw fail("SCHEMA_LEGACY", "applyLegacy: " + key + " is not a project control key");
+    }
+    if (JSON.stringify(S.geometryKey(p)) !== JSON.stringify(S.geometryKey(project))) p.revision = project.revision + 1;
+    return p;
+  };
+
+  /**
+   * The pure guard in front of regenerate() (PRJ-01: a source is required; there is no auto-demo). `source` is whatever
+   * the controller holds (an image, a canvas or a source record); only its presence is checked here. → {ok, reason}.
+   */
+  S.canGenerate = function (project, source) {
+    if (source === null || source === undefined) return { ok: false, reason: "Choose a source" };
+    const v = S.validate(project);
+    if (!v.ok) return { ok: false, reason: "Fix the project settings: " + v.errors.map((e) => (e.path || "project") + " (" + e.code + ")").join(", ") };
+    return { ok: true, reason: null };
   };
 
   // ------------------------------------------------------------ geometry key (PRJ-02, D4)

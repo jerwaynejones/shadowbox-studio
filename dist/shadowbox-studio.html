@@ -251,6 +251,9 @@ select {
 .btn.primary { background: var(--cut); border-color: var(--cut); color: #fff; }
 .btn.primary:hover { background: #b92c1f; }
 .btn.wide { width: 100%; }
+.btn:disabled, .btn:disabled:hover { opacity: 0.5; cursor: not-allowed; background: var(--film); border-color: var(--film); color: inherit; }
+.why { margin: 6px 0 0; font-size: 12px; opacity: 0.75; }
+.why[hidden] { display: none; }
 .filebtn { position: relative; overflow: hidden; flex: 1; }
 .filebtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 
@@ -473,7 +476,8 @@ select {
       <h2><span class="stepnum">4</span> Export</h2>
       <p class="hint">One ZIP with every sheet SVG (real mm units), a color
       proof, the assembly guide, a preview render, and your settings.</p>
-      <button id="btn-export" class="btn primary wide">Download cut files (.zip)</button>
+      <button id="btn-export" class="btn primary wide" disabled aria-describedby="why-export">Download cut files (.zip)</button>
+      <p id="why-export" class="why" role="status">Choose a source</p>
     </section>
 
   </aside>
@@ -2225,6 +2229,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *   SBSchema.toMM / fromMM           lossless units, quantized to 0.001 mm.
  *   SBSchema.modeChangeDiff(p, patch) → [{path, from, to, reason}] (G2.11e).
  *   SBSchema.sourceTemplate()        a valid placeholder `source` record.
+ *   SBSchema.legacyState(p, w?, h?)  → the 19 v1.1.0 settings keys (G2.11a
+ *                                    controller adapter for legacyRun).
+ *   SBSchema.applyLegacy(p, key, v)  → new project with one v1.1.0 control
+ *                                    set; revision + 1 iff geometryKey changes.
+ *   SBSchema.canGenerate(p, source)  → {ok, reason}; "Choose a source" (PRJ-01).
  *   SBSchema.fromLegacySettings(json) → {project, diagnostics}: v1.1.0
  *                                    settings.json → tonal + connected-sheet
  *                                    (DEP-04, G2.4b); heightMM null raises
@@ -2646,6 +2655,99 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const workW = Math.max(32, Math.round(srcW * leg.procRes / Math.max(srcW, srcH)));
     p.construction.cleanup.toleranceMM = grid(Math.max(0.05, leg.detailEps * sz.artWMM / workW));
     return p;
+  };
+
+  // ------------------------------------------------------------ controller adapter (G2.11a, PRJ-01)
+  // The v1.1.0 `state` view of a project, for the legacy pipeline (SBEngine.legacyRun/connectedFiles) and the v1.1.0
+  // controls until the G2.11b–e stages replace them. `project` is the only source of truth; the app never keeps a copy.
+  const frameMMOf = (p) => p.construction.frame.enabled ? p.construction.frame.widthMM : 0;
+  /**
+   * project → the 19 v1.1.0 settings keys (settingsJSON keep list). Pure. widthMM is the art width: targetMM − 2·frame in
+   * width sizing, geometry.widthMM with lockAspect off, and in height sizing the width derived from the source size
+   * (srcW, srcH) — null without one. procRes is geometry.draftPx; sourceName and detailEps (not project fields) come from
+   * extras.legacy when the project was imported from settings.json, else their v1.1.0 defaults.
+   */
+  S.legacyState = function (project, srcW, srcH) {
+    const p = project, it = p.interpretation, c = p.construction, g = p.geometry, f = frameMMOf(p);
+    const leg = isLegacy(p) ? p.extras.legacy : {};
+    let widthMM = null;
+    if (!g.lockAspect) widthMM = g.widthMM;
+    else if (g.sizeBy === "width") widthMM = grid(g.targetMM - 2 * f);
+    else if (srcW !== undefined && srcH !== undefined) widthMM = S.resolveSize(p, srcW, srcH).artWMM;
+    return {
+      projectName: p.title,
+      sourceName: leg.sourceName !== undefined ? leg.sourceName : LEGACY_DEFAULTS.sourceName,
+      procRes: g.draftPx,
+      smoothRadius: it.smoothing.radius, smoothPasses: it.smoothing.passes,
+      nSheets: c.sheets,
+      thresholdMode: it.thresholdRule === "linear" ? "linear" : "balanced",   // manual has no v1.1.0 equivalent
+      darkFront: it.polarity === "dark-front" || it.polarity === "black-high",
+      palette: p.appearance.palette,
+      widthMM, marginMM: f,
+      minFeatureMM: c.cleanup.minFeatureMM,
+      bridgeMM: c.bridge.bridgeMM, cullBelowMM2: c.bridge.cullBelowMM2, maxBridgeMM: c.bridge.maxBridgeMM,
+      holes: c.registration.enabled, holeDiaMM: c.registration.diaMM,
+      cornerStyle: c.cleanup.cornerStyle === "sharp" ? "faceted" : "smooth",
+      detailEps: typeof leg.detailEps === "number" ? leg.detailEps : LEGACY_DEFAULTS.detailEps,
+    };
+  };
+
+  /**
+   * Set one v1.1.0 control key on a project → a new project (input not mutated). The derivations follow
+   * fromLegacySettings (speck = cull·0.5, hole fill = minFeature²·2). widthMM switches to width sizing and keeps the
+   * frame; marginMM keeps the art width. revision + 1 exactly when geometryKey changes (PRJ-02: title and palette do not).
+   * Throws SCHEMA_LEGACY for a key that is not project state (sourceName, detailEps) or unknown.
+   */
+  S.applyLegacy = function (project, key, value) {
+    const p = clone(project), it = p.interpretation, c = p.construction, g = p.geometry, m = p.material;
+    switch (key) {
+      case "projectName": p.title = String(value); break;
+      case "procRes": g.draftPx = value; break;
+      case "smoothRadius": it.smoothing.radius = value; break;
+      case "smoothPasses": it.smoothing.passes = value; break;
+      case "nSheets": c.sheets = value; break;
+      case "thresholdMode": it.thresholdRule = value === "linear" ? "linear" : "balanced"; break;
+      case "darkFront": it.polarity = it.mode === "height" ? (value ? "black-high" : "white-high") : (value ? "dark-front" : "light-front"); break;
+      case "palette": p.appearance.palette = String(value); break;
+      case "widthMM": {
+        g.sizeBy = "width"; g.lockAspect = true; g.widthMM = value; g.heightMM = null;
+        g.targetMM = grid(value + 2 * frameMMOf(p));
+        break;
+      }
+      case "marginMM": {
+        const art = S.legacyState(project).widthMM;
+        c.frame = { enabled: value > 0, widthMM: value };
+        if (g.lockAspect && g.sizeBy === "width") g.targetMM = grid(art + 2 * value);
+        else if (g.lockAspect) g.targetMM = grid(g.targetMM - 2 * frameMMOf(project) + 2 * value);   // height sizing keeps the art height
+        break;
+      }
+      case "minFeatureMM": {
+        const tracked = m.advisoryFeatureMM === m.minFeatureMM;
+        c.cleanup.minFeatureMM = value; c.cleanup.holeMM2 = r6(value * value * 2);
+        m.minFeatureMM = value; m.advisoryFeatureMM = tracked ? value : Math.max(m.advisoryFeatureMM, value);
+        break;
+      }
+      case "bridgeMM": c.bridge.bridgeMM = value; break;
+      case "cullBelowMM2": c.bridge.cullBelowMM2 = value; c.cleanup.speckMM2 = r6(value * 0.5); m.minPartMM2 = value; break;
+      case "maxBridgeMM": c.bridge.maxBridgeMM = value; break;
+      case "holes": c.registration.enabled = !!value; break;
+      case "holeDiaMM": c.registration.diaMM = value; break;
+      case "cornerStyle": c.cleanup.cornerStyle = value === "faceted" ? "sharp" : "smooth"; break;
+      default: throw fail("SCHEMA_LEGACY", "applyLegacy: " + key + " is not a project control key");
+    }
+    if (JSON.stringify(S.geometryKey(p)) !== JSON.stringify(S.geometryKey(project))) p.revision = project.revision + 1;
+    return p;
+  };
+
+  /**
+   * The pure guard in front of regenerate() (PRJ-01: a source is required; there is no auto-demo). `source` is whatever
+   * the controller holds (an image, a canvas or a source record); only its presence is checked here. → {ok, reason}.
+   */
+  S.canGenerate = function (project, source) {
+    if (source === null || source === undefined) return { ok: false, reason: "Choose a source" };
+    const v = S.validate(project);
+    if (!v.ok) return { ok: false, reason: "Fix the project settings: " + v.errors.map((e) => (e.path || "project") + " (" + e.code + ")").join(", ") };
+    return { ok: true, reason: null };
   };
 
   // ------------------------------------------------------------ geometry key (PRJ-02, D4)
@@ -7077,69 +7179,83 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     "Monochrome": ["#F4F4F2", "#C4C6C8", "#8B8F94", "#4A4E55", "#15181D"],
   };
 
-  const state = {
-    projectName: "untitled",
+  // G2.11a (PRJ-01): the project (schema v1) is the single source of truth for every setting. The legacy pipeline
+  // reads the v1.1.0 view of it through SBSchema.legacyState, and every control writes through SBSchema.applyLegacy
+  // (revision + 1 exactly when the geometry changes). Acrylic keeps today's connected tonal behaviour until the
+  // G2.11b–e stages expose the plywood/bonded path.
+  let project = SBSchema.defaults("acrylic");
+
+  // Runtime only, never saved: the loaded source and the last pipeline result.
+  const run = {
     sourceName: null,
-    sourceImage: null,   // HTMLImageElement or canvas
-    // — cartoonize —
-    procRes: 720,        // long-side working resolution, px
-    smoothRadius: 4,     // Kuwahara radius, px
-    smoothPasses: 2,
-    // — layers —
-    nSheets: 5,
-    thresholdMode: "balanced",
-    darkFront: true,
-    palette: "Midnight (Starry Night)",
-    // — fabrication (all mm) —
-    widthMM: 300,
-    marginMM: 12,
-    minFeatureMM: 1.2,
-    bridgeMM: 1.8,
-    cullBelowMM2: 9,
-    maxBridgeMM: 40,
-    holes: true,
-    holeDiaMM: 4,
-    cornerStyle: "smooth", // smooth | faceted
-    detailEps: 0.8,        // RDP epsilon, px
-    // — results —
-    sheets: [],            // [{mask, bridges, loops, stats}]
+    sourceImage: null,   // HTMLImageElement or canvas; null until the user chooses a source (no auto-demo)
+    sheets: [],          // [{mask, bridges, loops, stats}]
     procW: 0, procH: 0,
     report: "",
   };
+
+  /** The v1.1.0 settings view of the project (plus the runtime source name), for legacyRun and the exporters. */
+  function cfg() {
+    const src = run.sourceImage;
+    const c = src ? SBSchema.legacyState(project, src.width, src.height) : SBSchema.legacyState(project);
+    c.sourceName = run.sourceName;
+    return c;
+  }
+
+  /** Set one v1.1.0 control on the project. */
+  function setLegacy(key, value) {
+    project = SBSchema.applyLegacy(project, key, value);
+  }
 
   let preview = null;
   const $ = (id) => document.getElementById(id);
 
   // ------------------------------------------------------------- pipeline
-  const recompute = SBUtil.debounce(runPipeline, 160);
+  const recompute = SBUtil.debounce(regenerate, 160);
 
-  function runPipeline() {
-    if (!state.sourceImage) return;
+  /** Enable Export only when generation is possible, and say why not otherwise (PRJ-01). */
+  function updateGate(gate) {
+    const btn = $("btn-export"), why = $("why-export");
+    if (!btn || btn.dataset.busy === "1") return;
+    const blocked = !gate.ok || !run.sheets.length;
+    btn.disabled = blocked;
+    if (why) { why.textContent = blocked ? (gate.reason || "Generating…") : ""; why.hidden = !blocked; }
+  }
+
+  function regenerate() {
+    const gate = SBSchema.canGenerate(project, run.sourceImage);
+    if (!gate.ok) {
+      updateGate(gate);
+      setStatus(gate.reason === "Choose a source" ? "Choose a source: load a photo or the Demo scene" : gate.reason);
+      return;
+    }
+    const state = cfg();
     const t0 = performance.now();
 
     // 1. Scale source to working resolution.
-    const iw = state.sourceImage.width, ih = state.sourceImage.height;
+    const iw = run.sourceImage.width, ih = run.sourceImage.height;
     const k = state.procRes / Math.max(iw, ih);
     const w = Math.max(32, Math.round(iw * k));
     const h = Math.max(32, Math.round(ih * k));
     const cv = document.createElement("canvas");
     cv.width = w; cv.height = h;
     const cx = cv.getContext("2d", { willReadFrequently: true });
-    cx.drawImage(state.sourceImage, 0, 0, w, h);
+    cx.drawImage(run.sourceImage, 0, 0, w, h);
     const rgba = cx.getImageData(0, 0, w, h).data;
 
     // 2-5. DOM-free engine (T0.5 seam).
     const { sheets, totals } = SBEngine.legacyRun(rgba, w, h, state);
-    state.sheets = sheets;
+    run.sheets = sheets;
     let totalBridged = totals.bridged, totalCulled = totals.culled, totalCutMM = totals.cutMM;
-    state.procW = w; state.procH = h;
+    run.procW = w; run.procH = h;
 
     const ms = performance.now() - t0;
-    state.report =
+    run.report =
       `${w}×${h}px · ${state.nSheets} sheets · ` +
       `${totalBridged} bridged · ${totalCulled} culled · ` +
       `${SBUtil.fmt(totalCutMM / 1000, 2)} m of cuts · ${ms.toFixed(0)} ms`;
-    setStatus(state.report);
+    setStatus(run.report);
+    updateGate(gate);
 
     renderAll();
   }
@@ -7154,18 +7270,18 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const el = $("statusline");
     if (el) el.textContent = text;
     clearTimeout(statusRevertTimer);
-    if (transient && state.report) {
+    if (transient && run.report) {
       statusRevertTimer = setTimeout(() => {
         const cur = $("statusline");
-        if (cur) cur.textContent = state.report;
+        if (cur) cur.textContent = run.report;
       }, 6000);
     }
   }
 
   // ------------------------------------------------------------- rendering
   function sheetColors() {
-    const stops = PALETTES[state.palette];
-    const n = state.nSheets;
+    const stops = PALETTES[project.appearance.palette] || PALETTES["Midnight (Starry Night)"];
+    const n = project.construction.sheets;
     // Back sheet = lightest, front = darkest (matches dark-front stacking).
     return Array.from({ length: n }, (_, s) =>
       SBUtil.samplePalette(stops, 1 - (n === 1 ? 0 : s / (n - 1)))
@@ -7173,9 +7289,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   }
 
   function renderAll() {
-    if (!state.sheets.length) return;
+    if (!run.sheets.length) return;
     const colors = sheetColors();
-    preview.setSheets(state.sheets, colors, state.procW, state.procH);
+    preview.setSheets(run.sheets, colors, run.procW, run.procH);
     renderSheetGrid(colors);
     renderPaletteChips(colors);
   }
@@ -7184,12 +7300,12 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   function renderSheetGrid(colors) {
     const grid = $("sheetgrid");
     grid.innerHTML = "";
-    state.sheets.forEach((sheet, s) => {
+    run.sheets.forEach((sheet, s) => {
       const card = document.createElement("div");
       card.className = "sheetcard";
 
       const cvs = document.createElement("canvas");
-      const w = state.procW, h = state.procH;
+      const w = run.procW, h = run.procH;
       cvs.width = w; cvs.height = h;
       const c = cvs.getContext("2d");
       // waste = dark bed, material = sheet color, bridges = amber
@@ -7208,7 +7324,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
 
       const label = document.createElement("div");
       label.className = "sheetlabel";
-      const role = s === 0 ? "backing" : s === state.sheets.length - 1 ? "front" : "mid";
+      const role = s === 0 ? "backing" : s === run.sheets.length - 1 ? "front" : "mid";
       label.innerHTML =
         `<b>SHEET ${s + 1}</b> <span class="muted">${role}</span><br>` +
         (s === 0
@@ -7307,8 +7423,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
 
   // ------------------------------------------------------------- exporting
   function buildAssemblyMD(colors) {
-    const mmPerPx = state.widthMM / state.procW;
-    const artH = state.procH * mmPerPx;
+    const state = cfg();
+    const mmPerPx = state.widthMM / run.procW;
+    const artH = run.procH * mmPerPx;
     const lines = [
       `# ${state.projectName} — assembly guide`,
       ``,
@@ -7324,8 +7441,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       `| # | Role | Suggested color | File |`,
       `|---|------|-----------------|------|`,
     ];
-    state.sheets.forEach((s, i) => {
-      const role = i === 0 ? "backing (solid)" : i === state.sheets.length - 1 ? "front" : "mid";
+    run.sheets.forEach((s, i) => {
+      const role = i === 0 ? "backing (solid)" : i === run.sheets.length - 1 ? "front" : "mid";
       lines.push(`| ${i + 1} | ${role} | \`${colors[i]}\` | \`sheet_${String(i + 1).padStart(2, "0")}.svg\` |`);
     });
     lines.push(
@@ -7366,14 +7483,14 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       "minFeatureMM", "bridgeMM", "cullBelowMM2", "maxBridgeMM", "holes",
       "holeDiaMM", "cornerStyle", "detailEps",
     ];
-    const o = {};
+    const state = cfg(), o = {};
     keep.forEach((k) => (o[k] = state[k]));
     return JSON.stringify(o, null, 2);
   }
 
   async function exportBundle() {
-    if (!state.sheets.length) {
-      setStatus("nothing to export yet — load a photo or the demo first", true);
+    if (!run.sheets.length) {
+      setStatus("Choose a source: load a photo or the Demo scene", true);
       return;
     }
     const btn = $("btn-export");
@@ -7388,9 +7505,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     } catch (err) {
       setStatus(`export failed: ${err.message || err}`, true);
     } finally {
-      btn.disabled = false;
       btn.dataset.busy = "0";
       btn.textContent = label;
+      updateGate(SBSchema.canGenerate(project, run.sourceImage));
     }
   }
 
@@ -7398,7 +7515,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const colors = sheetColors();
     // G1.7: cut files and proof come from canonical polygons (SBMaterial → layerSVG/assemblySVG):
     // frame unioned with edge art, v1.1.0 corner holes and text label kept, legacy file names.
-    const files = SBEngine.connectedFiles(state.sheets, state.procW, state.procH, state, colors);
+    const state = cfg();
+    const files = SBEngine.connectedFiles(run.sheets, run.procW, run.procH, state, colors);
     files.push({ name: "ASSEMBLY.md", data: buildAssemblyMD(colors) });
     files.push({ name: "settings.json", data: settingsJSON() });
 
@@ -7474,29 +7592,30 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   // ------------------------------------------------------------- UI wiring
   function bindRange(id, key, out, fmt = (v) => v) {
     const el = $(id);
-    el.value = state[key];
-    if (out) $(out).textContent = fmt(state[key]);
+    const v0 = cfg()[key];
+    el.value = v0;
+    if (out) $(out).textContent = fmt(v0);
     el.addEventListener("input", () => {
-      state[key] = parseFloat(el.value);
-      if (out) $(out).textContent = fmt(state[key]);
+      setLegacy(key, parseFloat(el.value));
+      if (out) $(out).textContent = fmt(cfg()[key]);
       recompute();
     });
   }
 
   function bindSelect(id, key) {
     const el = $(id);
-    el.value = String(state[key]);
+    el.value = String(cfg()[key]);
     el.addEventListener("change", () => {
-      state[key] = el.type === "checkbox" ? el.checked
-        : isNaN(+el.value) ? el.value : +el.value;
+      setLegacy(key, el.type === "checkbox" ? el.checked
+        : isNaN(+el.value) ? el.value : +el.value);
       recompute();
     });
   }
 
   function bindCheck(id, key) {
     const el = $(id);
-    el.checked = state[key];
-    el.addEventListener("change", () => { state[key] = el.checked; recompute(); });
+    el.checked = cfg()[key];
+    el.addEventListener("change", () => { setLegacy(key, el.checked); recompute(); });
   }
 
   function loadFile(file) {
@@ -7517,11 +7636,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
         setStatus("couldn’t read that image", true);
         return;
       }
-      state.sourceImage = downscaleIfHuge(img);
-      state.sourceName = file.name;
-      if (state.projectName === "untitled")
+      run.sourceImage = downscaleIfHuge(img);
+      run.sourceName = file.name;
+      if (project.title === "untitled")
         setProjectName(file.name.replace(/\.[^.]+$/, ""));
-      runPipeline();
+      regenerate();
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
@@ -7549,7 +7668,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   }
 
   function setProjectName(n) {
-    state.projectName = n;
+    setLegacy("projectName", n);
     $("projname").value = n;
   }
 
@@ -7566,18 +7685,19 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     preview.start();
 
     // header
-    $("projname").addEventListener("input", (e) => (state.projectName = e.target.value));
+    $("projname").addEventListener("input", (e) => setLegacy("projectName", e.target.value));
     $("meta-date").textContent = new Date().toISOString().slice(0, 10);
 
     // photo
     $("filein").addEventListener("change", (e) => {
       if (e.target.files[0]) loadFile(e.target.files[0]);
     });
+    // PRJ-01: the demo is an explicit source button; nothing loads it automatically.
     $("btn-demo").addEventListener("click", () => {
-      state.sourceImage = demoScene();
-      state.sourceName = "demo scene";
-      if (state.projectName === "untitled") setProjectName("night-over-the-valley");
-      runPipeline();
+      run.sourceImage = demoScene();
+      run.sourceName = "demo scene";
+      if (project.title === "untitled") setProjectName("night-over-the-valley");
+      regenerate();
     });
     bindRange("in-res", "procRes", "out-res", (v) => v + " px");
     bindRange("in-smooth", "smoothRadius", "out-smooth", (v) => v + " px");
@@ -7593,8 +7713,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       o.value = k; o.textContent = k;
       pal.appendChild(o);
     });
-    pal.value = state.palette;
-    pal.addEventListener("change", () => { state.palette = pal.value; renderAll(); });
+    pal.value = project.appearance.palette;
+    // Appearance only: no revision change, no regeneration (PRJ-02).
+    pal.addEventListener("change", () => { setLegacy("palette", pal.value); renderAll(); });
 
     // fabrication
     bindRange("in-width", "widthMM", "out-width", (v) => v + " mm");
@@ -7632,8 +7753,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const verEl = $("meta-version");
     if (verEl) verEl.textContent = "v" + APP_VERSION;
 
-    // Start with the demo so the app never opens empty.
-    $("btn-demo").click();
+    // PRJ-01: open empty. Export stays disabled with "Choose a source" until a photo or the Demo scene is chosen.
+    regenerate();
 
     registerServiceWorker();
     requestPersistentStorage();

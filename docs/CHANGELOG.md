@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **G2.11a, controller state adapter; no auto-demo (PRJ-01):** the app keeps one schema v1
+  `project` (acrylic preset, today's connected tonal behaviour) instead of the v1.1.0 `state`
+  object. The legacy pipeline reads it through the new pure `SBSchema.legacyState(project, w?, h?)`
+  (the 19 v1.1.0 settings keys; `legacyState(defaults("acrylic"))` equals the v1.1.0 defaults), and
+  every control writes through `SBSchema.applyLegacy(project, key, value)`, which bumps
+  `revision` exactly when the geometry key changes (title and palette do not). `runPipeline` is now
+  `regenerate()`, guarded by `SBSchema.canGenerate(project, source)`. **Start-up change:** the app
+  no longer loads the demo by itself; it opens empty with Export disabled and the reason "Choose a
+  source", and the Demo scene stays an explicit source button. `settings.json` export is unchanged.
+  New `docs/QA_CHECKLIST.md`.
+
 - **G2.10b: Z model, accounting, hashes and freeze (engine only; the app path is unchanged):**
   `SBEngine.generate` now sets each layer's `zBottomMM`/`zTopMM` (k·(t + g), gap 0 in bonded
   mode) and keeps trailing empty layers in place with status `omitted-trailing` and one

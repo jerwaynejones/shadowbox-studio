@@ -2366,11 +2366,15 @@ Runs right after G2.7 (Appendix D.4, D.9). **Why:** G2.2b showed that the pixel 
 - Modify: `js/app.js:34-62` (`state` → `project`), `js/app.js:70` (`runPipeline` → `regenerate()`), `js/app.js:652-653` (remove the auto-demo click)
 - Create: `SBSchema.legacyState(project)` in `schema.js` (pure)
 
-- [ ] **Tests (Node):**
+- [x] **Tests (Node):**
   - `PRJ-01 legacyState(defaults("acrylic")) reproduces v1.1.0 state keys`
   - `PRJ-01 regenerate is not callable without a source` (pure guard `SBSchema.canGenerate(project, source)`)
 - **QA checklist** (`docs/QA_CHECKLIST.md`): the app opens empty; Demo is an explicit source button; Generate and Export are disabled with a "Choose a source" reason.
-- **Commit.**
+- [x] **Commit.**
+
+**Result (2026-10-08):**
+- **API.** `SBSchema.legacyState(project, srcW?, srcH?)` returns the 19 v1.1.0 settings keys (the `settingsJSON` keep list). `widthMM` is the art width (`targetMM − 2·frame` in width sizing; derived from the source size in height sizing, null without one); `procRes` is `geometry.draftPx`; `sourceName` and `detailEps` come from `extras.legacy`, else their v1.1.0 defaults. It round-trips `fromLegacySettings`. Added (beyond the plan) the controller's write path `SBSchema.applyLegacy(project, key, value)`: pure, mirrors the G2.4b derivations, keeps the frame or art width when width or margin changes, maps `darkFront` by interpretation mode, bumps `revision` exactly when `geometryKey` changes, and throws `SCHEMA_LEGACY` for `sourceName`, `detailEps` or unknown keys. `SBSchema.canGenerate(project, source)` → `{ok, reason}`: "Choose a source" without a source, else the failing validation paths.
+- **App.** `state` is replaced by `let project = SBSchema.defaults("acrylic")` (connected tonal behaviour unchanged until G2.11b–e) plus a runtime-only `run` record (source, sheets, raster size, report). `runPipeline` is `regenerate()`, guarded by `canGenerate`. The auto-demo click is removed; Export starts disabled with a `#why-export` "Choose a source" reason (`aria-describedby`). There is no separate Generate button yet (generation runs on change); G2.11b adds it under the same guard. Headless smoke check: opens empty with the reason shown; Demo generates and enables Export; a slider edit regenerates.
 
 ### Task G2.11b: Stage markup and slider ranges (UI-01)
 
