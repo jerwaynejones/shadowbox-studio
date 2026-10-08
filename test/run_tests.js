@@ -1005,6 +1005,109 @@ suite("spike S5 — frame union (F2: GEO-02 / LYR-04 / AT-12)", () => {
   check("AT-12 frame outer ring is the exact page rectangle", JSON.stringify(polys[0].outer) === "[0,0,100000,0,100000,70000,0,70000]");
 });
 
+suite("spike S5 — finite-width contact (F6, Appendix B.3) and sub-µm offset refusal (F4)", () => {
+  const G = SBGeom, { F, FULL, a2, rev } = S5, B = (v) => BigInt(v), C2 = globalThis.Clipper2;
+  const sq = (x0, y0, x1, y1) => ({ outer: [x0, y0, x1, y0, x1, y1, x0, y1], holes: [] });
+  const poly = (flat) => [{ outer: a2(flat) < 0 ? rev(flat) : flat, holes: [] }];
+  const lower = [sq(0, 0, 10000, 10000)], I = (upper) => G.intersection([upper], lower);
+  // ---- B.3 classification (width w = 2·r*: block if w < 0.5 µm, warn SUPPORT_NARROW if w < minFeatureUm)
+  check("B.3 point contact: intersection empty → block", G.isEmpty(I(sq(10000, 10000, 20000, 20000))) && G.classifyContact(I(sq(10000, 10000, 20000, 20000)), 3000).level === "block");
+  check("B.3 edge contact: intersection empty → block", G.isEmpty(I(sq(10000, 0, 20000, 10000))) && G.classifyContact(I(sq(10000, 0, 20000, 10000)), 3000).level === "block");
+  check("B.3 1 µm axis overlap: width 1 µm ≥ 0.5 → warn, not block", G.classifyContact(I(sq(9999, 0, 20000, 10000)), 3000).level === "warn");
+  check("B.3 needle sliver (inradius 2.5e-5 µm) → block", G.classifyContact(poly([0, 0, 20001, 1, 20000, 1]), 3000).level === "block");
+  check("B.3 2999 µm overlap → warn (SUPPORT_NARROW)", G.classifyContact(I(sq(7001, 0, 20000, 10000)), 3000).level === "warn");
+  check("B.3 3000 µm overlap (width = minFeature) → ok; the tie is certified, not undecided",
+    G.classifyContact(I(sq(7000, 0, 20000, 10000)), 3000).level === "ok" && G.insetStatus(I(sq(7000, 0, 20000, 10000)), 1500).status === "survives");
+  check("B.3 survivesInset scale-independent where certified (×4, ×16, ×64 agree on the 2999/3000 pair)",
+    [4, 16, 64].every((sc) => !G.survivesInset(I(sq(7001, 0, 20000, 10000)), 1500, { scale: sc }) && G.survivesInset(I(sq(7000, 0, 20000, 10000)), 1500, { scale: sc })));
+  const sl = (k) => G.intersection([{ outer: [0, 0, 100000, 0, 0, 100000], holes: [] }], [{ outer: [100000 - k, 0, 100000 - k, 100000, -k, 100000], holes: [] }]);
+  check("B.3 diagonal sliver, normal width 0.707 µm → warn (not block)", G.classifyContact(sl(1), 3000).level === "warn");
+  check("B.3 thin parallelogram (height ≈ 1 µm) → warn; right triangle 10000×1 → warn",
+    G.classifyContact(poly([0, 0, 10000, 3, 10000, 4, 0, 1]), 3000).level === "warn" && G.classifyContact(poly([0, 0, 10000, 0, 10000, 1]), 3000).level === "warn");
+  check("D3 minFeatureUm is rounded to integer µm before halving (3000.4 → 3000: tie ok; 3000.6 → 3001: warn)",
+    G.classifyContact(I(sq(7000, 0, 20000, 10000)), 3000.4).level === "ok" && G.classifyContact(I(sq(7000, 0, 20000, 10000)), 3000.6).level === "warn");
+  check("D3 an odd minFeatureUm halves to a dyadic inset (2999 → 1499.5: 2999 overlap ok, 2998 warn)",
+    G.classifyContact(I(sq(7001, 0, 20000, 10000)), 2999).level === "ok" && G.classifyContact(I(sq(7002, 0, 20000, 10000)), 2999).level === "warn");
+  let nd = ""; try { G.insetStatus(lower, 0.3); } catch (e) { nd = e.message; }
+  check("D3 insetStatus refuses a non-dyadic inset (GEO_INSET_NOT_DYADIC)", /GEO_INSET_NOT_DYADIC/.test(nd));
+  const w1 = G.insetStatus(I(sq(9999, 0, 20000, 10000)), 0.25), w2 = G.insetStatus(I(sq(9999, 0, 20000, 10000)), 0.25);
+  check("NFR-05 insetStatus is deterministic (same witness twice)", w1.status === "survives" && JSON.stringify(w1) === JSON.stringify(w2));
+  // ---- F4: Clipper2 Paths64 offsets at sub-µm deltas, and SBGeom.offset refusing them
+  const inf = (f, d) => C2.inflatePaths([S5.toP(f)], d, C2.JoinType.Miter, C2.EndType.Polygon, 2).map((p) => p.map((q) => [q.x, q.y]));
+  const rect = [0, 0, 4000, 0, 4000, 10000, 0, 10000], Lsh = [0, 0, 3000, 0, 3000, 1000, 1000, 1000, 1000, 3000, 0, 3000];
+  const ar = (out) => out.reduce((a, p) => a + C2.area(p.map(([x, y]) => ({ x, y }))), 0);
+  check("F4 (characterization) |delta| < 0.5 is a no-op (input returned unchanged)", JSON.stringify(inf(rect, -0.49)) === "[[[0,0],[4000,0],[4000,10000],[0,10000]]]");
+  check("F4 (characterization) delta −0.5: positive rect → [], reversed rect shrinks 1 µm on two sides only",
+    inf(rect, -0.5).length === 0 && JSON.stringify(inf(rev(rect), -0.5)) === "[[[4000,1],[1,1],[1,10000],[4000,10000]]]");
+  check("F4 (characterization) delta −0.5, positive L-shape → a wrong polygon of 2,497,000.5 µm² (true: 5,000,000)", Math.abs(ar(inf(Lsh, -0.5))) === 2497000.5);
+  check("F4 (characterization) delta −1.5 shrinks 2 µm on two sides and 1 µm on the other two", JSON.stringify(inf(rect, -1.5)) === "[[[3999,2],[3999,9999],[2,9999],[2,2]]]");
+  const refuses = (d) => { try { G.offset(lower, d, "miter"); return false; } catch (e) { return /GEO_OFFSET_NONINTEGER/.test(e.message); } };
+  check("F4 SBGeom.offset refuses sub-µm and non-integer deltas (−0.5, 0.4, −1.5, NaN, ∞) with GEO_OFFSET_NONINTEGER", [-0.5, 0.4, -1.5, NaN, Infinity].every(refuses));
+  // ---- exact-oracle families (spikes/S5/s5_inset.mjs): no certified verdict may be wrong at default, ×4, ×16, ×64
+  function family(name, cases) {
+    let wrong = 0, und = 0, undTrue = 0, contra = 0;
+    for (const c of cases) {
+      const st = [undefined, 4, 16, 64].map((s) => G.insetStatus(c.I, c.d, s ? { scale: s } : undefined).status);
+      for (const v of st) if ((v === "survives" && !c.truth) || (v === "fails" && c.truth)) wrong++;
+      if (st[0] === "undecided") { und++; if (c.truth) undTrue++; }
+      if (new Set(st.filter((v) => v !== "undecided")).size > 1) contra++;
+      if (G.survivesInset(c.I, c.d) && !c.truth) wrong++; // the boolean is conservative
+    }
+    check(`F6 ${name}: ${cases.length} cases, no wrong certified verdict, no cross-scale contradiction (undecided at default: ${und}, of which truly surviving: ${undTrue})`, wrong === 0 && contra === 0);
+    return { und, undTrue };
+  }
+  const rat = (d) => [B(Math.round(d * 1024)), 1024n];
+  { const cases = [];
+    for (const d of [0.25, 1500, 1.5, 7]) { const r = F.lcg(Math.round(d * 1000) + 17), N = FULL ? 600 : 60;
+      for (let i = 0; i < N; i++) {
+        const len = 200 + r() * 20000, th = r() * Math.PI * 2, a = Math.round(len * Math.cos(th)), b = Math.round(len * Math.sin(th)); if (!a && !b) continue;
+        const L = Math.hypot(a, b), h = Math.max(0.05, 2 * d + (r() * 2 - 1) * Math.max(1, 0.002 * d)), t = (r() - 0.5) * L;
+        const vx = Math.round((-b / L) * h + (a / L) * t * 0.5), vy = Math.round((a / L) * h + (b / L) * t * 0.5), cr = B(a) * B(vy) - B(b) * B(vx); if (cr === 0n) continue;
+        const [dn, dd] = rat(d), uu = B(a * a + b * b), vv = B(vx * vx + vy * vy), mx = uu > vv ? uu : vv, x0 = Math.floor(r() * 1e6), y0 = Math.floor(r() * 7e5);
+        cases.push({ I: poly([x0, y0, x0 + a, y0 + b, x0 + a + vx, y0 + b + vy, x0 + vx, y0 + vy]), d, truth: cr * cr * dd * dd >= 4n * dn * dn * mx });
+      } }
+    family("parallelograms near 2d (d = 0.25, 1.5, 7, 1500 µm)", cases); }
+  { const cases = [];
+    for (const [w, d] of [[1, 0.25], [2, 0.25], [1, 0.5], [2999, 1500], [3000, 1500], [3001, 1500.5], [3, 1.5], [14, 7], [13, 7]])
+      for (const L of [w, 10000]) cases.push({ I: poly([12345, 678, 12345 + w, 678, 12345 + w, 678 + L, 12345, 678 + L]), d, truth: Math.min(w, L) >= 2 * d });
+    const r = family("axis rectangles incl. ties w = 2d", cases);
+    check("F6 axis rectangles: ties w = 2d are certified SURVIVES (none undecided)", r.und === 0); }
+  { const cases = [];
+    for (const k of [1, 2, 3]) { const Ik = G.intersection([{ outer: [0, 0, 100000, 0, 0, 100000], holes: [] }], [{ outer: [100000 - k, 0, 100000 - k, 100000, -k, 100000], holes: [] }]);
+      for (const d of [0.25, 0.5, 1]) cases.push({ I: Ik, d, truth: k * k * 1024 * 1024 >= 8 * Math.round(d * 1024) ** 2 }); }
+    family("diagonal slivers k = 1..3 µm (normal width k/√2)", cases); }
+  { const Lc = [], Pc = [];
+    for (const d of FULL ? [7, 100, 1500] : [7, 1500]) { const wL = ((2 + Math.SQRT2) * d) / 2, wP = d * Math.SQRT2;
+      for (let dw = -3; dw <= 3; dw++) for (const rot of FULL ? [0, 1, 2, 3] : [0, 1]) {
+        const w = Math.max(1, Math.round(wL) + dw), A = 4 * w; let f = [0, 0, A, 0, A, w, w, w, w, A, 0, A];
+        for (let k = 0; k < rot; k++) { const g = []; for (let i = 0; i < f.length; i += 2) g.push(-f[i + 1], f[i]); f = g; }
+        f = f.map((v, i) => v + (i % 2 ? 50000 : 90000));
+        const [dn, dd] = rat(d), W = B(w), lhs = 2n * W * dd - dn; Lc.push({ I: poly(f), d, truth: lhs >= 0n && lhs * lhs >= 2n * W * W * dd * dd });
+        const p = Math.max(1, Math.round(wP) + dw), h = Math.floor(p / 2), q = p - h, M = 3 * p;
+        Pc.push({ I: poly([-h, -M, q, -M, q, -h, M, -h, M, q, q, q, q, M, -h, M, -h, q, -M, q, -M, -h, -h, -h].map((v, i) => v + (i % 2 ? 40000 : 70000))), d, truth: B(p) * B(p) * dd * dd >= 2n * dn * dn });
+      } }
+    family("L-shapes (r* = (2−√2)w, bound by the reflex vertex)", Lc); family("plus-shapes (r* = w/√2, bound by four reflex vertices)", Pc); }
+  { // intersections of random star polygons: a sampled lower bound r_lb ≤ r* (float) — FAILS must never occur with r_lb ≥ d
+    const star = (r, cx, cy, R0, n) => { const f = []; for (let i = 0; i < n; i++) { const t = (2 * Math.PI * i) / n, rr = R0 * (0.55 + 0.45 * r()); f.push(Math.round(cx + rr * Math.cos(t)), Math.round(cy + rr * Math.sin(t))); } return f; };
+    const distSeg = (px, py, ax, ay, bx, by) => { const ex = bx - ax, ey = by - ay, L = ex * ex + ey * ey; let t = L ? ((px - ax) * ex + (py - ay) * ey) / L : 0; t = Math.max(0, Math.min(1, t)); return Math.hypot(ax + t * ex - px, ay + t * ey - py); };
+    const inR = (rings, x, y) => { let ins = false; for (const r of rings) for (let i = 0, n = r.length / 2, j = n - 1; i < n; j = i++) { const xi = r[2 * i], yi = r[2 * i + 1], xj = r[2 * j], yj = r[2 * j + 1]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) ins = !ins; } return ins; };
+    const depth = (rings, x, y) => { if (!inR(rings, x, y)) return -1; let m = Infinity; for (const r of rings) for (let i = 0, n = r.length / 2, j = n - 1; i < n; j = i++) m = Math.min(m, distSeg(x, y, r[2 * j], r[2 * j + 1], r[2 * i], r[2 * i + 1])); return m; };
+    const rlb = (rings) => { let X0 = Infinity, Y0 = Infinity, X1 = -Infinity, Y1 = -Infinity; for (const r of rings) for (let i = 0; i < r.length; i += 2) { X0 = Math.min(X0, r[i]); X1 = Math.max(X1, r[i]); Y0 = Math.min(Y0, r[i + 1]); Y1 = Math.max(Y1, r[i + 1]); }
+      let best = -1, bx = 0, by = 0; const N = 40; for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) { const x = X0 + ((X1 - X0) * i) / N, y = Y0 + ((Y1 - Y0) * j) / N, v = depth(rings, x, y); if (v > best) { best = v; bx = x; by = y; } }
+      let step = Math.max(X1 - X0, Y1 - Y0) / N; while (step > 1e-4) { let moved = false; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) { const v = depth(rings, bx + dx * step, by + dy * step); if (v > best) { best = v; bx += dx * step; by += dy * step; moved = true; } } if (!moved) step /= 2; }
+      return best; };
+    let n = 0, bad = 0, wit = 0, cnt = { survives: 0, fails: 0, undecided: 0 }; const r = F.lcg(4242);
+    for (let i = 0, N = FULL ? 250 : 40; i < N; i++) {
+      const s1 = star(r, 5000, 5000, 3000 + r() * 2000, 7 + Math.floor(r() * 9)), s2 = star(r, 5000 + (r() - 0.5) * 6000, 5000 + (r() - 0.5) * 6000, 3000 + r() * 2000, 7 + Math.floor(r() * 9));
+      const Ii = G.intersection(poly(s1), poly(s2)); if (G.isEmpty(Ii)) continue;
+      const rings = Ii.flatMap((p) => [p.outer, ...p.holes]), lb = rlb(rings), d = Math.max(0.25, Math.round(lb * (0.97 + 0.06 * r()) * 4) / 4), res = G.insetStatus(Ii, d); n++; cnt[res.status]++;
+      if (res.status === "fails" && lb >= d) bad++;
+      if (res.status === "survives") { const { X, Y, q } = res.witness; if (depth(rings, X / q, Y / q) < d * (1 - 1e-12)) wit++; }
+    }
+    check(`F6 practical star intersections (${n}: ${JSON.stringify(cnt)}): every SURVIVES witness re-checks in floating point; no FAILS where r_lb ≥ d`, n > 20 && bad === 0 && wit === 0);
+  }
+});
+
 suite("spike S4 — png.js raw decode and inspection, plan checks (IMG-01/02/05/07, AT-02/22)", () => {
   const F = require("./fixtures.js");
   const g = (opts) => F.pngEncode({ w: 5, h: 1, colorType: 0, bitDepth: 8, data: Uint8Array.from([0, 64, 128, 191, 255]), ...opts });

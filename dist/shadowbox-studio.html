@@ -733,11 +733,13 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *     the re-pair); (4) drop collinear, orient, rotate, nest holes in the smallest
  *     containing outer, sort. Postcondition: one polygon per part (interiorConnected;
  *     components() asserts it, validate() reports GEO_MULTIPART).
+ *   · Finite-width contact (D3, B.3): insetStatus / survivesInset / classifyContact
+ *     certify r* ≥ d with an exact BigInt witness; never through offset().
  *   · Polygons sorted by (minY, minX) of the outer, then by the outer's
  *     coordinate list; holes the same way.
  *   · canonicalBytes / layerHash / materialHash (decision D4, spike S6) are
  *     built on normalize; integer coordinates within ±2^25 µm only.
- * Only + - * / Math.round/floor/abs/sqrt/min/max, Math.imul (integer hash in the T-split
+ * Only + - * / Math.round/floor/ceil/abs/sqrt/min/max, BigInt (finite-width witness), Math.imul (integer hash in the T-split
  * index) and integer typed-array sorts are used here (NFR-05). No trig.
  * Booleans and offsets delegate to global.Clipper2 (js/vendor/clipper2.js),
  * looked up at call time. Merged from spikes/S1/geom_core.js + geom_clipper.js.
@@ -1465,7 +1467,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const J = L().JoinType;
     const jt = join === "miter" ? J.Miter : join === "square" ? J.Square : null;
     if (jt === null) throw new Error("SBGeom.offset: join '" + join + "' refused (only miter|square are deterministic)");
-    if (!Number.isInteger(delta)) throw new Error("SBGeom.offset: delta must be integer µm");
+    // D3 / S5 F4: Clipper2 Paths64 offsets are meaningless below the 1 µm grid (|delta| < 0.5 is a no-op, −0.5 is
+    // orientation- and shape-dependent), so only integer µm deltas are accepted. Sub-µm insets: insetStatus().
+    if (!Number.isInteger(delta)) throw new Error("SBGeom.offset: GEO_OFFSET_NONINTEGER — delta must be an integer µm (got " + delta + "); use SBGeom.survivesInset for sub-µm insets");
     if (delta === 0) return C.normalize(polys);
     return fromPaths(L().inflatePaths(toPaths(polys), delta, jt, L().EndType.Polygon, 2.0));
   };
@@ -1474,6 +1478,145 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const u = G.union(polys, []);
     for (let i = 0; i < u.length; i++) if (!interiorConnected(u[i])) throw new Error("SBGeom.components: GEO_MULTIPART_POLYGON — normalized polygon " + i + " has a disconnected interior");
     return u.map((p) => [p]);
+  };
+
+  // ------------------------------------------- finite-width contact (decision D3, spike S5 F6, Appendix B.3)
+  // survives(I, d) ⇔ the closed inward offset I ⊖ B(d) is non-empty ⇔ r*(I) ≥ d, where r* is the radius of the
+  // largest disk inside I; the contact WIDTH is w = 2·r*. Verdicts:
+  //   "survives"  — certified EXACTLY: a rational witness p = (X/q, Y/q) strictly inside I (even–odd) with
+  //                 dist(p, e)² ≥ d² for every edge e, checked in BigInt. Independent of Clipper2, floats and scale.
+  //   "fails"     — certified through Clipper2: the BEVEL inset at d − m (m = 2 units at ×scale) is empty. Bevel ⊇ the
+  //                 true inset, and a true inset at d would leave a disk of radius m there, which survives the ≤ 0.71-unit
+  //                 vertex rounding. (Assumes Clipper2 offsets by winding number; cross-checked in spike S5.)
+  //   "undecided" — neither. survivesInset() returns true ONLY for "survives", so undecided counts as NOT surviving
+  //                 (warn / block): the boolean never reports a contact wider than it is.
+  // Spike S5 also tried a Round-join failure certificate; it is not shipped (trig inside Clipper2, NFR-05), so a few
+  // reflex-bound shapes that S5 certified as "fails" are "undecided" here — the boolean is unchanged.
+  // Never built on SBGeom.offset (F4). Candidates: Clipper2 miter/bevel insets at ×scale on translated coordinates;
+  // then a float pattern search over a fixed 16-direction table (from COS64: no trig), snapped to 1/4096 µm.
+  const DIRS16 = [];
+  for (let k = 0; k < 16; k++) {
+    const i = (k & 3) * 4; let c = COS64[i], s = COS64[16 - i];
+    for (let t = 0; t < k >> 2; t++) { const c2 = -s; s = c; c = c2; } // rotate by 90°
+    DIRS16.push([c / 1e6, s / 1e6]);
+  }
+  function dyadic(d) {
+    const n = Math.round(d * 1024);
+    if (!(n > 0) || n / 1024 !== d) throw new Error("SBGeom.insetStatus: GEO_INSET_NOT_DYADIC — inset must be a positive multiple of 1/1024 µm (got " + d + ")");
+    return [BigInt(n), BigInt(1024)];
+  }
+  /** Exact: is (X/q, Y/q) strictly inside the rings (even–odd) with every edge at distance ≥ d? */
+  function verifyWitness(rings, X, Y, q, d) {
+    const [dn, dd] = dyadic(d), Q = BigInt(q), PX = BigInt(X), PY = BigInt(Y), lim = dn * Q * (dn * Q), dd2 = dd * dd, Z = BigInt(0);
+    let inside = false;
+    for (const r of rings) {
+      const n = r.length / 2;
+      for (let i = 0, j = n - 1; i < n; j = i++) {
+        const ax = BigInt(r[2 * j]) * Q, ay = BigInt(r[2 * j + 1]) * Q, bx = BigInt(r[2 * i]) * Q, by = BigInt(r[2 * i + 1]) * Q;
+        const ex = bx - ax, ey = by - ay, wx = PX - ax, wy = PY - ay, L = ex * ex + ey * ey, t = wx * ex + wy * ey;
+        if (t <= Z) { if (dd2 * (wx * wx + wy * wy) < lim) return false; }
+        else if (t >= L) { const vx = PX - bx, vy = PY - by; if (dd2 * (vx * vx + vy * vy) < lim) return false; }
+        else { const cr = ex * wy - ey * wx; if (dd2 * cr * cr < lim * L) return false; }
+        if ((ay > PY) !== (by > PY)) { const s = (PX - ax) * (by - ay) - ex * (PY - ay); if (by - ay > Z ? s < Z : s > Z) inside = !inside; }
+      }
+    }
+    return inside;
+  }
+  function candidatesOf(paths) { // float points: area centroid, vertex mean, vertices and edge midpoints
+    const c = [];
+    for (const p of paths) {
+      const n = p.length; if (n < 3) continue;
+      let A = 0, cx = 0, cy = 0, sx = 0, sy = 0;
+      for (let i = 0; i < n; i++) { const a = p[i], b = p[(i + 1) % n], cr = a.x * b.y - b.x * a.y; A += cr; cx += (a.x + b.x) * cr; cy += (a.y + b.y) * cr; sx += a.x; sy += a.y; }
+      if (A !== 0) c.push([cx / (3 * A), cy / (3 * A)]);
+      c.push([sx / n, sy / n]);
+      for (let i = 0; i < n; i++) { const a = p[i], b = p[(i + 1) % n]; c.push([a.x, a.y], [(a.x + b.x) / 2, (a.y + b.y) / 2]); }
+    }
+    return c;
+  }
+  /** Float depth of (x, y): distance to the boundary if inside (even–odd), else −1. Only steers the search. */
+  function depthF(rings, x, y) {
+    let inside = false, m = Infinity;
+    for (const r of rings) {
+      const n = r.length / 2;
+      for (let i = 0, j = n - 1; i < n; j = i++) {
+        const ax = r[2 * j], ay = r[2 * j + 1], bx = r[2 * i], by = r[2 * i + 1];
+        if ((ay > y) !== (by > y) && x < ((bx - ax) * (y - ay)) / (by - ay) + ax) inside = !inside;
+        const ex = bx - ax, ey = by - ay, L = ex * ex + ey * ey; let t = L ? ((x - ax) * ex + (y - ay) * ey) / L : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const dx = ax + t * ex - x, dy = ay + t * ey - y, d2 = dx * dx + dy * dy; if (d2 < m) m = d2;
+      }
+    }
+    return inside ? Math.sqrt(m) : -1;
+  }
+  function refine(rings, x, y, step) { // pattern search towards the max-inscribed-disk centre (float; verified exactly after)
+    let best = depthF(rings, x, y);
+    for (let it = 0; it < 4000 && step > 1e-7; it++) {
+      let moved = false;
+      for (const [dx, dy] of DIRS16) { const v = depthF(rings, x + dx * step, y + dy * step); if (v > best) { best = v; x += dx * step; y += dy * step; moved = true; break; } }
+      if (!moved) step /= 2;
+    }
+    return [x, y, best];
+  }
+  /**
+   * insetStatus(I: PolygonWithHoles[], dUm, {scale}?) → {status: "survives"|"fails"|"undecided", witness?: {X, Y, q}, scale, via}.
+   * dUm must be dyadic (a multiple of 1/1024 µm, e.g. 0.25 or minFeatureUm/2 with integer minFeatureUm).
+   * Scale defaults to max(16, ⌈16/d⌉).
+   */
+  G.insetStatus = function (polys, dUm, opts) {
+    dyadic(dUm);
+    const C2 = L(), JT = C2.JoinType, ET = C2.EndType, rings = [];
+    for (const p of polys || []) {
+      if (area2(p.outer) !== 0) rings.push(area2(p.outer) < 0 ? reverseRing(p.outer) : p.outer);
+      for (const h of p.holes || []) if (area2(h) !== 0) rings.push(area2(h) > 0 ? reverseRing(h) : h);
+    }
+    if (!rings.length || C.area(polys) <= 0) return { status: "fails", via: "empty" };
+    const s = opts && opts.scale !== undefined ? opts.scale : Math.max(16, Math.ceil(16 / dUm)), m = 2;
+    let x0 = Infinity, y0 = Infinity;
+    for (const r of rings) { const b = ringBox(r); if (b[0] < x0) x0 = b[0]; if (b[1] < y0) y0 = b[1]; }
+    const up = rings.map((r) => { const p = []; for (let i = 0; i < r.length; i += 2) p.push({ x: (r[i] - x0) * s, y: (r[i + 1] - y0) * s }); return p; });
+    const D = dUm * s, q = 2 * s, off = (delta, jt) => (delta < 0.5 ? null : C2.inflatePaths(up, -delta, jt, ET.Polygon, 2.0));
+    const tried = new Set(), seeds = [];
+    const tryPaths = (paths) => {
+      if (!paths) return null;
+      for (const [cx, cy] of candidatesOf(paths)) {
+        const X = Math.round(cx * 2) + q * x0, Y = Math.round(cy * 2) + q * y0, k = X + "," + Y;
+        if (tried.has(k)) continue; tried.add(k);
+        if (verifyWitness(rings, X, Y, q, dUm)) return { X, Y, q };
+        if (seeds.length < 4096) seeds.push([X / q, Y / q]);
+      }
+      return null;
+    };
+    // 1. witnesses from Clipper2 insets (miter ⊆ true inset ⊆ bevel)
+    for (const [delta, jt] of [[D + m, JT.Miter], [D, JT.Miter], [D + m, JT.Bevel], [D - m, JT.Miter], [D - m, JT.Bevel]]) {
+      const w = tryPaths(off(delta, jt)); if (w) return { status: "survives", witness: w, scale: s, via: "inset" };
+    }
+    // 2. failure certificate: the bevel (outer approximation) inset at d − m is empty ⇒ r* < d
+    if (D - m >= 1 && !off(D - m, JT.Bevel).some((p) => C2.area(p) !== 0)) return { status: "fails", scale: s, via: "bevel" };
+    // 3. refine the deepest candidates (and the input's own) by pattern search; snap to 1/4096 µm; verify exactly
+    for (const c of candidatesOf(up)) seeds.push([c[0] / s + x0, c[1] / s + y0]);
+    const ranked = seeds.map(([x, y]) => [x, y, depthF(rings, x, y)]).filter((t) => t[2] > 0).sort((a, b) => b[2] - a[2] || a[0] - b[0] || a[1] - b[1]).slice(0, 4);
+    for (const [sx, sy] of ranked) {
+      const [rx, ry, dep] = refine(rings, sx, sy, 1 / s); if (dep < dUm * (1 - 1e-9)) continue;
+      const Q = 4096, X = Math.round(rx * Q), Y = Math.round(ry * Q);
+      if (verifyWitness(rings, X, Y, Q, dUm)) return { status: "survives", witness: { X, Y, q: Q }, scale: s, via: "refine" };
+    }
+    return { status: "undecided", scale: s };
+  };
+  /** True only when survival of the inset dUm is certified exactly (undecided counts as NOT surviving). */
+  G.survivesInset = (polys, dUm, opts) => G.insetStatus(polys, dUm, opts).status === "survives";
+  /**
+   * G2.7 classification of a support contact I = intersection(upper part, lower part), Appendix B.3 thresholds:
+   * "block" if w < 0.5 µm (does not survive an inset of 0.25 µm; empty, point and line contact included),
+   * "warn" (SUPPORT_NARROW) if w < minFeatureUm (does not survive minFeatureUm/2, minFeatureUm first rounded to an
+   * integer µm so the half is dyadic), else "ok". `certain` is false when the verdict came from "undecided".
+   */
+  G.classifyContact = function (I, minFeatureUm) {
+    if (!(minFeatureUm >= 0) || !Number.isFinite(minFeatureUm)) throw new Error("SBGeom.classifyContact: minFeatureUm must be a finite number ≥ 0 (got " + minFeatureUm + ")");
+    const b = G.insetStatus(I, 0.25);
+    if (b.status !== "survives") return { level: "block", certain: b.status === "fails" };
+    const mf = Math.round(minFeatureUm);
+    if (mf >= 1) { const w = G.insetStatus(I, mf / 2); if (w.status !== "survives") return { level: "warn", certain: w.status === "fails" }; }
+    return { level: "ok", certain: true };
   };
 
   for (const k of ["fromPixelLoops", "normalize", "validate", "area", "isEmpty", "containsPoint", "bbox", "circle",
