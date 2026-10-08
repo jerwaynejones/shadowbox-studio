@@ -607,7 +607,7 @@
    * (x, y) vertex, in the positive direction when it encloses signed area and in either direction
    * when it does not (out-and-back, self-cancelling bowtie). The closing point is repeated. So the
    * result is invariant to start vertex and direction for every closed path, degenerate ones included.
-   * Returns null for fewer than 2 distinct points.
+   * Returns null for fewer than 2 distinct points (no segment, nothing burned): the only paths dropped.
    */
   function canonPolyline(src) {
     const pts = [];

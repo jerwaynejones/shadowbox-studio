@@ -711,6 +711,48 @@ suite("spike S6 — canonicalBytes layout and D4 hash scope (amendments A, B, C)
     throws(() => G.canonicalBytes([{ index: 0, material: [], holes: [{ cxUm: 0, cyUm: 0, rUm: 0 }] }])) && throws(() => G.canonicalBytes([{ index: -1, material: [] }])));
   check("S6 typed-array ring is refused with the real reason (not 'odd coordinate count')", (() => {
     try { G.canonicalBytes([{ index: 0, material: [{ outer: new Int32Array([0, 0, 10, 0, 10, 10]), holes: [] }] }]); return false; } catch (e) { return /plain Array/.test(e.message) && /Int32Array/.test(e.message); } })());
+  check("S6 typed-array score path and hole ring refused with the real reason", [
+    { index: 0, material: [], scorePaths: [new Float64Array([0, 0, 10, 0])] },
+    { index: 0, material: [{ outer: rect(0, 0, 10, 10), holes: [new Int32Array([2, 2, 2, 8, 8, 8, 8, 2])] }] }].every((L) => {
+    try { G.canonicalBytes([L]); return false; } catch (e) { return /plain Array/.test(e.message) && /(Float64|Int32)Array/.test(e.message); } }));
+  check("S6 guards apply to layerHashes too (orphan hole, negative index, radius <= 0, typed array)",
+    throws(() => G.layerHashes({ index: 0, material: [{ outer: rect(0, 0, 10, 10), holes: [rect(100, 100, 110, 110)] }] })) &&
+    throws(() => G.layerHashes({ index: -1, material: [] })) && throws(() => G.layerHashes({ index: 0, material: [], holes: [{ cxUm: 0, cyUm: 0, rUm: 0 }] })) &&
+    throws(() => G.layerHashes({ index: 0, material: [], scorePaths: [new Int32Array([0, 0, 1, 1])] })));
+  // A hole congruent to its outer is not inside it (same area): without the orphan throw the layer would hash as the solid square.
+  check("S6 hole identical to its outer throws (would otherwise hash as solid material)",
+    throws(() => G.canonicalBytes([{ index: 0, material: [{ outer: rect(0, 0, 10, 10), holes: [rect(0, 0, 10, 10)] }] }])));
+  // Interaction with the D3 normalize (node → re-pair → split → nest): holes that touch the outer or each other at a
+  // vertex or T-contact are boolean-resolved input; re-pairing may turn them into outer boundary or new parts, but never
+  // into orphans, and the bytes equal those of the normalized input.
+  {
+    const sq = rect(0, 0, 100, 100), cases = [
+      [{ outer: sq, holes: [[0, 0, 50, 20, 20, 50]] }], // hole touches the outer at a corner
+      [{ outer: sq, holes: [[50, 0, 60, 20, 40, 20]] }], // hole vertex on the outer's edge (T)
+      [{ outer: sq, holes: [rect(10, 10, 50, 50), rect(50, 50, 90, 90)] }], // two holes touching at a vertex
+      [{ outer: sq, holes: [[0, 50, 25, 60, 50, 50, 25, 40], [50, 50, 75, 60, 100, 50, 75, 40]] }], // T-chain cutting the interior in two
+      [{ outer: sq, holes: [[50, 0, 100, 50, 50, 100, 0, 50]] }], // diamond hole with all four corners on the outer
+      [{ outer: rect(0, 0, 30, 30), holes: [rect(10, 10, 20, 20)] }, { outer: rect(10, 10, 15, 15), holes: [] }]]; // island touching its hole
+    const same = (m) => { const a = G.canonicalBytes([{ index: 0, material: m }]), b = G.canonicalBytes([{ index: 0, material: G.normalize(m) }]);
+      return a.length === b.length && a.every((v, i) => v === b[i]); };
+    check("D3×D4 holes touching the outer / each other (vertex, T, interior cut) hash without orphan throw, = canonicalBytes(normalize)",
+      cases.every((m) => !throws(() => G.canonicalBytes([{ index: 0, material: m }])) && same(m)));
+    check("D3×D4 holes whose T-chain cuts the interior come out as two one-part polygons", (() => {
+      const n = G.normalize(cases[3]); return n.length === 2 && n.every((p) => p.holes.length === 0 && G.interiorConnected(p)); })());
+  }
+  check("S6 score path with fewer than two distinct points has no segment: dropped (documented), hashes like no path",
+    [[], [5, 5], [5, 5, 5, 5]].every((sp) => G.layerHash({ index: 0, material: [], scorePaths: [sp] }) === G.layerHash({ index: 0, material: [], scorePaths: [] })) &&
+    G.layerHash({ index: 0, material: [], scorePaths: [[5, 5, 6, 5]] }) !== G.layerHash({ index: 0, material: [], scorePaths: [] }));
+  check("S6 closed score paths: fuzzed cycles on a 3×3 grid (dups, spikes, bowties, out-and-backs) start- and direction-invariant", (() => {
+    const rnd = require("./fixtures.js").lcg(606), L0 = (sp) => G.layerHash({ index: 0, material: [], scorePaths: [sp] });
+    for (let s = 0; s < 400; s++) {
+      const n = 2 + Math.floor(rnd() * 6), c = []; for (let i = 0; i < n; i++) c.push(Math.floor(rnd() * 3), Math.floor(rnd() * 3));
+      const h = L0(c.concat(c.slice(0, 2)));
+      for (let k = 0; k < n; k++) for (const q of [rot(c, k), rev(rot(c, k))]) if (L0(q.concat(q.slice(0, 2))) !== h) return false;
+      if (L0(c) !== L0(rev(c))) return false;
+    }
+    return true;
+  })());
   check("S6 zero-area part dropped", H({ ...base, material: [...base.material, { outer: [0, 50000, 100, 50000, 200, 50000], holes: [] }] }) === h0);
   check("S6 SBHash.sha256(canonicalBytes) == node:crypto", SBHash.sha256(G.canonicalBytes([base])) === require("crypto").createHash("sha256").update(G.canonicalBytes([base])).digest("hex"));
   check("S6 canonicalBytes does not mutate its input", (() => { const s = JSON.stringify(base); G.canonicalBytes([base]); return JSON.stringify(base) === s; })());
