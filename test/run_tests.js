@@ -321,10 +321,10 @@ suite("baseline — characterization (KNOWN-DEFECT checks invert when fixed)", (
   const base = { pxW: 8, pxH: 5, widthMM: 80, marginMM: 10, holes: false, holeDiaMM: 3, label: "t 1/2" };
   const svgUp = SBSvg.sheetSVG({ ...base, loops: SBTrace.trace(F.MASKS.borderTouch.layers[1], 8, 5), isBacking: false });
   const svgBack = SBSvg.sheetSVG({ ...base, loops: [], isBacking: true });
-  check("KNOWN-DEFECT EXP-01: sheetSVG always emits the page <rect>", /<rect /.test(svgUp));
+  // KNOWN-DEFECT EXP-01 and EXP-02 were fixed in G1.4: the checks now live on SBSvg.layerSVG (suite "svgout.js — layerSVG …");
+  // the shim versions were deleted, not edited, because T0.7 freezes sheetSVG.
   // KNOWN-DEFECT GEO-02 was fixed in G1.3: the check now lives on SBMaterial.applyFrame (suite "material.js — frame and holes …");
   // the shim version was deleted, not edited, because T0.7 freezes sheetSVG.
-  check("KNOWN-DEFECT EXP-02: cut group has no id", !/<g id="CUT"/.test(svgUp));
   check("KNOWN-DEFECT EXP-03: label is live <text>", /<text /.test(svgUp));
   check("G0 backing sheet emits only rect (+label), no paths", !/<path /.test(svgBack) && /<rect /.test(svgBack));
   const proof = SBSvg.proofSVG([{ loops: [] }, { loops: [] }], 8, 5, 80, ["#fff", "#000"]);
@@ -1850,6 +1850,94 @@ suite("material.js — frame and holes as canonical material; the page model (GE
   check("smoothStack refuses a non-integer or negative frameUm", throws(() => M.smoothStack([[]], { tolUm: 50, sxUm: 1, syUm: 1, mode: "connected", w: 1, h: 1, frameUm: 0.5 })) &&
     throws(() => M.smoothStack([[]], { tolUm: 50, sxUm: 1, syUm: 1, mode: "connected", w: 1, h: 1, frameUm: -1 })));
   check("GEO-03 framed + smoothed noise layers raise no blocking diagnostics", okV);
+});
+
+// ------------------------------------------------ SVG writer v2 (G1.4)
+suite("svgout.js — layerSVG: CUT/SCORE groups, mm units, shared viewBox, no page rect (EXP-01/02/03, AT-12, D-4.2, GEO-09; G1.4)", () => {
+  const F = require("./fixtures.js"), M = SBMaterial, S = SBSvg;
+  check("G1.4 API present", typeof S.layerSVG === "function" && typeof S.fmtUm === "function");
+  if (typeof S.layerSVG !== "function" || typeof S.fmtUm !== "function") return;
+  const throws = (f, re) => { try { f(); return false; } catch (x) { return !re || re.test(x.message); } };
+  const ringsOf = (l) => { const o = []; for (const p of l.material) o.push(p.outer, ...p.holes); return o; };
+  const groupOf = (svg, id) => { const m = svg.match(new RegExp('<g id="' + id + '"[^>]*>([\\s\\S]*?)</g>')); return m ? m[1] : null; };
+  const nums = (d) => d.replace(/[MLZ]/g, " ").trim().split(/\s+/).filter(Boolean);
+  // ---- fmtUm: exact decimal mm from integer µm
+  check("GEO-09 fmtUm formats integer µm as exact mm (trailing zeros and point dropped)",
+    S.fmtUm(0) === "0" && S.fmtUm(100000) === "100" && S.fmtUm(1500) === "1.5" && S.fmtUm(5) === "0.005" && S.fmtUm(10) === "0.01" &&
+    S.fmtUm(304800) === "304.8" && S.fmtUm(-2500) === "-2.5" && S.fmtUm(-0) === "0" && S.fmtUm(33554432) === "33554.432");
+  check("GEO-09 fmtUm round-trips every integer in a sweep (Math.round(parse·1000) === u)", (() => {
+    const r = F.lcg(4711); for (let i = 0; i < 20000; i++) { const u = Math.floor((r() - 0.5) * 2 * 33554432);
+      const t = S.fmtUm(u); if (Math.round(Number(t) * 1000) !== u || /\.\d*0$|\.$/.test(t)) return false; } return true; })());
+  check("NONFINITE fmtUm refuses non-integer µm", throws(() => S.fmtUm(0.5), /NONINTEGER/) && throws(() => S.fmtUm(NaN), /NONINTEGER/));
+  // ---- fixtures: bonded (no frame) and connected (framed) borderTouch on 10 mm/px
+  const bt = F.MASKS.borderTouch;
+  const pgB = M.page({ artWMM: 80, artHMM: 50, frame: { enabled: false, widthMM: 10 } }), LB = M.fromMasks(bt.layers, 8, 5, pgB, {});
+  const pgC = M.page({ artWMM: 80, artHMM: 50, frameMM: 10 }), LC = M.fromMasks(bt.layers, 8, 5, pgC, { frame: true, holes: [{ cxUm: 5000, cyUm: 5000, rUm: 1500 }] });
+  const opts = { construction: "bonded", frontNote: "front face = layer N−1 (top)" };
+  const svgB = LB.map((l) => S.layerSVG(l, pgB, opts)), svgC = LC.map((l) => S.layerSVG(l, pgC, { ...opts, construction: "connected" }));
+  // ---- EXP-01
+  check("EXP-01 FIXED: bonded upper layer emits no <rect>", !/<rect/.test(svgB[1]) && svgB.every((s) => !/<rect/.test(s)) && svgC.every((s) => !/<rect/.test(s)));
+  const vb = (s) => (s.match(/viewBox="([^"]+)"/) || [])[1];
+  check("EXP-01 shared viewBox across layers = the shared page frame (0 0 wMM hMM; assemblySVG joins it in G1.6, GEO-01)",
+    svgB.every((s) => vb(s) === "0 0 80 50") && svgC.every((s) => vb(s) === "0 0 100 70"));
+  check("EXP-01/D-4.2 root element: mm width/height equal the page, viewBox in mm",
+    svgC.every((s) => /<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" width="100mm" height="70mm" viewBox="0 0 100 70">/.test(s)));
+  check("AT-07 bonded base outline comes from the material ring (a path), not a page rect",
+    (() => { const c = groupOf(svgB[0], "CUT"); return !!c && (c.match(/<path /g) || []).length === 1 && /d="M 0 0 L 80 0 L 80 50 L 0 50 Z"/.test(c); })());
+  // ---- EXP-02
+  check("EXP-02 FIXED: groups id=CUT #FF0000 and id=SCORE #0000FF, no fill on cuts", svgB.concat(svgC).every((s) =>
+    /<g id="CUT" fill="none" stroke="#FF0000" stroke-width="0\.1">/.test(s) && /<g id="SCORE" fill="none" stroke="#0000FF" stroke-width="0\.1">/.test(s) &&
+    !/fill="(?!none)/.test(groupOf(s, "CUT")) && (s.match(/<g /g) || []).length === 2));
+  check("EXP-02 one <path d=\"M… L… Z\"> per material ring, in material order, coordinates exact", LC.concat(LB).every((l, i) => {
+    const s = i < LC.length ? svgC[i] : svgB[i - LC.length], ds = [...groupOf(s, "CUT").matchAll(/<path d="([^"]+)"\/>/g)].map((m) => m[1]), rs = ringsOf(l);
+    return ds.length === rs.length && ds.every((d, j) => /^M [-\d.]+ [-\d.]+( L [-\d.]+ [-\d.]+)+ Z$/.test(d) &&
+      JSON.stringify(nums(d).map((t) => Math.round(Number(t) * 1000))) === JSON.stringify(rs[j])); }));
+  check("ASM-04 registration hole rings are cut paths (connected base: outer + 1 hole circle)",
+    (groupOf(svgC[0], "CUT").match(/<path /g) || []).length === 2);
+  // ---- EXP-03 (pure vector) and legacyTextLabel
+  const bad = /<(text|image|style|clipPath|filter)|transform=/;
+  check("EXP-03 no transform|clipPath|filter|style|image|text (without legacyTextLabel)", svgB.concat(svgC).every((s) => !bad.test(s)));
+  const lab = S.layerSVG(LC[1], pgC, { construction: "connected", legacyTextLabel: "t 1/2 <&>" });
+  check("DEP-04 legacyTextLabel emits the v1.1.0 <text> label inside SCORE (escaped), nowhere else",
+    /<text x="2" y="68" font-family="monospace" font-size="4" fill="none" stroke="#0000FF" stroke-width="0\.1">t 1\/2 &lt;&amp;&gt;<\/text>/.test(groupOf(lab, "SCORE")) &&
+    (lab.match(/<text /g) || []).length === 1);
+  // ---- SCORE: polylines only (open paths, no Z)
+  const sp = [[10000, 10000, 20000, 10000, 20000, 15500], [0, 0, 1, 1]];
+  const sv = S.layerSVG(LB[1], pgB, { scorePaths: sp }), sg = groupOf(sv, "SCORE"), sd = [...sg.matchAll(/<path d="([^"]+)"\/>/g)].map((m) => m[1]);
+  check("EXP-02 SCORE holds polylines only: one open <path d=\"M… L…\"> per score path, no Z, exact coords",
+    sd.length === 2 && sd[0] === "M 10 10 L 20 10 L 20 15.5" && sd[1] === "M 0 0 L 0.001 0.001" && !/Z/.test(sg) && !/<(polygon|rect|circle)/.test(sg));
+  check("G1.4 scorePaths default to layer.scorePaths", (() => { const s = S.layerSVG({ ...LB[1], scorePaths: [sp[0]] }, pgB, {});
+    return [...groupOf(s, "SCORE").matchAll(/<path /g)].length === 1; })());
+  // ---- <desc>: front face, orientation, kerfMode
+  const desc = (s) => (s.match(/<desc>([\s\S]*?)<\/desc>/) || [])[1] || "";
+  check("D-4.2/MAT-05 <desc> states front face, Y-down not mirrored, kerfMode=external", svgB.concat(svgC).every((s) => {
+    const d = desc(s); return /front face/i.test(d) && /Y-down/.test(d) && /not mirrored/.test(d) && /kerfMode=external/.test(d); }) &&
+    desc(svgB[1]).includes("front face = layer N−1 (top)") && /construction=connected/.test(desc(svgC[1])) && /layer 1\b/.test(desc(svgC[1])));
+  check("NFR-06 <desc> escapes a hostile frontNote", (() => { const s = S.layerSVG(LB[1], pgB, { frontNote: "</desc><script>x</script>" });
+    return !/<script/.test(s) && desc(s).includes("&lt;/desc&gt;&lt;script&gt;"); })());
+  // ---- AT-12
+  const sq = M.fromMasks([new Uint8Array(4).fill(1)], 2, 2, M.page({ artWMM: 100, artHMM: 100, frameMM: 0 }), {});
+  const sqs = S.layerSVG(sq[0], M.page({ artWMM: 100, artHMM: 100, frameMM: 0 }), {});
+  check("AT-12 100mm square → width=\"100mm\" and coords 0..100", /width="100mm" height="100mm" viewBox="0 0 100 100"/.test(sqs) &&
+    (() => { const n = nums([...groupOf(sqs, "CUT").matchAll(/d="([^"]+)"/g)].map((m) => m[1]).join(" ")).map(Number); return Math.min(...n) === 0 && Math.max(...n) === 100; })());
+  check("AT-12 304.8 mm (12 in) asymmetric page dims are exact", (() => {
+    const P = M.page({ artWMM: 304.8, artHMM: 203.2, frameMM: 0 }), L = M.fromMasks([new Uint8Array(6).fill(1)], 3, 2, P, {});
+    return /width="304.8mm" height="203.2mm" viewBox="0 0 304.8 203.2"/.test(S.layerSVG(L[0], P, {})); })());
+  // ---- determinism and purity
+  check("AT-16 layerSVG is deterministic (byte-identical on repeat)", LC.every((l, k) => S.layerSVG(l, pgC, { ...opts, construction: "connected" }) === svgC[k]));
+  check("D4 layerSVG does not mutate the layer (material and canonicalHash = materialHash unchanged)", (() => {
+    const l = M.fromMasks(bt.layers, 8, 5, pgC, { frame: true })[1], before = JSON.stringify(l);
+    S.layerSVG(l, pgC, { scorePaths: sp, legacyTextLabel: "x" }); return JSON.stringify(l) === before && l.canonicalHash === SBGeom.materialHash(l); })());
+  check("empty layer → empty CUT group, still a valid document with both groups", (() => {
+    const s = S.layerSVG({ index: 3, material: [], scorePaths: [], holes: [] }, pgB, {});
+    return groupOf(s, "CUT").trim() === "" && groupOf(s, "SCORE") !== null && /<\/svg>\s*$/.test(s); })());
+  // ---- input guards
+  check("GEO-09 layerSVG refuses non-integer coordinates (never rounds silently)",
+    throws(() => S.layerSVG({ index: 1, material: [{ outer: [0, 0, 10.5, 0, 10, 10], holes: [] }] }, pgB, {}), /NONINTEGER/) &&
+    throws(() => S.layerSVG(LB[1], pgB, { scorePaths: [[0, 0, 1.25, 3]] }), /NONINTEGER/));
+  check("NONFINITE layerSVG refuses an invalid page", throws(() => S.layerSVG(LB[1], { wMM: 0, hMM: 5 }, {}), /NONFINITE/) &&
+    throws(() => S.layerSVG(LB[1], { wMM: 10.0005, hMM: 5 }, {}), /NONFINITE|NONINTEGER/));
+  check("G1.4 legacy shims unchanged (sheetSVG/proofSVG still exported)", typeof S.sheetSVG === "function" && typeof S.proofSVG === "function");
 });
 
 // ------------------------------------------------------------------ report

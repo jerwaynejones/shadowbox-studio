@@ -3767,6 +3767,82 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     );
   };
 
+  // ======================================================== v2 writer (G1.4)
+
+  /**
+   * Exact mm text for an integer µm value: (u/1000).toFixed(3) with trailing zeros (and a bare point) dropped.
+   * Exact from integers (GEO-09); a non-integer is refused, never rounded.
+   */
+  S.fmtUm = function (u) {
+    if (!Number.isInteger(u)) throw new Error("SBSvg.fmtUm: NONINTEGER — coordinates must be integer µm (got " + u + ")");
+    const t = (u / 1000).toFixed(3).replace(/\.?0+$/, "");
+    return t === "-0" ? "0" : t;
+  };
+
+  /**
+   * One layer as a cut file (EXP-01/02/03, D-4.2).
+   *
+   *   layerSVG(layer: MaterialLayer, page: {wMM, hMM}, {construction, scorePaths, frontNote, legacyTextLabel?}) → string
+   *
+   * - mm units; viewBox = the shared page frame "0 0 wMM hMM" for every layer (EXP-01); origin top-left, Y down,
+   *   no mirroring (D-4.2).
+   * - <g id="CUT">: one closed <path d="M… L… Z"> per material ring (outer rings and holes, in normalized material
+   *   order). No fill. There is never a page <rect>: the base gets its outline from its material ring.
+   * - <g id="SCORE">: open polylines only (opts.scorePaths, else layer.scorePaths).
+   * - legacyTextLabel: the v1.1.0 live <text> sheet label inside SCORE, for the connected export between G1.7 and
+   *   G3.2 only (deleted in G3.2). Without it the output is pure vector (EXP-03).
+   * Pure: the layer is not mutated and nothing here enters a hash.
+   */
+  S.layerSVG = function (layer, page, opts) {
+    const o = opts || {};
+    const wUm = pageUm(page && page.wMM, "wMM"), hUm = pageUm(page && page.hMM, "hMM");
+    const W = S.fmtUm(wUm), H = S.fmtUm(hUm);
+
+    const cut = [];
+    for (const p of (layer && layer.material) || []) for (const r of [p.outer, ...(p.holes || [])]) cut.push(`<path d="${ringD(r, true)}"/>`);
+
+    const score = [];
+    for (const s of o.scorePaths || (layer && layer.scorePaths) || []) if (s.length >= 4) score.push(`<path d="${ringD(s, false)}"/>`);
+    if (o.legacyTextLabel) {
+      // v1.1.0 label, verbatim (sheetSVG): 2 mm in from the left, 2 mm up from the bottom.
+      score.push(`<text x="2" y="${S.fmtUm(hUm - 2000)}" font-family="monospace" font-size="4" ` +
+        `fill="none" stroke="#0000FF" stroke-width="0.1">${esc(String(o.legacyTextLabel))}</text>`);
+    }
+
+    const desc = [
+      "Shadowbox Studio cut file" + (layer && Number.isInteger(layer.index) ? "; layer " + layer.index : ""),
+      o.construction ? "construction=" + o.construction : null,
+      "front face: " + (o.frontNote || "toward the viewer (Z+)"),
+      "units mm; origin top-left; X right, Y-down; not mirrored",
+      "kerfMode=external (no kerf offset applied)",
+      "RED #FF0000 = CUT, BLUE #0000FF = SCORE",
+    ].filter(Boolean).join("; ");
+
+    return (
+      `<?xml version="1.0" encoding="UTF-8"?>\n` +
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${W}mm" height="${H}mm" viewBox="0 0 ${W} ${H}">\n` +
+      `<desc>${esc(desc)}</desc>\n` +
+      `<g id="CUT" fill="none" stroke="#FF0000" stroke-width="0.1">\n${cut.length ? cut.join("\n") + "\n" : ""}</g>\n` +
+      `<g id="SCORE" fill="none" stroke="#0000FF" stroke-width="0.1">\n${score.length ? score.join("\n") + "\n" : ""}</g>\n` +
+      `</svg>\n`
+    );
+  };
+
+  /** Page dimension (mm on the 1 µm grid, as SBMaterial.page produces) → integer µm; anything else is refused. */
+  function pageUm(mm, name) {
+    if (!(Number.isFinite(mm) && mm > 0)) throw new Error("SBSvg.layerSVG: NONFINITE — page." + name + " must be finite and > 0 mm");
+    const u = Math.round(mm * 1000);
+    if (Math.abs(mm * 1000 - u) > 1e-6) throw new Error("SBSvg.layerSVG: NONFINITE — page." + name + " is not on the 1 µm grid (" + mm + ")");
+    return u;
+  }
+
+  /** Flat [x0,y0,x1,y1,…] µm → "M x y L x y … [Z]" in exact mm. */
+  function ringD(r, closed) {
+    let d = "M " + S.fmtUm(r[0]) + " " + S.fmtUm(r[1]);
+    for (let i = 2; i + 1 < r.length; i += 2) d += " L " + S.fmtUm(r[i]) + " " + S.fmtUm(r[i + 1]);
+    return closed ? d + " Z" : d;
+  }
+
   // ---------------------------------------------------------------- helpers
   const f = (x) => Number(x.toFixed(3)).toString();
 
