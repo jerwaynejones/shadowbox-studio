@@ -6337,8 +6337,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  * canonical path. rasterPlan/qualityPair (G2.1b) are the one draft/fabrication
  * raster rule (LYR-06, PO-LASER-4/5). orient (G2.5) is the one orientation rule (IMG-05).
  * interpretHeight (G2.5b) is the height-mode interpretation stage: raw unless an explicit heightFilter is set (IMG-03).
- * generate (G2.10a) is the §11.1 pipeline through validation, with the machine-envelope check; G2.10b adds the Z model,
- * accounting, hashes and freezing.
+ * generate (G2.10a) is the §11.1 pipeline through validation, with the machine-envelope check; G2.10b completes it with
+ * the Z model, trailing-empty accounting, stats, the D4 hashes (layerHash, guideHash, geometryHash) and a deep freeze.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -6449,7 +6449,21 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   // ------------------------------------------------------------ raster plan (G2.1b)
   function efail(code, msg) { const e = new Error(code + (msg ? ": " + msg : "")); e.code = code; return e; }
   const isPosInt = (v) => Number.isSafeInteger(v) && v > 0;
-  const deepFreeze = (o) => { if (o && typeof o === "object" && !Object.isFrozen(o)) { Object.freeze(o); Object.values(o).forEach(deepFreeze); } return o; };
+  /**
+   * Deep Object.freeze (G2.10b). Iterative (deep polygon stacks never recurse), visits each object once, skips typed
+   * arrays (Object.freeze throws on a non-empty ArrayBuffer view) and walks arrays by index without copying them.
+   */
+  const deepFreeze = (root) => {
+    const stack = [root];
+    while (stack.length) {
+      const o = stack.pop();
+      if (!o || typeof o !== "object" || Object.isFrozen(o) || ArrayBuffer.isView(o)) continue;
+      Object.freeze(o);
+      if (Array.isArray(o)) { for (let i = 0; i < o.length; i++) { const v = o[i]; if (v && typeof v === "object") stack.push(v); } }
+      else for (const k of Object.keys(o)) { const v = o[k]; if (v && typeof v === "object") stack.push(v); }
+    }
+    return root;
+  };
 
   // ------------------------------------------------------------ orientation (G2.5, IMG-05)
   /*
@@ -6666,8 +6680,19 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    *  12  SBGeom.validate (per layer, in fromMasks/withMaterial), SBSupport.validate, featureChecks, checkEnvelope
    *  13  assignParts, then Part.supports from the support graph (SBSupport.annotate)
    *  14  guides: G3.1 inserts them (snapshot.guides null until then)
-   * A cap over its limit returns status "error", COMPLEXITY_LIMIT and NO layers. Z, accounting, hashes and freezing are
-   * G2.10b: zBottomMM/zTopMM, snapshot.geometryHash and snapshot.stats are null here.
+   * A cap over its limit returns status "error", COMPLEXITY_LIMIT and NO layers.
+   * Then (G2.10b), all lengths as µm integers (t = round(thicknessMM·1000), g = round(gapMM·1000), g = 0 in bonded mode):
+   *   Z         zBottomMM(k) = k·(t + g)/1000, zTopMM = zBottomMM + t (SRS §4.3, UI-03; view.explodeMM never enters)
+   *   accounting layers above the highest non-empty layer get status "omitted-trailing" and stay in layers[] with their
+   *             index (D-4.7); one TRAILING_OMITTED warning; stats {requested: N, exported: N − |omitted|, omitted[],
+   *             stockMM: N·t (nominal stock-only height, MAT-01: no adhesive or finish term), reliefMM: (N − 1)·t,
+   *             maxZMM: top of the highest exported layer (N_e·t + (N_e − 1)·g)} (LYR-01)
+   *   hashes    geometryHash = hashJSON({key: geometryKey(config), engine: VERSION, quality, raster: [rasterW, rasterH],
+   *             layers: SBGeom.layerHashes(L).layerHash per index 0..N−1 (omitted layers included), guides: guideHash})
+   *             (§3, D4); also in the response as geometryHash
+   *   freeze    every response is deep-frozen (Object.freeze; typed arrays skipped)
+   * Draft/fabrication (LYR-06): the hash carries quality and the raster size, so draft diagnostics and acks never
+   * apply to a fabrication snapshot; every export regenerates at fabrication (G3.10).
    */
   E.generate = function (req, opts) {
     opts = opts || {};
@@ -6675,16 +6700,27 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const isCanceled = typeof opts.isCanceled === "function" ? opts.isCanceled : () => false;
     const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : () => {};
     const step = (stage, frac) => { if (isCanceled()) throw new Canceled(); onProgress(stage, frac); };
-    const fail = (code, message, diagnostics) => Object.assign({}, head, { status: "error", error: { code, message }, diagnostics: diagnostics || [] });
+    const fail = (code, message, diagnostics) => deepFreeze(Object.assign({}, head, { status: "error", error: { code, message }, diagnostics: diagnostics || [] }));
     if (!req || typeof req !== "object") return fail("ENGINE_ARG", "request must be a GenerateRequest");
     if (req.engineVersion !== E.VERSION) return fail("ENGINE_MISMATCH", "request names engine " + req.engineVersion + ", this engine is " + E.VERSION);
     if (req.debug !== undefined && req.debug !== null && !E.TEST_HOOKS) return fail("ENGINE_DEBUG_DISABLED", "req.debug is a test-only hook");
+    let res;
     try {
-      return run(req, head, step, fail);
+      res = run(req, head, step, fail);
     } catch (e) {
-      if (e instanceof Canceled) return Object.assign({}, head, { status: "canceled" });
-      return Object.assign({}, head, { status: "error", error: codedError(e), diagnostics: [] });
+      res = e instanceof Canceled ? Object.assign({}, head, { status: "canceled" }) : Object.assign({}, head, { status: "error", error: codedError(e), diagnostics: [] });
     }
+    return deepFreeze(res);
+  };
+
+  /**
+   * guideHash(guides) (§3, D4): what the guides add beyond the score polylines already inside each layerHash — labels,
+   * omissions with reasons and the placement map. null guides (until G3.1) hash as hashJSON(null).
+   */
+  E.guideHash = function (guides) {
+    const H = global.SBHash;
+    if (guides === null || guides === undefined) return H.hashJSON(null);
+    return H.hashJSON({ labels: guides.labels || [], omitted: guides.omitted || [], map: guides.map === undefined ? null : guides.map });
   };
 
   function run(req, head, step, fail) {
@@ -6809,12 +6845,37 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     // 13. parts and their supports; 14. guides arrive with G3.1
     step("parts", 0.98);
     layers = S.annotate(M.assignParts(layers), sv.supportGraph);
+    const guides = null;
+
+    // G2.10b: Z model (µm integers; bonded g = 0, D1/SRS §4.3) and trailing-empty accounting (D-4.7, LYR-01)
+    step("accounting", 0.985);
+    const tUm = Math.round(mat.thicknessMM * 1000), gUm = bonded ? 0 : Math.round(con.gapMM * 1000), pitchUm = tUm + gUm;
+    let last = -1;
+    layers.forEach((L, k) => { if (L.material.length > 0) last = k; });
+    const omitted = [];
+    layers = layers.map((L, k) => {
+      if (k > last) omitted.push(k);
+      return Object.assign({}, L, { zBottomMM: (k * pitchUm) / 1000, zTopMM: (k * pitchUm + tUm) / 1000, status: k > last ? "omitted-trailing" : L.status });
+    });
+    const exported = N - omitted.length;
+    if (omitted.length) diagnostics.push(D.make("TRAILING_OMITTED", Object.assign({}, dOpts, {
+      detail: "layer" + (omitted.length > 1 ? "s " : " ") + omitted.join(", ") + " empty; " + exported + " of " + N + " sheets exported" })));
+    const stats = {
+      requested: N, exported, omitted,
+      stockMM: (N * tUm) / 1000, reliefMM: ((N - 1) * tUm) / 1000,
+      maxZMM: exported > 0 ? ((exported - 1) * pitchUm + tUm) / 1000 : 0,
+    };
+
+    // G2.10b: D4 hashes — one layerHash per index 0..N−1 (omitted layers included), then geometryHash (§3)
+    const layerHashes = layers.map((L) => { step("hashes", 0.99); return G.layerHashes(L).layerHash; });
+    const geometryHash = global.SBHash.hashJSON({ key: global.SBSchema.geometryKey(p), engine: E.VERSION, quality,
+      raster: [W, H], layers: layerHashes, guides: E.guideHash(guides) });
     const snapshot = {
-      revision, engineVersion: E.VERSION, geometryHash: null, quality, layers, diagnostics, cleanupReport,
-      supportGraph: sv.supportGraph, guides: null, geometry: geo, page: { wMM: page.wMM, hMM: page.hMM }, stats: null,
+      revision, engineVersion: E.VERSION, geometryHash, quality, layers, diagnostics, cleanupReport,
+      supportGraph: sv.supportGraph, guides, geometry: geo, page: { wMM: page.wMM, hMM: page.hMM }, stats,
     };
     step("done", 1);
-    return Object.assign({}, head, { status: "done", validatedLayers: layers, snapshot, diagnostics, geometryHash: null });
+    return Object.assign({}, head, { status: "done", validatedLayers: layers, snapshot, diagnostics, geometryHash });
   }
 
   global.SBEngine = E;

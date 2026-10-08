@@ -3906,6 +3906,97 @@ suite("engine.js — G2.10a SBEngine.generate through validation, with the envel
     check("GEO-10 machine null → no envelope diagnostics (end to end)", nm.status === "done" && !codes(nm.snapshot.diagnostics).some((c) => c === "PAGE_OVERFLOW" || c === "MACHINE_THICKNESS")); }
 });
 
+suite("engine.js — G2.10b Z model, accounting, hashes, freeze and the draft/fab rule (§3, §9.2, LYR-01/05/06, MAT-01, UI-03, D-4.7, NFR-05, PRJ-02, AT-03/04/11)", () => {
+  const F = require("./fixtures.js"), E = SBEngine, G = SBGeom;
+  E.TEST_HOOKS = true;
+  const codes = (ds) => (ds || []).map((d) => d.code);
+  const proj = (preset, w, h, edit) => { const p = SBSchema.defaults(preset); p.source = SBSchema.sourceTemplate(); p.source.w = w; p.source.h = h;
+    if (edit) edit(p); return p; };
+  const req = (p, pixels, w, h, o) => Object.assign({ requestId: "r1", revision: p.revision, engineVersion: E.VERSION, quality: "draft",
+    normalizedSource: { pixels, channels: 1, w, h, alpha: null }, sourceHash: null, config: p, deviceClass: "desktop" }, o || {});
+  const flat = (w, h, v) => new Uint8Array(w * h).fill(v);
+  const clone = (p) => JSON.parse(JSON.stringify(p));
+  const um = (mm) => Math.round(mm * 1000);
+  // a horizontal 0..255 ramp occupies every one of the 8 plywood sheets
+  const w = 64, h = 40, ramp = F.ramp(w, h);
+  const p8 = proj("plywood", w, h, (q) => { q.geometry.targetMM = 40; });
+  const r8 = E.generate(req(p8, ramp, w, h)), S8 = r8.snapshot;
+  check("G2.10b generate done on the ramp fixture", r8.status === "done" && S8.layers.length === 8);
+  if (r8.status !== "done") return;
+
+  const KEYS = ["index", "zBottomMM", "zTopMM", "material", "carriers", "parts", "cutPaths", "scorePaths", "diagnostics", "canonicalHash"];
+  check("§9.2 each layer has index,zBottomMM,zTopMM,material,carriers,parts,cutPaths,scorePaths,diagnostics,canonicalHash",
+    S8.layers.every((L, k) => KEYS.every((key) => Object.prototype.hasOwnProperty.call(L, key) && L[key] !== null && L[key] !== undefined) &&
+      L.index === k && Number.isFinite(L.zBottomMM) && Number.isFinite(L.zTopMM) && Array.isArray(L.carriers) && L.carriers.length === 0 &&
+      typeof L.canonicalHash === "string" && L.canonicalHash === G.materialHash(L)));
+  check("UI-03/D1 bonded: g = 0, zBottom(k) = k·t, zTop = zBottom + t (µm integers)",
+    S8.layers.every((L, k) => um(L.zBottomMM) === k * 6350 && um(L.zTopMM) === (k + 1) * 6350 && L.zBottomMM === (k * 6350) / 1000));
+  const st = S8.stats;
+  check("AT-03 N=8 t=6.35 → stats.stockMM 50.8, reliefMM 44.45", !!st && st.stockMM === 50.8 && st.reliefMM === 44.45 && st.maxZMM === 50.8 &&
+    st.requested === 8 && st.exported === 8 && Array.isArray(st.omitted) && st.omitted.length === 0 && !codes(S8.diagnostics).includes("TRAILING_OMITTED"));
+  { const q = clone(p8); q.extras = { adhesiveMM: 0.4, finishMM: 0.2 }; q.appearance.color = "#000000"; q.material.thicknessState = "measured";
+    const rq = E.generate(req(q, ramp, w, h));
+    check("MAT-01 stockMM excludes adhesive/finish (no such input affects it)", rq.status === "done" && rq.snapshot.stats.stockMM === 50.8 &&
+      rq.snapshot.stats.reliefMM === 44.45 && rq.snapshot.stats.maxZMM === 50.8); }
+
+  // ---- connected gap (UI-03)
+  { const pc = proj("acrylic", w, h, (q) => { q.material.thicknessMM = 6.35; q.construction.gapMM = 3; q.geometry.sizeBy = "width"; q.geometry.targetMM = 80;
+      q.construction.registration.enabled = false; });
+    const rc = E.generate(req(pc, ramp, w, h)), L = rc.status === "done" ? rc.snapshot.layers : [];
+    check("UI-03 connected g=3: zBottom(2) = 2*(6.35+3)", rc.status === "done" && um(L[2].zBottomMM) === 2 * (6350 + 3000) && L[2].zBottomMM === 18.7 &&
+      um(L[2].zTopMM) === 2 * 9350 + 6350 && L.every((x, k) => um(x.zBottomMM) === k * 9350));
+    check("UI-03 connected: stock excludes the gap; maxZMM is the assembled envelope N·t + (N−1)·g",
+      rc.snapshot.stats.stockMM === 31.75 && rc.snapshot.stats.reliefMM === 25.4 && um(rc.snapshot.stats.maxZMM) === 5 * 6350 + 4 * 3000); }
+
+  // ---- trailing empties (D-4.7, AT-04, LYR-05): flat 182/255 → nearest level 5 of 0..7 → sheets 0..5 occupied
+  { const pf = proj("plywood", w, h, (q) => { q.geometry.targetMM = 40; });
+    const rf = E.generate(req(pf, flat(w, h, 182), w, h)), S = rf.snapshot;
+    const tr = rf.status === "done" ? S.diagnostics.filter((d) => d.code === "TRAILING_OMITTED") : [];
+    check("D-4.7/AT-04 trailing empty omitted with index preserved; requested 8, exported 6; maxZMM uses exported", rf.status === "done" &&
+      S.layers.length === 8 && S.layers.map((L) => L.index).join() === "0,1,2,3,4,5,6,7" &&
+      S.layers.map((L) => L.status).join() === "ok,ok,ok,ok,ok,ok,omitted-trailing,omitted-trailing" &&
+      S.stats.requested === 8 && S.stats.exported === 6 && S.stats.omitted.join() === "6,7" && S.stats.maxZMM === 38.1 &&
+      um(S.layers[7].zBottomMM) === 7 * 6350 &&
+      tr.length === 1 && tr[0].severity === "warning" && tr[0].quality === "draft" && tr[0].revision === pf.revision && !codes(S.diagnostics).includes("BOND_EMPTY_UNDER"));
+    check("D-4.7 stock and relief stay the nominal N·t and (N−1)·t (SRS §4.3)", S.stats.stockMM === 50.8 && S.stats.reliefMM === 44.45);
+    check("LYR-05 identical layers kept", S.layers.slice(1, 6).every((L) => L.status === "ok" && L.material.length > 0 &&
+      JSON.stringify(L.material) === JSON.stringify(S.layers[1].material)) && codes(S.diagnostics).includes("IDENTICAL_LAYERS"));
+    const hashes = S.layers.map((L) => G.layerHashes(L).layerHash);
+    check("D4 geometryHash = hashJSON({key, engine, quality, raster, layers: one layerHash per index incl. omitted, guides})",
+      S.geometryHash === SBHash.hashJSON({ key: SBSchema.geometryKey(pf), engine: E.VERSION, quality: "draft",
+        raster: [S.geometry.rasterW, S.geometry.rasterH], layers: hashes, guides: E.guideHash(S.guides) }) && rf.geometryHash === S.geometryHash); }
+
+  // ---- hashes (NFR-05, PRJ-02, AT-11, LYR-06)
+  { const a = E.generate(req(p8, ramp, w, h)), b = E.generate(req(clone(p8), ramp.slice(), w, h));
+    check("NFR-05 same request → same geometryHash ×3", typeof S8.geometryHash === "string" && /^[0-9a-f]{64}$/.test(S8.geometryHash) &&
+      a.snapshot.geometryHash === S8.geometryHash && b.snapshot.geometryHash === S8.geometryHash); }
+  { const q = clone(p8); q.appearance = { mode: "palette", color: "#123456", palette: "dusk" }; q.title = "Renamed"; q.revision = p8.revision + 1;
+    const r = E.generate(req(q, ramp, w, h));
+    check("PRJ-02 appearance-only change → same geometryHash", r.status === "done" && r.snapshot.geometryHash === S8.geometryHash);
+    const t = clone(p8); t.material.thicknessMM = 6; const rt = E.generate(req(t, ramp, w, h));
+    check("§3 a geometry change (thickness, hence Z) changes geometryHash", rt.status === "done" && rt.snapshot.geometryHash !== S8.geometryHash); }
+  { const q0 = clone(p8), qm = clone(p8); q0.view.explodeMM = 0; qm.view.explodeMM = 1000;
+    const a = E.generate(req(q0, ramp, w, h)), b = E.generate(req(qm, ramp, w, h));
+    check("AT-11/UI-03 view.explodeMM 0 vs max → same geometryHash", a.status === "done" && b.status === "done" && a.snapshot.geometryHash === b.snapshot.geometryHash &&
+      a.snapshot.geometryHash === S8.geometryHash && a.snapshot.layers.every((L, k) => L.zBottomMM === b.snapshot.layers[k].zBottomMM)); }
+  { const fab = E.generate(req(p8, ramp, w, h, { quality: "fabrication" }));
+    check("LYR-06 draft and fab geometryHash differ; diagnostics carry their quality", fab.status === "done" && fab.snapshot.geometryHash !== S8.geometryHash &&
+      fab.snapshot.diagnostics.length > 0 && fab.snapshot.diagnostics.every((d) => d.quality === "fabrication") &&
+      S8.diagnostics.every((d) => d.quality === "draft") && fab.snapshot.layers.every((L) => L.diagnostics.every((d) => d.quality === "fabrication")));
+    check("LYR-06 a draft ack never satisfies the fabrication snapshot (ackKey scoped to geometryHash)",
+      S8.diagnostics.filter((d) => d.severity === "warning").every((d) => SBDiag.ackKey(d, S8.geometryHash) !== SBDiag.ackKey(d, fab.snapshot.geometryHash))); }
+
+  // ---- freeze (deep)
+  const frozenDeep = (o, seen) => { if (!o || typeof o !== "object") return true; if (ArrayBuffer.isView(o)) return true; if (!Object.isFrozen(o)) return false;
+    if (seen.has(o)) return true; seen.add(o); return Object.values(o).every((v) => frozenDeep(v, seen)); };
+  check("§3 response, snapshot and every layer are deep-frozen", Object.isFrozen(r8) && frozenDeep(r8, new Set()) && Object.isFrozen(S8.layers[3].material[0].outer) &&
+    Object.isFrozen(S8.diagnostics[0]) && Object.isFrozen(S8.stats.omitted) && r8.validatedLayers === S8.layers);
+  check("§3 frozen output: a write to a layer throws in strict mode", (() => { try { S8.layers[0].zBottomMM = 99; return false; } catch (e) { return e instanceof TypeError; } })());
+  check("§3 error responses are frozen too", Object.isFrozen(E.generate(req(p8, ramp, w, h, { engineVersion: "0.0.0-x" }))));
+  check("§3 guideHash covers labels, omissions and the map; null guides hash as null (G3.1 fills them)", E.guideHash(null) === SBHash.hashJSON(null) &&
+    E.guideHash({ labels: [], omitted: [], map: null }) !== E.guideHash(null));
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

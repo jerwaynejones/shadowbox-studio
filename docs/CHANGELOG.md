@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **G2.10b: Z model, accounting, hashes and freeze (engine only; the app path is unchanged):**
+  `SBEngine.generate` now sets each layer's `zBottomMM`/`zTopMM` (k·(t + g), gap 0 in bonded
+  mode) and keeps trailing empty layers in place with status `omitted-trailing` and one
+  `TRAILING_OMITTED` warning. It reports `stats` {requested, exported, omitted, stockMM (N·t),
+  reliefMM ((N−1)·t), maxZMM (top of the highest exported layer)} and computes the snapshot
+  `geometryHash`. That hash covers the geometry key, engine version, quality, raster size, one
+  layer hash per index and the guide hash, so appearance and explode changes keep it, and draft
+  and fabrication snapshots never share it. Every response is deep-frozen. New
+  `SBEngine.guideHash`.
+
 - **G2.10a, `SBEngine.generate` through validation, with the machine-envelope check (engine; the
   app path is unchanged):** `SBEngine.generate(request, {isCanceled, onProgress})` runs the §11.1
   pipeline: orientation, resampling to the draft or fabrication raster plan, the alpha domain,
