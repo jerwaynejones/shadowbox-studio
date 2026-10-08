@@ -3403,6 +3403,168 @@ suite("height.js/engine.js — G2.5b explicit height filter/remap (IMG-03, AT-02
   check("IMG-03 interpretHeight does not mutate the samples", (() => { const s = Uint8Array.from(img); E.interpretHeight(s, W, Hh, withF({ op: "box", radius: 3 }), N, null, {}); return s.join() === img.join(); })());
 });
 
+// ------------------------------------------------ G2.7b complexity caps and busy-art simplification
+suite("construct.js/schema.js — G2.7b complexity caps and busy-art simplification (§12.3, NFR-03/04/05, PO-LASER-9)", () => {
+  const F = require("./fixtures.js"), S = SBSchema, C = SBConstruct, D = SBDiag;
+  const codeOf = (fn) => { try { fn(); return null; } catch (e) { return e.code || "UNCODED:" + e.message; } };
+  // dot grid: a full base and one layer of isolated single pixels every `step` px (4-connected parts = dots)
+  const dots = (w, h, step) => { const m = new Uint8Array(w * h); for (let y = 0; y < h; y += step) for (let x = 0; x < w; x += step) m[y * w + x] = 1;
+    return { w, h, layers: [new Uint8Array(w * h).fill(1), m] }; };
+  const mk = (st, mmPerPx = 1) => SBMaterial.fromMasks(st.layers, st.w, st.h, { artWMM: st.w * mmPerPx, artHMM: st.h * mmPerPx, frameMM: 0 }, {});
+  const ply = { minFeatureMM: 1.5, minPartMM2: 25, sxUm: 100, syUm: 100 };
+
+  // ---- caps (SBSchema.limits)
+  const mob = S.limits("mobile"), desk = S.limits("desktop");
+  check("§12.3 mobile caps 100 parts / 20k vertices (SRS §12.3 mobile workload)",
+    mob.maxPartsPerLayer === 100 && mob.maxVerticesTotal === 20000 && mob.maxVerticesPerLayer === 20000 && mob.fabPxBudget === 1e6);
+  const perf = (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, "..", "docs", "perf", "complexity.json"), "utf8")); } catch (e) { return null; } })();
+  check("§12.3/PO-LASER-9 desktop caps equal the measured decision in docs/perf/complexity.json",
+    !!perf && desk.maxPartsPerLayer === perf.decision.desktop.maxPartsPerLayer && desk.maxVerticesPerLayer === perf.decision.desktop.maxVerticesPerLayer &&
+    desk.maxVerticesTotal === perf.decision.desktop.maxVerticesTotal && desk.fabPxBudget === 25e6);
+  check("§12.3 desktop caps admit the realistic art measured at the desktop budget (parts and vertices of the r25 row)",
+    !!perf && perf.decision.desktop.realistic.maxPartsPerLayer <= desk.maxPartsPerLayer &&
+    perf.decision.desktop.realistic.maxVerticesPerLayer <= desk.maxVerticesPerLayer && perf.decision.desktop.realistic.vertices <= desk.maxVerticesTotal);
+  check("§12.3 desktop caps: the capped busy row meets the 10 s bonded target and 512 MiB (live set; the G2.2b peak with garbage is recorded beside it)",
+    !!perf && perf.decision.desktop.row.p95Ms <= 10000 && perf.decision.desktop.row.liveSetMiB <= 512 && Number.isFinite(perf.decision.desktop.row.workingSetMiB) &&
+    perf.decision.desktop.row.maxPartsPerLayer === desk.maxPartsPerLayer);
+  check("§12.3 limits are frozen per device class", Object.isFrozen(desk) && Object.isFrozen(mob));
+  check("PO-LASER-9 recorded caps decision is reproducible from the recorded rows (decideCaps) and has no escalation",
+    !!perf && JSON.stringify(require("./bench.js").decideCaps(perf.rows, perf.mobileRow)) === JSON.stringify(perf.decision) && perf.decision.escalate.length === 0);
+  check("PO-LASER-9 large --caps desktop: busy b4/b9 fail fast with COMPLEXITY_LIMIT at the recorded cap; realistic r25 passes; simplify busy brings b4/b9 under the caps",
+    !!perf && (() => { const v = (id, k) => perf.variantRows.find((r) => r.id === id && r.variant === k), C1 = "caps=desktop,bonded-only", C2 = "caps=desktop,simplify=busy,bonded-only";
+      return ["b4", "b9"].every((id) => v(id, C1) && v(id, C1).status === "COMPLEXITY_LIMIT" && v(id, C1).shape.rejected.every((x) => x.limit.value === desk.maxPartsPerLayer) &&
+          v(id, C2) && v(id, C2).status === "ok" && v(id, C2).shape.maxPartsPerLayer <= desk.maxPartsPerLayer && v(id, C2).shape.verticesBonded <= desk.maxVerticesTotal) &&
+        v("r25", C1) && v("r25", C1).status === "ok" && v("r25", C1).shape.verticesBonded <= desk.maxVerticesTotal; })());
+
+  { const { decideCaps, CAPS } = require("./bench.js");
+    const row = (id, family, parts, p95, live, vpl, v, status = "ok") => ({ id, family, status, workingSetMiB: live + 100, liveSetMiB: live, stages: { final: { p95Ms: p95 } },
+      shape: { maxPartsPerLayer: parts, maxVerticesPerLayer: vpl, verticesBonded: v } });
+    const d = decideCaps([row("r25", "realistic", 120, 6000, 200, 49450, 182556), row("c240", "busy", 176, 8000, 250, 110536, 284214),
+      row("c208", "busy", 258, 9500, 260, 121258, 336448), row("c192", "busy", 300, 10500, 270, 130000, 360000), row("c176", "busy", 340, 9900, 280, 150630, 403416)]);
+    check("PO-LASER-9 decideCaps: largest busy parts/layer with every smaller busy row in budget; vertex caps admit it and the realistic row (rounded up to 1,000)",
+      d.desktop.maxPartsPerLayer === 258 && d.desktop.row.id === "c208" && d.desktop.firstOver.id === "c192" && d.desktop.maxVerticesPerLayer === 122000 &&
+      d.desktop.maxVerticesTotal === 337000 && d.escalate.length === 0 && CAPS.w * CAPS.h >= 25e6 && CAPS.w * CAPS.h < 25.01e6);
+    const e = decideCaps([row("r25", "realistic", 120, 6000, 200, 49450, 182556), row("c240", "busy", 176, 8000, 600, 110536, 284214)]);
+    check("PO-LASER-9 decideCaps: no busy row in budget (live set 600 MiB) → parts cap falls back to the realistic art, escalation recorded",
+      e.desktop.maxPartsPerLayer === 120 && e.desktop.maxVerticesTotal === 183000 && e.escalate.length === 1); }
+
+
+  // ---- estimateComplexity
+  const est = (st) => C.estimateComplexity(st.layers, st.w, st.h);
+  const fixtures = Object.entries(F.MASKS).filter(([, v]) => typeof v !== "function").map(([, v]) => v)
+    .concat([F.MASKS.narrowBridge(2), F.MASKS.stripOnBase(1.8), dots(40, 30, 3)]);
+  { const rng = F.lcg(5); for (let i = 0; i < 4; i++) fixtures.push({ w: 48, h: 36, layers: F.randomNestedStack(rng, 48, 36, 5) }); }
+  { const s = F.busyHeightMap(4, 120, 90, 9); fixtures.push({ w: 120, h: 90, layers: SBHeight.cumulativeMasks(SBHeight.addedFromSamples(s, 6, "white-high"), null, 6, 120, 90) }); }
+  check("§12.3 estimateComplexity counts components per layer before trace (equals fromMasks part count on fixtures)",
+    fixtures.every((st) => { const e = est(st), L = mk(st); return e.partsPerLayer.length === L.length && e.partsPerLayer.every((n, k) => n === L[k].parts.length) &&
+      e.maxPartsPerLayer === Math.max(...e.partsPerLayer); }));
+  check("§12.3 estimateComplexity: empty layer 0 parts, nonzero values count as material, input not mutated",
+    (() => { const m = new Uint8Array(12); m[0] = 255; m[5] = 7; const copy = m.slice(); const e = C.estimateComplexity([new Uint8Array(12), m], 4, 3);
+      return e.partsPerLayer.join() === "0,2" && e.maxPartsPerLayer === 2 && m.join() === copy.join(); })());
+  check("§12.3 estimateComplexity: unaligned buffers, 0/255 values and long runs count the same as the 0/1 copy", (() => {
+    const rng = F.lcg(77), w = 97, h = 41, L = [];
+    for (let k = 0; k < 4; k++) { const buf = new Uint8Array(w * h + 3), m = buf.subarray(k % 4, k % 4 + w * h);
+      for (let y = 0; y < h; y++) { let v = 0; for (let x = 0; x < w; x++) { if (rng() < (k === 1 ? 0.02 : 0.2)) v = 1 - v; m[y * w + x] = v ? (k === 2 ? 255 : 1) : 0; } } L.push(m); }
+    const e = C.estimateComplexity(L, w, h), ref = L.map((m) => SBMorph.components(Uint8Array.from(m, (v) => (v ? 1 : 0)), w, h).count);
+    return e.partsPerLayer.join() === ref.join() && ref.some((n) => n > 5); })());
+  check("§12.3 estimateComplexity bad arguments are CONSTRUCT_ARG", codeOf(() => C.estimateComplexity([], 4, 3)) === "CONSTRUCT_ARG" &&
+    codeOf(() => C.estimateComplexity([new Uint8Array(5)], 4, 3)) === "CONSTRUCT_ARG");
+
+  // ---- the parts gate (pre-trace)
+  const busy = dots(160, 160, 3);   // 54 × 54 = 2916 one-pixel parts on layer 1
+  const gate = (st, o) => C.complexityGate(st.layers, st.w, st.h, Object.assign({ deviceClass: "desktop", simplify: "off", quality: "fabrication", revision: 4 }, ply, o));
+  const g = gate(busy);
+  const cl = g.diagnostics.filter((d) => d.code === "COMPLEXITY_LIMIT");
+  check("§12.3 busy fixture over the desktop cap → COMPLEXITY_LIMIT (blocking, measured/limit/layer/device class), no layers",
+    2916 > desk.maxPartsPerLayer && g.status === "error" && g.masks === null && cl.length === 1 && cl[0].severity === "blocking" && D.CODES.COMPLEXITY_LIMIT.kind === "process" &&
+    cl[0].layer === 1 && cl[0].measured.value === 2916 && cl[0].measured.unit === "parts" && cl[0].limit.value === desk.maxPartsPerLayer && cl[0].limit.unit === "parts" &&
+    cl[0].deviceClass === "desktop" && cl[0].quality === "fabrication" && cl[0].revision === 4);
+  check("§12.3 COMPLEXITY_LIMIT fix offers \"Simplify busy art\" and the cleanup controls", /Simplify busy art/.test(D.CODES.COMPLEXITY_LIMIT.fix) && /cleanup/i.test(D.CODES.COMPLEXITY_LIMIT.fix));
+  check("§12.3 under the cap → status ok, masks passed through unchanged, no diagnostics",
+    (() => { const st = dots(40, 30, 6), r = gate(st); return r.status === "ok" && r.masks.length === 2 && r.masks.every((m, k) => m.join() === st.layers[k].join()) &&
+      r.diagnostics.length === 0 && r.estimate.maxPartsPerLayer === 35; })());
+  check("§12.3 mobile cap is per device class (101 parts blocks on mobile, passes on desktop)",
+    (() => { const st = { w: 202, h: 1, layers: [new Uint8Array(202).fill(1), Uint8Array.from({ length: 202 }, (_, i) => (i % 2 === 0 ? 1 : 0))] };
+      const m = gate(st, { deviceClass: "mobile" }), d = gate(st);
+      return m.status === "error" && m.diagnostics[0].limit.value === 100 && m.diagnostics[0].deviceClass === "mobile" && d.status === "ok"; })());
+  check("§12.3 complexityGate bad deviceClass / simplify is CONSTRUCT_ARG",
+    codeOf(() => gate(busy, { deviceClass: "tablet" })) === "CONSTRUCT_ARG" && codeOf(() => gate(busy, { simplify: "on" })) === "CONSTRUCT_ARG");
+
+  // ---- the vertex gate (after fromMasks, before validation)
+  const fake = (verts) => verts.map((v, k) => ({ index: k, stats: { vertices: v } }));
+  { const L = fake([4, desk.maxVerticesPerLayer + 1, 10]), r = C.vertexGate(L, "desktop", { quality: "draft" });
+    const d = r.diagnostics.find((x) => x.code === "COMPLEXITY_LIMIT");
+    check("§12.3 vertices per layer over the cap → COMPLEXITY_LIMIT (vertices, layer), no layers",
+      r.status === "error" && r.layers.length === 0 && !!d && d.layer === 1 && d.measured.unit === "vertices" && d.measured.value === desk.maxVerticesPerLayer + 1 &&
+      d.limit.value === desk.maxVerticesPerLayer && d.deviceClass === "desktop" && d.quality === "draft"); }
+  { const L = fake([4, 15000, 6000]), r = C.vertexGate(L, "mobile", {});
+    const d = r.diagnostics.find((x) => x.code === "COMPLEXITY_LIMIT");
+    check("§12.3 total vertices over the cap → COMPLEXITY_LIMIT (layer null, total), no layers",
+      r.status === "error" && r.layers.length === 0 && !!d && d.layer === null && d.measured.value === 21004 && d.limit.value === 20000 && r.vertices.total === 21004); }
+  { const L = fake([4, 100, 10]), r = C.vertexGate(L, "mobile", {});
+    check("§12.3 vertex gate under the caps → status ok, the same layers", r.status === "ok" && r.layers === L && r.diagnostics.length === 0 && r.vertices.perLayer.join() === "4,100,10"); }
+
+  // ---- simplification (explicit; NFR-04, R5)
+  check("NFR-04 simplify \"busy\" is explicit: off by default, in geometryKey, reported with before/after counts", (() => {
+    const p = S.defaults("plywood"), a = S.defaults("acrylic"), H = (o) => SBHash.hashJSON(S.geometryKey(o));
+    const q = JSON.parse(JSON.stringify(p)); q.construction.cleanup.simplify = "busy";
+    const bad = JSON.parse(JSON.stringify(p)); bad.construction.cleanup.simplify = "aggressive";
+    const leg = S.fromLegacySettings({}).project;
+    const r = gate(busy, { simplify: "busy" }), info = r.diagnostics.filter((d) => d.code === "BUSY_SIMPLIFIED");
+    return p.construction.cleanup.simplify === "off" && a.construction.cleanup.simplify === "off" && leg.construction.cleanup.simplify === "off" &&
+      S.validate(p).ok && S.validate(q).ok && S.validate(bad).errors.some((e) => e.path === "construction.cleanup.simplify" && e.code === "ENUM") &&
+      H(q) !== H(p) && info.length === 1 && info[0].severity === "info" && info[0].quality === "fabrication" &&
+      info[0].counts.before.join() === "1,2916" && info[0].counts.after.join() === r.estimate.partsPerLayer.join() &&
+      gate(busy).diagnostics.every((d) => d.code !== "BUSY_SIMPLIFIED"); })());
+  { const r = gate(busy, { simplify: "busy" });
+    check("NFR-04 simplify \"busy\" brings the busy fixture under the desktop cap (merged by closing, status ok)",
+      r.status === "ok" && r.estimate.maxPartsPerLayer <= desk.maxPartsPerLayer && r.simplified.closeR === 7); }
+  // gap semantics at 0.1 mm/px, 1.5 mm minimum feature: closeR 7 merges gaps ≤ 14 px (< 15 px = 1.5 mm), not 15 px
+  const pair = (gap) => { const w = 120, h = 60, m = new Uint8Array(w * h); for (let y = 10; y < 50; y++) for (let x = 10; x < 40; x++) { m[y * w + x] = 1; m[y * w + x + 30 + gap] = 1; }
+    return { w, h, layers: [new Uint8Array(w * h).fill(1), m] }; };
+  const simp = (st, o) => C.simplifyBusy(st.layers, st.w, st.h, Object.assign({}, ply, o));
+  check("NFR-04 simplify merges parts closer than the minimum feature (gap 14 px = 1.4 mm merged; 15 px = 1.5 mm kept apart)",
+    simp(pair(14), { minPartMM2: 1 }).after.join() === "1,1" && simp(pair(15), { minPartMM2: 1 }).after.join() === "1,2" && simp(pair(14)).before.join() === "1,2");
+  check("NFR-04 simplify drops parts below minPartMM2 (24 mm² dropped, 25 mm² kept at 0.1 mm/px)", (() => {
+    const blob = (side, extra) => { const w = 80, h = 80, m = new Uint8Array(w * h); for (let y = 5; y < 5 + side; y++) for (let x = 5; x < 5 + side; x++) m[y * w + x] = 1;
+      for (let i = 0; i < extra; i++) m[(5 + side) * w + 5 + i] = 1; return { w, h, layers: [new Uint8Array(w * h).fill(1), m] }; };
+    // 48 × 50 = 2400 px = 24 mm²; 50 × 50 = 2500 px = 25 mm² (closing keeps a convex block unchanged)
+    const small = { w: 80, h: 80, layers: [new Uint8Array(6400).fill(1), (() => { const m = new Uint8Array(6400); for (let y = 5; y < 55; y++) for (let x = 5; x < 53; x++) m[y * 80 + x] = 1; return m; })()] };
+    return simp(small).after.join() === "1,0" && simp(blob(50, 0)).after.join() === "1,1"; })());
+  check("LYR-06 draft and fabrication apply the same rule at their own pitch (closeR 7 at 0.1 mm/px, 2 at 0.25 mm/px; minPart in µm²)",
+    simp(pair(14)).closeR === 7 && simp(pair(14), { sxUm: 250, syUm: 250 }).closeR === 2 &&
+    simp(pair(14), { sxUm: 250, syUm: 250 }).minPartUm2 === 25e6 && simp(pair(14)).minPartUm2 === 25e6);
+  check("NFR-04 the separable closing equals SBMorph.close on the padded mask (random masks, r 1–9)", (() => {
+    const rng = F.lcg(21);
+    for (let t = 0; t < 12; t++) { const w = 20 + Math.floor(rng() * 40), h = 15 + Math.floor(rng() * 30), r = 1 + (t % 9), m = new Uint8Array(w * h);
+      for (let i = 0; i < m.length; i++) m[i] = rng() < 0.15 ? 1 : 0;
+      const p = r + 1, W = w + 2 * p, H = h + 2 * p, big = new Uint8Array(W * H);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) big[(y + p) * W + p + x] = m[y * w + x];
+      const ref = SBMorph.close(big, W, H, r), got = C._paddedClose(m, w, h, r);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (ref[(y + p) * W + p + x] !== got[y * w + x]) return false;
+      for (let i = 0; i < m.length; i++) if (m[i] && !got[i]) return false; }   // extensive
+    return true; })());
+  check("D-4.5 simplify keeps the stack nested, leaves layer 0 and the input untouched", (() => {
+    const rng = F.lcg(9), st = { w: 64, h: 48, layers: F.randomNestedStack(rng, 64, 48, 6) }, copy = st.layers.map((m) => m.slice());
+    const r = C.simplifyBusy(st.layers, 64, 48, { minFeatureMM: 0.5, minPartMM2: 4, sxUm: 100, syUm: 100 });
+    let nested = true; for (let k = 1; k < r.masks.length; k++) for (let i = 0; i < r.masks[k].length; i++) if (r.masks[k][i] && !r.masks[k - 1][i]) nested = false;
+    return nested && r.masks[0].join() === st.layers[0].join() && r.masks[0] !== st.layers[0] && st.layers.every((m, k) => m.join() === copy[k].join()); })());
+  check("NFR-05 simplify \"busy\" is deterministic (hashes ×3)", (() => {
+    const s = F.busyHeightMap(6, 200, 150, 11), L = SBHeight.cumulativeMasks(SBHeight.addedFromSamples(s, 8, "white-high"), null, 8, 200, 150);
+    const hs = [0, 1, 2].map(() => { const r = C.complexityGate(L, 200, 150, Object.assign({ deviceClass: "desktop", simplify: "busy", quality: "draft" }, ply));
+      return SBHash.hashJSON({ m: r.masks.map((m) => SBHash.sha256(m)), d: r.diagnostics, e: r.estimate }); });
+    return hs[0] === hs[1] && hs[1] === hs[2]; })());
+  check("NFR-04 simplifyBusy bad arguments are CONSTRUCT_ARG",
+    codeOf(() => C.simplifyBusy(busy.layers, 160, 160, { ...ply, sxUm: 0 })) === "CONSTRUCT_ARG" && codeOf(() => C.simplifyBusy(busy.layers, 160, 160, { ...ply, minFeatureMM: -1 })) === "CONSTRUCT_ARG");
+
+  // ---- registry
+  check("§9.5 BUSY_SIMPLIFIED registered (info, process); make() carries deviceClass and counts and refuses bad ones",
+    D.CODES.BUSY_SIMPLIFIED && D.CODES.BUSY_SIMPLIFIED.severity === "info" && D.CODES.BUSY_SIMPLIFIED.kind === "process" &&
+    D.make("COMPLEXITY_LIMIT", { deviceClass: "mobile" }).deviceClass === "mobile" && D.make("BUSY_SIMPLIFIED", { counts: { before: [1, 9], after: [1, 2] } }).counts.after.join() === "1,2" &&
+    (() => { try { D.make("COMPLEXITY_LIMIT", { deviceClass: "tablet" }); return false; } catch (e) { return true; } })() &&
+    (() => { try { D.make("BUSY_SIMPLIFIED", { counts: { before: [1], after: [1, 2] } }); return false; } catch (e) { return true; } })());
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

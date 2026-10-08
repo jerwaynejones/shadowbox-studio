@@ -1,0 +1,24 @@
+[caps] r25 5774×4330 realistic: final (bonded) p95 5760.5 ms, ws 477.8 MiB (live 429.1 MiB), parts ≤120/layer, vertices 182556 (≤49450/layer), 82.8 s wall
+[caps] c240 5774×4330 busy cell 240: final (bonded) p95 8289.4 ms, ws 559.6 MiB (live 429.1 MiB), parts ≤176/layer, vertices 284214 (≤110536/layer), 104.4 s wall
+[caps] c224 5774×4330 busy cell 224: final (bonded) p95 8930.1 ms, ws 527.5 MiB (live 429.1 MiB), parts ≤192/layer, vertices 328872 (≤111960/layer), 110.4 s wall
+[caps] c208 5774×4330 busy cell 208: final (bonded) p95 9644.6 ms, ws 577.9 MiB (live 429 MiB), parts ≤258/layer, vertices 336448 (≤121258/layer), 115.6 s wall
+[caps] c200 5774×4330 busy cell 200: final (bonded) p95 9720.4 ms, ws 589 MiB (live 429.1 MiB), parts ≤250/layer, vertices 355322 (≤131756/layer), 117.5 s wall
+[caps] c192 5774×4330 busy cell 192: final (bonded) p95 10207.2 ms, ws 714.3 MiB (live 429.1 MiB), parts ≤309/layer, vertices 364158 (≤133536/layer), 122 s wall
+[caps] c176 5774×4330 busy cell 176: final (bonded) p95 10838.6 ms, ws 487.8 MiB (live 429 MiB), parts ≤340/layer, vertices 403416 (≤150630/layer), 131.5 s wall
+stage: "caps"
+quick: false
+node: "v26.7.0"
+v8: "14.6.202.34-node.28"
+cpu: "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz"
+threads: 16
+memGiB: 62.5
+backend: "clipper2-ts@2.0.1-18"
+loadAvgStart: [7.13,7.1,7.23]
+rows: [{"id":"r25","cellPx":null,"finalP95Ms":5760.5,"workingSetMiB":477.8,"liveSetMiB":429.1,"maxPartsPerLayer":120,"vertices":182556,"maxVerticesPerLayer":49450},{"id":"c240","cellPx":240,"finalP95Ms":8289.4,"workingSetMiB":559.6,"liveSetMiB":429.1,"maxPartsPerLayer":176,"vertices":284214,"maxVerticesPerLayer":110536},{"id":"c224","cellPx":224,"finalP95Ms":8930.1,"workingSetMiB":527.5,"liveSetMiB":429.1,"maxPartsPerLayer":192,"vertices":328872,"maxVerticesPerLayer":111960},{"id":"c208","cellPx":208,"finalP95Ms":9644.6,"workingSetMiB":577.9,"liveSetMiB":429,"maxPartsPerLayer":258,"vertices":336448,"maxVerticesPerLayer":121258},{"id":"c200","cellPx":200,"finalP95Ms":9720.4,"workingSetMiB":589,"liveSetMiB":429.1,"maxPartsPerLayer":250,"vertices":355322,"maxVerticesPerLayer":131756},{"id":"c192","cellPx":192,"finalP95Ms":10207.2,"workingSetMiB":714.3,"liveSetMiB":429.1,"maxPartsPerLayer":309,"vertices":364158,"maxVerticesPerLayer":133536},{"id":"c176","cellPx":176,"finalP95Ms":10838.6,"workingSetMiB":487.8,"liveSetMiB":429,"maxPartsPerLayer":340,"vertices":403416,"maxVerticesPerLayer":150630}]
+mobileRow: {"id":"r1","w":1155,"h":866,"maxPartsPerLayer":120,"vertices":36582,"maxVerticesPerLayer":9872}
+loadAvgEnd: [7.63,7.81,7.65]
+decision: {"rule":"largest busy parts/layer at the desktop budget with every busy row of as many or fewer parts at bonded p95 ≤ 10 s and live set ≤ 512 MiB (gc'd at each stage boundary; the G2.2b peak incl. garbage is recorded as workingSetMiB); vertex caps = max(that row, realistic r25), rounded up to 1,000","desktop":{"deviceClass":"desktop","fabPxBudget":25000000,"targetMs":10000,"wsMiB":512,"maxPartsPerLayer":258,"maxVerticesPerLayer":122000,"maxVerticesTotal":337000,"row":{"id":"c208","cellPx":208,"status":"ok","p95Ms":9644.6,"workingSetMiB":577.9,"liveSetMiB":429,"maxPartsPerLayer":258,"maxVerticesPerLayer":121258,"vertices":336448},"realistic":{"id":"r25","cellPx":null,"status":"ok","p95Ms":5760.5,"workingSetMiB":477.8,"liveSetMiB":429.1,"maxPartsPerLayer":120,"maxVerticesPerLayer":49450,"vertices":182556},"firstOver":{"id":"c192","cellPx":192,"status":"ok","p95Ms":10207.2,"workingSetMiB":714.3,"liveSetMiB":429.1,"maxPartsPerLayer":309,"maxVerticesPerLayer":133536,"vertices":364158}},"mobile":{"deviceClass":"mobile","source":"SRS §12.3 mobile workload (SRS:L562)","maxPartsPerLayer":100,"maxVerticesPerLayer":20000,"maxVerticesTotal":20000,"realisticAtBudget":{"id":"r1","cellPx":null,"status":"ok","p95Ms":1016.1,"workingSetMiB":59,"liveSetMiB":17.2,"maxPartsPerLayer":120,"maxVerticesPerLayer":9872,"vertices":36582,"withinCaps":false}},"escalate":[]}
+overBudget: []
+heapUsedMB: 29
+rssMB: 582
+exit 0

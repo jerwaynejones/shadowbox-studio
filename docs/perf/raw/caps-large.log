@@ -1,0 +1,37 @@
+[large caps=desktop,bonded-only] b4 2309×1732 busy: COMPLEXITY_LIMIT, final (bonded) p95 112.8 ms, connected not run (--bonded-only), ws 73.2 MiB, parts ≤1991/layer, vertices -, 5.6 s wall
+[large caps=desktop,bonded-only] b9 3464×2598 busy: COMPLEXITY_LIMIT, final (bonded) p95 224.8 ms, connected not run (--bonded-only), ws 167.8 MiB, parts ≤4603/layer, vertices -, 11.9 s wall
+[large caps=desktop,bonded-only] r25 5774×4330 realistic: ok, final (bonded) p95 7611.4 ms, connected not run (--bonded-only), ws 512.7 MiB, parts ≤120/layer, vertices 182556, 87.3 s wall
+stage: "large"
+quick: false
+node: "v26.7.0"
+v8: "14.6.202.34-node.28"
+cpu: "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz"
+threads: 16
+memGiB: 62.5
+backend: "clipper2-ts@2.0.1-18"
+loadAvgStart: [7.57,7.11,7.35]
+rows: [{"id":"b4","variant":"caps=desktop,bonded-only","status":"COMPLEXITY_LIMIT","finalP95Ms":112.8,"workingSetMiB":73.2,"maxPartsPerLayer":1991,"vertices":null,"simplifiedFrom":null},{"id":"b9","variant":"caps=desktop,bonded-only","status":"COMPLEXITY_LIMIT","finalP95Ms":224.8,"workingSetMiB":167.8,"maxPartsPerLayer":4603,"vertices":null,"simplifiedFrom":null},{"id":"r25","variant":"caps=desktop,bonded-only","status":"ok","finalP95Ms":7611.4,"workingSetMiB":512.7,"maxPartsPerLayer":120,"vertices":182556,"simplifiedFrom":null}]
+variant: "caps=desktop,bonded-only"
+loadAvgEnd: [5.79,6.67,7.17]
+overBudget: []
+heapUsedMB: 101
+rssMB: 740
+[large caps=desktop,simplify=busy,bonded-only] b4 2309×1732 busy: ok, final (bonded) p95 3700.1 ms, connected not run (--bonded-only), ws 139.9 MiB, parts ≤85/layer (simplified from ≤1991), vertices 77320, 30.6 s wall
+[large caps=desktop,simplify=busy,bonded-only] b9 3464×2598 busy: ok, final (bonded) p95 8080.9 ms, connected not run (--bonded-only), ws 261.9 MiB, parts ≤211/layer (simplified from ≤4603), vertices 172390, 69.6 s wall
+[large caps=desktop,simplify=busy,bonded-only] r25 5774×4330 realistic: ok, final (bonded) p95 14179.6 ms, connected not run (--bonded-only), ws 621.4 MiB, parts ≤64/layer (simplified from ≤120), vertices 161614, 121.6 s wall
+stage: "large"
+quick: false
+node: "v26.7.0"
+v8: "14.6.202.34-node.28"
+cpu: "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz"
+threads: 16
+memGiB: 62.5
+backend: "clipper2-ts@2.0.1-18"
+loadAvgStart: [5.79,6.67,7.17]
+rows: [{"id":"b4","variant":"caps=desktop,simplify=busy,bonded-only","status":"ok","finalP95Ms":3700.1,"workingSetMiB":139.9,"maxPartsPerLayer":85,"vertices":77320,"simplifiedFrom":[1,1,14,328,1082,1991,1074,33]},{"id":"b9","variant":"caps=desktop,simplify=busy,bonded-only","status":"ok","finalP95Ms":8080.9,"workingSetMiB":261.9,"maxPartsPerLayer":211,"vertices":172390,"simplifiedFrom":[1,1,28,640,2319,4603,2500,79]},{"id":"r25","variant":"caps=desktop,simplify=busy,bonded-only","status":"ok","finalP95Ms":14179.6,"workingSetMiB":621.4,"maxPartsPerLayer":64,"vertices":161614,"simplifiedFrom":[1,2,3,38,95,120,91,36]}]
+variant: "caps=desktop,simplify=busy,bonded-only"
+loadAvgEnd: [7.85,7.23,7.28]
+overBudget: []
+heapUsedMB: 76
+rssMB: 1195
+done

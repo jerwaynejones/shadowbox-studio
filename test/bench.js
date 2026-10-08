@@ -6,6 +6,21 @@
  *     node test/bench.js geom [--runs 15] [--json out.json] [--no-fail] [--quick]
  *     node test/bench.js large [--only id,id] [--large-runs N] [--record] [--no-fail] [--quick]
  *     node test/bench.js large-assemble --logs f.log=log,g.log=live [--env run.json] [--loads l.txt=label,…] [--record]
+ *     node test/bench.js large --only b4,b9,r25 --caps desktop [--simplify busy] [--bonded-only] [--record]
+ *     node test/bench.js caps [--large-runs N] [--record] [--quick]
+ *
+ * G2.7b (complexity caps, SRS §12.3; PO-LASER-9): `large` with --caps <desktop|mobile> runs SBConstruct.complexityGate
+ * (pre-trace parts cap; --simplify busy applies the explicit busy-art simplification first at the plywood thresholds
+ * 1.5 mm / 25 mm²) and SBConstruct.vertexGate (after fromMasks) inside the timed pass; a row over a cap is recorded with
+ * status COMPLEXITY_LIMIT and its time to reject. --bonded-only skips connected mode (reported, never gating). These
+ * variant rows never enter docs/perf/large-image.json; --record merges them (by id + variant) into
+ * docs/perf/complexity.json. Every row records vertex counts (shape.verticesBonded, maxVerticesPerLayer).
+ * Stage "caps" sets the desktop caps: busy-family rows at the desktop budget (5774×4330, 25 Mpx) with larger noise cells
+ * (CAPS.cells: fewer, larger parts) plus the realistic r25 row, bonded only; decideCaps picks the largest parts/layer at
+ * which every busy row with as many or fewer parts meets the 10 s bonded target and 512 MiB (live set: gc() before each
+ * stage-boundary sample, recorded next to the G2.2b peak that includes garbage), and vertex caps that admit
+ * every admitted row that met the target and the realistic art (rounded up to 1,000). --record writes docs/perf/complexity.json (decision.*);
+ * SBSchema.limits("desktop") carries the result. Mobile caps are the SRS §12.3 values; the r1 row is checked against them.
  *
  * Stage "large" (plan G2.2b; PO-LASER-4/9, NFR-03/04): the LARGE_WORKLOADS rows (SRS §12.3 calibration, 2–25 Mpx
  * realistic and busy height maps, the 470 mm-high page at 0.1 mm/px), stages 1–5 per row, final + validation per
@@ -73,7 +88,7 @@ const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] :
 const stage = argv[0];
 const QUICK = argv.includes("--quick");
 const RUNS = QUICK ? 1 : +arg("--runs", 15);
-const STAGES = { geom: benchGeom, support: benchSupport, large: benchLarge, "large-assemble": benchLargeAssemble };
+const STAGES = { geom: benchGeom, support: benchSupport, large: benchLarge, "large-assemble": benchLargeAssemble, caps: benchCaps };
 if (MAIN && !STAGES[stage]) { console.error("usage: node test/bench.js " + Object.keys(STAGES).join("|") + " [--runs N] [--json out.json] [--no-fail] [--quick]"); process.exit(2); }
 
 function timeRuns(fn, runs, warm) {
@@ -243,7 +258,7 @@ const LARGE_WORKLOADS = (() => {
   return W;
 })();
 const LARGE = {
-  seeds: { realistic: 2022, busy: 11 }, busyCellPx: 27, pitchUm: 100, tolUm: 50, minFeatureUm: 1500, advisoryFeatureUm: 2000,
+  seeds: { realistic: 2022, busy: 11 }, busyCellPx: 27, pitchUm: 100, tolUm: 50, minFeatureUm: 1500, advisoryFeatureUm: 2000, minPartMM2: 25,
   source16: [4618, 3464],
   desktop: { candidates: [16, 20, 25], wsMiB: 512, targetMs: 10000, relaxStepMs: 5000, relaxMaxMs: 60000 },
   mobile: { candidates: [1, 1.25, 1.5, 2, 4, 6, 8], wsMiB: 192, targetMs: 8000, k: 4, kProvisional: true },
@@ -257,14 +272,17 @@ function stats(t) {
 }
 
 /** One full pipeline pass over a workload; returns per-stage ms and (when mem) the peak algorithm-owned bytes. */
-function largePass(wl, samples, src, mem) {
+function largePass(wl, samples, src, mem, opt = {}) {
   const G = SBGeom, M = SBMaterial, R = SBRaster, N = wl.layers, w = wl.w, h = wl.h;
   const page = { artWMM: wl.artWMM || (w * LARGE.pitchUm) / 1000, artHMM: wl.artHMM || (h * LARGE.pitchUm) / 1000, frameMM: 0 };
   const t = {}, now = () => performance.now();
   const used = () => { const u = process.memoryUsage(); return u.arrayBuffers + u.heapUsed; };
   let base = 0, peak = 0;
-  const sample = () => { if (mem) peak = Math.max(peak, used() - base); };
-  if (mem) { global.gc(); base = used(); }
+  // mem true: peak sampled after every stage (G2.2b method; includes garbage not yet collected). mem "live" (G2.7b):
+  // gc() before every sample, so the peak is the live set retained at the stage boundaries.
+  const gcFull = () => { for (let i = 0; i < 3; i++) global.gc(); };   // repeated: array buffers of the previous pass are released lazily
+  const sample = () => { if (mem) { if (mem === "live") gcFull(); peak = Math.max(peak, used() - base); } };
+  if (mem) { gcFull(); base = used(); }
   let t0;
   // 1. resample from the 16 MP source (realistic family only; content-independent)
   if (src && w * h < src.w * src.h) {
@@ -277,12 +295,43 @@ function largePass(wl, samples, src, mem) {
   const tonal = R.sheetMasks(bandMap, N, w, h, false);
   t.masksTonal = now() - t0; sample();
   t0 = now();
-  const masks = SBHeight.cumulativeMasks(SBHeight.addedFromSamples(samples, N, "white-high"), null, N, w, h);
+  let masks = SBHeight.cumulativeMasks(SBHeight.addedFromSamples(samples, N, "white-high"), null, N, w, h);
   t.masksHeight = now() - t0; sample();
   void tonal;
+  // 2b. G2.7b complexity gate (pre-trace parts cap, optional busy-art simplification); part of the timed final pass
+  const sxUm = Math.round(page.artWMM * 1000 / w), syUm = Math.round(page.artHMM * 1000 / h);
+  const physical = { minFeatureMM: LARGE.minFeatureUm / 1000, minPartMM2: LARGE.minPartMM2, sxUm, syUm };
+  let gate = null;
+  t.complexity = 0;
+  if (opt.caps || opt.simplify === "busy") {
+    t0 = now();
+    if (opt.caps) gate = SBConstruct.complexityGate(masks, w, h, Object.assign({ deviceClass: opt.caps, simplify: opt.simplify || "off", quality: "fabrication" }, physical));
+    else { const sb = SBConstruct.simplifyBusy(masks, w, h, physical); gate = { status: "ok", masks: sb.masks, simplified: sb, estimate: SBConstruct.estimateComplexity(sb.masks, w, h), diagnostics: [] }; }
+    t.complexity = now() - t0; sample();
+    const simplified = gate.simplified ? { before: gate.simplified.before, after: gate.simplified.after, closeR: gate.simplified.closeR } : null;
+    if (gate.status === "error") {
+      t.final = t.finalBonded = t.complexity;
+      return { t, status: "COMPLEXITY_LIMIT", shape: { partsPerLayer: gate.estimate.partsPerLayer, maxPartsPerLayer: gate.estimate.maxPartsPerLayer, simplified,
+        rejected: gate.diagnostics.filter((d) => d.code === "COMPLEXITY_LIMIT").map((d) => ({ layer: d.layer, measured: d.measured, limit: d.limit })) }, peakBytes: mem ? peak : null };
+    }
+    masks = gate.masks; gate.simplifiedShape = simplified;
+  } else if (opt.estimate) { // caps calibration: the pre-trace estimate is part of the capped workload, without gating
+    t0 = now(); SBConstruct.estimateComplexity(masks, w, h); t.complexity = now() - t0; sample();
+  }
   // 3. trace + fromMasks: bonded (D1: unsmoothed) and connected (G1.2 smoothing)
   t0 = now(); const bonded = M.fromMasks(masks, w, h, page, { quality: "fabrication", smooth: { mode: "bonded", tolUm: LARGE.tolUm } }); t.materialBonded = now() - t0; sample();
-  t0 = now(); const connected = M.fromMasks(masks, w, h, page, { quality: "fabrication", smooth: { mode: "connected", tolUm: LARGE.tolUm } }); t.materialConnected = now() - t0; sample();
+  const verts = (L) => L.reduce((s, l) => s + l.stats.vertices, 0);
+  if (opt.caps) { // G2.7b vertex caps after fromMasks, before validation
+    t0 = now(); const vg = SBConstruct.vertexGate(bonded, opt.caps, { quality: "fabrication" }); t.complexity += now() - t0;
+    if (vg.status === "error") {
+      t.final = t.finalBonded = t.complexity + t.materialBonded;
+      return { t, status: "COMPLEXITY_LIMIT", shape: { partsPerLayer: bonded.map((l) => l.parts.length), maxPartsPerLayer: Math.max(...bonded.map((l) => l.parts.length)),
+        verticesBonded: verts(bonded), maxVerticesPerLayer: Math.max(...vg.vertices.perLayer), simplified: gate.simplifiedShape || null,
+        rejected: vg.diagnostics.map((d) => ({ layer: d.layer, measured: d.measured, limit: d.limit })) }, peakBytes: mem ? peak : null };
+    }
+  }
+  let connected = null;
+  if (!opt.bondedOnly) { t0 = now(); connected = M.fromMasks(masks, w, h, page, { quality: "fabrication", smooth: { mode: "connected", tolUm: LARGE.tolUm } }); t.materialConnected = now() - t0; sample(); }
   // 4. validation: adjacent-pair difference both directions (B1 shape) and the support pass (G2.7 SBSupport.validate,
   //    bonded-relief at the plywood thresholds; the upward differences are reused, B3b shape)
   const validate = (layers) => {
@@ -296,23 +345,49 @@ function largePass(wl, samples, src, mem) {
       blocked: n("BOND_UNSUPPORTED"), narrow: n("SUPPORT_NARROW"), marginal: n("FEATURE_MARGINAL") };
   };
   const vb = validate(bonded); t.diffBonded = vb.diffMs; t.supportBonded = vb.supportMs;
-  const vc = validate(connected); t.diffConnected = vc.diffMs; t.supportConnected = vc.supportMs;
+  if (connected) { const vc = validate(connected); t.diffConnected = vc.diffMs; t.supportConnected = vc.supportMs; }
   // 5. packaging proxy: layerSVG + layer hashing (bonded)
   t0 = now();
   const pg = M.page(page);
   let bytes = 0; for (const l of bonded) bytes += SBSvg.layerSVG(l, pg).length;
   for (const l of bonded) G.layerHashes(l);
   t.package = now() - t0; sample();
-  t.finalBonded = t.materialBonded + t.diffBonded + t.supportBonded;
-  t.finalConnected = t.materialConnected + t.diffConnected + t.supportConnected;
+  t.finalBonded = t.complexity + t.materialBonded + t.diffBonded + t.supportBonded;   // t.complexity is 0 without --caps/--simplify
+  if (connected) t.finalConnected = t.materialConnected + t.diffConnected + t.supportConnected;
   t.final = t.finalBonded; // gated value: bonded mode (PO decision 2026-10-08); connected is reported (KI-CONN-PERF)
-  const verts = (L) => L.reduce((s, l) => s + l.stats.vertices, 0);
   const shape = {
-    partsPerLayer: bonded.map((l) => l.parts.length), verticesBonded: verts(bonded), verticesConnected: verts(connected),
+    partsPerLayer: bonded.map((l) => l.parts.length), verticesBonded: verts(bonded), verticesConnected: connected ? verts(connected) : null,
+    verticesPerLayer: bonded.map((l) => l.stats.vertices), simplified: gate ? gate.simplifiedShape || null : null,
     maxPartsPerLayer: Math.max(...bonded.map((l) => l.parts.length)), maxVerticesPerLayer: Math.max(...bonded.map((l) => l.stats.vertices)),
     supportPieces: vb.pieces, contacts: { blocked: vb.blocked, narrow: vb.narrow, marginal: vb.marginal }, svgBytes: bytes,
   };
-  return { t, shape, peakBytes: mem ? peak : null };
+  return { t, status: "ok", shape, peakBytes: mem ? peak : null };
+}
+
+/** G2.7b: the variant of a `large` run (--caps / --simplify / --bonded-only), "" for the plain G2.2b pass. */
+function largeVariant() {
+  const caps = arg("--caps"), simplify = arg("--simplify", "off"), bondedOnly = argv.includes("--bonded-only");
+  if (caps && !["desktop", "mobile"].includes(caps)) throw new Error("--caps must be desktop|mobile");
+  if (!["off", "busy"].includes(simplify)) throw new Error("--simplify must be off|busy");
+  const parts = [caps ? "caps=" + caps : null, simplify !== "off" ? "simplify=" + simplify : null, bondedOnly ? "bonded-only" : null].filter(Boolean);
+  return { caps: caps || null, simplify, bondedOnly, key: parts.join(",") };
+}
+
+/** Runs one workload (memory pass, warm-up, timed runs) and returns its row; shared by `large` and `caps`. */
+function largeRow(wl, samples, src, opt) {
+  const os = require("os"), t0 = performance.now();
+  const memPass = largePass(wl, samples, src, true, opt);
+  const livePass = opt.liveSet ? largePass(wl, samples, src, "live", opt) : null;
+  const runs = [];
+  if (memPass.status === "ok" || memPass.status === "COMPLEXITY_LIMIT") {
+    for (let i = 0; i < wl.warm; i++) largePass(wl, samples, src, false, opt);
+    for (let i = 0; i < wl.runs; i++) runs.push(largePass(wl, samples, src, false, opt).t);
+  }
+  const st = {};
+  for (const k of Object.keys(runs[0])) st[k] = stats(runs.map((r) => r[k]).filter((v) => v !== undefined));
+  return Object.assign({}, wl, { source: "live", detail: "full", status: memPass.status, stages: st, shape: memPass.shape, workingSetMiB: +(memPass.peakBytes / 2 ** 20).toFixed(1),
+    liveSetMiB: livePass ? +(livePass.peakBytes / 2 ** 20).toFixed(1) : undefined,
+    wallS: +((performance.now() - t0) / 1000).toFixed(1), loadAvg: os.loadavg().map((x) => +x.toFixed(2)) });
 }
 
 function benchLarge() {
@@ -326,22 +401,32 @@ function benchLarge() {
     memGiB: +(os.totalmem() / 2 ** 30).toFixed(1), backend: SBGeom.backend, loadAvgStart: os.loadavg().map((x) => +x.toFixed(2)), rows: [] };
   const [sw, sh] = QUICK ? [Math.round(LARGE.source16[0] / div), Math.round(LARGE.source16[1] / div)] : LARGE.source16;
   const src = { w: sw, h: sh, px: F.heightMap(LARGE.seeds.realistic, sw, sh) };
+  const variant = largeVariant();
+  if (variant.key) report.variant = variant.key;
   for (const wl of list) {
-    const t0 = performance.now();
-    const samples = wl.family === "busy" ? F.busyHeightMap(LARGE.seeds.busy, wl.w, wl.h, LARGE.busyCellPx) : F.heightMap(LARGE.seeds.realistic, wl.w, wl.h);
-    const memPass = largePass(wl, samples, wl.family === "realistic" ? src : null, true);
-    for (let i = 0; i < wl.warm; i++) largePass(wl, samples, wl.family === "realistic" ? src : null, false);
-    const runs = [];
-    for (let i = 0; i < wl.runs; i++) runs.push(largePass(wl, samples, wl.family === "realistic" ? src : null, false).t);
-    const st = {};
-    for (const k of Object.keys(runs[0])) st[k] = stats(runs.map((r) => r[k]));
-    const row = Object.assign({}, wl, { source: "live", detail: "full", stages: st, shape: memPass.shape, workingSetMiB: +(memPass.peakBytes / 2 ** 20).toFixed(1),
-      wallS: +((performance.now() - t0) / 1000).toFixed(1), loadAvg: os.loadavg().map((x) => +x.toFixed(2)) });
+    const samples = wl.family === "busy" ? F.busyHeightMap(LARGE.seeds.busy, wl.w, wl.h, wl.cellPx || LARGE.busyCellPx) : F.heightMap(LARGE.seeds.realistic, wl.w, wl.h);
+    const row = largeRow(wl, samples, wl.family === "realistic" ? src : null, variant);
+    if (variant.key) row.variant = variant.key;
     report.rows.push(row);
-    console.error(`[large] ${wl.id} ${wl.w}×${wl.h} ${wl.family}: final (bonded, gated) p95 ${st.final.p95Ms} ms, connected ${st.finalConnected.p95Ms} ms (reported, KI-CONN-PERF), ws ${row.workingSetMiB} MiB, parts ≤${row.shape.maxPartsPerLayer}/layer, ${row.wallS} s wall`);
+    const st = row.stages, conn = st.finalConnected ? st.finalConnected.p95Ms + " ms (reported, KI-CONN-PERF)" : "not run (--bonded-only)";
+    if (!variant.key) console.error(`[large] ${wl.id} ${wl.w}×${wl.h} ${wl.family}: final (bonded, gated) p95 ${st.final.p95Ms} ms, connected ${conn}, ws ${row.workingSetMiB} MiB, parts ≤${row.shape.maxPartsPerLayer}/layer, ${row.wallS} s wall`);
+    else console.error(`[large ${variant.key}] ${wl.id} ${wl.w}×${wl.h} ${wl.family}: ${row.status}, final (bonded) p95 ${st.final.p95Ms} ms, connected ${conn}, ws ${row.workingSetMiB} MiB, parts ≤${row.shape.maxPartsPerLayer}/layer` +
+      (row.shape.simplified ? ` (simplified from ≤${Math.max(...row.shape.simplified.before)})` : "") + `, vertices ${row.shape.verticesBonded ?? "-"}, ${row.wallS} s wall`);
   }
   report.loadAvgEnd = os.loadavg().map((x) => +x.toFixed(2));
   if (QUICK) { report.overBudget = []; return report; }
+  if (variant.key) { // G2.7b variant rows: never merged into large-image.json; --record merges them into complexity.json
+    if (argv.includes("--record")) {
+      const prev = fs.existsSync(CAPS.perfJson) ? JSON.parse(fs.readFileSync(CAPS.perfJson, "utf8")) : {};
+      const key = (r) => r.id + "|" + r.variant, byKey = new Map((prev.variantRows || []).map((r) => [key(r), r]));
+      for (const r of report.rows) byKey.set(key(r), r);
+      fs.writeFileSync(CAPS.perfJson, JSON.stringify(Object.assign({}, prev, { variantRows: [...byKey.values()] }), null, 1) + "\n");
+    }
+    report.overBudget = [];
+    report.rows = report.rows.map((r) => ({ id: r.id, variant: r.variant, status: r.status, finalP95Ms: r.stages.final.p95Ms, workingSetMiB: r.workingSetMiB,
+      maxPartsPerLayer: r.shape.maxPartsPerLayer, vertices: r.shape.verticesBonded ?? null, simplifiedFrom: r.shape.simplified ? r.shape.simplified.before : null }));
+    return report;
+  }
 
   // Merge with the recorded rows (an --only run updates just its rows), then decide or gate.
   const prev = fs.existsSync(LARGE.perfJson) ? JSON.parse(fs.readFileSync(LARGE.perfJson, "utf8")) : null;
@@ -443,6 +528,95 @@ function gateLarge(byId, d) {
   return over;
 }
 
+// =========================================================================== stage "caps" (G2.7b)
+/**
+ * Desktop complexity caps by measurement (plan G2.7b; SRS §12.3, NFR-03/04, PO-LASER-9). Rows at the desktop budget
+ * (r25: 5774×4330 = 25 Mpx, 8 layers, 0.1 mm/px): the realistic r25 row and the busy family with larger noise cells
+ * (fewer, larger parts per layer), bonded only (the gated mode). The capped busy workload is the busy row whose
+ * parts per layer sit at the cap.
+ */
+const CAPS = {
+  w: 5774, h: 4330, cells: [240, 224, 208, 200, 192, 176], warm: 1, runs: 5, targetMs: 10000, wsMiB: 512, round: 1000,
+  mobile: { row: "r1", w: 1155, h: 866 },
+  perfJson: path.join(__dirname, "..", "docs", "perf", "complexity.json"),
+};
+const roundUp = (v, q) => Math.ceil(v / q) * q;
+
+/**
+ * decideCaps(rows) → decision. rows: [{id, family, status, stages.final.p95Ms, workingSetMiB, shape}]; the realistic row
+ * has id "r25". maxPartsPerLayer = the largest busy maxPartsPerLayer such that every busy row with as many or fewer parts
+ * meets targetMs and wsMiB; the vertex caps admit every row so admitted that met the target, and the realistic row
+ * (max of their vertex counts, rounded up to 1,000).
+ * If no busy row qualifies, the parts cap falls back to the realistic row (escalate recorded).
+ */
+function decideCaps(rows, mobileRow) {
+  const mem = (r) => (Number.isFinite(r.liveSetMiB) ? r.liveSetMiB : r.workingSetMiB);
+  const ok = (r) => r.status === "ok" && r.stages.final.p95Ms <= CAPS.targetMs && mem(r) <= CAPS.wsMiB;
+  const real = rows.find((r) => r.id === "r25"), busy = rows.filter((r) => r.family === "busy").slice().sort((a, b) => a.shape.maxPartsPerLayer - b.shape.maxPartsPerLayer);
+  let chosen = null;
+  for (const r of busy) { if (!ok(r)) break; chosen = r; }
+  const escalate = [];
+  if (!real) escalate.push("realistic r25 row missing");
+  else if (!ok(real)) escalate.push(`realistic r25 misses the target (p95 ${real.stages.final.p95Ms} ms, ${mem(real)} MiB)`);
+  if (!chosen) escalate.push("no busy row meets the target; parts cap falls back to the realistic art");
+  // vertex caps: every measured workload admitted by the parts cap that met the target (busy rows up to the chosen one, realistic)
+  const admitted = (chosen ? busy.filter((r) => r.shape.maxPartsPerLayer <= chosen.shape.maxPartsPerLayer) : []).concat(real && ok(real) ? [real] : []);
+  const basis = chosen || real, pick = (f) => Math.max(0, ...admitted.map((r) => r.shape[f]), basis ? basis.shape[f] : 0);
+  const cx = (r) => r ? { id: r.id, cellPx: r.cellPx || null, status: r.status, p95Ms: r.stages.final.p95Ms, workingSetMiB: r.workingSetMiB, liveSetMiB: r.liveSetMiB ?? null,
+    maxPartsPerLayer: r.shape.maxPartsPerLayer, maxVerticesPerLayer: r.shape.maxVerticesPerLayer, vertices: r.shape.verticesBonded } : null;
+  const desktop = { deviceClass: "desktop", fabPxBudget: CAPS.w * CAPS.h >= 25e6 ? 25e6 : null, targetMs: CAPS.targetMs, wsMiB: CAPS.wsMiB,
+    maxPartsPerLayer: basis ? basis.shape.maxPartsPerLayer : null,
+    maxVerticesPerLayer: roundUp(pick("maxVerticesPerLayer"), CAPS.round), maxVerticesTotal: roundUp(pick("verticesBonded"), CAPS.round),
+    row: cx(chosen || real), realistic: cx(real),
+    firstOver: cx(busy.find((r) => !ok(r)) || null) };
+  const mob = { deviceClass: "mobile", source: "SRS §12.3 mobile workload (SRS:L562)", maxPartsPerLayer: 100, maxVerticesPerLayer: 20000, maxVerticesTotal: 20000 };
+  if (mobileRow) mob.realisticAtBudget = Object.assign(cx(mobileRow), { withinCaps: mobileRow.shape.maxPartsPerLayer <= 100 && mobileRow.shape.verticesBonded <= 20000 &&
+    mobileRow.shape.maxVerticesPerLayer <= 20000 });
+  return { rule: "largest busy parts/layer at the desktop budget with every busy row of as many or fewer parts at bonded p95 ≤ 10 s and live set ≤ 512 MiB (gc'd at each stage boundary; the G2.2b peak incl. garbage is recorded as workingSetMiB); vertex caps = max over the admitted rows that met the target (busy up to that row, realistic r25), rounded up to 1,000",
+    desktop, mobile: mob, escalate };
+}
+
+function benchCaps() {
+  const div = QUICK ? 8 : 1, os = require("os");
+  const runs = arg("--large-runs") ? +arg("--large-runs") : CAPS.runs;
+  const W = Math.max(64, Math.round(CAPS.w / div)), H = Math.max(64, Math.round(CAPS.h / div));
+  const base = { w: W, h: H, mpx: +(W * H / 1e6).toFixed(2), layers: 8, warm: QUICK ? 0 : CAPS.warm, runs: QUICK ? 1 : runs, role: "caps",
+    artWMM: (W * LARGE.pitchUm) / 1000, artHMM: (H * LARGE.pitchUm) / 1000 };
+  const report = { stage: "caps", quick: QUICK, node: process.version, v8: process.versions.v8, cpu: os.cpus()[0].model, threads: os.cpus().length,
+    memGiB: +(os.totalmem() / 2 ** 30).toFixed(1), backend: SBGeom.backend, loadAvgStart: os.loadavg().map((x) => +x.toFixed(2)), rows: [] };
+  const opt = { bondedOnly: true, caps: null, simplify: "off", key: "bonded-only", liveSet: true, estimate: true };
+  const wls = [Object.assign({ id: "r25", family: "realistic" }, base)]
+    .concat(CAPS.cells.map((c) => Object.assign({ id: "c" + c, family: "busy", cellPx: Math.max(2, Math.round(c / div)) }, base)));
+  for (const wl of wls) {
+    const samples = wl.family === "busy" ? F.busyHeightMap(LARGE.seeds.busy, wl.w, wl.h, wl.cellPx) : F.heightMap(LARGE.seeds.realistic, wl.w, wl.h);
+    const row = largeRow(wl, samples, null, opt);
+    report.rows.push(row);
+    console.error(`[caps] ${wl.id} ${wl.w}×${wl.h} ${wl.family}${wl.cellPx ? " cell " + wl.cellPx : ""}: final (bonded) p95 ${row.stages.final.p95Ms} ms, ws ${row.workingSetMiB} MiB (live ${row.liveSetMiB} MiB), parts ≤${row.shape.maxPartsPerLayer}/layer, vertices ${row.shape.verticesBonded} (≤${row.shape.maxVerticesPerLayer}/layer), ${row.wallS} s wall`);
+  }
+  // mobile: the realistic art at the mobile budget (r1), measured once against the SRS caps (informational)
+  const mw = QUICK ? Math.round(CAPS.mobile.w / div) : CAPS.mobile.w, mh = QUICK ? Math.round(CAPS.mobile.h / div) : CAPS.mobile.h;
+  const mwl = { id: CAPS.mobile.row, family: "realistic", w: mw, h: mh, layers: 8, warm: 0, runs: 1, role: "caps-mobile", artWMM: mw * LARGE.pitchUm / 1000, artHMM: mh * LARGE.pitchUm / 1000 };
+  const mobileRow = largeRow(mwl, F.heightMap(LARGE.seeds.realistic, mw, mh), null, opt);
+  report.mobileRow = { id: mobileRow.id, w: mw, h: mh, maxPartsPerLayer: mobileRow.shape.maxPartsPerLayer, vertices: mobileRow.shape.verticesBonded, maxVerticesPerLayer: mobileRow.shape.maxVerticesPerLayer };
+  report.loadAvgEnd = os.loadavg().map((x) => +x.toFixed(2));
+  const decision = decideCaps(report.rows, mobileRow);
+  report.decision = decision;
+  report.overBudget = [];
+  if (!QUICK && argv.includes("--record")) {
+    const prev = fs.existsSync(CAPS.perfJson) ? JSON.parse(fs.readFileSync(CAPS.perfJson, "utf8")) : {};
+    const out = Object.assign({}, prev, { stage: "caps", task: "G2.7b", node: report.node, v8: report.v8, cpu: report.cpu, threads: report.threads, memGiB: report.memGiB,
+      backend: report.backend, loadAvgStart: report.loadAvgStart, loadAvgEnd: report.loadAvgEnd, method: { runs, warm: CAPS.warm, cells: CAPS.cells, page: CAPS.w + "×" + CAPS.h + " at 0.1 mm/px, 8 layers",
+        final: "bonded only: SBConstruct.estimateComplexity (the pre-trace gate's cost, not gating) + SBMaterial.fromMasks (fabrication, D1 unsmoothed) + adjacent-pair differences + SBSupport.validate", workingSet: LARGE_METHOD.workingSet,
+        liveSet: "a second instrumented pass with gc() before every stage-boundary sample: the live set retained by the pipeline (garbage excluded); the 512 MiB criterion is applied to it" },
+      rows: report.rows, mobileRow, decision });
+    fs.mkdirSync(path.dirname(CAPS.perfJson), { recursive: true });
+    fs.writeFileSync(CAPS.perfJson, JSON.stringify(out, null, 1) + "\n");
+  }
+  report.rows = report.rows.map((r) => ({ id: r.id, cellPx: r.cellPx || null, finalP95Ms: r.stages.final.p95Ms, workingSetMiB: r.workingSetMiB, liveSetMiB: r.liveSetMiB, maxPartsPerLayer: r.shape.maxPartsPerLayer,
+    vertices: r.shape.verticesBonded, maxVerticesPerLayer: r.shape.maxVerticesPerLayer }));
+  return report;
+}
+
 // --------------------------------------------------------------------------- stage "large-assemble" (G2.2b shortened)
 /** The product-owner decision behind the shortened G2.2b run; copied into the results file by large-assemble. */
 const LARGE_SHORTENED = {
@@ -512,7 +686,7 @@ function benchLargeAssemble() {
 }
 
 function main() {
-  if (stage === "large" && typeof global.gc !== "function") { // the working-set pass needs gc()
+  if ((stage === "large" || stage === "caps") && typeof global.gc !== "function") { // the working-set pass needs gc()
     const r = require("child_process").spawnSync(process.execPath, ["--expose-gc", __filename, ...argv], { stdio: "inherit" });
     process.exit(r.status === null ? 1 : r.status);
   }
@@ -528,5 +702,5 @@ function main() {
     process.exit(1);
   }
 }
-module.exports = { LARGE_WORKLOADS, LARGE, TRACKED_LARGE, LARGE_SHORTENED, decideLarge, gateLarge, knownOverLarge, largeRowFromSummary, largeMethodKind };
+module.exports = { LARGE_WORKLOADS, LARGE, TRACKED_LARGE, LARGE_SHORTENED, CAPS, decideLarge, decideCaps, gateLarge, knownOverLarge, largeRowFromSummary, largeMethodKind };
 if (MAIN) main();

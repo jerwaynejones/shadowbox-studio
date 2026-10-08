@@ -38,6 +38,10 @@
  * d.detail = {kind} (FEATURE_MARGINAL "contact" | "part" | "neck"), enters the
  * id and splits aggregation groups.
  *
+ * G2.7b (§12.3): BUSY_SIMPLIFIED (info) is registered here; make() accepts
+ * deviceClass ("desktop"|"mobile", COMPLEXITY_LIMIT) and counts
+ * ({before, after} part counts per layer, BUSY_SIMPLIFIED). Neither enters the id.
+ *
  * D1: SMOOTH_FALLBACK is only ever raised in connected mode; bonded mode is
  * unsmoothed and never reports it.
  *
@@ -80,7 +84,7 @@
     ["REPAIR_STALE", B, P, "Repair no longer matches the current settings",
       "Review and re-apply the repair, or remove it."],
     ["COMPLEXITY_LIMIT", B, P, "Geometry is too complex to process",
-      "Increase cleanup (speck and minimum feature size), reduce sheets, or use a simpler source."],
+      "Simplify busy art (cleanup), or increase cleanup (speck and minimum feature size), reduce sheets, or use a simpler source; geometry is never truncated."],
     ["LEGACY_NEEDS_SOURCE", B, P, "Legacy project needs its source image",
       "Re-import the original source image to regenerate this project."],
     ["GUIDE_UNCONTAINED", B, F, "Assembly guide is not inside the part it marks",
@@ -164,6 +168,8 @@
       "The recorded filter is applied deterministically; remove it to slice raw heights."],
     ["RESAMPLED", I, P, "Source was resampled to the working resolution",
       "No action needed; use a matching source size to avoid resampling."],
+    ["BUSY_SIMPLIFIED", I, P, "Busy art was simplified",
+      "Small parts were dropped and close parts merged at the minimum feature size; set Simplify busy art to off to keep every part."],
   ];
 
   const CODES = {};
@@ -213,6 +219,15 @@
       if (!Array.isArray(f.shortPx) || f.shortPx.length !== 2 || !f.shortPx.every((v) => Number.isInteger(v) && v >= 0))
         throw new Error("SBDiag.make: shortPx must be [int ≥ 0, int ≥ 0]");
       d.shortPx = f.shortPx.slice();
+    }
+    if (f.deviceClass !== undefined && f.deviceClass !== null) { // G2.7b COMPLEXITY_LIMIT: the device class whose cap was exceeded
+      if (f.deviceClass !== "desktop" && f.deviceClass !== "mobile") throw new Error("SBDiag.make: deviceClass must be desktop|mobile");
+      d.deviceClass = f.deviceClass;
+    }
+    if (f.counts !== undefined && f.counts !== null) { // G2.7b BUSY_SIMPLIFIED: part counts per layer before/after simplification
+      const c = f.counts, ok = (a) => Array.isArray(a) && a.every((v) => Number.isInteger(v) && v >= 0);
+      if (!c || !ok(c.before) || !ok(c.after) || c.before.length !== c.after.length) throw new Error("SBDiag.make: counts must be {before: int[], after: int[]} of equal length");
+      d.counts = { before: c.before.slice(), after: c.after.slice() };
     }
     if (f.count !== undefined) {
       if (!Number.isInteger(f.count) || f.count < 1) throw new Error("SBDiag.make: count must be a positive integer");

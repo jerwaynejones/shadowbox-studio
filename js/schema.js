@@ -19,12 +19,20 @@
  *   SBSchema.resolveSize(p, w, h)    → art and page size on the 1 µm grid from
  *                                    the ORIENTED source size (PO-LASER-3);
  *                                    both art axes range-checked (MAT-02).
- *   SBSchema.limits(deviceClass)     → {deviceClass, fabPxBudget}. Budgets
- *                                    measured by G2.2b (docs/perf/large-image
- *                                    .json, decision.*.fabPxBudget): desktop
- *                                    25 Mpx, mobile 1 Mpx (bonded mode, k = 4
- *                                    provisional); G2.7b/G2.14/G4.3 add the
- *                                    remaining limits.
+ *   SBSchema.limits(deviceClass)     → {deviceClass, fabPxBudget,
+ *                                    maxPartsPerLayer, maxVerticesPerLayer,
+ *                                    maxVerticesTotal}. Budgets measured by
+ *                                    G2.2b (docs/perf/large-image.json,
+ *                                    decision.*.fabPxBudget): desktop 25 Mpx,
+ *                                    mobile 1 Mpx (bonded mode, k = 4
+ *                                    provisional). Complexity caps (G2.7b,
+ *                                    SRS §12.3): mobile 100 parts/layer and
+ *                                    20,000 vertices; desktop measured
+ *                                    (docs/perf/complexity.json). G2.14/G4.3
+ *                                    add the remaining limits.
+ *   construction.cleanup.simplify    "off" | "busy" (G2.7b; default "off", in
+ *                                    geometryKey): explicit busy-art
+ *                                    simplification, SBConstruct.simplifyBusy.
  *   SBSchema.toMM / fromMM           lossless units, quantized to 0.001 mm.
  *   SBSchema.modeChangeDiff(p, patch) → [{path, from, to, reason}] (G2.11e).
  *   SBSchema.sourceTemplate()        a valid placeholder `source` record.
@@ -83,9 +91,16 @@
   // "PO-LASER-4 SBSchema.limits budgets equal docs/perf/large-image.json" keeps them in step). Desktop: r25 bonded
   // p95 9.75 s ≤ 10 s, 404 MiB ≤ 512 MiB. Mobile: r1 bonded p95 1.82 s × k 4 = 7.3 s ≤ 8 s (k provisional, G4.4).
   // IMG-07 still caps sources at 16 MP (desktop) / 8 MP (mobile), and the engine never upsamples.
+  // G2.7b complexity caps (SRS §12.3; SRS:L564: fail explicitly, never truncate). Mobile: the SRS §12.3 mobile workload
+  // (100 parts/layer, 20,000 vertices total; per layer bounded by the total). Desktop: measured by `node test/bench.js caps`
+  // (docs/perf/complexity.json, decision.desktop): the largest caps at which the capped busy workload at the desktop budget
+  // meets the 10 s bonded target and 512 MiB, never below the realistic art measured at that budget; the test
+  // "§12.3/PO-LASER-9 desktop caps equal the measured decision" keeps them in step.
+  const DESKTOP_CAPS = { maxPartsPerLayer: 258, maxVerticesPerLayer: 132000, maxVerticesTotal: 356000 };   // c208 row (+ c200 vertices), 2026-10-08
   const LIMITS = deepFreeze({
-    desktop: { deviceClass: "desktop", fabPxBudget: 25000000 },
-    mobile: { deviceClass: "mobile", fabPxBudget: 1000000 },
+    desktop: { deviceClass: "desktop", fabPxBudget: 25000000, maxPartsPerLayer: DESKTOP_CAPS.maxPartsPerLayer,
+      maxVerticesPerLayer: DESKTOP_CAPS.maxVerticesPerLayer, maxVerticesTotal: DESKTOP_CAPS.maxVerticesTotal },
+    mobile: { deviceClass: "mobile", fabPxBudget: 1000000, maxPartsPerLayer: 100, maxVerticesPerLayer: 20000, maxVerticesTotal: 20000 },
   });
   S.limits = function (deviceClass) {
     if (!Object.prototype.hasOwnProperty.call(LIMITS, deviceClass)) throw fail("SCHEMA_DEVICE", "deviceClass must be desktop|mobile (got " + deviceClass + ")");
@@ -117,6 +132,7 @@
     resampleTonal: ["area"],
     quality: ["draft", "fabrication"],
     repairOp: ["clip-to-lower"],
+    simplify: ["off", "busy"],
   };
   const POLARITY_FOR = { height: ["white-high", "black-high"], tonal: ["light-front", "dark-front"] };
   const POLARITY_MAP = { "white-high": "light-front", "black-high": "dark-front", "light-front": "white-high", "dark-front": "black-high" };
@@ -141,7 +157,7 @@
       p.interpretation = { mode: "height", polarity: "white-high", thresholdRule: "balanced", manual: [],
         smoothing: { radius: 0, passes: 0 }, heightFilter: null };
       p.construction = { mode: "bonded-relief", sheets: 8, frame: { enabled: false, widthMM: 0 }, gapMM: 0,
-        cleanup: { minFeatureMM: 1.5, speckMM2: 4.5, holeMM2: 4.5, cornerStyle: "sharp", toleranceMM: 0.05 },
+        cleanup: { minFeatureMM: 1.5, speckMM2: 4.5, holeMM2: 4.5, cornerStyle: "sharp", toleranceMM: 0.05, simplify: "off" },
         bridge: { bridgeMM: 1.8, cullBelowMM2: 25, maxBridgeMM: 40, cullEnabled: false },
         registration: { enabled: false, diaMM: 3, edgeClearanceMM: 1, layers: "all" },
         guides: { mode: "interior-mark", concealInsetMM: 0.5, markFootprintMM: 0.2, allowanceMM: 0.5, labelHeightMM: 3 },
@@ -159,7 +175,7 @@
       p.interpretation = { mode: "tonal", polarity: "dark-front", thresholdRule: "balanced", manual: [],
         smoothing: { radius: 4, passes: 2 }, heightFilter: null };
       p.construction = { mode: "connected-sheet", sheets: 5, frame: { enabled: true, widthMM: 12 }, gapMM: 3,
-        cleanup: { minFeatureMM: 1.2, speckMM2: 4.5, holeMM2: 2.88, cornerStyle: "smooth", toleranceMM: 0.05 },
+        cleanup: { minFeatureMM: 1.2, speckMM2: 4.5, holeMM2: 2.88, cornerStyle: "smooth", toleranceMM: 0.05, simplify: "off" },
         bridge: { bridgeMM: 1.8, cullBelowMM2: 9, maxBridgeMM: 40, cullEnabled: false },
         registration: { enabled: true, diaMM: 4, edgeClearanceMM: 1, layers: "all" },
         guides: { mode: "none", concealInsetMM: 0.5, markFootprintMM: 0.2, allowanceMM: 0.5, labelHeightMM: 3 },
@@ -269,7 +285,7 @@
       mode: en(E.construction), sheets: num(1, 16, { int: true }),
       frame: obj({ enabled: bool, widthMM: mm(0, 500) }),
       gapMM: mm(0, 25),
-      cleanup: obj({ minFeatureMM: mm(0, 50), speckMM2: num(0, 1e6), holeMM2: num(0, 1e6), cornerStyle: en(E.cornerStyle), toleranceMM: mm(0.001, 5) }),
+      cleanup: obj({ minFeatureMM: mm(0, 50), speckMM2: num(0, 1e6), holeMM2: num(0, 1e6), cornerStyle: en(E.cornerStyle), toleranceMM: mm(0.001, 5), simplify: en(E.simplify) }),
       bridge: obj({ bridgeMM: mm(0, 50), cullBelowMM2: num(0, 1e6), maxBridgeMM: mm(0, 2000), cullEnabled: bool }),
       registration: obj({
         enabled: bool, diaMM: mm(0.5, 25), edgeClearanceMM: mm(0, 25),
@@ -408,7 +424,7 @@
     c.frame = { enabled: L.marginMM > 0, widthMM: L.marginMM };
     // v1.1.0 legacyRun: speck = max(4 px, cull·0.5), hole fill = minFeature²·2 (the acrylic preset's derivation).
     c.cleanup = { minFeatureMM: L.minFeatureMM, speckMM2: r6(L.cullBelowMM2 * 0.5), holeMM2: r6(L.minFeatureMM * L.minFeatureMM * 2),
-      cornerStyle: L.cornerStyle === "faceted" ? "sharp" : "smooth", toleranceMM: c.cleanup.toleranceMM };
+      cornerStyle: L.cornerStyle === "faceted" ? "sharp" : "smooth", toleranceMM: c.cleanup.toleranceMM, simplify: "off" };
     c.bridge = { bridgeMM: L.bridgeMM, cullBelowMM2: L.cullBelowMM2, maxBridgeMM: L.maxBridgeMM, cullEnabled: false };
     c.registration = Object.assign(c.registration, { enabled: !!L.holes, diaMM: L.holeDiaMM });
     p.material.minFeatureMM = L.minFeatureMM;

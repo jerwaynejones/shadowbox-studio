@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **G2.7b, complexity caps and busy-art simplification (engine; the app path is unchanged):**
+  `SBSchema.limits(deviceClass)` now returns the SRS §12.3 complexity caps. On desktop these are
+  258 parts per layer, 132,000 vertices per layer and 356,000 vertices in total, measured at the
+  25 Mpx budget by the new `node test/bench.js caps`. On mobile they are 100 parts per layer and
+  20,000 vertices (SRS). `SBConstruct.estimateComplexity` counts the parts on each layer before
+  trace. `SBConstruct.complexityGate` and `SBConstruct.vertexGate` fail with `COMPLEXITY_LIMIT`
+  (blocking: measured value, limit, layer and device class) and return no geometry, never
+  truncated geometry. A new project setting, `construction.cleanup.simplify: "off" | "busy"`
+  (default `"off"`, part of the geometry key), turns on explicit busy-art simplification
+  (`SBConstruct.simplifyBusy`): parts closer than the minimum feature are merged, parts smaller
+  than the minimum part area are dropped, and the new info diagnostic `BUSY_SIMPLIFIED` reports
+  the part counts before and after. The busy benchmark rows now fail in 0.1–0.3 s instead of
+  running 35–88 s; simplified, they finish in 3.7–8.1 s. `test/bench.js large` gained
+  `--caps`, `--simplify` and `--bonded-only`, and records vertex counts
+  (`docs/perf/complexity.json`, `docs/perf/LARGE_IMAGE.md`).
+
 - **G2.7, final-polygon validation (engine; the app path is unchanged):** new module `SBSupport`
   (`js/support.js`). `SBSupport.validate(layers, mode, cfg)` checks the final MaterialLayer
   polygons, never the masks. In bonded-relief mode it reports `BOND_UNSUPPORTED` with the

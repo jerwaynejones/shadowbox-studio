@@ -1,4 +1,4 @@
-# Large-image benchmark and per-device pixel budgets (G2.2b)
+# Large-image benchmark, per-device pixel budgets (G2.2b) and complexity caps (G2.7b)
 
 Plan task G2.2b (PO-LASER-4/9, NFR-03/04, AT-24). Raw results: [`large-image.json`](large-image.json).
 Decision recorded as D6 in [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) (the laser-detail table) and in
@@ -144,6 +144,91 @@ desktop reference. 5+30 and 1+5 are warm-up + timed runs.
   706.2 MiB (`b9`, over the 512 MiB desktop limit). The shortened run recorded no vertex counts. G2.7b measures
   them when it sets the caps.
 
+## G2.7b: complexity caps and busy-art simplification (2026-10-08)
+
+Plan task G2.7b (SRS §12.3, NFR-03/04/05, PO-LASER-9). Raw results: [`complexity.json`](complexity.json)
+(`rows` and `decision` from `node test/bench.js caps --record`; `variantRows` from
+`node test/bench.js large --only b4,b9,r25 --caps desktop [--simplify busy] --bonded-only --record`), logs in
+[`raw/caps.log`](raw/caps.log), [`raw/caps-large.log`](raw/caps-large.log) and
+[`raw/caps-large-b.log`](raw/caps-large-b.log). Same machine as above, load average 6–9 throughout (other
+desktop processes), 1 warm-up + 5 runs per row, bonded mode only (the gated mode; connected is not run).
+
+### Caps
+
+| | Parts per layer | Vertices per layer | Vertices total | Source |
+|---|---|---|---|---|
+| **Desktop** | **258** | **132,000** | **356,000** | measured (below) |
+| **Mobile** | **100** | **20,000** | **20,000** | SRS §12.3 mobile workload (SRS:L562); per layer bounded by the total |
+
+`SBSchema.limits(deviceClass)` carries them; the test `§12.3/PO-LASER-9 desktop caps equal the measured decision in
+docs/perf/complexity.json` keeps them in step, and `decideCaps` must reproduce the recorded decision from the
+recorded rows.
+
+**Desktop rule.** At the desktop budget (5774 × 4330 = 25 Mpx, 8 layers, 0.1 mm/px) the busy family is generated
+with larger noise cells, so it has fewer and larger parts per layer. Each row times the capped workload: the
+pre-trace estimate (`SBConstruct.estimateComplexity`), then `SBMaterial.fromMasks` (fabrication, D1 unsmoothed),
+the adjacent-pair differences, and `SBSupport.validate`. The parts cap is the largest parts/layer at which every
+busy row with as many or fewer parts meets **10 s** bonded p95 and **512 MiB**. The vertex caps admit every row that
+passes under that parts cap, plus the realistic art at the budget, rounded up to 1,000. The run's own decision, printed in
+`raw/caps.log` and `raw/caps.json`, used the first form of the vertex rule: that row and `r25` only, giving
+122,000 / 337,000. The recorded decision was then recomputed from the same rows with `decideCaps` in its final
+form, which also admits `c200`, giving 132,000 / 356,000. No re-measurement was needed.
+
+| Row | Cell px | Parts/layer | Vertices (max/layer) | Bonded p95 | Estimate p95 | Support p95 | Live set | G2.2b-method peak |
+|---|---|---|---|---|---|---|---|---|
+| `r25` (realistic) | — | 120 | 182,556 (49,450) | 5.76 s | 168 ms | 107 ms | 429.1 MiB | 477.8 MiB |
+| `c240` | 240 | 176 | 284,214 (110,536) | 8.29 s | 226 ms | 406 ms | 429.1 MiB | 559.6 MiB |
+| `c224` | 224 | 192 | 328,872 (111,960) | 8.93 s | 183 ms | 603 ms | 429.1 MiB | 527.5 MiB |
+| `c200` | 200 | 250 | 355,322 (131,756) | 9.72 s | 205 ms | 633 ms | 429.1 MiB | 589.0 MiB |
+| **`c208`** (cap) | 208 | **258** | 336,448 (121,258) | **9.64 s** | 203 ms | 540 ms | 429.0 MiB | 577.9 MiB |
+| `c192` (first over) | 192 | 309 | 364,158 (133,536) | 10.21 s | 206 ms | 953 ms | 429.1 MiB | 714.3 MiB |
+| `c176` | 176 | 340 | 403,416 (150,630) | 10.84 s | 248 ms | 891 ms | 429.0 MiB | 487.8 MiB |
+
+The desktop caps sit well above the SRS §12.3 desktop envelope (250 parts/layer, 50,000 vertices) on parts, and far
+above it on vertices: bonded contours are unsmoothed pixel staircases (D1), so realistic art at 25 Mpx already has
+182,556 vertices.
+
+**Working set: live set, not the G2.2b peak.** The G2.2b method samples `arrayBuffers + heapUsed` after every
+stage without collecting garbage. In bonded-only rows that peak swings by up to 250 MiB between neighbouring rows
+(`c208` 578 MiB, `c192` 714 MiB, `c176` 488 MiB) and does not follow the part count. G2.7b therefore adds a second
+instrumented pass that calls `gc()` before every stage-boundary sample (the **live set**) and applies the 512 MiB
+rule to that pass. The live set is about 429 MiB in every row. It is dominated by the pixel buffers the bench holds
+at 25 Mpx (8 height masks plus 8 tonal masks that are computed only for timing), not by geometry. It is a lower
+bound, because peaks inside a stage are not sampled. Both values are recorded. The realistic `r25` row reads
+478–513 MiB by the G2.2b method in bonded-only runs, against 404 MiB in the G2.2b run with connected mode. G4.4
+re-measures the desktop working set on the reference machine.
+
+**Mobile: the SRS caps do not admit the realistic art at the mobile budget.** At 1 Mpx (`r1`, 1155 × 866) the
+realistic art has 120 parts/layer and 36,582 vertices on the raw masks. After the bonded construction chain
+(`SBConstruct.bonded`, 1.5 mm features) it still has 93 parts/layer and 31,944 vertices. The SRS mobile workload
+size (768 × 768, 8 layers) has 25,588. That is over the 20,000-vertex cap, so mobile fabrication of such art fails
+with `COMPLEXITY_LIMIT`, and busy-art simplification does not lower the vertex count enough to help. The plan
+fixes the mobile caps at the SRS values. This is **open for the product owner** (see the D6 item 13 note) and
+does not block G2.7b. G2.10a enforces the caps.
+
+### Busy rows with the caps and with simplification (`large --only b4,b9,r25 … --bonded-only`)
+
+| Row | `--caps desktop` | `--caps desktop --simplify busy` |
+|---|---|---|
+| `b4` (4 Mpx busy, 1,991 parts/layer) | `COMPLEXITY_LIMIT` in 113 ms (layers 3–6 over 258) | ok: 85 parts/layer, 77,320 vertices, **3.70 s** (simplify + estimate 1.01 s) |
+| `b9` (9 Mpx busy, 4,603 parts/layer) | `COMPLEXITY_LIMIT` in 321 ms | ok: 211 parts/layer, 172,390 vertices, **8.08 s** (simplify + estimate 2.41 s) |
+| `r25` (25 Mpx realistic) | ok: **7.61 s** (estimate 256 ms; support 87 ms) | ok: 64 parts/layer, 161,614 vertices, **14.18 s** (simplify + estimate 5.71 s) |
+
+Without caps, G2.2b measured `b4` at 35.4 s and `b9` at 87.9 s bonded. With the caps, busy art now fails in a
+fraction of a second and returns no geometry, or, with **Simplify busy art**, it runs in 3.7 s and 8.1 s.
+Simplification changes the art, and the before/after counts in `BUSY_SIMPLIFIED` show by how much. On `b4`, for
+example, layers 6–7 become empty (1,074 and 33 parts dropped as smaller than 25 mm² after merging). Simplification
+is a full-image closing plus component filtering. At 25 Mpx it costs about 5.5 s, so a
+simplified 25 Mpx image misses the 10 s target. Simplification is opt-in and never needed by realistic art, so the
+cost is reported here, not gated. The G4.1 worker pool (per layer) is the planned mitigation. The first variant
+run used a provisional 309-part cap (the decision before the estimate cost was included). `b4` and `b9` were
+re-run at the final 258-part cap ([`raw/caps-large-b.log`](raw/caps-large-b.log)). The other variant rows are
+admitted under either cap.
+
+**Support stage on the large workloads (G2.7 `SBSupport.validate`).** p95 is 87–107 ms on realistic `r25`, and
+0.4–0.95 s on the busy rows at 176–340 parts/layer. The G2.2b rows were timed with the pre-G2.7 pass and were not
+re-run.
+
 ## Re-running
 
 - Gate against the recorded decision: `node test/bench.js large --only srs-desktop,r1,r25`. This measures those
@@ -151,6 +236,10 @@ desktop reference. 5+30 and 1+5 are warm-up + timed runs.
   `--record`, the rule is re-applied and the rows are stored as `source: "live"`.
 - Full re-measure (hours): `node test/bench.js large --record`. Once every row is live at its default count, the
   JSON records `method: "full"`.
+- Complexity caps (G2.7b, about 15 min): `node test/bench.js caps --record` re-measures the desktop rows and
+  rewrites `complexity.json` `rows` and `decision`. Copy the decision into `SBSchema.limits` (the test fails until
+  they match). `node test/bench.js large --only b4,b9,r25 --caps desktop [--simplify busy] --bonded-only --record`
+  updates `variantRows`; such runs never touch `large-image.json`.
 - Fast checks in `node test/run_tests.js`: `PO-LASER-4 SBSchema.limits budgets equal docs/perf/large-image.json`,
   `PO-LASER-9 large-image targets recorded for desktop and mobile`, and the reproducibility and provenance checks
   next to them.

@@ -1,0 +1,1764 @@
+{
+ "stage": "caps",
+ "task": "G2.7b",
+ "node": "v26.7.0",
+ "v8": "14.6.202.34-node.28",
+ "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+ "threads": 16,
+ "memGiB": 62.5,
+ "backend": "clipper2-ts@2.0.1-18",
+ "loadAvgStart": [
+  7.13,
+  7.1,
+  7.23
+ ],
+ "loadAvgEnd": [
+  7.63,
+  7.81,
+  7.65
+ ],
+ "method": {
+  "runs": 5,
+  "warm": 1,
+  "cells": [
+   240,
+   224,
+   208,
+   200,
+   192,
+   176
+  ],
+  "page": "5774×4330 at 0.1 mm/px, 8 layers",
+  "final": "bonded only: SBConstruct.estimateComplexity (the pre-trace gate's cost, not gating) + SBMaterial.fromMasks (fabrication, D1 unsmoothed) + adjacent-pair differences + SBSupport.validate",
+  "workingSet": "one instrumented pass per row after gc(): peak of process.memoryUsage() arrayBuffers + heapUsed minus the pre-pipeline baseline, sampled after every stage (algorithm-owned, SRS §12.3); the input samples are outside it",
+  "liveSet": "a second instrumented pass with gc() before every stage-boundary sample: the live set retained by the pipeline (garbage excluded); the 512 MiB criterion is applied to it"
+ },
+ "rows": [
+  {
+   "id": "r25",
+   "family": "realistic",
+   "w": 5774,
+   "h": 4330,
+   "mpx": 25,
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "role": "caps",
+   "artWMM": 577.4,
+   "artHMM": 433,
+   "source": "live",
+   "detail": "full",
+   "status": "ok",
+   "stages": {
+    "masksTonal": {
+     "n": 5,
+     "p50Ms": 2081,
+     "p95Ms": 2937.1,
+     "maxMs": 2937.1
+    },
+    "masksHeight": {
+     "n": 5,
+     "p50Ms": 1492.5,
+     "p95Ms": 1618.3,
+     "maxMs": 1618.3
+    },
+    "complexity": {
+     "n": 5,
+     "p50Ms": 153.3,
+     "p95Ms": 168.3,
+     "maxMs": 168.3
+    },
+    "materialBonded": {
+     "n": 5,
+     "p50Ms": 4555.2,
+     "p95Ms": 4644.8,
+     "maxMs": 4644.8
+    },
+    "diffBonded": {
+     "n": 5,
+     "p50Ms": 821.4,
+     "p95Ms": 908,
+     "maxMs": 908
+    },
+    "supportBonded": {
+     "n": 5,
+     "p50Ms": 92.7,
+     "p95Ms": 106.9,
+     "maxMs": 106.9
+    },
+    "package": {
+     "n": 5,
+     "p50Ms": 536.2,
+     "p95Ms": 550.8,
+     "maxMs": 550.8
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": 5632.7,
+     "p95Ms": 5760.5,
+     "maxMs": 5760.5
+    },
+    "final": {
+     "n": 5,
+     "p50Ms": 5632.7,
+     "p95Ms": 5760.5,
+     "maxMs": 5760.5
+    }
+   },
+   "shape": {
+    "partsPerLayer": [
+     1,
+     2,
+     3,
+     38,
+     95,
+     120,
+     91,
+     36
+    ],
+    "verticesBonded": 182556,
+    "verticesConnected": null,
+    "verticesPerLayer": [
+     4,
+     9824,
+     20744,
+     39708,
+     49450,
+     35968,
+     19082,
+     7776
+    ],
+    "simplified": null,
+    "maxPartsPerLayer": 120,
+    "maxVerticesPerLayer": 49450,
+    "supportPieces": 385,
+    "contacts": {
+     "blocked": 0,
+     "narrow": 15,
+     "marginal": 21
+    },
+    "svgBytes": 2423446
+   },
+   "workingSetMiB": 477.8,
+   "liveSetMiB": 429.1,
+   "wallS": 82.8,
+   "loadAvg": [
+    8.1,
+    7.27,
+    7.27
+   ]
+  },
+  {
+   "id": "c240",
+   "family": "busy",
+   "cellPx": 240,
+   "w": 5774,
+   "h": 4330,
+   "mpx": 25,
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "role": "caps",
+   "artWMM": 577.4,
+   "artHMM": 433,
+   "source": "live",
+   "detail": "full",
+   "status": "ok",
+   "stages": {
+    "masksTonal": {
+     "n": 5,
+     "p50Ms": 2260.8,
+     "p95Ms": 2792.2,
+     "maxMs": 2792.2
+    },
+    "masksHeight": {
+     "n": 5,
+     "p50Ms": 1474.4,
+     "p95Ms": 1886.3,
+     "maxMs": 1886.3
+    },
+    "complexity": {
+     "n": 5,
+     "p50Ms": 167.4,
+     "p95Ms": 226,
+     "maxMs": 226
+    },
+    "materialBonded": {
+     "n": 5,
+     "p50Ms": 5965,
+     "p95Ms": 6036.8,
+     "maxMs": 6036.8
+    },
+    "diffBonded": {
+     "n": 5,
+     "p50Ms": 1541.6,
+     "p95Ms": 1670.4,
+     "maxMs": 1670.4
+    },
+    "supportBonded": {
+     "n": 5,
+     "p50Ms": 356.2,
+     "p95Ms": 406,
+     "maxMs": 406
+    },
+    "package": {
+     "n": 5,
+     "p50Ms": 832.2,
+     "p95Ms": 960.4,
+     "maxMs": 960.4
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": 8024.7,
+     "p95Ms": 8289.4,
+     "maxMs": 8289.4
+    },
+    "final": {
+     "n": 5,
+     "p50Ms": 8024.7,
+     "p95Ms": 8289.4,
+     "maxMs": 8289.4
+    }
+   },
+   "shape": {
+    "partsPerLayer": [
+     1,
+     1,
+     1,
+     33,
+     121,
+     176,
+     84,
+     3
+    ],
+    "verticesBonded": 284214,
+    "verticesConnected": null,
+    "verticesPerLayer": [
+     4,
+     268,
+     14172,
+     70518,
+     110536,
+     72894,
+     15666,
+     156
+    ],
+    "simplified": null,
+    "maxPartsPerLayer": 176,
+    "maxVerticesPerLayer": 110536,
+    "supportPieces": 419,
+    "contacts": {
+     "blocked": 0,
+     "narrow": 147,
+     "marginal": 18
+    },
+    "svgBytes": 3754042
+   },
+   "workingSetMiB": 559.6,
+   "liveSetMiB": 429.1,
+   "wallS": 104.4,
+   "loadAvg": [
+    8.7,
+    7.68,
+    7.42
+   ]
+  },
+  {
+   "id": "c224",
+   "family": "busy",
+   "cellPx": 224,
+   "w": 5774,
+   "h": 4330,
+   "mpx": 25,
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "role": "caps",
+   "artWMM": 577.4,
+   "artHMM": 433,
+   "source": "live",
+   "detail": "full",
+   "status": "ok",
+   "stages": {
+    "masksTonal": {
+     "n": 5,
+     "p50Ms": 2188.6,
+     "p95Ms": 2761.3,
+     "maxMs": 2761.3
+    },
+    "masksHeight": {
+     "n": 5,
+     "p50Ms": 1477.3,
+     "p95Ms": 1527.6,
+     "maxMs": 1527.6
+    },
+    "complexity": {
+     "n": 5,
+     "p50Ms": 176.2,
+     "p95Ms": 182.9,
+     "maxMs": 182.9
+    },
+    "materialBonded": {
+     "n": 5,
+     "p50Ms": 6278.4,
+     "p95Ms": 6361.9,
+     "maxMs": 6361.9
+    },
+    "diffBonded": {
+     "n": 5,
+     "p50Ms": 1670.2,
+     "p95Ms": 1875.3,
+     "maxMs": 1875.3
+    },
+    "supportBonded": {
+     "n": 5,
+     "p50Ms": 500,
+     "p95Ms": 603.1,
+     "maxMs": 603.1
+    },
+    "package": {
+     "n": 5,
+     "p50Ms": 975.3,
+     "p95Ms": 1108.8,
+     "maxMs": 1108.8
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": 8646.3,
+     "p95Ms": 8930.1,
+     "maxMs": 8930.1
+    },
+    "final": {
+     "n": 5,
+     "p50Ms": 8646.3,
+     "p95Ms": 8930.1,
+     "maxMs": 8930.1
+    }
+   },
+   "shape": {
+    "partsPerLayer": [
+     1,
+     1,
+     3,
+     28,
+     103,
+     192,
+     161,
+     18
+    ],
+    "verticesBonded": 328872,
+    "verticesConnected": null,
+    "verticesPerLayer": [
+     4,
+     890,
+     18512,
+     71266,
+     111960,
+     94854,
+     30400,
+     986
+    ],
+    "simplified": null,
+    "maxPartsPerLayer": 192,
+    "maxVerticesPerLayer": 111960,
+    "supportPieces": 506,
+    "contacts": {
+     "blocked": 0,
+     "narrow": 178,
+     "marginal": 38
+    },
+    "svgBytes": 4344312
+   },
+   "workingSetMiB": 527.5,
+   "liveSetMiB": 429.1,
+   "wallS": 110.4,
+   "loadAvg": [
+    8.52,
+    7.89,
+    7.52
+   ]
+  },
+  {
+   "id": "c208",
+   "family": "busy",
+   "cellPx": 208,
+   "w": 5774,
+   "h": 4330,
+   "mpx": 25,
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "role": "caps",
+   "artWMM": 577.4,
+   "artHMM": 433,
+   "source": "live",
+   "detail": "full",
+   "status": "ok",
+   "stages": {
+    "masksTonal": {
+     "n": 5,
+     "p50Ms": 2249.9,
+     "p95Ms": 2726.6,
+     "maxMs": 2726.6
+    },
+    "masksHeight": {
+     "n": 5,
+     "p50Ms": 1494.9,
+     "p95Ms": 1611.3,
+     "maxMs": 1611.3
+    },
+    "complexity": {
+     "n": 5,
+     "p50Ms": 177.1,
+     "p95Ms": 203.1,
+     "maxMs": 203.1
+    },
+    "materialBonded": {
+     "n": 5,
+     "p50Ms": 6447.7,
+     "p95Ms": 7053.6,
+     "maxMs": 7053.6
+    },
+    "diffBonded": {
+     "n": 5,
+     "p50Ms": 1881.3,
+     "p95Ms": 1967.2,
+     "maxMs": 1967.2
+    },
+    "supportBonded": {
+     "n": 5,
+     "p50Ms": 519.6,
+     "p95Ms": 539.5,
+     "maxMs": 539.5
+    },
+    "package": {
+     "n": 5,
+     "p50Ms": 1019.8,
+     "p95Ms": 1127.9,
+     "maxMs": 1127.9
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": 9034.3,
+     "p95Ms": 9644.6,
+     "maxMs": 9644.6
+    },
+    "final": {
+     "n": 5,
+     "p50Ms": 9034.3,
+     "p95Ms": 9644.6,
+     "maxMs": 9644.6
+    }
+   },
+   "shape": {
+    "partsPerLayer": [
+     1,
+     1,
+     6,
+     49,
+     156,
+     258,
+     131,
+     9
+    ],
+    "verticesBonded": 336448,
+    "verticesConnected": null,
+    "verticesPerLayer": [
+     4,
+     1106,
+     23026,
+     84166,
+     121258,
+     87596,
+     18710,
+     582
+    ],
+    "simplified": null,
+    "maxPartsPerLayer": 258,
+    "maxVerticesPerLayer": 121258,
+    "supportPieces": 610,
+    "contacts": {
+     "blocked": 0,
+     "narrow": 242,
+     "marginal": 45
+    },
+    "svgBytes": 4445486
+   },
+   "workingSetMiB": 577.9,
+   "liveSetMiB": 429,
+   "wallS": 115.6,
+   "loadAvg": [
+    8.87,
+    7.99,
+    7.59
+   ]
+  },
+  {
+   "id": "c200",
+   "family": "busy",
+   "cellPx": 200,
+   "w": 5774,
+   "h": 4330,
+   "mpx": 25,
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "role": "caps",
+   "artWMM": 577.4,
+   "artHMM": 433,
+   "source": "live",
+   "detail": "full",
+   "status": "ok",
+   "stages": {
+    "masksTonal": {
+     "n": 5,
+     "p50Ms": 2146.8,
+     "p95Ms": 2709.8,
+     "maxMs": 2709.8
+    },
+    "masksHeight": {
+     "n": 5,
+     "p50Ms": 1505.3,
+     "p95Ms": 1565.5,
+     "maxMs": 1565.5
+    },
+    "complexity": {
+     "n": 5,
+     "p50Ms": 191.7,
+     "p95Ms": 204.6,
+     "maxMs": 204.6
+    },
+    "materialBonded": {
+     "n": 5,
+     "p50Ms": 6697.3,
+     "p95Ms": 6888.9,
+     "maxMs": 6888.9
+    },
+    "diffBonded": {
+     "n": 5,
+     "p50Ms": 1980,
+     "p95Ms": 2060.8,
+     "maxMs": 2060.8
+    },
+    "supportBonded": {
+     "n": 5,
+     "p50Ms": 587.8,
+     "p95Ms": 632.9,
+     "maxMs": 632.9
+    },
+    "package": {
+     "n": 5,
+     "p50Ms": 1081.6,
+     "p95Ms": 1094.5,
+     "maxMs": 1094.5
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": 9511.5,
+     "p95Ms": 9720.4,
+     "maxMs": 9720.4
+    },
+    "final": {
+     "n": 5,
+     "p50Ms": 9511.5,
+     "p95Ms": 9720.4,
+     "maxMs": 9720.4
+    }
+   },
+   "shape": {
+    "partsPerLayer": [
+     1,
+     1,
+     4,
+     41,
+     155,
+     250,
+     161,
+     15
+    ],
+    "verticesBonded": 355322,
+    "verticesConnected": null,
+    "verticesPerLayer": [
+     4,
+     424,
+     19488,
+     85046,
+     131756,
+     95660,
+     21926,
+     1018
+    ],
+    "simplified": null,
+    "maxPartsPerLayer": 250,
+    "maxVerticesPerLayer": 131756,
+    "supportPieces": 627,
+    "contacts": {
+     "blocked": 0,
+     "narrow": 264,
+     "marginal": 58
+    },
+    "svgBytes": 4695280
+   },
+   "workingSetMiB": 589,
+   "liveSetMiB": 429.1,
+   "wallS": 117.5,
+   "loadAvg": [
+    8.72,
+    8.07,
+    7.66
+   ]
+  },
+  {
+   "id": "c192",
+   "family": "busy",
+   "cellPx": 192,
+   "w": 5774,
+   "h": 4330,
+   "mpx": 25,
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "role": "caps",
+   "artWMM": 577.4,
+   "artHMM": 433,
+   "source": "live",
+   "detail": "full",
+   "status": "ok",
+   "stages": {
+    "masksTonal": {
+     "n": 5,
+     "p50Ms": 2214.3,
+     "p95Ms": 2924.4,
+     "maxMs": 2924.4
+    },
+    "masksHeight": {
+     "n": 5,
+     "p50Ms": 1597.7,
+     "p95Ms": 1746.6,
+     "maxMs": 1746.6
+    },
+    "complexity": {
+     "n": 5,
+     "p50Ms": 192.5,
+     "p95Ms": 205.5,
+     "maxMs": 205.5
+    },
+    "materialBonded": {
+     "n": 5,
+     "p50Ms": 6974.6,
+     "p95Ms": 7000.6,
+     "maxMs": 7000.6
+    },
+    "diffBonded": {
+     "n": 5,
+     "p50Ms": 1939.4,
+     "p95Ms": 2080.6,
+     "maxMs": 2080.6
+    },
+    "supportBonded": {
+     "n": 5,
+     "p50Ms": 884.4,
+     "p95Ms": 952.8,
+     "maxMs": 952.8
+    },
+    "package": {
+     "n": 5,
+     "p50Ms": 1131.2,
+     "p95Ms": 1162.5,
+     "maxMs": 1162.5
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": 9985.6,
+     "p95Ms": 10207.2,
+     "maxMs": 10207.2
+    },
+    "final": {
+     "n": 5,
+     "p50Ms": 9985.6,
+     "p95Ms": 10207.2,
+     "maxMs": 10207.2
+    }
+   },
+   "shape": {
+    "partsPerLayer": [
+     1,
+     1,
+     7,
+     38,
+     174,
+     309,
+     159,
+     12
+    ],
+    "verticesBonded": 364158,
+    "verticesConnected": null,
+    "verticesPerLayer": [
+     4,
+     890,
+     21078,
+     87588,
+     133536,
+     97292,
+     23228,
+     542
+    ],
+    "simplified": null,
+    "maxPartsPerLayer": 309,
+    "maxVerticesPerLayer": 133536,
+    "supportPieces": 700,
+    "contacts": {
+     "blocked": 0,
+     "narrow": 278,
+     "marginal": 59
+    },
+    "svgBytes": 4811618
+   },
+   "workingSetMiB": 714.3,
+   "liveSetMiB": 429.1,
+   "wallS": 122,
+   "loadAvg": [
+    7.92,
+    7.95,
+    7.67
+   ]
+  },
+  {
+   "id": "c176",
+   "family": "busy",
+   "cellPx": 176,
+   "w": 5774,
+   "h": 4330,
+   "mpx": 25,
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "role": "caps",
+   "artWMM": 577.4,
+   "artHMM": 433,
+   "source": "live",
+   "detail": "full",
+   "status": "ok",
+   "stages": {
+    "masksTonal": {
+     "n": 5,
+     "p50Ms": 2206.9,
+     "p95Ms": 2702.5,
+     "maxMs": 2702.5
+    },
+    "masksHeight": {
+     "n": 5,
+     "p50Ms": 1508.3,
+     "p95Ms": 1606.1,
+     "maxMs": 1606.1
+    },
+    "complexity": {
+     "n": 5,
+     "p50Ms": 192.9,
+     "p95Ms": 247.5,
+     "maxMs": 247.5
+    },
+    "materialBonded": {
+     "n": 5,
+     "p50Ms": 7341.3,
+     "p95Ms": 7625.1,
+     "maxMs": 7625.1
+    },
+    "diffBonded": {
+     "n": 5,
+     "p50Ms": 2197,
+     "p95Ms": 2263.5,
+     "maxMs": 2263.5
+    },
+    "supportBonded": {
+     "n": 5,
+     "p50Ms": 795,
+     "p95Ms": 891.1,
+     "maxMs": 891.1
+    },
+    "package": {
+     "n": 5,
+     "p50Ms": 1227.2,
+     "p95Ms": 1394.3,
+     "maxMs": 1394.3
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": 10600.3,
+     "p95Ms": 10838.6,
+     "maxMs": 10838.6
+    },
+    "final": {
+     "n": 5,
+     "p50Ms": 10600.3,
+     "p95Ms": 10838.6,
+     "maxMs": 10838.6
+    }
+   },
+   "shape": {
+    "partsPerLayer": [
+     1,
+     1,
+     1,
+     33,
+     165,
+     340,
+     241,
+     28
+    ],
+    "verticesBonded": 403416,
+    "verticesConnected": null,
+    "verticesPerLayer": [
+     4,
+     216,
+     14870,
+     81380,
+     150630,
+     117944,
+     36838,
+     1534
+    ],
+    "simplified": null,
+    "maxPartsPerLayer": 340,
+    "maxVerticesPerLayer": 150630,
+    "supportPieces": 809,
+    "contacts": {
+     "blocked": 0,
+     "narrow": 352,
+     "marginal": 71
+    },
+    "svgBytes": 5332694
+   },
+   "workingSetMiB": 487.8,
+   "liveSetMiB": 429,
+   "wallS": 131.5,
+   "loadAvg": [
+    7.63,
+    7.81,
+    7.65
+   ]
+  }
+ ],
+ "mobileRow": {
+  "id": "r1",
+  "family": "realistic",
+  "w": 1155,
+  "h": 866,
+  "layers": 8,
+  "warm": 0,
+  "runs": 1,
+  "role": "caps-mobile",
+  "artWMM": 115.5,
+  "artHMM": 86.6,
+  "source": "live",
+  "detail": "full",
+  "status": "ok",
+  "stages": {
+   "masksTonal": {
+    "n": 1,
+    "p50Ms": 103.2,
+    "p95Ms": 103.2,
+    "maxMs": 103.2
+   },
+   "masksHeight": {
+    "n": 1,
+    "p50Ms": 57.7,
+    "p95Ms": 57.7,
+    "maxMs": 57.7
+   },
+   "complexity": {
+    "n": 1,
+    "p50Ms": 11.3,
+    "p95Ms": 11.3,
+    "maxMs": 11.3
+   },
+   "materialBonded": {
+    "n": 1,
+    "p50Ms": 616.3,
+    "p95Ms": 616.3,
+    "maxMs": 616.3
+   },
+   "diffBonded": {
+    "n": 1,
+    "p50Ms": 176.8,
+    "p95Ms": 176.8,
+    "maxMs": 176.8
+   },
+   "supportBonded": {
+    "n": 1,
+    "p50Ms": 211.7,
+    "p95Ms": 211.7,
+    "maxMs": 211.7
+   },
+   "package": {
+    "n": 1,
+    "p50Ms": 103,
+    "p95Ms": 103,
+    "maxMs": 103
+   },
+   "finalBonded": {
+    "n": 1,
+    "p50Ms": 1016.1,
+    "p95Ms": 1016.1,
+    "maxMs": 1016.1
+   },
+   "final": {
+    "n": 1,
+    "p50Ms": 1016.1,
+    "p95Ms": 1016.1,
+    "maxMs": 1016.1
+   }
+  },
+  "shape": {
+   "partsPerLayer": [
+    1,
+    2,
+    3,
+    38,
+    97,
+    120,
+    90,
+    36
+   ],
+   "verticesBonded": 36582,
+   "verticesConnected": null,
+   "verticesPerLayer": [
+    4,
+    1982,
+    4172,
+    8008,
+    9872,
+    7144,
+    3848,
+    1552
+   ],
+   "simplified": null,
+   "maxPartsPerLayer": 120,
+   "maxVerticesPerLayer": 9872,
+   "supportPieces": 386,
+   "contacts": {
+    "blocked": 0,
+    "narrow": 225,
+    "marginal": 49
+   },
+   "svgBytes": 436392
+  },
+  "workingSetMiB": 59,
+  "liveSetMiB": 17.2,
+  "wallS": 4.3,
+  "loadAvg": [
+   7.63,
+   7.81,
+   7.65
+  ]
+ },
+ "decision": {
+  "rule": "largest busy parts/layer at the desktop budget with every busy row of as many or fewer parts at bonded p95 ≤ 10 s and live set ≤ 512 MiB (gc'd at each stage boundary; the G2.2b peak incl. garbage is recorded as workingSetMiB); vertex caps = max over the admitted rows that met the target (busy up to that row, realistic r25), rounded up to 1,000",
+  "desktop": {
+   "deviceClass": "desktop",
+   "fabPxBudget": 25000000,
+   "targetMs": 10000,
+   "wsMiB": 512,
+   "maxPartsPerLayer": 258,
+   "maxVerticesPerLayer": 132000,
+   "maxVerticesTotal": 356000,
+   "row": {
+    "id": "c208",
+    "cellPx": 208,
+    "status": "ok",
+    "p95Ms": 9644.6,
+    "workingSetMiB": 577.9,
+    "liveSetMiB": 429,
+    "maxPartsPerLayer": 258,
+    "maxVerticesPerLayer": 121258,
+    "vertices": 336448
+   },
+   "realistic": {
+    "id": "r25",
+    "cellPx": null,
+    "status": "ok",
+    "p95Ms": 5760.5,
+    "workingSetMiB": 477.8,
+    "liveSetMiB": 429.1,
+    "maxPartsPerLayer": 120,
+    "maxVerticesPerLayer": 49450,
+    "vertices": 182556
+   },
+   "firstOver": {
+    "id": "c192",
+    "cellPx": 192,
+    "status": "ok",
+    "p95Ms": 10207.2,
+    "workingSetMiB": 714.3,
+    "liveSetMiB": 429.1,
+    "maxPartsPerLayer": 309,
+    "maxVerticesPerLayer": 133536,
+    "vertices": 364158
+   }
+  },
+  "mobile": {
+   "deviceClass": "mobile",
+   "source": "SRS §12.3 mobile workload (SRS:L562)",
+   "maxPartsPerLayer": 100,
+   "maxVerticesPerLayer": 20000,
+   "maxVerticesTotal": 20000,
+   "realisticAtBudget": {
+    "id": "r1",
+    "cellPx": null,
+    "status": "ok",
+    "p95Ms": 1016.1,
+    "workingSetMiB": 59,
+    "liveSetMiB": 17.2,
+    "maxPartsPerLayer": 120,
+    "maxVerticesPerLayer": 9872,
+    "vertices": 36582,
+    "withinCaps": false
+   }
+  },
+  "escalate": []
+ },
+ "variantRows": [
+  {
+   "id": "b4",
+   "w": 2309,
+   "h": 1732,
+   "mpx": 4,
+   "family": "busy",
+   "role": "exploration",
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "source": "live",
+   "detail": "full",
+   "status": "COMPLEXITY_LIMIT",
+   "stages": {
+    "masksTonal": {
+     "n": 5,
+     "p50Ms": 417.9,
+     "p95Ms": 497.8,
+     "maxMs": 497.8
+    },
+    "masksHeight": {
+     "n": 5,
+     "p50Ms": 239.4,
+     "p95Ms": 298.3,
+     "maxMs": 298.3
+    },
+    "complexity": {
+     "n": 5,
+     "p50Ms": 90.1,
+     "p95Ms": 113.2,
+     "maxMs": 113.2
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": 90.1,
+     "p95Ms": 113.2,
+     "maxMs": 113.2
+    },
+    "final": {
+     "n": 5,
+     "p50Ms": 90.1,
+     "p95Ms": 113.2,
+     "maxMs": 113.2
+    }
+   },
+   "shape": {
+    "partsPerLayer": [
+     1,
+     1,
+     14,
+     328,
+     1082,
+     1991,
+     1074,
+     33
+    ],
+    "maxPartsPerLayer": 1991,
+    "simplified": null,
+    "rejected": [
+     {
+      "layer": 3,
+      "measured": {
+       "value": 328,
+       "unit": "parts"
+      },
+      "limit": {
+       "value": 258,
+       "unit": "parts"
+      }
+     },
+     {
+      "layer": 4,
+      "measured": {
+       "value": 1082,
+       "unit": "parts"
+      },
+      "limit": {
+       "value": 258,
+       "unit": "parts"
+      }
+     },
+     {
+      "layer": 5,
+      "measured": {
+       "value": 1991,
+       "unit": "parts"
+      },
+      "limit": {
+       "value": 258,
+       "unit": "parts"
+      }
+     },
+     {
+      "layer": 6,
+      "measured": {
+       "value": 1074,
+       "unit": "parts"
+      },
+      "limit": {
+       "value": 258,
+       "unit": "parts"
+      }
+     }
+    ]
+   },
+   "workingSetMiB": 73.2,
+   "wallS": 5.4,
+   "loadAvg": [
+    7.03,
+    7.61,
+    7.59
+   ],
+   "variant": "caps=desktop,bonded-only"
+  },
+  {
+   "id": "b9",
+   "w": 3464,
+   "h": 2598,
+   "mpx": 9,
+   "family": "busy",
+   "role": "exploration",
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "source": "live",
+   "detail": "full",
+   "status": "COMPLEXITY_LIMIT",
+   "stages": {
+    "masksTonal": {
+     "n": 5,
+     "p50Ms": 856.5,
+     "p95Ms": 975.5,
+     "maxMs": 975.5
+    },
+    "masksHeight": {
+     "n": 5,
+     "p50Ms": 543.1,
+     "p95Ms": 561.3,
+     "maxMs": 561.3
+    },
+    "complexity": {
+     "n": 5,
+     "p50Ms": 200.3,
+     "p95Ms": 320.9,
+     "maxMs": 320.9
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": 200.3,
+     "p95Ms": 320.9,
+     "maxMs": 320.9
+    },
+    "final": {
+     "n": 5,
+     "p50Ms": 200.3,
+     "p95Ms": 320.9,
+     "maxMs": 320.9
+    }
+   },
+   "shape": {
+    "partsPerLayer": [
+     1,
+     1,
+     28,
+     640,
+     2319,
+     4603,
+     2500,
+     79
+    ],
+    "maxPartsPerLayer": 4603,
+    "simplified": null,
+    "rejected": [
+     {
+      "layer": 3,
+      "measured": {
+       "value": 640,
+       "unit": "parts"
+      },
+      "limit": {
+       "value": 258,
+       "unit": "parts"
+      }
+     },
+     {
+      "layer": 4,
+      "measured": {
+       "value": 2319,
+       "unit": "parts"
+      },
+      "limit": {
+       "value": 258,
+       "unit": "parts"
+      }
+     },
+     {
+      "layer": 5,
+      "measured": {
+       "value": 4603,
+       "unit": "parts"
+      },
+      "limit": {
+       "value": 258,
+       "unit": "parts"
+      }
+     },
+     {
+      "layer": 6,
+      "measured": {
+       "value": 2500,
+       "unit": "parts"
+      },
+      "limit": {
+       "value": 258,
+       "unit": "parts"
+      }
+     }
+    ]
+   },
+   "workingSetMiB": 167.8,
+   "wallS": 11.8,
+   "loadAvg": [
+    7.26,
+    7.65,
+    7.6
+   ],
+   "variant": "caps=desktop,bonded-only"
+  },
+  {
+   "id": "r25",
+   "w": 5774,
+   "h": 4330,
+   "mpx": 25,
+   "family": "realistic",
+   "role": "desktop",
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "source": "live",
+   "detail": "full",
+   "status": "ok",
+   "stages": {
+    "masksTonal": {
+     "n": 5,
+     "p50Ms": 2191.5,
+     "p95Ms": 2721.8,
+     "maxMs": 2721.8
+    },
+    "masksHeight": {
+     "n": 5,
+     "p50Ms": 1478.8,
+     "p95Ms": 1506,
+     "maxMs": 1506
+    },
+    "complexity": {
+     "n": 5,
+     "p50Ms": 158.4,
+     "p95Ms": 255.7,
+     "maxMs": 255.7
+    },
+    "materialBonded": {
+     "n": 5,
+     "p50Ms": 6457.7,
+     "p95Ms": 6566.4,
+     "maxMs": 6566.4
+    },
+    "diffBonded": {
+     "n": 5,
+     "p50Ms": 836.6,
+     "p95Ms": 869.1,
+     "maxMs": 869.1
+    },
+    "supportBonded": {
+     "n": 5,
+     "p50Ms": 82.9,
+     "p95Ms": 87.4,
+     "maxMs": 87.4
+    },
+    "package": {
+     "n": 5,
+     "p50Ms": 534,
+     "p95Ms": 536.7,
+     "maxMs": 536.7
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": 7542.5,
+     "p95Ms": 7611.4,
+     "maxMs": 7611.4
+    },
+    "final": {
+     "n": 5,
+     "p50Ms": 7542.5,
+     "p95Ms": 7611.4,
+     "maxMs": 7611.4
+    }
+   },
+   "shape": {
+    "partsPerLayer": [
+     1,
+     2,
+     3,
+     38,
+     95,
+     120,
+     91,
+     36
+    ],
+    "verticesBonded": 182556,
+    "verticesConnected": null,
+    "verticesPerLayer": [
+     4,
+     9824,
+     20744,
+     39708,
+     49450,
+     35968,
+     19082,
+     7776
+    ],
+    "simplified": null,
+    "maxPartsPerLayer": 120,
+    "maxVerticesPerLayer": 49450,
+    "supportPieces": 385,
+    "contacts": {
+     "blocked": 0,
+     "narrow": 15,
+     "marginal": 21
+    },
+    "svgBytes": 2423446
+   },
+   "workingSetMiB": 512.7,
+   "wallS": 87.3,
+   "loadAvg": [
+    5.79,
+    6.67,
+    7.17
+   ],
+   "variant": "caps=desktop,bonded-only"
+  },
+  {
+   "id": "b4",
+   "w": 2309,
+   "h": 1732,
+   "mpx": 4,
+   "family": "busy",
+   "role": "exploration",
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "source": "live",
+   "detail": "full",
+   "status": "ok",
+   "stages": {
+    "masksTonal": {
+     "n": 5,
+     "p50Ms": 405.1,
+     "p95Ms": 528.7,
+     "maxMs": 528.7
+    },
+    "masksHeight": {
+     "n": 5,
+     "p50Ms": 269.8,
+     "p95Ms": 301,
+     "maxMs": 301
+    },
+    "complexity": {
+     "n": 5,
+     "p50Ms": 965.6,
+     "p95Ms": 1012.8,
+     "maxMs": 1012.8
+    },
+    "materialBonded": {
+     "n": 5,
+     "p50Ms": 1839.4,
+     "p95Ms": 2315.4,
+     "maxMs": 2315.4
+    },
+    "diffBonded": {
+     "n": 5,
+     "p50Ms": 346.4,
+     "p95Ms": 411.2,
+     "maxMs": 411.2
+    },
+    "supportBonded": {
+     "n": 5,
+     "p50Ms": 27.2,
+     "p95Ms": 36.6,
+     "maxMs": 36.6
+    },
+    "package": {
+     "n": 5,
+     "p50Ms": 237.7,
+     "p95Ms": 250.8,
+     "maxMs": 250.8
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": 3223.7,
+     "p95Ms": 3700.1,
+     "maxMs": 3700.1
+    },
+    "final": {
+     "n": 5,
+     "p50Ms": 3223.7,
+     "p95Ms": 3700.1,
+     "maxMs": 3700.1
+    }
+   },
+   "shape": {
+    "partsPerLayer": [
+     1,
+     1,
+     1,
+     1,
+     4,
+     85,
+     0,
+     0
+    ],
+    "verticesBonded": 77320,
+    "verticesConnected": null,
+    "verticesPerLayer": [
+     4,
+     4,
+     62,
+     10268,
+     43128,
+     23854,
+     0,
+     0
+    ],
+    "simplified": {
+     "before": [
+      1,
+      1,
+      14,
+      328,
+      1082,
+      1991,
+      1074,
+      33
+     ],
+     "after": [
+      1,
+      1,
+      1,
+      1,
+      4,
+      85,
+      0,
+      0
+     ],
+     "closeR": 7
+    },
+    "maxPartsPerLayer": 85,
+    "maxVerticesPerLayer": 43128,
+    "supportPieces": 92,
+    "contacts": {
+     "blocked": 0,
+     "narrow": 0,
+     "marginal": 0
+    },
+    "svgBytes": 980598
+   },
+   "workingSetMiB": 139.9,
+   "wallS": 30.6,
+   "loadAvg": [
+    6.86,
+    6.87,
+    7.22
+   ],
+   "variant": "caps=desktop,simplify=busy,bonded-only"
+  },
+  {
+   "id": "b9",
+   "w": 3464,
+   "h": 2598,
+   "mpx": 9,
+   "family": "busy",
+   "role": "exploration",
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "source": "live",
+   "detail": "full",
+   "status": "ok",
+   "stages": {
+    "masksTonal": {
+     "n": 5,
+     "p50Ms": 927.1,
+     "p95Ms": 1166.4,
+     "maxMs": 1166.4
+    },
+    "masksHeight": {
+     "n": 5,
+     "p50Ms": 559.4,
+     "p95Ms": 646.8,
+     "maxMs": 646.8
+    },
+    "complexity": {
+     "n": 5,
+     "p50Ms": 2248.8,
+     "p95Ms": 2406.6,
+     "maxMs": 2406.6
+    },
+    "materialBonded": {
+     "n": 5,
+     "p50Ms": 4700,
+     "p95Ms": 4791.1,
+     "maxMs": 4791.1
+    },
+    "diffBonded": {
+     "n": 5,
+     "p50Ms": 922,
+     "p95Ms": 1074.7,
+     "maxMs": 1074.7
+    },
+    "supportBonded": {
+     "n": 5,
+     "p50Ms": 52.7,
+     "p95Ms": 78.2,
+     "maxMs": 78.2
+    },
+    "package": {
+     "n": 5,
+     "p50Ms": 539.7,
+     "p95Ms": 647.6,
+     "maxMs": 647.6
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": 7876.8,
+     "p95Ms": 8080.9,
+     "maxMs": 8080.9
+    },
+    "final": {
+     "n": 5,
+     "p50Ms": 7876.8,
+     "p95Ms": 8080.9,
+     "maxMs": 8080.9
+    }
+   },
+   "shape": {
+    "partsPerLayer": [
+     1,
+     1,
+     1,
+     1,
+     8,
+     211,
+     1,
+     0
+    ],
+    "verticesBonded": 172390,
+    "verticesConnected": null,
+    "verticesPerLayer": [
+     4,
+     4,
+     154,
+     18874,
+     93972,
+     59196,
+     186,
+     0
+    ],
+    "simplified": {
+     "before": [
+      1,
+      1,
+      28,
+      640,
+      2319,
+      4603,
+      2500,
+      79
+     ],
+     "after": [
+      1,
+      1,
+      1,
+      1,
+      8,
+      211,
+      1,
+      0
+     ],
+     "closeR": 7
+    },
+    "maxPartsPerLayer": 211,
+    "maxVerticesPerLayer": 93972,
+    "supportPieces": 223,
+    "contacts": {
+     "blocked": 0,
+     "narrow": 0,
+     "marginal": 0
+    },
+    "svgBytes": 2245008
+   },
+   "workingSetMiB": 261.9,
+   "wallS": 69.6,
+   "loadAvg": [
+    5.94,
+    6.61,
+    7.1
+   ],
+   "variant": "caps=desktop,simplify=busy,bonded-only"
+  },
+  {
+   "id": "r25",
+   "w": 5774,
+   "h": 4330,
+   "mpx": 25,
+   "family": "realistic",
+   "role": "desktop",
+   "layers": 8,
+   "warm": 1,
+   "runs": 5,
+   "source": "live",
+   "detail": "full",
+   "status": "ok",
+   "stages": {
+    "masksTonal": {
+     "n": 5,
+     "p50Ms": 2205.8,
+     "p95Ms": 2892.7,
+     "maxMs": 2892.7
+    },
+    "masksHeight": {
+     "n": 5,
+     "p50Ms": 1582.7,
+     "p95Ms": 1626.7,
+     "maxMs": 1626.7
+    },
+    "complexity": {
+     "n": 5,
+     "p50Ms": 5353.4,
+     "p95Ms": 5712.3,
+     "maxMs": 5712.3
+    },
+    "materialBonded": {
+     "n": 5,
+     "p50Ms": 6588.2,
+     "p95Ms": 7722.4,
+     "maxMs": 7722.4
+    },
+    "diffBonded": {
+     "n": 5,
+     "p50Ms": 705.7,
+     "p95Ms": 771.9,
+     "maxMs": 771.9
+    },
+    "supportBonded": {
+     "n": 5,
+     "p50Ms": 37.4,
+     "p95Ms": 41.7,
+     "maxMs": 41.7
+    },
+    "package": {
+     "n": 5,
+     "p50Ms": 459.7,
+     "p95Ms": 480.1,
+     "maxMs": 480.1
+    },
+    "finalBonded": {
+     "n": 5,
+     "p50Ms": 12483.7,
+     "p95Ms": 14179.6,
+     "maxMs": 14179.6
+    },
+    "final": {
+     "n": 5,
+     "p50Ms": 12483.7,
+     "p95Ms": 14179.6,
+     "maxMs": 14179.6
+    }
+   },
+   "shape": {
+    "partsPerLayer": [
+     1,
+     1,
+     2,
+     26,
+     60,
+     64,
+     40,
+     18
+    ],
+    "verticesBonded": 161614,
+    "verticesConnected": null,
+    "verticesPerLayer": [
+     4,
+     8368,
+     18828,
+     36726,
+     45304,
+     30910,
+     14944,
+     6530
+    ],
+    "simplified": {
+     "before": [
+      1,
+      2,
+      3,
+      38,
+      95,
+      120,
+      91,
+      36
+     ],
+     "after": [
+      1,
+      1,
+      2,
+      26,
+      60,
+      64,
+      40,
+      18
+     ],
+     "closeR": 7
+    },
+    "maxPartsPerLayer": 64,
+    "maxVerticesPerLayer": 45304,
+    "supportPieces": 211,
+    "contacts": {
+     "blocked": 0,
+     "narrow": 0,
+     "marginal": 0
+    },
+    "svgBytes": 2145684
+   },
+   "workingSetMiB": 621.4,
+   "wallS": 121.6,
+   "loadAvg": [
+    7.85,
+    7.23,
+    7.28
+   ],
+   "variant": "caps=desktop,simplify=busy,bonded-only"
+  }
+ ]
+}
