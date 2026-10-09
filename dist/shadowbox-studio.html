@@ -11603,6 +11603,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       updateGate(c.gate);
     }
     if (fabRestart) { fabRestart = false; previewFabrication(); }   // UI-06: "fabrication restarted" on the edited revision
+    if (benchDraftHook) benchDraftHook(res, c);   // speed round F16a: ?bench=draft waits for this draft
   }
 
   /** Cancel the pooled draft in flight, if any (its canceled result is dropped by draftToken). */
@@ -13164,6 +13165,336 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     preview.redraw();
   }
 
+  // ------------------------------------------------------------- bench modes (speed round F16a; S1–S3, F.7)
+  /**
+   * In-app measurement modes, inert unless the page URL carries ?bench=fab|draft|cancel (index.html or the dist/ bundle,
+   * any scheme). Each mode drives the app's own paths on a bench project and shows a panel (#bench-panel) with the JSON
+   * record (#bench-result; <html data-bench="running|done|error">) and a "Download JSON" button (&download also saves
+   * it on completion). Every record carries p50Ms/p95Ms/maxMs (nearest rank, as test/bench.js) and longTaskMaxMs, the
+   * longest main-thread task seen by the F11 recorder (SBPool.longTasks: PerformanceObserver("longtask"); Chromium only,
+   * longTasks.supported says whether it was observable).
+   *   ?bench=fab    S2: fabrication preview of the S2 workload (test/bench.js user12 settings: plywood auto-tonal, 8 sheets,
+   *                 300 mm high, 0.1 mm pitch, inset-outline), 1 warm + 5 measured runs through previewFabrication, each
+   *                 timed from the click to the painted result (receipt, freeze, setSnapshot and the preview render).
+   *   ?bench=draft  S3: the E4 method: both art families (realistic, busy), E4 workload (a); after the cold draft, warm
+   *                 edits sheets 8 ↔ 7 (revision changing) through the draft path, 3 warm-up + 15 measured per family,
+   *                 each timed from the edit to the painted draft. families.<f>.p95Ms is the E4/S3 rule's number.
+   *   ?bench=cancel S1/NFR-02: 20 fabrication runs canceled (Cancel = cancelFab("user")) after 50–1000 ms; latency from
+   *                 the cancel to the settled run, plus whether the watchdog fired and the respawn time.
+   * Sources: &src=realistic|busy (default: realistic; draft runs both) is the seeded synthetic art of test/fixtures.js
+   * heightMap/busyHeightMap as RGBA (bench.js draftSource), at 4096 × 3084 unless &w=&h=; &src=loaded runs on the
+   * source the user loaded (e.g. the S2 photo, or `node tools/alpha3_scene.js scene.png 4096 3084`) after "Run".
+   * &runs=, &warm=, &cancels= override the counts (a smoke run, not a measurement).
+   */
+  // ---- F16a bench helpers (pure)
+  const BENCH_PLAN = {
+    fab: { warm: 1, runs: 5, src: [4096, 3084], fabPitchMM: 0.1, guides: "inset-outline" },
+    draft: { warm: 3, runs: 15, families: ["realistic", "busy"], sheets: [8, 7], src: [4096, 3084], seeds: { realistic: 2022, busy: 11 }, busyCellPx: 27 },
+    cancel: { cancels: 20, src: [4096, 3084], delaysMs: [50, 150, 300, 600, 1000] },
+  };
+  /** Nearest-rank p50/p95 and max over t (ms), as test/bench.js stats; nulls for no runs. */
+  function benchStats(t) {
+    const s = t.slice().sort((a, b) => a - b), q = (p) => s[Math.min(s.length - 1, Math.ceil(p * s.length) - 1)];
+    const r = (v) => +v.toFixed(1);
+    return s.length ? { n: s.length, p50Ms: r(q(0.5)), p95Ms: r(q(0.95)), maxMs: r(s[s.length - 1]) } : { n: 0, p50Ms: null, p95Ms: null, maxMs: null };
+  }
+  function benchLcg(seed) { let s = seed >>> 0; return () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296); }
+  /** test/fixtures.js heightMap (the "realistic" family), byte for byte. */
+  function benchHeightMap(seed, w, h, blobs = 420) {
+    const rng = benchLcg(seed), f = new Float32Array(w * h), S = Math.min(w, h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) f[y * w + x] = 0.18 + 0.32 * (x / w) + 0.22 * (y / h);
+    for (let b = 0; b < blobs; b++) {
+      const cx = rng() * w, cy = rng() * h, r = S * (0.006 + 0.064 * rng() * rng()), amp = (rng() < 0.6 ? 1 : -1) * (0.12 + 0.38 * rng());
+      const x0 = Math.max(0, Math.floor(cx - r)), x1 = Math.min(w - 1, Math.ceil(cx + r)), y0 = Math.max(0, Math.floor(cy - r)), y1 = Math.min(h - 1, Math.ceil(cy + r)), r2 = r * r;
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+        const d2 = (x - cx) ** 2 + (y - cy) ** 2; if (d2 >= r2) continue;
+        const t = 1 - d2 / r2; f[y * w + x] += amp * t * t;
+      }
+    }
+    const out = new Uint8Array(w * h);
+    for (let i = 0; i < out.length; i++) { const v = f[i]; out[i] = v <= 0 ? 0 : v >= 1 ? 255 : Math.round(v * 255); }
+    return out;
+  }
+  /** test/fixtures.js busyHeightMap (the "busy" family), byte for byte. */
+  function benchBusyHeightMap(seed, w, h, cell = 27) {
+    const rng = benchLcg(seed), f = new Float32Array(w * h);
+    for (const [sp, amp] of [[cell, 1], [cell / 2.5, 0.45], [cell / 6, 0.2]]) {
+      const gw = Math.ceil(w / sp) + 2, gh = Math.ceil(h / sp) + 2, g = new Float32Array(gw * gh);
+      for (let i = 0; i < g.length; i++) g[i] = rng();
+      for (let y = 0; y < h; y++) {
+        const gy = y / sp, iy = Math.floor(gy), ty = gy - iy;
+        for (let x = 0; x < w; x++) {
+          const gx = x / sp, ix = Math.floor(gx), tx = gx - ix, o = iy * gw + ix;
+          f[y * w + x] += amp * ((g[o] * (1 - tx) + g[o + 1] * tx) * (1 - ty) + (g[o + gw] * (1 - tx) + g[o + gw + 1] * tx) * ty);
+        }
+      }
+    }
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < f.length; i++) { if (f[i] < lo) lo = f[i]; if (f[i] > hi) hi = f[i]; }
+    const out = new Uint8Array(w * h), k = hi > lo ? 255 / (hi - lo) : 0;
+    for (let i = 0; i < out.length; i++) out[i] = Math.round((f[i] - lo) * k);
+    return out;
+  }
+  /** Gray samples → the engine's RGBA source, coloured as test/bench.js draftSource. */
+  function benchRgba(g, w, h) {
+    const rgba = new Uint8Array(w * h * 4);
+    for (let i = 0; i < w * h; i++) { rgba[4 * i] = g[i]; rgba[4 * i + 1] = (g[i] * 3) & 255; rgba[4 * i + 2] = 255 - g[i]; rgba[4 * i + 3] = 255; }
+    return { pixels: rgba, channels: 4, w, h, alpha: null };
+  }
+  /**
+   * The bench project on an installed source record (S = SBSchema): E4 workload (a) (test/bench.js draftProject("a"):
+   * plywood auto-tonal, light-front, smoothing 1.65 mm × 2, bonded, 8 sheets, 300 mm high) for "draft"; plus the S2
+   * fabrication pitch and inset-outline guides (user12Project) for "fab" and "cancel".
+   */
+  function benchProject(S, record, kind) {
+    let p = S.withSource(S.defaults("plywood"), record);
+    p = S.applyModeChange(p, { interpretation: { mode: "tonal" } }, true);
+    p.interpretation.polarity = "light-front"; p.interpretation.smoothing = { radiusMM: 1.65, passes: 2 };
+    p.construction.sheets = BENCH_PLAN.draft.sheets[0]; p.geometry.sizeBy = "height"; p.geometry.targetMM = 300;
+    if (kind !== "draft") {
+      if (p.construction.mode === "bonded-relief") p.construction.guides.mode = BENCH_PLAN.fab.guides;
+      p = S.applyFabPitch(p, BENCH_PLAN.fab.fabPitchMM);
+    }
+    return p;
+  }
+  /** The JSON record of one bench: mode, time, environment, the stats of m.runsMs (warm-up excluded), then m's fields. */
+  function benchRecord(mode, m, env) {
+    return Object.assign({ bench: mode, at: new Date().toISOString(), env }, benchStats(m.runsMs || []), m);
+  }
+  // ---- F16a bench helpers end
+
+  const BENCH = (() => {
+    try {
+      const m = new URLSearchParams(location.search).get("bench");
+      return ["fab", "draft", "cancel"].includes(m) ? m : null;
+    } catch (_) { return null; }
+  })();
+  /** A bench query option (string), or d when absent. */
+  function benchOpt(k, d) {
+    try { const v = new URLSearchParams(location.search).get(k); return v === null || v === "" ? d : v; } catch (_) { return d; }
+  }
+  /** A positive integer bench option clamped to [lo, hi], or d. */
+  function benchInt(k, d, lo, hi) { const v = Math.round(Number(benchOpt(k, d))); return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; }
+  /** Called at the end of applyDraft (the one draft result path of both drivers) while a bench waits for a draft. */
+  let benchDraftHook = null;
+  const benchSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  /** Resolves once the next frame has been painted (the second animation frame callback runs after it). */
+  const benchPaint = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+  /** The F11 long-task recorder (zeros, supported false, where SBPool or longtask entries are unavailable). */
+  function benchLongTasks() {
+    if (typeof SBPool !== "undefined" && typeof SBPool.longTasks === "function") return SBPool.longTasks();
+    return { supported: false, start() {}, stop() { return { supported: false, max: 0, count: 0 }; } };
+  }
+  /** The next applyDraft whose context matches pred → {res, c}. */
+  function benchWaitDraft(pred) {
+    return new Promise((resolve) => {
+      benchDraftHook = (res, c) => { if (!pred(c)) return; benchDraftHook = null; resolve({ res, c }); };
+    });
+  }
+  /** Until no draft or fabrication run is in flight. */
+  async function benchIdle() { while (fabInFlight || draftRun) await benchSleep(25); await benchPaint(); }
+  function benchEnv() {
+    const n = typeof navigator !== "undefined" ? navigator : {};
+    return { app: APP_VERSION, engine: SBEngine.VERSION, userAgent: n.userAgent || null, hardwareConcurrency: n.hardwareConcurrency || null,
+      deviceMemory: Number.isFinite(n.deviceMemory) ? n.deviceMemory : null, deviceClass: deviceClass(), protocol: location.protocol,
+      pool: pool ? { mode: pool.mode, rung: pool.rung || null, helpers: pool.mode === "pool" ? SBPool.helperCount(n.hardwareConcurrency, deviceClass()) : 0 } : { mode: "fallback", helpers: 0 },
+      notice: poolNotice, draftCapPx: SBSchema.limits(deviceClass()).draftPxCap };
+  }
+  const benchMs = (v) => +v.toFixed(1);
+
+  /**
+   * Install the bench source (family "realistic"/"busy": the seeded synthetic art; "loaded": the source the user loaded)
+   * with the bench project of kind through the app's own install path (acceptSource → one draft), and wait for that
+   * cold draft. → {family, w, h, coldMs, coldStatus}.
+   */
+  async function benchInstall(kind, family) {
+    const plan = BENCH_PLAN[kind], S = SBSchema, E = SBEngine;
+    if (family === "loaded") {
+      if (!run.src || !project.source) throw new Error("load a source first (the S2 photo, or node tools/alpha3_scene.js scene.png 4096 3084), then press Run");
+      const next = benchProject(S, project.source, kind);
+      next.revision = project.revision + 1;
+      project = next;
+      const t0 = performance.now(), wait = benchWaitDraft((c) => c.rev === project.revision);
+      setRunState({ type: "edit" });
+      regenerate();
+      const { res } = await wait;
+      await benchPaint();
+      return { family, w: run.src.w, h: run.src.h, coldMs: benchMs(performance.now() - t0), coldStatus: res.status };
+    }
+    const w = benchInt("w", plan.src[0], 16, 8192), h = benchInt("h", plan.src[1], 16, 8192), seeds = BENCH_PLAN.draft.seeds;
+    setStatus(`bench: building the ${family} art at ${w} × ${h} px…`);
+    await benchPaint();
+    const g = family === "busy" ? benchBusyHeightMap(seeds.busy, w, h, BENCH_PLAN.draft.busyCellPx) : benchHeightMap(seeds.realistic, w, h);
+    const px = benchRgba(g, w, h), route = { format: "png", decode: "canvas-tonal" };
+    const sampleHash = await SBHash.digest(E.sampleBytes(px));
+    const next = benchProject(S, Object.assign(E.sourceRecord(px, route), { sampleHash }), kind);
+    next.revision = project.revision + 1;
+    project = next;
+    setProjectName("bench-" + kind + "-" + family);
+    const gen = ++sourceGen, wait = benchWaitDraft((c) => c.gen === gen), t0 = performance.now();
+    await acceptSource("bench " + family + " " + w + "x" + h,
+      { bitmap: samplesToCanvas({ w, h, channels: 4, samples: px.pixels, alpha: null }), raw: { w, h, channels: 4, samples: px.pixels, alpha: null, policy: route.decode } },
+      null, gen, null);
+    const { res } = await wait;
+    await benchPaint();
+    return { family, w, h, coldMs: benchMs(performance.now() - t0), coldStatus: res.status };
+  }
+
+  /** ?bench=fab (S2, F.7): 1 warm + 5 fabrication previews, each from the click to the painted fabrication result. */
+  async function benchFab(family) {
+    const plan = BENCH_PLAN.fab, warm = benchInt("warm", plan.warm, 0, 100), runs = benchInt("runs", plan.runs, 1, 1000);
+    const src = await benchInstall("fab", family), rows = [], all = benchLongTasks();
+    all.start();
+    for (let i = 0; i < warm + runs; i++) {
+      setStatus(`bench fab: run ${i + 1} of ${warm + runs}${i < warm ? " (warm-up)" : ""}…`, true);
+      await benchIdle();
+      run.fab = null;   // not current: the run is generated again (fabCurrent would reuse it)
+      const lt = benchLongTasks();
+      lt.start();
+      const t0 = performance.now();
+      await previewFabrication();
+      await benchPaint();
+      const ms = performance.now() - t0, l = lt.stop(), f = run.fab;
+      rows.push({ warm: i < warm, ms: benchMs(ms), engineMs: f ? benchMs(f.ms) : null, status: f ? f.status : "none",
+        raster: f && f.snapshot ? [f.snapshot.geometry.rasterW, f.snapshot.geometry.rasterH] : null, longTaskMaxMs: benchMs(l.max), longTasks: l.count });
+    }
+    const lts = all.stop(), stats = pool && pool.mode === "pool" ? await pool.stats().catch(() => null) : null;
+    return benchRecord("fab", { workload: "S2 (test/bench.js user12 settings)", source: src, warm, runs,
+      runsMs: rows.filter((r) => !r.warm).map((r) => r.ms), warmMs: rows.filter((r) => r.warm).map((r) => r.ms), rows,
+      longTaskMaxMs: benchMs(lts.max), longTasks: lts, health: pool && pool.health ? pool.health() : null, coordStats: stats }, benchEnv());
+  }
+
+  /** ?bench=draft (S3, E4 method): per family, the cold draft then warm edits sheets 8 ↔ 7, edit → painted draft. */
+  async function benchDraft(family) {
+    const plan = BENCH_PLAN.draft, warm = benchInt("warm", plan.warm, 0, 100), runs = benchInt("runs", plan.runs, 1, 1000);
+    const fams = family === "loaded" || benchOpt("src", null) ? [family] : plan.families, all = benchLongTasks(), families = {}, every = [];
+    all.start();
+    for (const fam of fams) {
+      const src = await benchInstall("draft", fam), rows = [];
+      for (let i = 0; i < warm + runs; i++) {
+        setStatus(`bench draft (${fam}): edit ${i + 1} of ${warm + runs}${i < warm ? " (warm-up)" : ""}…`, true);
+        await benchIdle();
+        const sheets = plan.sheets[(i + 1) % 2], before = project.revision, lt = benchLongTasks();
+        lt.start();
+        const t0 = performance.now();
+        setLegacy("nSheets", sheets);   // the sheets control's own write (bindRange "nSheets"); a geometry change bumps the revision
+        if (project.revision === before) throw new Error("the sheets edit did not change the revision");
+        const rev = project.revision, wait = benchWaitDraft((c) => c.rev === rev);
+        setRunState({ type: "edit" });
+        regenerate();   // the debounced recompute without its 300 ms wait
+        const { res } = await wait;
+        await benchPaint();
+        const ms = performance.now() - t0, l = lt.stop();
+        rows.push({ warm: i < warm, sheets, ms: benchMs(ms), engineMs: run.draft ? benchMs(run.draft.ms) : null, status: res.status,
+          code: res.error ? res.error.code : null, longTaskMaxMs: benchMs(l.max), longTasks: l.count });
+      }
+      const measured = rows.filter((r) => !r.warm).map((r) => r.ms);
+      every.push(...measured);
+      families[fam] = Object.assign(benchStats(measured), { source: src, rows, raster: run.draft && run.draft.snapshot ? [run.draft.snapshot.geometry.rasterW, run.draft.snapshot.geometry.rasterH] : null });
+    }
+    const lts = all.stop();
+    return benchRecord("draft", { workload: "E4 (a) (test/bench.js draftProject(\"a\")), warm edit sheets 8 <-> 7", warm, runs, runsMs: every, families,
+      worstFamilyP95Ms: Math.max(...Object.values(families).map((f) => f.p95Ms)), longTaskMaxMs: benchMs(lts.max), longTasks: lts,
+      health: pool && pool.health ? pool.health() : null }, benchEnv());
+  }
+
+  /** ?bench=cancel (S1, NFR-02): 20 fabrication runs canceled after 50–1000 ms; cancel → settled latency and respawns. */
+  async function benchCancel(family) {
+    const plan = BENCH_PLAN.cancel, n = benchInt("cancels", plan.cancels, 1, 1000);
+    const src = await benchInstall("cancel", family), rows = [], all = benchLongTasks();
+    if (!usePool()) {
+      return benchRecord("cancel", { source: src, unsupported: "no worker pool (the fallback run blocks the page and cannot be canceled)", runsMs: [],
+        longTaskMaxMs: 0, longTasks: { supported: false, max: 0, count: 0 } }, benchEnv());
+    }
+    all.start();
+    for (let i = 0; i < n; i++) {
+      setStatus(`bench cancel: ${i + 1} of ${n}…`, true);
+      await benchIdle();
+      run.fab = null;
+      const delay = plan.delaysMs[i % plan.delaysMs.length], lt = benchLongTasks();
+      lt.start();
+      const p = previewFabrication();
+      await benchSleep(delay);
+      const h0 = pool.health(), t0 = performance.now(), canceled = cancelFab("user");
+      await p;
+      const ms = performance.now() - t0, h1 = pool.health(), l = lt.stop();
+      rows.push({ delayMs: delay, canceled, ms: benchMs(ms), watchdog: h1.watchdogKills > h0.watchdogKills,
+        respawnMs: h1.lastRespawnMs !== h0.lastRespawnMs ? h1.lastRespawnMs : null, longTaskMaxMs: benchMs(l.max) });
+    }
+    const lts = all.stop(), done = rows.filter((r) => r.canceled);
+    return benchRecord("cancel", { source: src, cancels: n, runsMs: done.map((r) => r.ms), finishedBeforeCancel: rows.length - done.length,
+      watchdogKills: rows.filter((r) => r.watchdog).length, rows, longTaskMaxMs: benchMs(lts.max), longTasks: lts, health: pool.health() }, benchEnv());
+  }
+
+  /** The bench panel (created on demand; bench mode only). */
+  function benchPanel(mode) {
+    let el = $("bench-panel");
+    if (el) return el;
+    el = document.createElement("section");
+    el.id = "bench-panel";
+    el.setAttribute("aria-label", "Bench " + mode);
+    el.style.cssText = "position:fixed;right:12px;bottom:12px;z-index:1000;width:min(560px,calc(100vw - 24px));max-height:60vh;overflow:auto;" +
+      "background:#fff;color:#111;border:1px solid #888;border-radius:6px;padding:8px 10px;font:12px/1.4 ui-monospace,monospace;box-shadow:0 2px 12px rgba(0,0,0,.25)";
+    const head = document.createElement("strong");
+    head.textContent = "Bench: " + mode + " ";
+    const go = document.createElement("button");
+    go.type = "button"; go.id = "bench-run"; go.textContent = "Run";
+    const dl = document.createElement("button");
+    dl.type = "button"; dl.id = "bench-download"; dl.textContent = "Download JSON"; dl.disabled = true;
+    const st = document.createElement("div");
+    st.id = "bench-status"; st.setAttribute("role", "status"); st.setAttribute("aria-live", "polite");
+    const out = document.createElement("pre");
+    out.id = "bench-result"; out.style.cssText = "white-space:pre-wrap;margin:6px 0 0";
+    el.append(head, go, document.createTextNode(" "), dl, st, out);
+    document.body.appendChild(el);
+    return el;
+  }
+  function benchDownload(rec) {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(rec, null, 2)], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "shadowbox-bench-" + rec.bench + "-" + rec.at.replace(/[:.]/g, "-") + ".json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  /** Start the ?bench= mode: the panel, then (after the pool settled) the driver; &src=loaded waits for "Run". */
+  function startBench(mode) {
+    benchPanel(mode);
+    const family = benchOpt("src", "realistic"), html = document.documentElement, st = $("bench-status"), out = $("bench-result");
+    const go = $("bench-run"), dl = $("bench-download");
+    let last = null;
+    dl.addEventListener("click", () => { if (last) benchDownload(last); });
+    const runIt = async () => {
+      if (html.dataset.bench === "running") return;
+      go.disabled = true; dl.disabled = true;
+      html.dataset.bench = "running";
+      st.textContent = "running…";
+      try {
+        if (!["realistic", "busy", "loaded"].includes(family)) throw new Error("&src must be realistic, busy or loaded");
+        if (pool && pool.ready) await pool.ready.catch(() => false);
+        if (pool && pool.mode === "pool" && pool.helpersReady) await pool.helpersReady.catch(() => null);
+        const rec = last = await ({ fab: benchFab, draft: benchDraft, cancel: benchCancel }[mode])(family);
+        out.textContent = JSON.stringify(rec, null, 2);
+        st.textContent = `done: p50 ${rec.p50Ms} ms, p95 ${rec.p95Ms} ms (n ${rec.n}), longest main-thread task ${rec.longTaskMaxMs} ms` +
+          (rec.longTasks && rec.longTasks.supported ? "" : " (longtask not observable here)");
+        html.dataset.bench = "done";
+        dl.disabled = false;
+        if (benchOpt("download", null) !== null) benchDownload(rec);
+      } catch (err) {
+        st.textContent = "bench failed: " + (err && err.message ? err.message : String(err));
+        html.dataset.bench = "error";
+      } finally {
+        go.disabled = false;
+      }
+    };
+    go.addEventListener("click", runIt);
+    if (family === "loaded") st.textContent = "load a source, then press Run";
+    else runIt();
+  }
+
   function init() {
     preview = SBPreview.create($("stackcanvas"));
     preview.start();
@@ -13268,6 +13599,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     startPool();
     // PRJ-01: open empty. Export stays disabled with "Choose a source" until a photo or the Demo scene is chosen.
     regenerate();
+    // speed round F16a: ?bench=fab|draft|cancel (inert without the query)
+    if (BENCH) startBench(BENCH);
 
     registerServiceWorker();
     requestPersistentStorage();

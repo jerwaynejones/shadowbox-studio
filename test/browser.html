@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shadowbox Harness</title>
+<style>
+  :root { color-scheme: light dark; --bg: #fafaf7; --fg: #1b1b1b; --muted: #555; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #16171a; --fg: #e8e8e8; --muted: #aaa; } }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, sans-serif; margin: 0; padding: 16px; }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  p { color: var(--muted); max-width: 70ch; }
+  pre { font: 12px/1.45 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<!--
+  Speed round F16a (S1, F.4 #4): the browser harness. Open with ?run:
+    chromium --headless=new --allow-file-access-from-files --virtual-time-budget=120000 --dump-dom "file://…/test/browser.html?run"
+    or serve the repository root over http (python3 -m http.server) and open /test/browser.html?run in any browser.
+  It runs the 5 F16 fixtures through the serial engine and the Blob-worker pool and prints the digests (test/browser_harness.js).
+-->
+<h1>Shadowbox Studio — browser harness</h1>
+<p>Runs the five F16 pool-equality fixtures through the serial engine and the Blob-worker pool in this browser, and compares
+the digests with each other and with the Node golden. Add <code>?run</code> to the address to start.</p>
+<pre id="harness-result">Open this page with ?run to run the harness.</pre>
+<script src="../js/util.js"></script>
+<script src="../js/hash.js"></script>
+<script src="../js/vendor/clipper2.js"></script>
+<script src="../js/geom.js"></script>
+<script src="../js/diag.js"></script>
+<script src="../js/schema.js"></script>
+<script src="../js/png.js"></script>
+<script src="../js/jpeg.js"></script>
+<script src="../js/height.js"></script>
+<script src="../js/raster.js"></script>
+<script src="../js/morph.js"></script>
+<script src="../js/islands.js"></script>
+<script src="../js/trace.js"></script>
+<script src="../js/construct.js"></script>
+<script src="../js/material.js"></script>
+<script src="../js/support.js"></script>
+<script src="../js/strokefont.js"></script>
+<script src="../js/guides.js"></script>
+<script src="../js/svgout.js"></script>
+<script src="../js/svgread.js"></script>
+<script src="../js/proof.js"></script>
+<script src="../js/zip.js"></script>
+<script src="../js/docs.js"></script>
+<script src="../js/engine.js"></script>
+<script src="../js/pool.js"></script>
+<script src="browser_harness.js"></script>
+<script>
+  if (new URLSearchParams(location.search).has("run")) SBHarness.main(document);
+</script>
+</body>
+</html>

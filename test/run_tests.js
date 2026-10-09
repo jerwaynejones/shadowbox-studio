@@ -7848,6 +7848,109 @@ suite("build.js/pool.js/worker.js — speed round F16 dist/ Blob worker and the 
   }
 });
 
+// ------------------------------------------------ speed round F16a (browser harness and in-app bench modes)
+suite("app.js/test/browser.html — speed round F16a browser harness and in-app bench modes (PO-PERF-1/2/3, NFR-02, NFR-05)", async () => {
+  const root = path.join(__dirname, ".."), E = SBEngine, S = SBSchema, F = require("./fixtures.js");
+  const appSrc = fs.readFileSync(path.join(root, "js", "app.js"), "utf8");
+  const BENCH = require("./bench.js");
+  const F16_FIVE = ["h-bonded-draft", "h-connected-fabrication", "t-connected-frame-draft", "n3-fabrication", "alpha-domain-draft"];
+
+  // ---- 1. in-app ?bench= modes (js/app.js): inert unless the query names a mode
+  check("F16a app.js reads ?bench= once and accepts only fab|draft|cancel (anything else: no bench)",
+    /const BENCH = \(\(\) => \{[\s\S]{0,300}new URLSearchParams\(location\.search\)\.get\("bench"\)[\s\S]{0,200}\["fab", "draft", "cancel"\]\.includes\(/.test(appSrc));
+  check("F16a init starts the bench only when BENCH is set, after the pool (inert otherwise)",
+    /startPool\(\);[\s\S]{0,400}if \(BENCH\) startBench\(BENCH\);/.test(appSrc));
+  check("F16a ?bench=fab|draft|cancel each have a driver (benchFab, benchDraft, benchCancel) dispatched by startBench",
+    /async function benchFab\(/.test(appSrc) && /async function benchDraft\(/.test(appSrc) && /async function benchCancel\(/.test(appSrc) &&
+    /function startBench\(mode\)[\s\S]{0,1500}\{ fab: benchFab, draft: benchDraft, cancel: benchCancel \}\[mode\]/.test(appSrc));
+  check("F16a each bench records main-thread long tasks with the F11 recorder (SBPool.longTasks)",
+    (appSrc.match(/benchLongTasks\(\)/g) || []).length >= 4 && /function benchLongTasks\(\)[\s\S]{0,300}SBPool\.longTasks\(\)/.test(appSrc));
+  check("F16a the record is shown in the page (#bench-result, data-bench state) and offered as a JSON download (Blob, a[download])",
+    /bench-result/.test(appSrc) && /dataset\.bench = /.test(appSrc) && /new Blob\(\[JSON\.stringify\(rec, null, 2\)\], \{ type: "application\/json" \}\)/.test(appSrc) &&
+    /\.download = "shadowbox-bench-" \+/.test(appSrc));
+  check("F16a the bench drives the app's own paths: previewFabrication (fab), the draft result path applyDraft (draft), cancelFab(\"user\") (cancel)",
+    /async function benchFab\([\s\S]{0,2500}previewFabrication\(\)/.test(appSrc) && /function applyDraft\(res, c\)[\s\S]{0,2600}if \(benchDraftHook\) benchDraftHook\(res, c\);/.test(appSrc) &&
+    /async function benchCancel\([\s\S]{0,3000}cancelFab\("user"\)/.test(appSrc));
+  check("F16a the bench code holds no script-element text (build.js inlines app.js and refuses it)", !/<\/?script/i.test(appSrc));
+
+  // the pure helpers block, evaluated on its own
+  const b0 = appSrc.indexOf("// ---- F16a bench helpers (pure)"), b1 = appSrc.indexOf("// ---- F16a bench helpers end");
+  check("F16a app.js has one self-contained pure bench-helpers block", b0 > 0 && b1 > b0);
+  if (!(b0 > 0 && b1 > b0)) return;
+  let B = null;
+  try { B = new Function(appSrc.slice(b0, b1) + "\nreturn { BENCH_PLAN, benchStats, benchHeightMap, benchBusyHeightMap, benchRgba, benchProject, benchRecord };")(); }
+  catch (e) { check("F16a the pure bench helpers evaluate on their own (" + e.message + ")", false); return; }
+  const P = B.BENCH_PLAN;
+  check("F16a BENCH_PLAN: fab = S2 workload, 1 warm + 5; draft = E4 method (realistic and busy, sheets 8 ↔ 7, ≥ 15 warm after warm-up); cancel = 20 cancels",
+    P.fab.warm === 1 && P.fab.runs === 5 && JSON.stringify(P.fab.src) === JSON.stringify(BENCH.USER12.src) && P.fab.fabPitchMM === BENCH.USER12.fabPitchMM && P.fab.guides === BENCH.USER12.guides &&
+    JSON.stringify(P.draft.families) === JSON.stringify(BENCH.DRAFT.families) && P.draft.runs >= 15 && P.draft.warm === BENCH.DRAFT.warm &&
+    JSON.stringify(P.draft.sheets) === "[8,7]" && JSON.stringify(P.draft.src) === JSON.stringify(BENCH.DRAFT.src) &&
+    JSON.stringify(P.draft.seeds) === JSON.stringify(BENCH.DRAFT.seeds) && P.draft.busyCellPx === BENCH.DRAFT.busyCellPx && P.cancel.cancels === 20);
+  {
+    const t = Array.from({ length: 20 }, (_, i) => 20 - i), s = B.benchStats(t);
+    check("F16a benchStats: nearest-rank p50/p95 and max, as test/bench.js stats", s.n === 20 && s.p50Ms === 10 && s.p95Ms === 19 && s.maxMs === 20 &&
+      B.benchStats([7]).p95Ms === 7 && B.benchStats([]).n === 0 && B.benchStats([]).p95Ms === null);
+  }
+  check("F16a the in-app bench art equals the Node fixtures byte for byte (F.heightMap, F.busyHeightMap; RGBA as bench.js draftSource)", (() => {
+    const w = 97, h = 61, eq = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+    const r = B.benchHeightMap(P.draft.seeds.realistic, w, h), bz = B.benchBusyHeightMap(P.draft.seeds.busy, w, h, P.draft.busyCellPx);
+    const rgba = B.benchRgba(r, w, h);
+    return eq(r, F.heightMap(P.draft.seeds.realistic, w, h)) && eq(bz, F.busyHeightMap(P.draft.seeds.busy, w, h, P.draft.busyCellPx)) &&
+      rgba.channels === 4 && rgba.w === w && rgba.h === h && rgba.alpha === null &&
+      eq(rgba.pixels.slice(0, 8), [r[0], (r[0] * 3) & 255, 255 - r[0], 255, r[1], (r[1] * 3) & 255, 255 - r[1], 255]);
+  })());
+  {
+    const w = 120, h = 90, px = B.benchRgba(B.benchHeightMap(5, w, h), w, h);
+    const rec = Object.assign(E.sourceRecord(px, { format: "png", decode: "canvas-tonal" }), { sampleHash: SBHash.sha256(E.sampleBytes(px)) });
+    const fab = B.benchProject(S, rec, "fab"), dr = B.benchProject(S, rec, "draft"), ref = BENCH.user12Project(px), refDraft = BENCH.user12Project(px, S.defaults("plywood").construction.guides.mode);
+    const pick = (p) => JSON.stringify([p.interpretation, p.construction, p.material, p.geometry]);
+    const noPitch = (p) => { const q = JSON.parse(JSON.stringify(p)); delete q.geometry.fabPitchMM; return q; };
+    check("F16a benchProject(\"fab\") is the S2 workload (test/bench.js user12Project: plywood auto-tonal, 8 sheets, 300 mm, 0.1 mm pitch, inset-outline) and validates",
+      S.validate(fab).ok && pick(fab) === pick(ref));
+    check("F16a benchProject(\"draft\") is E4 workload (a) (draftProject(\"a\"), the preset's guides, no fabrication pitch change) and validates",
+      S.validate(dr).ok && pick(noPitch(dr)) === pick(noPitch(refDraft)) && dr.geometry.fabPitchMM === S.defaults("plywood").geometry.fabPitchMM);
+  }
+  {
+    const rec = B.benchRecord("fab", { runsMs: [5, 4, 3, 2, 1], warmMs: [9], longTaskMaxMs: 42, longTasks: { supported: true, count: 3 } }, { app: "x" });
+    const j = JSON.parse(JSON.stringify(rec));
+    check("F16a benchRecord: JSON with mode, environment, p50Ms/p95Ms/maxMs of the measured runs (warm-up excluded) and longTaskMaxMs",
+      j.bench === "fab" && j.p50Ms === 3 && j.p95Ms === 5 && j.maxMs === 5 && j.n === 5 && j.longTaskMaxMs === 42 && j.env.app === "x" && JSON.stringify(j.warmMs) === "[9]" &&
+      typeof j.at === "string");
+  }
+
+  // ---- 2. test/browser.html?run: the modules, the 5 F16 fixtures through pool and serial, digests into the DOM
+  const htmlPath = path.join(__dirname, "browser.html");
+  check("F16a test/browser.html exists", fs.existsSync(htmlPath));
+  if (!fs.existsSync(htmlPath)) return;
+  const bh = fs.readFileSync(htmlPath, "utf8"), { NODE_MODULES } = require("./modules.js");
+  const srcs = [...bh.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
+  check("F16a browser.html loads the worker module list (test/modules.js) in order, then pool.js, then browser_harness.js",
+    JSON.stringify(srcs) === JSON.stringify(NODE_MODULES.map((n) => "../js/" + n).concat(["../js/pool.js", "browser_harness.js"])));
+  check("F16a browser.html runs the harness on ?run and prints into #harness-result",
+    /new URLSearchParams\(location\.search\)\.has\("run"\)/.test(bh) && /SBHarness\.main\(/.test(bh) && /id="harness-result"/.test(bh));
+  let H = null;
+  try { H = require("./browser_harness.js"); } catch (e) { check("F16a test/browser_harness.js loads in Node (" + e.message + ")", false); return; }
+  check("F16a the harness runs the 5 F16 fixtures", JSON.stringify(H.FIXTURES) === JSON.stringify(F16_FIVE));
+  const shim = require("./node_worker_shim.js");
+  if (typeof SBPool === "undefined") vm.runInThisContext(fs.readFileSync(path.join(root, "js", "pool.js"), "utf8"), { filename: "pool.js" });
+  const fetchText = async (rel) => fs.readFileSync(path.resolve(__dirname, rel), "utf8");
+  const inl = await H.readInlined(fetchText);
+  check("F16a readInlined: worker.js and every WORKER_MODULES text, read relative to test/ (../js/…)",
+    !!inl && inl.worker === fs.readFileSync(path.join(root, "js", "worker.js"), "utf8") && NODE_MODULES.every((n) => inl.modules[n] === fs.readFileSync(path.join(root, "js", n), "utf8")));
+  const blobSrc = SBPool.blobSource(inl);
+  const rec = await H.run({ fetchText, inlined: inl, helpers: 2, rungs: [{ name: "blob", spawn: (name) => shim.spawnSource(blobSrc, { name }) }] });
+  const j = JSON.parse(JSON.stringify(rec));
+  check("F16a harness record: rung blob, the 5 fixtures with serial and pooled digests, pool = serial (deepEqualStrict) and = the Node golden",
+    j.rung === "blob" && j.fixtures.length === 5 && j.fixtures.every((f, i) => f.id === F16_FIVE[i] && f.poolEqualsSerial === true && f.serialEqualsGolden === true &&
+      typeof f.serial.geometryHash === "string" && f.pool.wholeSha === f.serial.wholeSha) && j.pass === true);
+  check("F16a harness record: p50Ms/p95Ms of the pooled and serial runs and the long-task maximum",
+    ["pool", "serial"].every((k) => typeof j.timing[k].p50Ms === "number" && typeof j.timing[k].p95Ms === "number") && "longTaskMaxMs" in j && typeof j.longTasks.supported === "boolean");
+  check("F16a harness cancel round trip: a fabrication run canceled after its ack settles canceled within 500 ms (NFR-02)",
+    j.cancel && j.cancel.status === "canceled" && j.cancel.latencyMs < 500);
+  check("F16a harness text output lists every fixture with its geometryHash and the verdict", (() => {
+    const t = H.format(rec); return F16_FIVE.every((id, i) => t.includes(id) && t.includes(j.fixtures[i].serial.geometryHash)) && /PASS/.test(t); })());
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {
