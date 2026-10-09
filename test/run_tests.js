@@ -5705,6 +5705,53 @@ suite("docs.js/proof.js/app.js — alpha.3 E8 source diagnostics up front (PO-PR
   check("PO-PREVIEW-4 sourceNotes returns one line per warning", SBDocs.sourceNotes(plan.diagnostics).length === plan.diagnostics.length && SBDocs.sourceNotes([]).length === 0);
 });
 
+suite("strokefont.js/geom.js — alpha.3 E9 stroke digits, box placement and buffers (ASM-03, EXP-03, AT-14)", () => {
+  check("E9 API present", typeof globalThis.SBFont === "object" && typeof SBGeom.interiorPoint === "function" &&
+    typeof SBGeom.placeBox === "function" && typeof SBGeom.bufferPolylines === "function");
+  if (typeof globalThis.SBFont !== "object" || typeof SBGeom.placeBox !== "function" || typeof SBGeom.bufferPolylines !== "function") return;
+  const s = SBFont.strokes("12", 3000);
+  check("EXP-03 digits are open integer polylines inside their box (no text)", s.hUm === 3000 && s.wUm === Math.round(10 * 3000 / 6) &&
+    s.paths.every((p) => p.length >= 4 && p.every(Number.isInteger) && p.every((v, i) => i % 2 ? v >= 0 && v <= 3000 : v >= 0 && v <= s.wUm)));
+  check("FONT_CHAR for a character outside the alpha.3 charset", (() => { try { SBFont.strokes("A", 3000); return false; } catch (e) { return /FONT_CHAR/.test(e.message); } })());
+  const sq = (x, y, s2) => [x, y, x + s2, y, x + s2, y + s2, x, y + s2];
+  const donut = [{ outer: sq(0, 0, 10000), holes: [[2000, 2000, 2000, 8000, 8000, 8000, 8000, 2000]] }];   // hole: negative shoelace area
+  const pt = SBGeom.interiorPoint(donut, 800);
+  check("ASM-03 donut point is in the ring, not in the hole, with clearance", pt && !(pt[0] > 2000 && pt[0] < 8000 && pt[1] > 2000 && pt[1] < 8000));
+  const crescent = SBGeom.normalize(SBGeom.difference([{ outer: sq(0, 0, 10000), holes: [] }], [{ outer: sq(3000, -1000, 9000), holes: [] }]));
+  const pc = SBGeom.interiorPoint(crescent, 1000);
+  check("ASM-03 crescent interior point is inside with clearance, not the bbox centre", pc && pc[0] < 3000 - 1000 + 1 && SBGeom.interiorPoint(crescent, 1000).join() === pc.join());
+  check("ASM-03 too-thin region gives null", SBGeom.interiorPoint([{ outer: sq(0, 0, 1000), holes: [] }], 600) === null);
+  const strip = [{ outer: [0, 0, 3200, 0, 3200, 17800, 0, 17800], holes: [] }];
+  const bx = SBGeom.placeBox(strip, 1100, 1600);
+  check("ASM-03 placeBox fits a 2.2 × 3.2 mm box in a 3.2 mm strip (an axis-aligned box, not the circumscribed circle)",
+    bx && bx[0] - 1100 >= 0 && bx[0] + 1100 <= 3200 && bx[1] - 1600 >= 0 && bx[1] + 1600 <= 17800 && SBGeom.placeBox(strip, 1700, 1700) === null);
+  const buf = SBGeom.bufferPolylines([[0, 0, 10000, 0]], 100);
+  check("AT-14 bufferPolylines makes a square-capped band around an open path", Math.abs(SBGeom.area(buf) - 10200 * 200) <= 4 &&
+    SBGeom.isEmpty(SBGeom.difference(buf, [{ outer: [-100, -100, 10100, -100, 10100, 100, -100, 100], holes: [] }])));
+  const order = require("./modules.js").NODE_MODULES;
+  check("T0.2 strokefont.js sits directly after support.js", order.indexOf("strokefont.js") === order.indexOf("support.js") + 1);
+  // implementer additions (E9 open details)
+  const all = SBFont.strokes("0123456789", 6000);
+  check("EXP-03 every digit has strokes; advance 6 units, last glyph 4 units wide", all.wUm === 6000 * 58 / 6 && all.paths.length === 13 &&
+    SBFont.CHARSET === "0123456789" && Object.isFrozen(SBFont));
+  check("EXP-03 the second glyph is advanced by 6 units", (() => { const t = SBFont.strokes("1", 600), u = SBFont.strokes("11", 600); return u.paths[1].join() === t.paths[0].map((v, i) => i % 2 ? v : v + 600).join(); })());
+  check("EXP-03 empty string → no paths, zero width", (() => { const e = SBFont.strokes("", 3000); return e.paths.length === 0 && e.wUm === 0 && e.hUm === 3000; })());
+  check("EXP-03 non-integer height refused", (() => { try { SBFont.strokes("1", 2500.5); return false; } catch (e) { return true; } })());
+  check("ASM-03 placeBox on empty input gives null", SBGeom.placeBox([], 100, 100) === null);
+  check("ASM-03 placeBox is deterministic", SBGeom.placeBox(crescent, 900, 700).join() === SBGeom.placeBox(crescent, 900, 700).join());
+  check("ASM-03 placeBox box lies inside a non-convex L", (() => {
+    const L = [{ outer: [0, 0, 10000, 0, 10000, 2000, 2000, 2000, 2000, 10000, 0, 10000], holes: [] }];
+    const c = SBGeom.placeBox(L, 900, 900); if (!c) return false;
+    const box = [{ outer: [c[0] - 900, c[1] - 900, c[0] + 900, c[1] - 900, c[0] + 900, c[1] + 900, c[0] - 900, c[1] + 900], holes: [] }];
+    return SBGeom.isEmpty(SBGeom.difference(box, L)); })());
+  check("AT-14 bufferPolylines joins a closed ring (no square caps): an outer band of a square ring", (() => {
+    const b = SBGeom.bufferPolylines([[0, 0, 4000, 0, 4000, 4000, 0, 4000, 0, 0]], 100);
+    return b.length === 1 && b[0].holes.length === 1 && Math.abs(SBGeom.area(b) - (4200 * 4200 - 3800 * 3800)) <= 4; })());
+  check("AT-14 bufferPolylines refuses a non-integer half width", (() => { try { SBGeom.bufferPolylines([[0, 0, 10, 0]], 0.5); return false; } catch (e) { return true; } })());
+  check("AT-14 bufferPolylines unions overlapping paths", (() => {
+    const b = SBGeom.bufferPolylines([[0, 0, 1000, 0], [500, 0, 1500, 0]], 50); return b.length === 1 && Math.abs(SBGeom.area(b) - 1600 * 100) <= 4; })());
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

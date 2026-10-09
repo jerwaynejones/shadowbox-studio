@@ -859,6 +859,56 @@
     if (delta === 0) return C.normalize(polys);
     return fromPaths(L().inflatePaths(toPaths(polys), delta, jt, L().EndType.Polygon, 2.0));
   };
+  const translate = (polys, dx, dy) => polys.map((p) => ({
+    outer: p.outer.map((v, i) => v + (i % 2 ? dy : dx)),
+    holes: (p.holes || []).map((h) => h.map((v, i) => v + (i % 2 ? dy : dx))),
+  }));
+  /**
+   * placeBox (alpha.3 E9, ASM-03): the centre [x, y] of an axis-aligned box of half-extents hx × hy that lies
+   * inside polys, or null. By offsets, not a grid: Er = the intersection of the four corner translates of polys
+   * (every centre whose four corners are inside; a superset of the exact box erosion), candidates = the distinct
+   * vertices of Er sorted by y then x (at most 64), and the first whose box passes isEmpty(difference(box, polys)).
+   */
+  G.placeBox = function (polys, hx, hy) {
+    if (!Number.isInteger(hx) || !Number.isInteger(hy) || hx < 0 || hy < 0) throw new Error("SBGeom.placeBox: half-extents must be non-negative integer µm (got " + hx + ", " + hy + ")");
+    if (!polys || !polys.length || C.isEmpty(polys)) return null;
+    let er = translate(polys, -hx, -hy);
+    for (const [dx, dy] of [[hx, -hy], [-hx, hy], [hx, hy]]) { er = G.intersection(er, translate(polys, dx, dy)); if (C.isEmpty(er)) return null; }
+    er = C.normalize(er);
+    if (C.isEmpty(er)) return null;
+    const seen = new Set(), cand = [];
+    for (const p of er) for (const r of [p.outer].concat(p.holes || [])) for (let i = 0; i < r.length; i += 2) {
+      const k = r[i] + "," + r[i + 1]; if (!seen.has(k)) { seen.add(k); cand.push([r[i], r[i + 1]]); }
+    }
+    cand.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+    for (const [x, y] of cand.slice(0, 64)) {
+      const box = [{ outer: [x - hx, y - hy, x + hx, y - hy, x + hx, y + hy, x - hx, y + hy], holes: [] }];
+      if (C.isEmpty(G.difference(box, polys))) return [x, y];
+    }
+    return null;
+  };
+  /** interiorPoint (E9): a square of half-side c contains the disk of radius c, so the clearance is ≥ c. */
+  G.interiorPoint = (polys, clearanceUm) => G.placeBox(polys, clearanceUm, clearanceUm);
+  /**
+   * bufferPolylines (E9, AT-14): the band of half-width halfUm around flat polylines, miter joins (limit 2.0).
+   * Open paths get square caps (EndType.Square); a path whose last vertex equals its first is a closed ring and
+   * is offset as one (EndType.Joined), so no cap pokes past an acute corner. Unioned and normalized.
+   */
+  G.bufferPolylines = function (paths, halfUm) {
+    if (!Number.isInteger(halfUm) || halfUm <= 0) throw new Error("SBGeom.bufferPolylines: halfUm must be a positive integer µm (got " + halfUm + ")");
+    const C2 = L(), open = [], closed = [];
+    for (const f of paths || []) {
+      if (!f || f.length < 4) continue;
+      const n = f.length, ring = n >= 6 && f[0] === f[n - 2] && f[1] === f[n - 1];
+      const m = ring ? n - 2 : n, pts = new Array(m / 2);
+      for (let i = 0; i < m; i += 2) pts[i / 2] = { x: f[i], y: f[i + 1] };
+      (ring ? closed : open).push(pts);
+    }
+    const a = open.length ? C2.inflatePaths(open, halfUm, C2.JoinType.Miter, C2.EndType.Square, 2.0) : [];
+    const b = closed.length ? C2.inflatePaths(closed, halfUm, C2.JoinType.Miter, C2.EndType.Joined, 2.0) : [];
+    if (!a.length && !b.length) return [];
+    return C.normalize(fromPaths(C2.union(a, b, NZ())));
+  };
   /** One entry per connected part; point contact counts as separate (D3). Asserts the D3 postcondition. */
   G.components = function (polys) {
     const u = G.union(polys, []);
