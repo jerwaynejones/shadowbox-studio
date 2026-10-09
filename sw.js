@@ -20,7 +20,7 @@
 "use strict";
 
 // Keep this string in sync with APP_VERSION in js/app.js on every release.
-const VERSION = "2.0.0-alpha.3";
+const VERSION = "2.0.0-alpha.4";
 const CACHE = "shadowbox-studio-v" + VERSION;
 
 // The complete app shell. Relative paths keep the app working from a project

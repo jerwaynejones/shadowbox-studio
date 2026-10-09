@@ -2656,7 +2656,7 @@ suite("engine.js — connected export through the canonical path (DEP-04, GEO-02
     /SBEngine\.fabricationFiles\(/.test(bad) && !/SBEngine\.connectedFiles\(/.test(bad) && !/sheetSVG|proofSVG/.test(bad) && !/SBSvg\.(sheetSVG|proofSVG)/.test(app));
   check("G1.7 → G2.12 preview badge retired: the preview is drawn from the canonical polygons (preview.setSnapshot)",
     !(app + html).includes("Draft preview: cut files come from polygons") && /preview\.setSnapshot\(/.test(app));
-  check("DEP-02 release 2.0.0-alpha.3 (APP_VERSION)", /const APP_VERSION\s*=\s*"2\.0\.0-alpha\.3"/.test(app));
+  check("DEP-02 release 2.0.0-alpha.4 (APP_VERSION; alpha.3 until speed round F18)", /const APP_VERSION\s*=\s*"2\.0\.0-alpha\.4"/.test(app));
   const cl = fs.readFileSync(path.join(root, "docs/CHANGELOG.md"), "utf8"), sec = (cl.split(/^## v2\.0\.0-alpha\.1\b.*$/m)[1] || "").split(/^## /m)[0];
   check("DEP-04 CHANGELOG v2.0.0-alpha.1 lists the intentional connected-mode changes",
     /frame/i.test(sec) && /CUT/.test(sec) && /SCORE/.test(sec) && /proof/i.test(sec) && /0\.05 mm/.test(sec) && /holes/i.test(sec) && /label/i.test(sec));
@@ -8030,6 +8030,75 @@ suite("app.js/test/browser.html — speed round F16a browser harness and in-app 
     const t = H.format(rec); return F16_FIVE.every((id, i) => t.includes(id) && t.includes(j.fixtures[i].serial.geometryHash)) && /PASS/.test(t); })());
 });
 
+// ------------------------------------------------ speed round F18 (final measurement, records and the alpha.4 checkpoint)
+suite("checkpoint v2.0.0-alpha.4 — speed round F18 final measurement, records and docs (PO-PERF-1..5, S2, S5, F-D6)", async () => {
+  const root = path.join(__dirname, ".."), rd = (f) => fs.readFileSync(path.join(root, f), "utf8");
+  const ver = (s, re) => (s.match(re) || [])[1];
+  const app = rd("js/app.js"), sw = rd("sw.js"), wk = rd("js/worker.js");
+  // ---- release label (F.9 Q10): alpha.4, engine version unchanged (F.3)
+  check("F18 release 2.0.0-alpha.4: APP_VERSION, sw.js VERSION and WORKER_APP_VERSION agree (F.9 Q10, DEP-02)",
+    ver(app, /const APP_VERSION = "([^"]+)"/) === "2.0.0-alpha.4" && ver(sw, /const VERSION = "([^"]+)"/) === "2.0.0-alpha.4" &&
+    ver(wk, /const WORKER_APP_VERSION = "([^"]+)"/) === "2.0.0-alpha.4");
+  check("F18 engine version unchanged by the speed round (F.3: no SBSchema.ENGINE.version change)",
+    SBSchema.ENGINE.version === "1.0.0-dev" && SBEngine.VERSION === "1.0.0-dev");
+
+  // ---- docs
+  const cl = rd("docs/CHANGELOG.md"), sec = (cl.split(/^## v2\.0\.0-alpha\.4\b.*$/m)[1] || "").split(/^## /m)[0];
+  check("F18 CHANGELOG v2.0.0-alpha.4 is the top release and summarises PO-PERF-1..5 and the deviations F-D1..F-D6",
+    cl.search(/^## v2\.0\.0-alpha\.4\b/m) >= 0 && cl.search(/^## v2\.0\.0-alpha\.4\b/m) < cl.search(/^## v2\.0\.0-alpha\.3\b/m) &&
+    [1, 2, 3, 4, 5].every((n) => new RegExp("PO-PERF-" + n + "\\b").test(sec)) && [1, 2, 3, 4, 5, 6].every((n) => new RegExp("F-D" + n + "\\b").test(sec)));
+  check("F18 CHANGELOG v2.0.0-alpha.4 names the worker pool, the serial fallback, DRAFT_COARSER and the 720 px draft decision",
+    /SBPool/.test(sec) && /coordinator/i.test(sec) && /fallback/i.test(sec) && /DRAFT_COARSER/.test(sec) && /720/.test(sec) && /bit-identical/i.test(sec));
+  check("F18 CHANGELOG v2.0.0-alpha.4 has a known-gaps table (S2 browser measurement, M5, NFR-04 working set, KI-B1, KI-CONN-PERF, packaging on main)",
+    /known gaps/i.test(sec) && /^\|.*\|\s*$/m.test(sec) && /M5/.test(sec) && /NFR-04/.test(sec) && /KI-B1/.test(sec) && /KI-CONN-PERF/.test(sec) && /packag/i.test(sec));
+  check("F18 CHANGELOG has no Unreleased section above v2.0.0-alpha.4",
+    !/^## Unreleased\b/m.test(cl.slice(0, Math.max(0, cl.search(/^## v2\.0\.0-alpha\.4\b/m)))));
+  const arch = rd("docs/ARCHITECTURE.md"), as = (arch.split(/^## Speed round \(Appendix F\): worker architecture.*$/m)[1] || "").split(/^## /m)[0];
+  check("F18 ARCHITECTURE documents the worker architecture (runSteps, sync and async drivers, coordinator, helpers, SBPool, handshake, ladder, ledger, cancel)",
+    as.length > 0 && /runSteps/.test(as) && /generateAsync/.test(as) && /SBEngine\.generate/.test(as) && /coordinator/i.test(as) && /helper/i.test(as) &&
+    /SBPool/.test(as) && /modulesHash/.test(as) && /Blob/.test(as) && /fallback/i.test(as) && /estBytes/.test(as) && /acceptResult/.test(as) &&
+    /draftCapPx/.test(as) && /watchdog/i.test(as) && /WORKER_MODULES/.test(as));
+  const qa = rd("docs/QA_CHECKLIST.md"), qs = (qa.split(/^## Worker pool and responsiveness.*$/m)[1] || "").split(/^## /m)[0];
+  check("F18 QA_CHECKLIST has the manual speed-round checks (page responsive during fabrication, Cancel, file:// dist, fallback notice)",
+    qs.length > 0 && /responsive/i.test(qs) && /Cancel/.test(qs) && /file:\/\//.test(qs) && /dist/.test(qs) && /fallback/i.test(qs) && /^- \[ \]/m.test(qs));
+
+  // ---- bench: user12 with --pool 0,1,8 (S2), the 25 Mpx memory row (F-D6)
+  const B = require("./bench.js");
+  check("F18 bench poolList parses --pool 0,1,8 and refuses junk, negatives and repeats",
+    typeof B.poolList === "function" && JSON.stringify(B.poolList("0,1,8")) === "[0,1,8]" &&
+    ["", "x", "1,-1", "1,1", "0,1.5"].every((s) => { try { B.poolList(s); return false; } catch (e) { return true; } }));
+  const U = B.USER12, f25 = U && U.extraRows && U.extraRows.fab25;
+  const tiny = { pixels: new Uint8Array(64 * 48 * 4).fill(128), channels: 4, w: 64, h: 48, alpha: null };
+  const plan25 = f25 ? (() => { const p = B.user12Project(tiny); p.geometry.targetMM = f25.targetMM;
+    return SBEngine.rasterPlan(p, { w: f25.w, h: f25.h }, "fabrication", "desktop").geometry; })() : null;
+  check("F18 user12 fab25 memory row: an alpha.3 scene whose fabrication raster is within 0.5 % of the 25 Mpx desktop fabPxBudget (F-D6)",
+    !!plan25 && f25.w * f25.h <= SBSchema.limits("desktop").maxSourcePx && plan25.rasterW * plan25.rasterH <= SBSchema.limits("desktop").fabPxBudget &&
+    plan25.rasterW * plan25.rasterH >= 0.995 * SBSchema.limits("desktop").fabPxBudget && !("fab25" in U.rows));
+  check("F18 user12 final defaults: pools 0,1,8, rows draft720/fab3600/fab4096, 1 warm-up + 3 runs",
+    !!U && !!U.final && JSON.stringify(U.final.pools) === "[0,1,8]" && JSON.stringify(U.final.rows) === JSON.stringify(["draft720", "fab3600", "fab4096"]) &&
+    U.final.warm === 1 && U.final.runs === 3);
+  const fin = typeof B.benchUser12Final === "function" ? await B.benchUser12Final({ quick: true, pools: [0, 2], rows: ["draft720", "fab4096"], record: false }) : null;
+  const rowOf = (id, P) => fin && fin.rows[id] && fin.rows[id]["pool" + P];
+  check("F18 benchUser12Final (quick): a row per pool size with p50/p95, stages, raster and geometryHash, sync driver for 0 and SBPool otherwise",
+    !!fin && ["draft720", "fab4096"].every((id) => [0, 2].every((P) => { const r = rowOf(id, P);
+      return r && r.status === "done" && r.pool === P && r.runs === 1 && r.p50Ms > 0 && r.p95Ms >= r.p50Ms && typeof r.geometryHash === "string" &&
+        /×/.test(r.raster) && r.stagesP50Ms && Object.keys(r.stagesP50Ms).length > 0 && (P ? /SBPool/.test(r.driver) : /sync driver/.test(r.driver)); })));
+  check("F18 benchUser12Final: pooled geometryHash equals the sync driver's for every row (S1 bit-identity carried into the measurement)",
+    !!fin && fin.equal && fin.equal.draft720 === true && fin.equal.fab4096 === true && rowOf("fab4096", 2).geometryHash === rowOf("fab4096", 0).geometryHash);
+  check("F18 benchUser12Final memory: process RSS and arrayBuffers peaks (Node) on every row; the coordinator estBytes ledger peak and budget on pooled rows (F-D6)",
+    !!fin && ["draft720", "fab4096"].every((id) => [0, 2].every((P) => { const r = rowOf(id, P), m = r && r.memory;
+      return m && m.rssPeakMB > 0 && m.arrayBuffersPeakMB >= 0 && m.samples > 0 && (P ? r.ledger && r.ledger.peakLedgerMB > 0 && r.ledger.budgetMB > 0 && r.ledger.itemsHelper > 0 : r.ledger === null); })));
+
+  // ---- the record
+  const sr = JSON.parse(rd("docs/perf/speed-round.json")), F = sr.final;
+  check("F18 speed-round.json final: measured rows for pools 0,1,8, or a pending record naming the command and the interim evidence",
+    !!F && F.task === "F18" && (F.status === "measured"
+      ? ["draft720", "fab3600", "fab4096"].every((id) => F.rows[id] && [0, 1, 8].every((P) => F.rows[id]["pool" + P] && F.rows[id]["pool" + P].p95Ms > 0))
+      : F.status === "pending" && /large --only user12 --pool 0,1,8/.test(F.command) && F.interim && F.interim.length >= 2 && typeof F.reason === "string"));
+  check("F18 speed-round.json final records the KI-B1 B1 re-run (p95 against the 2 s budget, still tracked) and KI-CONN-PERF as reported-only",
+    !!F && F.kiB1 && F.kiB1.p95Ms > 0 && F.kiB1.budgetMs === 2000 && typeof F.kiB1.tracked === "boolean" && F.kiConnPerf && /report/i.test(F.kiConnPerf.status));
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {
@@ -8182,5 +8251,6 @@ suite("CHANGELOG — checkpoint v2.0.0-alpha.3 (R9, PO-PREVIEW-1..7)", () => {
   check("R9 CHANGELOG has no empty-handed Unreleased section above v2.0.0-alpha.3 (items moved into the release)",
     !/^## Unreleased\b/m.test(cl.slice(0, cl.search(/^## v2\.0\.0-alpha\.3\b/m))));
   const sw = fs.readFileSync(path.join(__dirname, "..", "sw.js"), "utf8");
-  check("DEP-02 sw.js VERSION is 2.0.0-alpha.3 (cache name follows the release)", /const VERSION\s*=\s*"2\.0\.0-alpha\.3"/.test(sw));
+  check("DEP-02 sw.js VERSION follows the release (2.0.0-alpha.4 since speed round F18; cache name follows it)", /const VERSION\s*=\s*"2\.0\.0-alpha\.4"/.test(sw));
 });
+

@@ -459,3 +459,77 @@ the whole corpus are `deepEqualStrict`).
 | `js/hash.js`, `js/schema.js` | pure | SHA-256 copies `H0` per call; schema tables are read-only. |
 
 Consequence for the pool: no module needs a per-call reset hook; a helper realm may run any sequence of items.
+
+## Speed round (Appendix F): worker architecture
+
+Plan Appendix F (F9–F16, v2.0.0-alpha.4; PO-PERF-1, NFR-02, NFR-05). `SBEngine.generate` runs off the page in a
+coordinator worker that fans the per-layer and per-adjacent-pair stages out to helper workers. The engine version is
+unchanged: every response is bit-identical to the serial engine for every pool size and completion order, pinned by the
+F0 golden corpus, the F12 adversarial executor (20 seeds, pool sizes 0–8) and the F16 browser equality checks.
+
+**One pipeline, two drivers (F9).** `run()` is the generator `runSteps`. At every parallel point it yields a batch
+`{kind, items, transfer, cost, estBytes, resident}` and folds the results in item order in its own body, so no fold
+sees scheduling or completion order (diagnostics concatenation, part ids and `supportGraph` edges stay in item
+order). Each item names a kernel in the frozen `SBEngine.TASKS` table: `constructLayer`, trace and `convertLayer`,
+`supportPair`, `featureLayer`, the guide `buildPair`/`validatePair`, layer hashes, and the row-band raster kernels
+(`SBRaster.resampleRows`, `kuwaharaRows` on seeded SAT rows that are byte-equal to the global SAT). Two drivers
+resume it:
+
+- the **sync driver**, `SBEngine.generate(req, opts)` (unchanged signature): every item inline in index order. Node
+  tests, the bench and the page's serial fallback use it;
+- the **async driver**, `SBEngine.generateAsync(req, {exec, …})`: `exec.map(kind, items, opts)` runs a batch anywhere
+  and resolves with the results in item order. Errors: a batch settles completely, then the error of the lowest
+  `(phase, item index)` is raised verbatim; pool-infrastructure failures re-run the item inline and are never shown.
+
+Kernels never write into or alias their arguments (deep-frozen and checksummed in a sync-driver test mode). Runtime
+inputs are explicit request fields (`deviceClass`, `overlays`, `draftCapPx`), never read from the realm (F-D5): the
+pooled page and the fallback differ only through `draftCapPx`, which is part of the raster and so of `geometryHash`.
+
+**Workers (F11, F13).** `js/worker.js` is one file with two roles, picked by the worker's name. It loads
+`WORKER_MODULES` (the 24 modules of `test/modules.js`, the page list minus the DOM modules) and computes their
+content hash `modulesHash`.
+
+- The **coordinator** (`sb-coord`) owns the stored source (posted once per `sampleHash` as a transferred copy), the
+  draft stage cache (K1/K2) and one run at a time; a new `generate` cancels the current run. It runs
+  `generateAsync` with an `exec` that dispatches items to admitted helpers: largest cost first (`SBEngine.lptOrder`,
+  dispatch order only), admitted by one `estBytes` ledger (`SBEngine.memoryLedger`: the coordinator's resident set at
+  the yield + the result held on main + in-flight items ≤ the budget, at least one item always admitted; budget
+  `SBEngine.memoryBudget`: `min(1 GiB, deviceMemory · 128 MiB)` desktop, 512 MiB without `deviceMemory`, 192 MiB
+  mobile). Raster kernels run one row band per admitted helper. Item arguments are cloned to helpers (a lost helper's
+  item re-runs inline on the coordinator's copy); only buffers the step allocated and nothing else references are
+  transferred (`SBEngine.checkTransfers`). A canceled or failed run never writes K1/K2.
+- **Helpers** (`sb-helper-<id>`) run `SBEngine.TASKS[kind](…args)` for items posted on their `MessagePort` and
+  transfer result buffers back; they keep nothing between items. A helper is admitted only after its `hello` carries
+  the coordinator's `modulesHash`, on every spawn and respawn.
+
+**Main thread (`SBPool`, F11–F16).** `js/pool.js` (a DOM module loaded before `app.js`) spawns the coordinator and
+P = `clamp(hardwareConcurrency − 1, 1, cap)` helpers (cap 8 desktop, 4 mobile), brokers one `MessageChannel` per helper
+and checks the coordinator's `hello` (engine version, app version, `modulesHash`). `pool.submit(req, …)` acknowledges
+in a microtask (NFR-02), reports `progress`, and settles with `{runId, gen, sampleHash, overlays, deviceClass, status,
+response}`; the page shows a result only through `SBDiag.acceptResult` (keyed by the unique `runId`, plus `gen`,
+`sampleHash`, `overlays` and `deviceClass`) and its own revision check, so a superseded draft is never painted.
+Responses are deep-frozen again on receipt (no polygon codec: the 12 Mpx receipt costs ≈ 34 ms in Node).
+
+**Cancel and watchdog (F14, F-D2).** Cooperative first: a cancel or a superseding submit posts `cancel` and, where the
+page can share memory, sets a shared `Int32Array` flag that the coordinator's long serial kernels (cumulative masks,
+the Kuwahara SAT scan, the complexity gate) poll every 64 rows. If the coordinator has not answered within 300 ms the
+**watchdog** terminates it, promotes a warm spare coordinator, re-posts the source, re-brokers the same helpers and
+resubmits the other runs; the next draft is then cold. A helper stuck in an abandoned item is replaced from a warm spare
+helper.
+
+**Ladder and fallback (F15, F16).** `SBPool.ladder` picks the rungs: the URL worker (`js/worker.js`) for `index.html`
+over http(s); a **Blob** worker for the single-file `dist/` bundle on any scheme, built from the module texts that
+`build.js` inlines once each (`<script data-sbmod>`, plus `worker.js` as `text/sb-worker`). A rung counts as up only
+after its `hello`; a failed rung is retried once. With no rung left (`index.html` from `file://`, a refused Blob
+worker, version skew) the page runs the **serial fallback**: `regenerateFallback`/`fabFallback` call the sync driver in
+rAF + `setTimeout` with `draftCapPx: limits.draftPxFallback` (720) and show the "reduced responsiveness" notice.
+Packaging (`buildAndDeliver`) and image decode stay on the main thread (F-D4).
+
+**Version skew (F10, F-D3).** `sw.js` precaches `js/worker.js` and `js/pool.js` with the page and no longer calls
+`skipWaiting()` on install; a new version activates only after the user accepts the "Update available — reload" offer,
+so page, coordinator and helpers always come from one cache version (R7).
+
+**Measurement.** `node test/bench.js large --only user12 --pool 0,1,8` (per pool size p50/p95, geometryHash equality,
+Node RSS/arrayBuffers peaks and the coordinator's `estBytes` ledger peak), `bench draft --draft-sweep … --pool N`, the
+browser harness `test/browser.html?run` and the in-app `?bench=fab|draft|cancel`; records in `docs/perf/speed-round.json`
+and `docs/perf/draft-budget.json`.

@@ -13,6 +13,7 @@
  *     node test/bench.js draft --draft-sweep 720,1280,1536,1792,2000 --pool 8 [--record]   (speed round F17, see benchDraftSweep)
  *     node test/bench.js draft-decide   (F17: the F.7 rule over docs/perf/draft-budget.json f17 → decision)
  *     node test/bench.js large --only user12 [--guides …] [--runs N] [--rows draft720,fab3600,fab4096] [--record] [--quick]
+ *     node test/bench.js large --only user12 --pool 0,1,8 [--rows draft720,fab3600,fab4096,fab25] [--runs N] [--record]   (speed round F18, see benchUser12Final)
  *
  * Speed round F2 (S5, PO-PERF-5): every engine-driven row (draft, fabrication, user12) carries a per-stage table
  * derived from the SBEngine.generate onProgress marks (stageDurations: a stage lasts until the next different mark,
@@ -420,7 +421,27 @@ function largeRow(wl, samples, src, opt) {
 const USER12 = {
   src: [4096, 3084], fabPitchMM: 0.1, guides: "inset-outline", runs: 3,
   rows: { draft720: { quality: "draft", draftPx: 720, w: 4096, h: 3084 }, fab3600: { quality: "fabrication", w: 3600, h: 2700 }, fab4096: { quality: "fabrication", w: 4096, h: 3084 } },
+  // Speed round F18 (F-D6): the 25 Mpx memory row, run only when named in --rows. 5770 × 4330 stays under the desktop
+  // maxSourcePx (25 MP); 433 mm high at 0.1 mm gives a 5770 × 4330 fabrication raster (≈ 24.98 Mpx, the fabPxBudget).
+  extraRows: { fab25: { quality: "fabrication", w: 5770, h: 4330, targetMM: 433 } },
+  // F18 Step 1 (S2, S5): `large --only user12 --pool 0,1,8` → benchUser12Final; 1 warm-up + 3 measured runs per row and pool size.
+  final: { pools: [0, 1, 8], rows: ["draft720", "fab3600", "fab4096"], warm: 1, runs: 3, sampleMs: 25 },
 };
+
+/** A user12 row spec by id (USER12.rows, then USER12.extraRows). */
+function user12Spec(id) {
+  const spec = USER12.rows[id] || USER12.extraRows[id];
+  if (!spec) throw new Error("unknown user12 row " + id);
+  return spec;
+}
+
+/** "0,1,8" → [0, 1, 8]: non-negative integers, no repeats (the --pool list of `large --only user12`). */
+function poolList(s) {
+  const out = String(s === undefined ? "" : s).split(",").map((x) => (/^\d+$/.test(x.trim()) ? +x.trim() : NaN));
+  if (!out.length || out.some((n) => !Number.isInteger(n) || n < 0) || new Set(out).size !== out.length)
+    throw new Error("--pool takes a list of distinct non-negative integers, e.g. 0,1,8 (got " + JSON.stringify(s) + ")");
+  return out;
+}
 
 /** The user12 project on source px: draftProject("a") settings, applyFabPitch(USER12.fabPitchMM), guides (default inset-outline). */
 function user12Project(px, guides) {
@@ -447,9 +468,9 @@ function benchUser12() {
   const probe = { overlayMs: 0, guidesBuild: 0, guidesValidate: 0 }, unprobe = installGuideProbe(probe);
   try {
     for (const id of ids) {
-      const spec = USER12.rows[id];
-      if (!spec) throw new Error("unknown user12 row " + id);
+      const spec = user12Spec(id);
       const w = Math.round(spec.w / div), h = Math.round(spec.h / div), px = alpha3Rgba(w, h), p = user12Project(px, guides), t0 = performance.now();
+      if (spec.targetMM) p.geometry.targetMM = spec.targetMM;
       if (spec.draftPx) p.geometry.draftPx = QUICK ? Math.round(spec.draftPx / div) : spec.draftPx;
       const runs = [];
       for (let i = 0; i < runsN; i++) runs.push(draftPass(p, px, spec.quality, null, probe));
@@ -476,11 +497,114 @@ function benchUser12() {
   return report;
 }
 
-function benchLarge() {
+/**
+ * One timed user12 run for benchUser12Final: through `pool` (SBPool) or, when null, the sync driver (SBEngine.generate,
+ * no cache). `id` is the run's source identity (sampleHash): a fresh one per run keeps every run cold in the pool's K1/K2
+ * cache, and the same id sequence for every pool size keeps the geometryHash comparable. Memory is sampled at every
+ * progress mark and every USER12.final.sampleMs (the event loop is free only while the pool runs): process RSS (the
+ * whole process, worker threads included) and arrayBuffers/heapUsed (the main isolate).
+ */
+async function user12FinalPass(pool, p0, px, id, quality, probe) {
+  const E = SBEngine, seq = [], q = JSON.parse(JSON.stringify(p0));
+  q.source.sampleHash = id;
+  const mem = { rss: 0, ab: 0, heap: 0, samples: 0 }, sample = () => { const m = process.memoryUsage();
+    mem.rss = Math.max(mem.rss, m.rss); mem.ab = Math.max(mem.ab, m.arrayBuffers); mem.heap = Math.max(mem.heap, m.heapUsed); mem.samples++; };
+  const onProgress = (st) => { seq.push([typeof st === "string" ? st : st.stage, performance.now()]); sample(); };
+  if (typeof global.gc === "function") global.gc();
+  probe.guidesBuild = 0; probe.guidesValidate = 0;
+  const req = E.request(q, px, { quality, requestId: quality + "-" + q.revision, deviceClass: "desktop" });
+  sample();
+  const timer = setInterval(sample, USER12.final.sampleMs), t0 = performance.now();
+  let res;
+  try {
+    if (pool) {
+      pool.setSource(Object.assign({ sampleHash: id }, px));
+      const r = await pool.submit(req, { sampleHash: id, gen: 1, overlays: true, onProgress }).done;
+      res = r.response || { status: r.status };
+    } else res = E.generate(req, { onProgress });
+  } finally { clearInterval(timer); }
+  const ms = performance.now() - t0;
+  sample();
+  if (res.status !== "done") throw new Error("user12 " + quality + " run: " + res.status + " " + (res.error ? res.error.code + " " + res.error.message : ""));
+  const stages = stageDurations(seq, t0, t0 + ms);
+  if (!pool && "guides" in stages) { stages["guides.build"] = probe.guidesBuild; stages["guides.validate"] = probe.guidesValidate; }
+  const g = res.snapshot.geometry;
+  return { ms, stages, geometryHash: res.geometryHash, raster: g.rasterW + "×" + g.rasterH, mpx: +(g.rasterW * g.rasterH / 1e6).toFixed(2),
+    maxPartsPerLayer: Math.max(0, ...res.snapshot.layers.map((L) => L.parts.length)), mem };
+}
+
+/**
+ * Speed round F18 Step 1/1a (S2, S5, F-D6): `node test/bench.js large --only user12 --pool 0,1,8 [--rows …,fab25]
+ * [--runs N] [--record]`. Per row and pool size: a fresh pool (pool 0 = the sync driver), USER12.final.warm warm-ups
+ * plus `runs` measured runs, each with a fresh source identity (no cache), p50/p95/max, stage p50s (guides.build/
+ * validate only for the sync driver: helper realms are not probed), geometryHash (equal across pool sizes, `equal`),
+ * memory peaks and, pooled, the coordinator stats (estBytes ledger peak and budget, items run on helpers/inline).
+ * --record writes docs/perf/speed-round.json `final` (status "measured"). o overrides the flags for the test:
+ * {quick, pools, rows, runs, warm, guides, record}.
+ */
+async function benchUser12Final(o = {}) {
+  const os = require("os"), quick = o.quick !== undefined ? !!o.quick : QUICK, div = quick ? 8 : 1;
+  const pools = o.pools || poolList(arg("--pool")), ids = o.rows || (arg("--rows") ? arg("--rows").split(",") : USER12.final.rows);
+  const runsN = quick ? 1 : (o.runs !== undefined ? o.runs : +arg("--runs", USER12.final.runs)), warmN = quick ? 0 : (o.warm !== undefined ? o.warm : USER12.final.warm);
+  const guides = o.guides || arg("--guides", USER12.guides), MB = (b) => +(b / 1048576).toFixed(1);
+  const report = { stage: "large", workload: "user12", mode: "final", quick, pools, node: process.version, v8: process.versions.v8, cpu: os.cpus()[0].model,
+    threads: os.cpus().length, memGiB: +(os.totalmem() / 2 ** 30).toFixed(1), loadAvgStart: os.loadavg().map((x) => +x.toFixed(2)), rows: {}, equal: {} };
+  const probe = { overlayMs: 0, guidesBuild: 0, guidesValidate: 0 }, unprobe = installGuideProbe(probe);
+  try {
+    for (const id of ids) {
+      const spec = user12Spec(id), w = Math.round(spec.w / div), h = Math.round(spec.h / div), px = alpha3Rgba(w, h), p = user12Project(px, guides);
+      if (spec.targetMM || quick) p.geometry.targetMM = (spec.targetMM || p.geometry.targetMM) / div;   // quick: a small fabrication raster too
+      if (spec.draftPx) p.geometry.draftPx = quick ? Math.round(spec.draftPx / div) : spec.draftPx;
+      const base = p.source.sampleHash.slice(0, 56);
+      report.rows[id] = {};
+      for (const P of pools) {
+        const t0 = performance.now(), pool = P ? await sweepPool(P) : null, runs = [];
+        let cs = null;
+        try {
+          for (let i = 0; i < warmN + runsN; i++) {
+            const r = await user12FinalPass(pool, p, px, base + (0xf1800000 + i).toString(16), spec.quality, probe);
+            if (i >= warmN) runs.push(r);
+          }
+          if (pool) cs = await pool.stats();
+        } finally { if (pool) pool.terminate(); }
+        const st = stats(runs.map((r) => r.ms)), r0 = runs[0], peak = (k) => Math.max(...runs.map((r) => r.mem[k]));
+        const row = { pool: P, driver: P ? "SBPool (coordinator + " + P + " helpers, worker threads)" : "sync driver (SBEngine.generate)",
+          source: w + "×" + h, quality: spec.quality, raster: r0.raster, mpx: r0.mpx, guides, status: "done", code: null,
+          runs: st.n, warmUps: warmN, p50Ms: st.p50Ms, p95Ms: st.p95Ms, maxMs: st.maxMs, runsMs: runs.map((r) => +r.ms.toFixed(1)),
+          stagesP50Ms: stageP50(runs.map((r) => r.stages)), geometryHash: r0.geometryHash, maxPartsPerLayer: r0.maxPartsPerLayer,
+          memory: { rssPeakMB: MB(peak("rss")), arrayBuffersPeakMB: MB(peak("ab")), heapUsedPeakMB: MB(peak("heap")), samples: runs.reduce((a, r) => a + r.mem.samples, 0) },
+          ledger: cs ? { peakLedgerMB: MB(cs.peakLedger), budgetMB: MB(cs.budgetBytes), maxInFlight: cs.maxInFlight, bands: cs.bands,
+            itemsHelper: cs.itemsHelper, itemsInline: cs.itemsInline } : null,
+          wallS: +((performance.now() - t0) / 1000).toFixed(1), loadAvg: os.loadavg().map((x) => +x.toFixed(2)) };
+        if (runs.some((r) => r.geometryHash !== r0.geometryHash)) throw new Error("user12 " + id + " pool " + P + ": geometryHash differs between runs");
+        report.rows[id]["pool" + P] = row;
+        console.error(`[user12 final] ${id} pool ${P} ${row.raster}: p50 ${row.p50Ms} p95 ${row.p95Ms} ms (n ${row.runs}), rss ≤${row.memory.rssPeakMB} MB, ` +
+          `arrayBuffers ≤${row.memory.arrayBuffersPeakMB} MB${row.ledger ? ", ledger peak " + row.ledger.peakLedgerMB + " MB" : ""}, ${row.wallS} s wall`);
+      }
+      report.equal[id] = new Set(pools.map((P) => report.rows[id]["pool" + P].geometryHash)).size === 1;
+    }
+  } finally { unprobe(); }
+  report.loadAvgEnd = os.loadavg().map((x) => +x.toFixed(2));
+  if (!quick && (o.record !== undefined ? o.record : argv.includes("--record"))) {
+    updateSpeedRound((j) => {
+      const prev = j.final || {};
+      j.final = { task: "F18", status: "measured", machine: report.cpu + " (" + report.threads + " threads, " + report.memGiB + " GiB), node " + report.node,
+        method: "node test/bench.js large --only user12 --pool " + pools.join(",") + ": per row and pool size a fresh pool (0 = the sync driver), " + warmN +
+          " warm-up + " + runsN + " runs, each with a fresh source identity (no cache); stage p50 from the onProgress marks; memory = process RSS (worker threads " +
+          "included) and arrayBuffers (main isolate) peaks sampled every " + USER12.final.sampleMs + " ms and at every mark; ledger = coordinator stats (estBytes " +
+          "ledger peak, admission budget)", pools, loadAvgStart: report.loadAvgStart, loadAvgEnd: report.loadAvgEnd,
+        rows: Object.assign({}, prev.status === "measured" ? prev.rows : {}, report.rows), equal: Object.assign({}, prev.status === "measured" ? prev.equal : {}, report.equal),
+        kiB1: prev.kiB1, kiConnPerf: prev.kiConnPerf, browser: prev.browser };
+    });
+  }
+  return report;
+}
+
+async function benchLarge() {
   const only = arg("--only") ? arg("--only").split(",") : null;
   if (only && only.includes("user12")) {
     if (only.length > 1) throw new Error("--only user12 runs alone (it is an SBEngine.generate workload, not a LARGE_WORKLOADS row)");
-    return benchUser12();
+    return arg("--pool") !== undefined ? benchUser12Final() : benchUser12();
   }
   const div = QUICK ? 8 : 1;
   const list = LARGE_WORKLOADS.filter((wl) => !only || only.includes(wl.id))
@@ -1255,7 +1379,7 @@ async function main() {
     const r = require("child_process").spawnSync(process.execPath, ["--expose-gc", __filename, ...argv], { stdio: "inherit" });
     process.exit(r.status === null ? 1 : r.status);
   }
-  const report = stage === "draft" && arg("--draft-sweep") ? await benchDraftSweep() : STAGES[stage]();
+  const report = stage === "draft" && arg("--draft-sweep") ? await benchDraftSweep() : await STAGES[stage]();
   report.heapUsedMB = +(process.memoryUsage().heapUsed / 1048576).toFixed(0);
   report.rssMB = +(process.memoryUsage().rss / 1048576).toFixed(0);
   for (const [k, v] of Object.entries(report)) console.log(k + ":", JSON.stringify(v));
@@ -1267,5 +1391,5 @@ async function main() {
     process.exit(1);
   }
 }
-module.exports = { stageDurations, benchDraft, benchDraftSweep, F17, decideDraftF17, USER12, user12Project, DRAFT, decideDraft, LARGE_WORKLOADS, LARGE, TRACKED_LARGE, LARGE_SHORTENED, CAPS, decideLarge, decideCaps, gateLarge, knownOverLarge, largeRowFromSummary, largeMethodKind };
+module.exports = { stageDurations, benchDraft, benchDraftSweep, F17, decideDraftF17, USER12, user12Project, user12Spec, poolList, benchUser12Final, DRAFT, decideDraft, LARGE_WORKLOADS, LARGE, TRACKED_LARGE, LARGE_SHORTENED, CAPS, decideLarge, decideCaps, gateLarge, knownOverLarge, largeRowFromSummary, largeMethodKind };
 if (MAIN) main().catch((e) => { console.error(e); process.exit(1); });

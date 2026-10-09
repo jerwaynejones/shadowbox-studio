@@ -150,3 +150,27 @@ Use a 4096 × 3084 colour PNG under Plywood (bonded) unless a step says otherwis
       the clip and the views return to the draft.
 - [ ] Reload the identical file: the clip stays valid. Change a setting or load a different file: the clip is
       `REPAIR_STALE` and its link opens the draft clip dialog.
+
+## Worker pool and responsiveness (PO-PERF-1/2/3, NFR-02, AT-15, speed round F15–F18)
+
+- [ ] `index.html` over http, 4096 × 3084 colour PNG, Plywood, 300 mm, fabrication pitch 0.1 mm: Preview at
+      fabrication resolution shows the progress bar and stage label; while it runs the page stays responsive
+      (scroll, open the diagnostics panel, switch views) with no "page not responding" prompt, and it finishes in
+      about 10 s or less on the i7 (record the time).
+- [ ] During that run, Cancel fabrication run stops it within about half a second ("fabrication run canceled"); the
+      draft stays on screen and the next draft edit is fast (warm cache).
+- [ ] Edit a setting (sheets 8 → 7) while a fabrication run is in flight: the status reads "fabrication restarted",
+      the old result is never shown, and the fabrication preview re-runs once the new draft is in.
+- [ ] Drag a slider quickly several times: only the last edit's draft is painted; the draft never flickers back to an
+      older result.
+- [ ] `dist/shadowbox-studio.html` opened from `file://` in Chromium and in Firefox: no fallback notice, drafts and the
+      fabrication preview run with progress (Blob worker); the fabrication `geometryHash` in the review header equals
+      the one from `index.html` over http for the same file and settings.
+- [ ] `index.html` opened from `file://`: the notice "Background processing is unavailable; the preview runs on the
+      page (reduced responsiveness)." is shown, the busy estimate appears before a fabrication run, and the result
+      matches the pooled one at fabrication quality (same `geometryHash`).
+- [ ] After deploying a new version over http, reload once: the status bar offers "Update available — reload" only
+      while nothing is unsaved and no export or fabrication run is in flight; accepting it reloads into the new
+      version (page and workers on the same version, no version-skew notice).
+- [ ] Optional measurement: `?bench=fab` (and `&download`) in Chromium on the i7 records p50/p95 and the long-task
+      maximum (target ≤ 100 ms) for docs/perf/speed-round.json `final`.

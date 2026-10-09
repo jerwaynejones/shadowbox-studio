@@ -1,5 +1,77 @@
 # Changelog
 
+## v2.0.0-alpha.4 — 2026-10-09, speed round (worker pool)
+
+A speed round before G3 (plan Appendix F), asked for by the product owner after the alpha.3 test: the fabrication
+preview of the user's 12 Mpx bonded colour illustration took about 28 s and froze the page. The G4.1 worker pool is
+pulled forward, the hot kernels are faster on one thread, and the draft no longer blocks on a fabrication-only
+sampling rule. Every change is **bit-identical** to the serial engine (whole response minus timing, including
+`geometryHash`, `layerHashes` and the diagnostics order) for every pool size and completion order, except the
+intentional S4 diagnostic change below. The engine version (`1.0.0-dev`) is unchanged; the release label is
+`2.0.0-alpha.4` (`APP_VERSION`, `sw.js` `VERSION`, `WORKER_APP_VERSION`). It is still not SRS-compliant (plan R9).
+
+- **PO-PERF-1, the engine runs off the main thread (F9–F16).** `SBEngine.generate` is a generator (`runSteps`) that
+  yields a batch at every parallel point and folds the results in item order; the sync driver (`SBEngine.generate`,
+  unchanged signature) and the async driver (`SBEngine.generateAsync`) call the same kernels from the frozen
+  `SBEngine.TASKS` table. In the page, `SBPool` runs one coordinator worker plus up to 8 helper workers (4 on mobile):
+  construct, trace and conversion, support pairs, feature checks, guides, layer hashes and the row-band area resample
+  and Kuwahara kernels run in parallel, in a fixed merge order. Helpers are admitted only after a `hello` with the
+  same engine version, app version and build-time `modulesHash`. Results are accepted by `runId` (`SBDiag.acceptResult`),
+  so a stale draft is never shown. The page shows a progress bar and stage label; the fabrication preview has a Cancel
+  button, and an edit restarts an in-flight fabrication ("fabrication restarted"). `dist/` runs the pool from a Blob
+  worker built from the inlined module texts; when no worker can start (`index.html` from `file://`, a refused Blob
+  worker) the app runs the serial fallback with the notice "Background processing is unavailable; the preview runs on
+  the page (reduced responsiveness).", at the 720 px draft cap.
+- **PO-PERF-2, the 12 Mpx fabrication preview.** Serial (the fallback): 25.3 s → 12.0 s p50 on the i7 in Node after
+  the single-thread work (F3–F8). Pooled with 8 helpers: 8.8 s in one Node run after F11 (12.9 s serial in the same
+  session), 8.5 s p50 on the realistic bench art at 12 Mpx (19.6 s with the sync driver, F17); the page's longest
+  main-thread block during a pooled 12 Mpx run was 13.5 ms in Node. The final `bench large --only user12 --pool 0,1,8`
+  record and the Chromium figure (`?bench=fab`) are pending (`docs/perf/speed-round.json` `final`).
+- **PO-PERF-3, the draft budget re-measured with the pool (F17).** No candidate in {1280, 1536, 1792, 2000} reaches
+  warm p95 ≤ 2.5 s in both Chromium and Firefox on the i7 (Chromium realistic 1280: 2657 ms), so the desktop draft
+  stays at **720 px** for both presets. The pooled 720 px draft is 1548 ms warm p95 in Chromium (alpha.3: 3.8 s serial in
+  Node). Mobile and the fallback keep 720 through the explicit request field `draftCapPx` (F-D5). The fabrication
+  estimate uses 720 ms/Mpx pooled and 1640 ms/Mpx in the fallback. A project at 720 px would be offered a raised
+  default once, applied only on the user's click; the offer is inert while the decision is 720.
+- **PO-PERF-4, sampling judged at the fabrication pitch (F1, F-D1).** `SAMPLING_LOW` is judged on the fabrication
+  raster plan at both qualities, so a plywood draft no longer blocks on a draft-only shortfall; it reports the new info
+  `DRAFT_COARSER` ("Draft sampling is below 3 samples per minimum feature"; the minimum feature is checked at the
+  fabrication pitch). A coarse
+  fabrication pitch still blocks. Draft diagnostics and their acknowledgements change; no hash changes.
+- **PO-PERF-5, measured stages and faster kernels (F2–F8).** The bench reports every stage, the guide stage (stage 14)
+  split into build and validate, at draft and fabrication. Single-thread kernels, each with a verbatim oracle and a
+  byte-equality test: streaming exact area resample in row bands (no 393 MB `rows` buffer at 12 Mpx), branch-free
+  `windowAny` with fused erode/dilate and fused dilations, run-based hole filling and speck removal, a Kuwahara interior
+  fast path and a band kernel that rebuilds SAT rows byte-equal to the global SAT from a seed row, a typed corner table in
+  `T.trace`, and draft change overlays cropped to the change box. KI-B1 (B1 p95 1990 ms against 2 s, 2026-10-09) and
+  KI-CONN-PERF stay tracked.
+- **Updates (F10, F-D3).** The service worker no longer activates a new version on its own: the status bar offers
+  "Update available — reload" when nothing is unsaved and no export or fabrication run is in flight. `js/worker.js` and
+  `js/pool.js` are precached.
+- **Deviations.** F-D1 (sampling at the fabrication pitch), F-D2 (cooperative cancel first, `terminate()` after 300 ms),
+  F-D3 (only the minimal G4.0 lands), F-D4 (packaging stays on the main thread), F-D5 (the draft cap depends on the
+  runtime through `draftCapPx`), F-D6 (the NFR-04 working set is measured and recorded, not yet inside 512 MiB).
+- **Tests and tools.** A pool-equality golden corpus (F0, `test/golden/pool-equality.json`), an adversarial
+  completion-order executor over 20 seeds (F12), a Node worker shim (`test/node_worker_shim.js`), a browser harness
+  (`test/browser.html?run`), in-app `?bench=fab|draft|cancel`, `bench draft --draft-sweep … --pool N` and
+  `bench large --only user12 --pool 0,1,8` (per pool size: p50/p95, geometryHash equality, Node RSS/arrayBuffers and the
+  coordinator's `estBytes` ledger peak).
+
+### Known gaps (alpha.4)
+
+| Area | Gap in alpha.4 | Arrives in |
+|---|---|---|
+| S2 record | The final `bench large --only user12 --pool 0,1,8` run, the 25 Mpx memory row and the Chromium `?bench=fab` p95 and long-task maximum are not yet recorded; the 10 s target is supported by single-run and realistic-art figures only | measurement run (F18), G4.4 |
+| MacBook Air M5 | Neither the draft decision nor the fabrication figures have been measured on the M5 (`draft-budget.json` `decision.m5` pending) | G4.4 |
+| Draft size | Still 720 px: guides are about half of the warm draft, and the per-pair guide item and other F18 candidates are not applied | G4.4 |
+| Working set (NFR-04) | The estimated working set at 12–25 Mpx exceeds 512 MiB (serial 12 Mpx Node RSS 588 MB); the pool admits work through one `estBytes` ledger but fabrication resolution is never lowered (F-D6) | G4.4 |
+| Cancel without shared memory | On ordinary `file://`/http pages (no cross-origin isolation) a coordinator inside a long serial kernel is stopped by the 300 ms watchdog, so the next draft after such a cancel is cold | — (by design, F-D2) |
+| Packaging | ZIP and SVG packaging still run on the main thread (F-D4) | G4.1 |
+| KI-B1 | The B1 geometry benchmark sits at the 2 s budget (p95 1990 ms in one run); `SBGeom` normalize work is not done | G4.4 |
+| KI-CONN-PERF | Connected mode with smooth corners is still slow; the pool helps the per-layer stages only, and the `smoothStack` barrier stays serial | G4.1/G4 |
+| Update UI | Only the user-gated update offer; the cache and update status UI of G4.0 is not built | G4.0 |
+| Everything listed for alpha.3 | Labels, registration holes, `.sbrproj`, manifest and layout, settings re-import, presets, calibration are unchanged from alpha.3 | see alpha.3 |
+
 ## v2.0.0-alpha.3 — 2026-10-09, real-engine preview and bonded alignment
 
 A patch round before G3 (plan Appendix E), triggered by the alpha.2 user test on the target setup (xTool S1 40 W

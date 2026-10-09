@@ -489,5 +489,74 @@
   },
   "codecDecision": "No Int32Array polygon codec: the receipt path of the largest fabrication response (deserialize + deepFreeze) is 34 ms in Node, under the 50 ms rule (F.2, F-R7); x1.2 for Chromium gives ~41 ms. setSnapshot and the preview render are DOM work and are measured in the browser by F16a (?bench=fab with SBPool.longTasks()).",
   "gate": "Phase B gate (plan F.6, after F11): fabrication runs in the coordinator with any pool size (P = 0 and 2 in the F11 tests, P = 8 in this run); in Node the main thread's longest event-loop block during the 12 Mpx pooled run is 13.5 ms. The in-app browser figure (PerformanceObserver longtask) needs the F15 app wiring and is recorded by F16a."
+ },
+ "final": {
+  "task": "F18",
+  "status": "pending",
+  "command": "node test/bench.js large --only user12 --pool 0,1,8 --record  (then: --pool 0,8 --rows fab25 --runs 1 --record for the 25 Mpx memory row; in-app ?bench=fab in Chromium on the i7 for the S2 browser figure, the long-task maximum and the estBytes ledger peak)",
+  "reason": "The F18 commit adds the measurement (bench.js benchUser12Final: --pool list, per-pool rows, geometryHash equality, process RSS/arrayBuffers peaks and the coordinator estBytes ledger peak) but does not run it: the run instructions for this task exclude the long large-image benchmark. A separate measurement run fills `final` (status becomes \"measured\"; --record keeps kiB1, kiConnPerf and browser).",
+  "interim": [
+   {
+    "source": "speed-round.json phaseA.fab4096 (serial, after F3-F8)",
+    "p50Ms": 11996,
+    "rssMB": 588,
+    "note": "sync driver, user12 12 Mpx; Node process RSS at the end of the row"
+   },
+   {
+    "source": "speed-round.json phaseB.fab4096 (F11, before F13 banding)",
+    "pooledWallMs": 8794,
+    "serialMs": 12879,
+    "geometryHashEqual": true,
+    "note": "one pooled run, coordinator + 8 helpers, user12 12 Mpx"
+   },
+   {
+    "source": "draft-budget.json f17.node.pool8/pool0 fabRows (realistic art, 3985×3000)",
+    "pool8P50Ms": 8503.3,
+    "pool0P50Ms": 19571.6,
+    "note": "bench realistic family, not the alpha.3 scene; 1 cold + 3 runs"
+   },
+   {
+    "source": "draft-budget.json f17.browser chromium-i7, 720 px",
+    "note": "pooled warm draft p95 1548 ms (realistic) in Chromium; S3 decision stays 720 (no candidate ≤ 2.5 s)"
+   }
+  ],
+  "s2": {
+   "rule": "pooled fab4096 p95 ≤ 10 s in Chromium on the i7 (stretch ≈ 5 s); longest main-thread task ≤ 100 ms",
+   "status": "pending",
+   "node": "interim evidence 8.5–8.8 s pooled (single or p50 figures, not p95)",
+   "chromium": "pending (?bench=fab)"
+  },
+  "step2": "F18 Step 2 candidates (single-pass cumulative masks, per-layer complexity estimation, one item per guide pair, helper-side layer caches or the Int32Array codec) are not applied: the plan applies them only when the measured pooled p95 > 10 s or a serial stage > 1 s is on the critical path, and that profile is part of the pending run.",
+  "kiB1": {
+   "metric": "B1 (8 layers × ~50k vertices, 14 adjacent differences)",
+   "command": "node test/bench.js geom --no-fail",
+   "runs": 15,
+   "p50Ms": 1904.2,
+   "p95Ms": 1989.6,
+   "maxMs": 1989.6,
+   "budgetMs": 2000,
+   "tracked": true,
+   "loadAvgStart": [
+    3.35,
+    6.55,
+    6.31
+   ],
+   "loadAvgEnd": [
+    4.03,
+    5.69,
+    6.01
+   ],
+   "date": "2026-10-09",
+   "note": "Under the 2 s budget in this run by 10 ms (≈ 0.5 %), inside run-to-run variance (2.14 s p95 when KI-B1 was opened). No SBGeom normalize change landed in this round, so TRACKED.B1 stays until G4.4's normalize work; B3b dense p95 1109 ms (budget 3 s), B4 feature checks p95 3115 ms (reported)."
+  },
+  "kiConnPerf": {
+   "status": "reported only (non-goal of the speed round, F.1)",
+   "note": "connected mode runs through the same pool (per-layer construct, trace except the smoothStack barrier, pairs); the `bench large --caps desktop` connected rows were not re-run in this commit (long large-image benchmark). Last recorded figures stay in docs/perf/large-image.json (TRACKED_LARGE.connected)."
+  },
+  "memory": {
+   "rule": "F-D6: record the estBytes ledger peak (browser) and process RSS + arrayBuffers (Node) at 12 Mpx and 25 Mpx",
+   "status": "pending (benchUser12Final rows fab4096 and fab25)",
+   "interim": "serial user12 12 Mpx: Node process RSS 588 MB at the end of the row (phaseA); the ledger peak is not yet measured at scale"
+  }
  }
 }

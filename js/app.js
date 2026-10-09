@@ -21,7 +21,7 @@
   // Single source of truth for the visible version. The service worker keeps
   // its own matching cache-version string (sw.js); bump both together on every
   // release so users can confirm at a glance which build they are running.
-  const APP_VERSION = "2.0.0-alpha.3";
+  const APP_VERSION = "2.0.0-alpha.4";
 
   // ------------------------------------------------------------------ state
   const PALETTES = {
