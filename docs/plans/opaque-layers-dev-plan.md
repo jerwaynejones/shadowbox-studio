@@ -2681,6 +2681,14 @@ Each task below is fully specified. It is expanded into step-level TDD before ex
 | **G3.10** Two-phase export, delivery states and bed check | **Phase 1:** freeze the current revision and generate at fabrication quality (worker). **Phase 2:** open the review panel scoped to that fab snapshot's `geometryHash`. It lists blocking items, unacknowledged warnings and any `REPAIR_REVIEW_FAB`, and the user acknowledges the warnings there. **Phase 3:** package only if `exportGate(fabDiags, acks, fabSnapshot, "fabrication").allowed`. Any edit during phases 1–2 marks the result stale and cancels. Export is disabled while stale, processing or blocked. **Diagnostic-only package:** `<title>_NOT-READY-TO-CUT_diagnostic.zip` contains `project.sbrproj`, `validation.json`, `manifest.json` and `proof/` but **no `cuts/`**; its README states it is not for cutting. `deliverFile` (`app.js:449`) returns `"generated"`, `"handed-off"`, `"canceled"` or `"failed"`. The machine envelope check (`PAGE_OVERFLOW`, `MACHINE_THICKNESS`; G2.10a, from `project.machine`, either orientation) is blocking, so the gate refuses the cut package and offers only the diagnostic package; nothing is rescaled. | `SBDiag.exportGate` (G2.2); `SBPackage.buildDiagnostic(...)`; `SBPackage.deliveryState(event)`; `SBSupport.checkEnvelope(page, machine, material)` (G2.10a) | `EXP-07 blocking → disabled`; `EXP-07 draft acks do not satisfy fab gate`; `EXP-07 fab warnings acked in fab review → allowed`; `AT-15 diagnostic-only package has no cuts/ entries and is labelled NOT READY TO CUT`; `EXP-08 share AbortError → canceled, project intact`; `GEO-10/PO-LASER-2 page > machine area (w or h) blocks export, no rescale` | EXP-07, EXP-08, GEO-10, LYR-06, NFR-09 |
 | **G3.11** Autosave and recovery | Debounced `.sbrproj` written to IndexedDB through an injectable storage adapter, with a recovery prompt. On quota or private-mode failure, show a persistent "Unsaved" badge and a "Download project" button. Wire the result of the existing `navigator.storage.persist()` call (`app.js:656`, `:679`) into the autosave status ("storage may be cleared"). | `SBProject.autosave(store, project)`, where `store` is `{put, get}` | `PRJ-05 quota error → unsaved flag + download offered` (fake store throws `QuotaExceededError`); `PRJ-05 persist() false → status shows non-persistent storage` | PRJ-05 |
 
+
+**Pulled forward into the alpha.3 patch round (Appendix E, product owner 2026-10-08).** Parts of four G3 tasks land before G3 starts; G3 completes them and keeps its named checks:
+- **G3.1** — stage 14 only: `SBGuides.build`/`validate` inside `generate`, score paths in `layerHash`, labels and omissions in `guideHash`, `GUIDE_UNCONTAINED` as a bug guard (E10, E11). Stage 10 registration holes stay with G3.4.
+- **G3.2** — `SBGeom.interiorPoint` and `js/strokefont.js` with the digits `0-9` only (E9). The full charset, deleting `legacyTextLabel` and the connected-sheet stroke label stay in G3.2.
+- **G3.3** — `inset-outline` and a position-only `interior-mark` cross for bonded mode, the scored sheet number, `GUIDE_OMITTED`/`ALIGN_CLEARANCE_ZERO`, the Appendix B defaults (E10). Part-ID labels, the rotation tick, `part.guideRefs` and SUP-05 invalidation stay in G3.3 (alpha.3 rebuilds guides on every generate).
+- **G3.5** — `SBSvg.placementMapSVG` as `placement_map.svg` in the flat layout, and the bonded `SBDocs.assembly` text (E11, E13). The printable map layout under §9.4 stays with G3.5/G3.9.
+- G3.4 (registration holes), G3.6–G3.11 are not pulled forward.
+
 **G3 exit:** AT-14 to AT-17 and the AT-22 import subset are green. A sample package is checked into `docs/samples/` for review. Release `2.0.0-beta.1`.
 
 ## 10. Phases G4 (hardening) and G5 (fabrication release)
@@ -2953,3 +2961,853 @@ Recorded as D6 item 12 in `docs/ARCHITECTURE.md`; results in `docs/perf/LARGE_IM
 - **Busy rows are evidence, not gates:** 2k–8k parts/layer → 35–163 s bonded at 4–16 Mpx, so cost is driven by part count, not pixels.
 - **G2.7b done (2026-10-08):** the caps are desktop 258 parts/layer, 132,000 vertices/layer and 356,000 vertices (measured), and mobile 100 / 20,000 / 20,000 (SRS). Simplification is explicit (`construction.cleanup.simplify`), and busy rows now fail explicitly or run simplified within the target. See the G2.7b result; the mobile vertex cap is kept (decided 2026-10-08, mobile limited to simpler art).
 - **Plan change:** the complexity caps and busy-art simplification (formerly G4.3: per-device part/vertex caps, merging or dropping tiny parts, clear diagnostics) move into G2 as **G2.7b**, scheduled right after the support task G2.7 (D.4). The **G4.1 worker pool** is the other mitigation and may still be pulled earlier if performance blocks progress.
+
+### D.10 alpha.3 patch round (product owner, 2026-10-08)
+
+The alpha.2 user test on the target setup (xTool S1 40 W diode + feeder, 1/4" basswood/poplar ply, colour illustrations, bonded relief) triggered an alpha.3 patch round **before G3**; the plan is **Appendix E**. It adds `PO-PREVIEW-1` to `PO-PREVIEW-7` and amends **PO-LASER-4**: the draft is no longer "about 720 px on the long side" but the measured `draftPx` of `docs/perf/draft-budget.json` with a per-device `draftPxCap` (E4). G3 tasks pulled forward into alpha.3: **G3.1** (stage 14 only), **G3.2** (interior point and digits), **G3.3** (inset-outline, position-only interior-mark, sheet numbers) and **G3.5** (placement map file and bonded assembly text); details in the note under the §9 G3 table. G3.4 and G3.6–G3.11 are unchanged. The G4.1 worker pool is not pulled forward; main-thread blocking during draft and fabrication preview is an accepted alpha.3 gap.
+
+## Appendix E — alpha.3 patch round
+
+**v2.0.0-alpha.3 (real-engine preview, bonded alignment) Implementation Plan**
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Make every on-screen preview come from `SBEngine.generate` in the selected mode at draft quality, add an explicit fabrication-resolution preview, a preset selector that accepts colour illustrations under Plywood, early source-resolution diagnostics, concealed alignment guides and sheet labels for bonded relief, re-reviewable draft repairs at fabrication, and bonded-aware export extras. Release as `2.0.0-alpha.3`.
+
+**Architecture:** One request builder (`SBEngine.request`) makes the draft and the fabrication request from the same project, whose `source` record is installed once at intake, so the two runs differ only in `quality` and the `rasterPlan` raster. The app keeps the full-size source pixels once per load (`run.src`) and a caller-owned stage cache (`run.draftCache`) so a warm draft skips orient, resample and Kuwahara. Everything the user sees (Proof, Section, Layers cards, Tilt, overlays, diagnostics, state badge, clip dialog, preview.png) reads one shown result, `run.shown`, which is either the draft run or the fabrication run. Guides and sheet labels are built inside `generate` (stage 14), so draft and fabrication show the same guides through the same code.
+
+**Tech Stack:** Plain ES2020 classic-script IIFEs, no npm; Node built-ins for tests (`node test/run_tests.js`) and build (`node build.js`); Clipper2 through `SBGeom`.
+
+**Spec:** `docs/SRS_Stacked_Relief.md`, this plan (§3, §9 G3, Appendices B–D), and the product-owner request of 2026-10-08 recorded in E.1 below.
+
+### E.0 Why this round exists (findings verified against the code, 2026-10-08)
+
+The alpha.2 user test (xTool S1 40 W diode + feeder, 1/4" basswood/poplar ply, colour Midjourney illustrations upscaled to about 4096 × 3084, bonded relief) found the preview "terrible". Read-only audits confirmed the causes. Every reference below was re-checked against the tree at `94de073`:
+
+1. **The draft is the v1.1 pipeline.** `regenerate` (`js/app.js:127-189`) scales the source on a canvas to `draftPx` (`js/app.js:139-147`) and calls `SBEngine.legacyRun` (`js/app.js:154`), which always uses `SBConstruct.connected` (`js/engine.js:47`) on the 19-key `SBSchema.legacyState` view (`js/app.js:67`, `js/schema.js:684`). Bonded projects are previewed with connected construction (bridges, Kuwahara, ≈0.55 mm/px at 720 px). The deferred view (`buildView`, `js/app.js:241-275`) adds `legacyView`, `legacyDiagnostics`, `legacySnapshotHash` and `legacyCleanupReport`. Only export calls `SBEngine.generate` (`fabReview`, `js/app.js:818-842`).
+2. **Draft-accepted clips block export.** The app never assigns `project.source` (it stays `null`, `js/schema.js:354`; `acceptSource` at `js/app.js:1319-1329` records only `run.sourceRoute/sourceW/sourceH`). `SBSupport.applyClip` stores `keyHash = hashJSON(geometryKey(project))` with `source: null` (`js/support.js:414-417, 447`). `SBEngine.fabricationRequest` installs a full source record into `config` (`js/engine.js:674-685`), and `replayRepairs` compares `keyHash` against `ctx.project` = that config (`js/support.js:476`). The keys differ, so every draft clip becomes `REPAIR_STALE` (blocking, `js/diag.js:98`) instead of the intended `REPAIR_REVIEW_FAB` warning (`js/support.js:487-495`). The existing repair tests (`test/run_tests.js` G2.9/G2.13d suites) start from projects that already carry a source, so they miss it.
+3. **`generate` is uncached and synchronous.** Each call re-orients and re-resamples the full source (`js/engine.js:523-536`); `SBRaster.cacheKey` (`js/raster.js:392-397`) is never called. Measured on the i7-11800H (12.6 Mpx bonded tonal, r4 p2): 720 px ≈ 2.6–3.6 s, 1536 px ≈ 6–7 s, 2048 px ≈ 8.8–10.2 s (2048 is outside the schema range `draftPx` 64–2000, `js/schema.js:531`). At 720 px, orient + resample are ≈1.6 s (45 %); construct grows fastest with raster size.
+4. **Plywood refuses colour sources.** The plywood preset is height mode (`js/schema.js:364-380`, PRJ-01). JPEG is refused at preflight (`HEIGHT_NEEDS_PNG`, `js/schema.js:261`); a colour palette PNG at `SBPng.check` (`PNG_PALETTE`); a truecolour PNG only at decode (`PNG_UNEQUAL_RGB`, `js/png.js:313-317`, surfaced at `js/app.js:1251`). The app still starts on Acrylic (`js/app.js:38`) although plan Q13 asks for Plywood.
+5. **Source-resolution diagnostics exist but are hidden.** Preflight already computes `FAB_EXCEEDS_SOURCE`/`FAB_PITCH_CAPPED` (`js/schema.js:236-246`), but `loadFile` shows only `EXIF_AMBIGUOUS` (`js/app.js:1256`).
+6. **Bonded sheets carry no alignment.** Stage 14 is `const guides = null` (`js/engine.js:631`); stage 10 holes are `legacyHoles`, `[]` in bonded (`js/engine.js:422-430`); bonded fabrication SVGs have no label. `layerSVG` already writes `layer.scorePaths` into the SCORE group (`js/svgout.js:140`), and `SBGeom.layerHashes` already hashes score paths into `layerHash` only (`js/geom.js:771-807`). All guide diagnostics are registered (`GUIDE_UNCONTAINED` `js/diag.js:104`, `GUIDE_OMITTED` `:163`, `ALIGN_CLEARANCE_ZERO` `:171`).
+7. **ASSEMBLY.md and preview.png use the draft.** `buildAssemblyMD` (`js/app.js:700-752`) reads `run.sheets` and `cfg()` with connected wording ("backing (solid)", `:720`); `preview.snapshot("proof")` (`js/app.js:910`) captures whatever draft is on screen while the cut files come from `run.fab.snapshot` (`:906`). `settingsJSON` (`:754-764`) exports only the 19 v1.1 keys.
+8. **No persisted geometry-hash goldens exist.** `test/golden/` holds `legacy_svg.json`, `oldrun.json` and `sheetmasks.json` only. Adding score paths or changing `draftPx` breaks no pinned hash; the drafts' "golden hashes change" risk reduces to the in-suite checks that compute hashes on the fly. The preset check `PO-LASER-4 fab pitch 0.1 mm, draft 720` (`test/run_tests.js:2918`) is the one literal that must be retargeted.
+
+Baseline before this round: `node test/run_tests.js` → **1423 passed, 0 failed** (2026-10-08).
+
+### E.1 Goals and traceability
+
+Requirements the SRS already states keep their SRS IDs; product-owner requirements of 2026-10-08 that the SRS does not state are `PO-PREVIEW-n`. This table extends the §1 traceability matrix for alpha.3.
+
+| Goal | ID | Requirement | SRS / PO links | Tasks |
+|---|---|---|---|---|
+| P1 | **PO-PREVIEW-1** | Proof, Section, Layers cards, Tilt, overlays, draft diagnostics and the state badge come from `SBEngine.generate` at quality `"draft"` in the selected interpretation and construction. The bonded preview never shows bridges. The legacy pipeline is removed from the app; it stays in `js/engine.js` only as the DEP-04 test oracle. Draft resolution is the largest that keeps a warm edit interactive, chosen by measurement and recorded. | LYR-06, UI-05, GEO-08, NFR-05; **amends PO-LASER-4** ("Draft stays about 720 px on the long side") | E1, E2, E3, E4, E5 |
+| P2 | **PO-PREVIEW-2** | "Preview at fabrication resolution" runs the exact fabrication `generate` (same request and hash as export) and shows it in every view; export reuses it while inputs are unchanged. Main-thread freezing is accepted until G4.1 but a busy state is shown first. | LYR-06, UI-05, UI-06 (partial), EXP-05, EXP-07; NFR-02 deviation until G4.1 | E6 |
+| P3 | **PO-PREVIEW-3** | Preset selector (Plywood (bonded), Acrylic (connected)); the app starts on Plywood. A colour source under a height preset switches to Tonal automatically with a visible notice and one-click undo; Height stays for grayscale height maps; no hard refusal for the common case. | PRJ-01, PRJ-02, IMG-01; plan Q13 | E7 |
+| P4 | **PO-PREVIEW-4** | `FAB_EXCEEDS_SOURCE`, `FAB_PITCH_CAPPED` (and every other preflight warning) are shown at load and in the draft diagnostics panel, not only at export. | GEO-06, NFR-04, UI-04; PO-LASER-4/5 | E8 |
+| P5 | **PO-PREVIEW-5** | Bonded relief gets concealed alignment: score guides of layer k+1 on layer k inside the ASM-02 region (Appendix B defaults: inset 0.5 mm, footprint 0.2 mm, allowance 0.5 mm, label height 3 mm), a scored sheet number in a concealed area, an omission diagnostic with the placement map as fallback, and guides in the preview cards. Pulls G3.1 (stage 14 only), G3.2 (digits + interior point), G3.3 (inset-outline, interior-mark) and part of G3.5 (placement map) forward. | ASM-01, ASM-02, ASM-03, ASM-05, EXP-03, GEO-07, AT-13 (sheet labels), AT-14 | E9, E10, E11 |
+| P6 | **PO-PREVIEW-6** | A clip accepted on the draft never hard-blocks export: it replays at fabrication as `REPAIR_REVIEW_FAB` and is re-reviewed in the Fabrication review with Keep (acknowledge, with the fabrication mm² and part counts and the region shown on the fabrication result) or Revert. | SUP-04, LYR-06, EXP-07, UI-04 | E1 (root cause), E12 |
+| P7 | **PO-PREVIEW-7** | Bonded-aware ASSEMBLY.md (glue-up order, thickness, guide and label explanation, placement map, machine and external kerf) built from the fabrication snapshot; settings.json keeps the v1.1 keys and adds a `project` block (modes, thickness, pitch, raster, hash); preview.png renders the exported fabrication result. | ASM-05, EXP-05, EXP-06 (partial), PO-LASER-7 | E6 (preview.png), E13 |
+| C3 | — | Version `2.0.0-alpha.3`, CHANGELOG with a known-gaps table. | DEP-02, R9 | E14 |
+
+### E.2 File structure
+
+| File | Change | Responsibility after this round |
+|---|---|---|
+| `js/engine.js` | Modify | `E.sourceRecord`, `E.request` (draft/fab), `fabricationRequest` as a wrapper; `opts.cache` stage memo; `snapshot.repairsApplied`; `cleanupReport[k].bridged/culled`; `snapshot.page.{frameMM, artWMM, artHMM}`; stage 14 calls `SBGuides.build`; `fabricationFiles` adds `placement_map.svg` for bonded. `legacy*` kept as test oracles only. |
+| `js/schema.js` | Modify | `S.withSource(project, record)`; `LIMITS.*.draftPxCap`; preset `draftPx` from E4; `S.colourSourceSwitch` (auto-tonal patch); `modeChangeDiff` sets `guides.mode` on a switch to bonded; `S.presetDiff`/`S.applyPreset`. |
+| `js/raster.js` | No change | `cacheKey` is reused by E3. |
+| `js/diag.js` | Modify | New info code `SOURCE_COLOR_TONAL`; `GUIDE_OMITTED` joins the `AGGREGATED` set (`js/diag.js:205`). |
+| `js/strokefont.js` | **Create** | `SBFont.strokes(text, heightUm) → {paths: number[][], wUm, hUm}`; digits `0-9` only in alpha.3 (G3.2 completes the charset). |
+| `js/geom.js` | Modify | `SBGeom.interiorPoint(polys, clearanceUm) → [x, y] | null`. |
+| `js/guides.js` | **Create** | `SBGuides.build(layers, cfg, ctx) → {scorePaths[], guides, diagnostics}` and `SBGuides.validate(...)`. |
+| `js/proof.js` | Modify | `SBProof.cutLengthMM(material)`; `cards` marks `omitted`. |
+| `js/svgout.js` | Modify | `SBSvg.placementMapSVG(snapshot, opts)`. |
+| `js/docs.js` | Modify | `SBDocs.assembly(project, fabSnapshot, opts)`; `SBDocs.sourceNotes(warnings)`. |
+| `js/preview.js` | Modify | Draw `layer.scorePaths` on Layers cards (`drawCard` option `scores`); `setSheets`/`maskToCanvas` removed when unused. |
+| `js/app.js` | Modify | `run.src`, `run.draftCache`, `run.shown`; `regenerate` on `generate`; fabrication preview; preset select; auto-tonal intake; load-time notes; guide controls; Fabrication review re-review; `buildAndDeliver` uses the fab snapshot for ASSEMBLY.md and preview.png. |
+| `index.html` | Modify | `#in-preset`, `#btn-fabpreview`, guide controls, two new `<script>` tags. |
+| `sw.js`, `test/modules.js` | Modify | Four-list registration of `strokefont.js` and `guides.js` (order: `… support → strokefont → guides → proof …`, §4). |
+| `test/bench.js` | Modify | New stage `draft`. |
+| `docs/perf/draft-budget.json`, `docs/perf/DRAFT.md` | **Create** | Measured draft budget and rationale. |
+| `test/run_tests.js` | Modify | New alpha.3 suites; retargeted static wiring checks. |
+| `docs/CHANGELOG.md`, `docs/USER_GUIDE.md`, `docs/QA_CHECKLIST.md`, `docs/COMPONENTS.md` | Modify | Release notes, user steps, manual checks, deprecated legacy seams. |
+
+### E.3 Global Constraints
+
+All of the plan's **Global Constraints** section applies. In addition, verbatim for this round:
+
+- No npm, no `package.json`; Node built-ins only. New modules are classic-script IIFEs registered in the four lists in §4 order: `… support → strokefont → guides → proof → svgout …`.
+- Hashed geometry: integer µm, `"miter"` offsets only (Appendix C), no `Math.sin/cos/exp/log/pow/cbrt`; `Math.sqrt`, `Math.hypot` only outside hashed paths (display values such as cut length).
+- Draft and fabrication requests for one project revision must have byte-identical `config` and `normalizedSource`; only `quality` differs (LYR-06).
+- Blocking diagnostics are never downgraded; acknowledgements stay scoped to `geometryHash` (§9.5). `REPAIR_REVIEW_FAB` stays a warning.
+- Bonded never adds bridges (SUP-06); guides are scored, never cut; no live text in any cut file (EXP-03). The placement map is not a cut file.
+- After every task: `node test/run_tests.js` all green; when shipped code (`js/`, `index.html`, `css/`, `sw.js`) changes, `node build.js` and commit `dist/shadowbox-studio.html` with the task. Commit only the task's files. Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. No push, no tags.
+- No copy states laser speed or power, or "ready to cut" while a blocking diagnostic exists.
+
+### E.4 Review Focus
+
+The five inputs most likely to bite the user that no single task's happy-path tests would exercise. Each line has its test added to the owning task.
+
+1. **A colour PNG whose RGB channels are all equal (gray-looking illustration or an RGB-saved height map).** Expected: it stays on the raw Height route under Plywood (it is a valid height map, IMG-01), with no auto-switch notice. Test in E7 (`IMG-01 RGB-equal truecolour PNG under plywood stays height`).
+2. **A clip accepted on the draft, then the source reloaded or a setting changed, then export.** Expected: after a settings change the clip is `REPAIR_STALE` (correct, SUP-04); without one it is `REPAIR_REVIEW_FAB`; reloading the identical file re-installs an identical record (same `sampleHash`, no revision bump) and the clip stays valid; a different file makes it stale. Tests in E1 (`PRJ-02 re-installing an identical source record changes nothing`, `SUP-04 loading a different source makes an earlier clip stale`).
+3. **Tiny or crescent upper parts (narrower than 2·(inset+allowance)+footprint ≈ 2.2 mm).** Expected: no score line on visible material; one aggregated `GUIDE_OMITTED` warning per layer with a count, and the part on the placement map. Test in E10 (`AT-14 crescent/donut/small part`).
+4. **An edit while a draft is generating, or a "Preview at fabrication resolution" click followed by an edit.** Expected: the stale result stays visible and marked Stale, a superseded run never overwrites a newer revision, and the next export regenerates (UI-06). Test in E6 (`UI-06 fab preview of revision r is not shown for r+1`).
+5. **A source smaller than the fabrication raster (the user's 4096 × 3084 on a 470 mm-high page needs 4700 px).** Expected: `FAB_EXCEEDS_SOURCE` visible at load and in the draft panel with the px shortfall, not ackable in the draft panel, ackable in the Fabrication review. Test in E8 (`PO-LASER-5 4096×3084 at 470 mm shows FAB_EXCEEDS_SOURCE at load`).
+
+### E.5 Decisions taken while merging the drafts
+
+Two drafts (fidelity-first, interactivity-first) were judged. The **fidelity draft is the backbone** (one request builder, one shown result, guides inside `generate`, no legacy in the app). Grafted from the interactivity draft: the two-slot stage cache (K1 orient/resample, K2 Kuwahara) and a separate fabrication cache; the paint-before-block veil; range sliders that commit on release; the Fabrication-plan diagnostics group that is not ackable in the draft panel; score paths drawn on Layers cards only (never on the Proof, which shows the visible face); `placement_map.svg` always included for bonded; the bench-recorded rationale with a test pinning the budget. Rejected or deferred:
+
+- **Removing `draftPx` from `geometryKey`** (interactivity P1b): rejected for alpha.3. The device cap goes into `rasterPlan` instead (`min(draftPx, limits(dc).draftPxCap)`), so the project key is the same on every device and repairs do not go stale across devices; nothing else needs the key change.
+- **User "Draft detail" select with a 2.5 Mpx "Fine" option:** deferred (Open question Q2). The fabrication preview is the way to see exact detail; a multi-second freeze per edit is the problem being fixed.
+- **`opts.overlays:false` to skip draft overlay polygons:** kept only as a measurement in E4; it ships only if the overlay polygons are ≥ 15 % of construct time.
+- **Replacing a draft review entry with a fabrication-quality review** (fidelity P6b): deferred. `keyHash` of every later entry covers the earlier entries, so replacing entry i would silently re-key entries i+1…; Keep = acknowledge the `REPAIR_REVIEW_FAB` warning on the fabrication snapshot, which the gate already supports.
+- **Part-ID labels on parts:** deferred to G3.3 (ASM-01 says "optional"); alpha.3 scores the sheet number and the guides, and the placement map carries the part IDs.
+- **Interior-mark rotation tick:** deferred; alpha.3 interior-mark is a position-only cross, inset-outline gives position and rotation.
+
+### E.6 Tasks
+
+Order is binding: E1 → E2 → E3 → E4 → E5 → E6, then E7, E8 (independent of each other, after E5), E9 → E10 → E11, E12 (after E6 and E1), E13 (after E11), E14 last. Each task ends with the full suite green and a commit.
+
+---
+
+#### Task E1: One request builder; the source record is installed at intake (fixes the P6 root cause)
+
+**Files:**
+- Modify: `js/engine.js:666-689` (`fabricationRequest` and its doc comment)
+- Modify: `js/schema.js` (add `S.withSource` after `S.sourceTemplate`, `:406`)
+- Modify: `js/app.js:1286-1329` (`decodeRaw`, `decodeSource`, `acceptSource`), `:818-835` (`fabReview` source read)
+- Test: `test/run_tests.js` — new suite `engine.js/schema.js/app.js — alpha.3 E1 shared request and installed source (LYR-06, SUP-04)` before the report block
+
+**Interfaces:**
+- Produces: `SBEngine.sourceRecord(px: {w, h, channels}, route: {format, decode}, base?: SourceRecord) → SourceRecord` (orientation `{exif: 1, exifAppliedBy: "none", rotate: 0, mirror: false}`); `SBEngine.request(project, px: {pixels, channels: 1|4, w, h, alpha}, {quality, requestId?, deviceClass?}) → GenerateRequest` (uses `project.source` as-is; `config === project` contents, never rewritten); `SBEngine.fabricationRequest(project, px, o)` unchanged signature, now `E.request(withSourceIfMissing, px, {quality: "fabrication", …})`; `SBSchema.withSource(project, record) → project` (clone, `revision + 1` iff `geometryKey` changes).
+- App produces: `run.src = {pixels, channels, w, h, alpha, gen}` (read once per `sourceGen`); `project.source.byteHash`/`sampleHash` are real SHA-256 values (`SBHash.digest`), and `req.sourceHash` = `sampleHash`.
+
+- [ ] **Step 1: Write the failing tests**
+
+```js
+suite("engine.js/schema.js/app.js — alpha.3 E1 shared request and installed source (LYR-06, SUP-04)", () => {
+  const F = require("./fixtures.js"), E = SBEngine, S = SBSchema, SP = SBSupport;
+  check("alpha.3 API present (SBEngine.request, SBEngine.sourceRecord, SBSchema.withSource)",
+    typeof E.request === "function" && typeof E.sourceRecord === "function" && typeof S.withSource === "function");
+  if (typeof E.request !== "function") return;
+  const w = 400, h = 100, px = { pixels: F.ramp(w, h), channels: 1, w, h, alpha: null };
+  const p0 = S.defaults("plywood"); p0.geometry.targetMM = 10;
+  const p = S.withSource(p0, E.sourceRecord(px, { format: "png", decode: "raw-gray8" }));
+  check("PRJ-02 withSource installs the record and bumps the revision", p.source && p.source.w === w && p.revision === p0.revision + 1 && p0.source === null);
+  const d = E.request(p, px, { quality: "draft" }), f = E.request(p, px, { quality: "fabrication" });
+  check("LYR-06 draft and fabrication requests differ only in quality (config and normalizedSource identical)",
+    d.quality === "draft" && f.quality === "fabrication" && JSON.stringify(d.config) === JSON.stringify(f.config) &&
+    d.normalizedSource.pixels === f.normalizedSource.pixels && JSON.stringify(d.config) === JSON.stringify(p));
+  check("LYR-06 fabricationRequest on an installed source does not rewrite config.source",
+    JSON.stringify(E.fabricationRequest(p, px, { format: "png", decode: "raw-gray8" }).config.source) === JSON.stringify(p.source));
+  // The app flow that alpha.2 got wrong: review a clip on a draft generate of the installed project, export at fabrication.
+  const tall = S.defaults("plywood"); tall.geometry.targetMM = 10;
+  const hm = F.heightMap(7, 200, 200), pxh = { pixels: hm, channels: 1, w: 200, h: 200, alpha: null };
+  let q = S.withSource(tall, E.sourceRecord(pxh, { format: "png", decode: "raw-gray8" }));
+  const dr = E.generate(E.request(q, pxh, { quality: "draft" })).snapshot;
+  q = SP.applyClip(q, SP.proposeClip(dr, 1));   // replay raises REPAIR_REVIEW_FAB for any draft review, even an empty clip
+  const fr = E.generate(E.request(q, pxh, { quality: "fabrication" })).snapshot;
+  check("SUP-04 a draft-reviewed clip replays at fabrication as REPAIR_REVIEW_FAB, never REPAIR_STALE",
+    fr.diagnostics.some((x) => x.code === "REPAIR_REVIEW_FAB") && !fr.diagnostics.some((x) => x.code === "REPAIR_STALE"));
+  const warn = fr.diagnostics.filter((x) => SBDiag.CODES[x.code].severity === "warning");
+  const blocking = fr.diagnostics.filter((x) => SBDiag.CODES[x.code].severity === "blocking");
+  check("EXP-07 the clip alone never blocks: no blocking item, and acknowledging the warnings on the fab snapshot allows export",
+    blocking.length === 0 && SBDiag.exportGate(fr.diagnostics, warn.map((x) => SBDiag.ackKey(x, fr.geometryHash)), fr, "fabrication").allowed);
+  const q2 = S.withSource(q, E.sourceRecord({ w: 200, h: 200, channels: 1 }, { format: "png", decode: "raw-gray8" }, Object.assign({}, q.source, { sampleHash: "f".repeat(64) })));
+  check("PRJ-02 re-installing an identical source record changes nothing (same revision)", S.withSource(q, q.source).revision === q.revision);
+  check("SUP-04 loading a different source makes an earlier clip stale, not silently applied",
+    E.generate(E.request(q2, pxh, { quality: "fabrication" })).snapshot.diagnostics.some((x) => x.code === "REPAIR_STALE"));
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8");
+  check("alpha.3 app.js installs the source record on the project at intake (SBSchema.withSource in acceptSource)",
+    /SBSchema\.withSource\(/.test(appSrc.slice(appSrc.indexOf("function acceptSource("), appSrc.indexOf("function acceptSource(") + 2500)));
+});
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `node test/run_tests.js --only "alpha.3 E1"`
+Expected: FAIL at "alpha.3 API present" (suite returns early).
+
+- [ ] **Step 3: Implement**
+
+`js/engine.js` (replace `fabricationRequest` body; keep its doc comment, add the two new docs):
+
+```js
+  E.sourceRecord = function (px, route, base) {
+    const src = Object.assign(global.SBSchema.sourceTemplate(), base ? JSON.parse(JSON.stringify(base)) : {});
+    if (route && route.format) src.format = route.format;
+    if (route && route.decode) src.decode = route.decode;
+    src.w = px.w; src.h = px.h; src.channels = px.channels;
+    src.orientation = { exif: 1, exifAppliedBy: "none", rotate: 0, mirror: false };
+    return src;
+  };
+  E.request = function (project, px, o) {
+    o = o || {};
+    return { requestId: o.requestId === undefined ? o.quality : o.requestId, revision: project.revision, engineVersion: E.VERSION,
+      quality: o.quality, normalizedSource: { pixels: px.pixels, channels: px.channels, w: px.w, h: px.h, alpha: px.alpha == null ? null : px.alpha },
+      sourceHash: project.source ? (project.source.sampleHash || project.source.byteHash) : null, config: project,
+      deviceClass: o.deviceClass === undefined ? "desktop" : o.deviceClass };
+  };
+  E.fabricationRequest = function (project, px, o) {
+    o = o || {};
+    const src = E.sourceRecord(px, o, project.source);
+    const config = JSON.stringify(src) === JSON.stringify(project.source) ? project : Object.assign({}, project, { source: src });
+    return E.request(config, px, { quality: "fabrication", requestId: o.requestId === undefined ? "export" : o.requestId, deviceClass: o.deviceClass });
+  };
+```
+
+`js/schema.js`:
+
+```js
+  S.withSource = function (project, record) {
+    const q = clone(project);
+    q.source = clone(record);
+    if (JSON.stringify(S.geometryKey(q)) !== JSON.stringify(S.geometryKey(project))) q.revision = project.revision + 1;
+    return q;
+  };
+```
+
+`js/app.js`:
+- `decodeSource` returns `{ bitmap, raw }` where `raw` is `decodeRaw`'s result for the raw route (keep 1-channel samples; the canvas `samplesToCanvas` copy is kept only for the source thumbnail/preview background).
+- New `sourcePixels(src)` builds `run.src` once: raw route → `{pixels: raw.samples, channels: raw.channels === 1 ? 1 : 4 …}` (a 3-channel raw RGB is expanded to RGBA once, alpha null when opaque); browser route → the `fabReview` canvas read moved here verbatim (`js/app.js:826-833`).
+- `acceptSource` sets `run.src`, computes `byteHash = await SBHash.digest(bytes)` and `sampleHash = await SBHash.digest(run.src.pixels)` (WebCrypto, `js/hash.js:59`; the schema requires 64-hex values, `js/schema.js:434, 471`), then `commitProject(SBSchema.withSource(project, SBEngine.sourceRecord(run.src, run.sourceRoute, {byteHash, sampleHash})), null)` (the revision bump goes through the normal path) before `regenerate()`. Reloading the identical file yields the identical record: no revision bump, earlier clips stay valid.
+- `fabReview` uses `run.src` and `SBEngine.request(project, run.src, {quality: "fabrication", requestId: "export-" + rev, deviceClass: dc})`.
+- The explicit downsample and the Demo source go through `acceptSource` too, so they install their own records.
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `node test/run_tests.js --only "alpha.3 E1"` → all ✓; then `node test/run_tests.js` → 0 failed (the alpha.2 check "fabricationRequest … p.source === null" still holds because `fabricationRequest` does not mutate its input).
+
+- [ ] **Step 5: Commit**
+
+```bash
+node build.js
+git add js/engine.js js/schema.js js/app.js test/run_tests.js dist/shadowbox-studio.html
+git commit -m "fix(engine,schema,app): one request builder; install the source record at intake so draft clips replay as REPAIR_REVIEW_FAB (alpha.3 E1)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+#### Task E2: Engine payload the UI needs (no hash change)
+
+**Files:**
+- Modify: `js/engine.js:571-580` (cleanupReport), `:604-608` (repairs), `:657-660` (snapshot)
+- Modify: `js/proof.js:96` (`cards`), add `P.cutLengthMM`
+- Test: `test/run_tests.js` — suite `engine.js/proof.js — alpha.3 E2 snapshot payload (UI-05, G2.13d)`
+
+**Interfaces:**
+- Produces: `cleanupReport[k].bridged`, `.culled` (numbers from `built.report[k]`, `js/construct.js:99`); `snapshot.repairsApplied: number[]` (`rp.applied`, `[]` without repairs); `snapshot.page = {wMM, hMM, frameMM, artWMM, artHMM}`; `SBProof.cutLengthMM(material: Polygon[]) → number` (sum of ring perimeters in mm, `Math.hypot`, display only); `SBProof.cards(layers, page)[k].omitted: boolean` (`L.status === "omitted-trailing"`).
+
+- [ ] **Step 1: Write the failing tests**
+
+```js
+suite("engine.js/proof.js — alpha.3 E2 snapshot payload (UI-05, G2.13d)", () => {
+  const F = require("./fixtures.js"), E = SBEngine, S = SBSchema;
+  const px = { pixels: F.heightMap(7, 200, 200), channels: 1, w: 200, h: 200, alpha: null };
+  const p = S.withSource(Object.assign(S.defaults("acrylic"), {}), E.sourceRecord(px, { format: "png", decode: "raw-gray8" }));
+  p.interpretation.mode = "height"; p.interpretation.polarity = "white-high"; p.geometry.widthMM = 60; p.geometry.targetMM = 84;
+  const r = E.generate(E.request(p, px, { quality: "draft" })), s = r.snapshot;
+  check("UI-05 cleanupReport carries bridged and culled per layer", r.status === "done" && s.cleanupReport.every((c) => Number.isFinite(c.bridged) && Number.isFinite(c.culled)));
+  check("G2.13d snapshot.repairsApplied is [] without repairs", Array.isArray(s.repairsApplied) && s.repairsApplied.length === 0);
+  check("§3 snapshot.page carries frameMM and the art size", s.page.frameMM === 12 && s.page.artWMM === s.geometry.artWMM && s.page.artHMM === s.geometry.artHMM);
+  check("NFR-05 the payload additions do not change geometryHash (hash recomputed from its inputs)",
+    s.geometryHash === SBHash.hashJSON({ key: S.geometryKey(p), engine: E.VERSION, quality: "draft", raster: [s.geometry.rasterW, s.geometry.rasterH],
+      layers: s.layers.map((L) => SBGeom.layerHashes(L).layerHash), guides: E.guideHash(s.guides) }));
+  const sq = [{ outer: [0, 0, 10000, 0, 10000, 10000, 0, 10000], holes: [] }];
+  check("display cutLengthMM of a 10 mm square is 40", SBProof.cutLengthMM(sq) === 40);
+  const cards = SBProof.cards([{ index: 0, material: sq, status: "ok" }, { index: 1, material: [], status: "omitted-trailing" }], { wMM: 10, hMM: 10 });
+  check("LYR-01 cards mark omitted-trailing layers", cards[1].omitted === true && cards[0].omitted === false);
+});
+```
+
+- [ ] **Step 2: Run to verify it fails** — `node test/run_tests.js --only "alpha.3 E2"` → ✗ on `bridged`.
+
+- [ ] **Step 3: Implement**
+
+In the `cleanupReport` map add `bridged: r.bridged || 0, culled: r.culled || 0` (use the construct report's field names; read `js/construct.js:99` and map them exactly). Keep `rp` in scope: `let applied = []; if (con.repairs.length) { …; applied = rp.applied; }` and add `repairsApplied: applied` to the snapshot. Snapshot page: `page: { wMM: page.wMM, hMM: page.hMM, frameMM: page.frameMM, artWMM: geo.artWMM, artHMM: geo.artHMM }`. In `proof.js`:
+
+```js
+  P.cutLengthMM = function (material) {
+    let um = 0;
+    const ring = (r) => { for (let i = 0; i < r.length; i += 2) { const j = (i + 2) % r.length; um += Math.hypot(r[j] - r[i], r[j + 1] - r[i + 1]); } };
+    for (const p of material || []) { ring(p.outer); for (const h of p.holes || []) ring(h); }
+    return Math.round(um) / 1000;
+  };
+```
+
+and in `P.cards` set `omitted: L.status === "omitted-trailing"` on each card.
+
+- [ ] **Step 4: Run** — the E2 suite ✓ and the full suite 0 failed.
+- [ ] **Step 5: Commit** — `node build.js`; `git add js/engine.js js/proof.js test/run_tests.js dist/shadowbox-studio.html`; message `feat(engine,proof): repairsApplied, bridged/culled, page art size, cut length, omitted cards (alpha.3 E2)` + trailer.
+
+---
+
+#### Task E3: Caller-owned stage cache in `generate`
+
+**Files:**
+- Modify: `js/engine.js:475-492` (`E.generate` passes `opts.cache` to `run`), `:523-558` (stages 1–4)
+- Test: `test/run_tests.js` — suite `engine.js — alpha.3 E3 stage cache (NFR-05)`
+
+**Interfaces:**
+- Consumes: `req.sourceHash` (= `project.source.sampleHash`, E1), `SBRaster.cacheKey`.
+- Produces: `generate(req, {cache})` where `cache` is a plain object the caller owns; slots `cache.k1 = {key, o, samples, alpha, ch}` (orient + resample) and `cache.k2 = {key, L}` (tonal luminance after Kuwahara). The app owns two: `run.draftCache`, `run.fabCache`.
+
+Keys (strings): `k1 = SBRaster.cacheKey({w: ns.w, h: ns.h, channels: ch, W, H, method: geo.resample, sampleHash: req.sourceHash}) + "|" + JSON.stringify(p.source.orientation) + "|" + interp.mode + "|" + (ns.alpha ? "a" : "-")`; `k2 = k1 + "|" + JSON.stringify(interp.smoothing) + "|" + JSON.stringify(p.source.alpha)`. Without `req.sourceHash` the cache is bypassed (never keyed on pixels identity alone).
+
+- [ ] **Step 1: Write the failing tests**
+
+```js
+suite("engine.js — alpha.3 E3 stage cache (NFR-05)", () => {
+  const F = require("./fixtures.js"), E = SBEngine, S = SBSchema;
+  const w = 300, h = 200, rgba = new Uint8Array(w * h * 4); const g = F.heightMap(3, w, h);
+  for (let i = 0; i < w * h; i++) { rgba[4 * i] = g[i]; rgba[4 * i + 1] = (g[i] * 3) & 255; rgba[4 * i + 2] = 255 - g[i]; rgba[4 * i + 3] = 255; }
+  const px = { pixels: rgba, channels: 4, w, h, alpha: null };
+  const p = S.withSource(S.defaults("plywood"), Object.assign(E.sourceRecord(px, { format: "png", decode: "canvas-tonal" }), { sampleHash: "a".repeat(64) }));
+  const q = S.applyModeChange(p, { interpretation: { mode: "tonal" } }, true); q.geometry.targetMM = 40;
+  const req = E.request(q, px, { quality: "draft" });
+  const plain = E.generate(req), cache = {}, c1 = E.generate(req, { cache }), marks = [];
+  const c2 = E.generate(req, { cache, onProgress: (st) => marks.push(st) });
+  check("NFR-05 generate with a cold and a warm cache equals generate without (geometryHash)",
+    plain.status === "done" && c1.geometryHash === plain.geometryHash && c2.geometryHash === plain.geometryHash);
+  check("cache: a warm run reports the cached stages (resample-cached, interpret-cached)", marks.includes("resample-cached") && marks.includes("interpret-cached"));
+  const q2 = JSON.parse(JSON.stringify(q)); q2.construction.sheets = 6; q2.revision++;
+  const m2 = []; E.generate(E.request(q2, px, { quality: "draft" }), { cache, onProgress: (st) => m2.push(st) });
+  check("cache: changing sheets reuses K1 and K2", m2.includes("resample-cached") && m2.includes("interpret-cached"));
+  const q3 = JSON.parse(JSON.stringify(q)); q3.interpretation.smoothing = { radius: 2, passes: 1 }; q3.revision++;
+  const m3 = []; E.generate(E.request(q3, px, { quality: "draft" }), { cache, onProgress: (st) => m3.push(st) });
+  check("cache: changing smoothing reuses K1 only", m3.includes("resample-cached") && !m3.includes("interpret-cached"));
+  check("NFR-05 a cached run never mutates the cached arrays (third run equal)", E.generate(req, { cache }).geometryHash === plain.geometryHash);
+});
+```
+
+- [ ] **Step 2: Run** — `node test/run_tests.js --only "alpha.3 E3"` → ✗ (no `-cached` marks).
+- [ ] **Step 3: Implement** — In `run`, compute `plan` before stage 1 (it only reads sizes), build `k1`; if `cache && cache.k1 && cache.k1.key === k1` reuse `{o-size, samples, alpha, ch}` and call `onProgress("resample-cached", 0.1)` via `step`; otherwise run stages 1–2 as today and store them. Same for K2 around `R.luminance`+`R.kuwahara` with `"interpret-cached"`. Before storing, confirm by reading `R.thresholds`, `R.bands`, `Hh.domainMask`, `E.interpretHeight` that none writes into its input; if one does, store a copy (`slice()`). `E.generate` passes `opts.cache` through to `run(req, head, step, fail, opts.cache)`. Results stay deep-frozen; cached typed arrays are skipped by `deepFreeze` and are never returned in the snapshot.
+- [ ] **Step 4: Run** — E3 ✓, full suite 0 failed.
+- [ ] **Step 5: Commit** — `node build.js`; add `js/engine.js test/run_tests.js dist/shadowbox-studio.html`; `perf(engine): caller-owned stage cache for orient/resample and Kuwahara (alpha.3 E3)` + trailer.
+
+---
+
+#### Task E4: Measure and record the draft budget
+
+**Files:**
+- Modify: `test/bench.js` (add `draft` to `STAGES`, `:92`)
+- Create: `docs/perf/draft-budget.json`, `docs/perf/DRAFT.md`
+- Modify: `js/schema.js:150-153` (`LIMITS.*.draftPxCap`), `:378, :396` (preset `draftPx`)
+- Modify: `js/engine.js:361-363` (draft branch of `rasterPlan`)
+- Test: `test/run_tests.js:2918` retarget; new suite `schema.js/engine.js — alpha.3 E4 draft budget (PO-PREVIEW-1)`
+
+**Interfaces:**
+- Produces: `SBSchema.limits(dc).draftPxCap` (desktop: measured, mobile: 720); `rasterPlan(…, "draft", dc)` uses `SBRaster.rasterSize(srcW, srcH, Math.min(g.draftPx, lim.draftPxCap))`; preset `draftPx` = desktop decision.
+
+Bench workload: 4096 × 3084 RGBA built from `F.heightMap(7, 4096, 3084)` with colour channels as in E3; projects: (a) plywood auto-tonal (E7's patch: tonal, light-front, smoothing r4 p2, bonded, 8 sheets, targetMM 300), (b) plywood height, (c) acrylic connected (reported only, KI-CONN-PERF). Candidates `draftPx ∈ {720, 1024, 1280, 1536, 2000}`; per candidate 1 cold + 5 warm runs (warm = E3 cache filled, a changed `sheets` value between runs so construct reruns), median; also the share of construct spent in the draft overlay polygons.
+
+**Decision rule (recorded in the JSON):** desktop `draftPxCap` = preset `draftPx` = the largest candidate whose **warm median for (a) ≤ 3.0 s** on the reference machine (i7-11800H); mobile cap 720 (mobile = 4× slower, k provisional as in D.8). Expected outcome from the audit numbers: 1024–1280 px (≈0.8–1.2 Mpx), **not** the 2–4 Mpx asked for; the PO's 2.7 s at 2.4 Mpx is consistent with height mode (no Kuwahara), which (b) records. If (a) exceeds 3.0 s even at 720, keep 720 and record it as a known gap pointing at G4.1.
+
+- [ ] **Step 1: Write the failing tests**
+
+```js
+suite("schema.js/engine.js — alpha.3 E4 draft budget (PO-PREVIEW-1)", () => {
+  const rec = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "docs/perf/draft-budget.json"), "utf8"));
+  const L = SBSchema.limits;
+  check("PO-PREVIEW-1 draft budget equals docs/perf/draft-budget.json (desktop cap, mobile cap, preset draftPx)",
+    L("desktop").draftPxCap === rec.decision.desktopDraftPx && L("mobile").draftPxCap === rec.decision.mobileDraftPx &&
+    SBSchema.defaults("plywood").geometry.draftPx === rec.decision.desktopDraftPx && SBSchema.defaults("acrylic").geometry.draftPx === rec.decision.desktopDraftPx);
+  const p = SBSchema.defaults("plywood"); p.source = SBSchema.sourceTemplate();
+  const m = SBEngine.rasterPlan(p, { w: 4096, h: 3084 }, "draft", "mobile").geometry, d = SBEngine.rasterPlan(p, { w: 4096, h: 3084 }, "draft", "desktop").geometry;
+  check("PO-PREVIEW-1 rasterPlan applies the mobile draftPxCap without changing the project key",
+    Math.max(m.rasterW, m.rasterH) === Math.min(p.geometry.draftPx, 720) && Math.max(d.rasterW, d.rasterH) === Math.min(p.geometry.draftPx, rec.decision.desktopDraftPx));
+  check("PO-PREVIEW-1 the rationale names the rule, machine and workload", /3\.0 s/.test(rec.rule) && /11800H/.test(rec.machine) && /4096/.test(rec.workload));
+});
+```
+
+and change `test/run_tests.js:2918` to `p.geometry.draftPx === JSON.parse(fs.readFileSync(path.join(__dirname, "..", "docs/perf/draft-budget.json"), "utf8")).decision.desktopDraftPx`, renaming the check `PO-LASER-4/PO-PREVIEW-1 fab pitch 0.1 mm, draft from docs/perf/draft-budget.json`.
+
+- [ ] **Step 2: Run** — ✗ (file missing).
+- [ ] **Step 3: Implement** — write `benchDraft()` in `test/bench.js` (`node test/bench.js draft [--record]`, `--record` writes the JSON `{machine, workload, rule, rows: [{draftPx, raster, mode, coldMs, warmMs, overlayShare}], decision: {desktopDraftPx, mobileDraftPx}}`), run it with `--record`, write `docs/perf/DRAFT.md` (table + rule + why 2–4 Mpx is not interactive on the main thread + pointer to G4.1), then add `draftPxCap` to both `LIMITS` entries and the `rasterPlan` draft branch, and set both presets' `draftPx`. If `overlayShare ≥ 0.15`, add `opts.overlays === false` skipping `e.added/e.removed` (`js/engine.js:575-579`) with the check `G2.13b overlays:false omits added/removed, geometryHash unchanged`; otherwise record "not worth it" in DRAFT.md.
+- [ ] **Step 4: Run** — full suite 0 failed (fixtures are small, so a higher `draftPx` never upsamples them).
+- [ ] **Step 5: Commit** — `node build.js`; add `test/bench.js docs/perf/draft-budget.json docs/perf/DRAFT.md js/schema.js js/engine.js test/run_tests.js dist/shadowbox-studio.html`; `perf(schema,engine): measured draft budget with device cap (alpha.3 E4)` + trailer.
+
+---
+
+#### Task E5: The draft preview runs `SBEngine.generate`; the legacy draft path leaves the app
+
+**Files:**
+- Modify: `js/app.js` — `regenerate` (`:127-189`), delete `buildView` (`:241-275`), `showRaster` (`:552`), `rasterCard` (`:601`), the KI-CONN-PERF deferral (`:216-240`); `renderSheetGrid` (`:563-598`); `renderDiagnostics` (`:306`); `setRunState` wiring (`:91`); `viewCurrent` (`:422`); `openClipDialog` (`:501-505`); `updateDimbar` (`:1177-1184`); every `run.sheets.length` (`:114, :157, :228, :312, :767, :1183`); `bindControls` (`:1146-1163`, range inputs commit on `change`)
+- Modify: `js/preview.js` — remove `setSheets`/`maskToCanvas` if no caller remains (`:124, :368`); keep `snapshot()`
+- Test: `test/run_tests.js` — new suite `app.js — alpha.3 E5 real-engine draft (PO-PREVIEW-1, LYR-06, UI-05)`; retarget the static checks that name the legacy draft path: `:4539-4557` (G2.12), `:4629-4639` (G2.13a), `:4792-4793` (G2.13b), `:4910` (G2.13c), `:5036` (G2.13d). Engine-level legacy oracles (`:691-700`, `:2535-2600`, `:4648-4858`) stay unchanged.
+
+**Interfaces:**
+- Consumes: E1 `SBEngine.request`, `run.src`; E2 payload; E3 `{cache}`; E4 caps.
+- Produces: `run.draft = {status, snapshot, diagnostics, error, revision, gen, ms, acks}`; `run.shown` (points at `run.draft` or, after E6, `run.fab`); `showResult(r)` renders every view from `r.snapshot` (`preview.setSnapshot`, `SBProof.overlays({cleanupReport, diagnostics, mode})`, `renderSheetGrid`, `renderDiagnostics(r)`, `renderRepairs`, `updateDimbar`, status line). The clip dialog proposes on `run.shown.snapshot` with `quality = snapshot.quality`; `run.applied` is replaced by `run.shown.snapshot.repairsApplied`.
+
+- [ ] **Step 1: Write the failing tests**
+
+```js
+suite("app.js — alpha.3 E5 real-engine draft (PO-PREVIEW-1, LYR-06, UI-05)", () => {
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8");
+  const fn = (name) => { const i = appSrc.indexOf("function " + name + "("); return i < 0 ? "" : appSrc.slice(i, appSrc.indexOf("\n  }\n", i)); };
+  check("PO-PREVIEW-1 app.js calls no SBEngine.legacy* (legacyRun, legacyView, legacyDiagnostics, legacySnapshotHash, legacyCleanupReport)", !/SBEngine\.legacy\w*\(/.test(appSrc));
+  check("PO-PREVIEW-1 regenerate calls SBEngine.generate on SBEngine.request(…, {quality: \"draft\"}) with the draft cache",
+    /SBEngine\.generate\(\s*SBEngine\.request\([^)]*quality:\s*"draft"/.test(fn("regenerate")) && /run\.draftCache/.test(fn("regenerate")));
+  check("LYR-06 regenerate no longer downsamples on a canvas (no drawImage)", !/drawImage\(/.test(fn("regenerate")));
+  check("UI-05 regenerate paints the Stale state before the blocking run (rAF + task)", /requestAnimationFrame\(/.test(fn("regenerate")) || /paintThen\(/.test(fn("regenerate")));
+  check("UI-04 the diagnostics panel lists res.diagnostics when generate fails with no layers (COMPLEXITY_LIMIT)", /\.status === "error"/.test(appSrc) && /renderDiagnostics\(/.test(fn("regenerate") + fn("showResult")));
+  check("alpha.3 no run.sheets / procW / viewToken left in app.js", !/run\.sheets\b|run\.procW|run\.viewToken/.test(appSrc));
+  // bonded never shows bridges, by construction (engine-level)
+  const F = require("./fixtures.js"), E = SBEngine, S = SBSchema, w = 200, h = 150, rgba = new Uint8Array(w * h * 4), g = F.heightMap(5, w, h);
+  for (let i = 0; i < w * h; i++) { rgba[4 * i] = g[i]; rgba[4 * i + 1] = 255 - g[i]; rgba[4 * i + 2] = (g[i] * 7) & 255; rgba[4 * i + 3] = 255; }
+  const px = { pixels: rgba, channels: 4, w, h, alpha: null };
+  let p = S.withSource(S.defaults("plywood"), E.sourceRecord(px, { format: "png", decode: "canvas-tonal" }));
+  p = S.applyModeChange(p, { interpretation: { mode: "tonal" } }, true); p.geometry.targetMM = 60;
+  const s = E.generate(E.request(p, px, { quality: "draft" })).snapshot;
+  check("PO-PREVIEW-1 bonded colour draft: no cleanupReport bridges and SBProof.overlays(bonded).bridges is empty",
+    s.cleanupReport.every((c) => !c.bridges && !c.bridged) && SBProof.overlays({ cleanupReport: s.cleanupReport, diagnostics: s.diagnostics, mode: "bonded-relief" }).bridges.length === 0);
+});
+```
+
+(Read `SBProof.overlays`' return shape at `js/proof.js:130` and adjust `.bridges` to its actual field name before running.)
+
+- [ ] **Step 2: Run** — `--only "alpha.3 E5"` → ✗ on the static checks.
+- [ ] **Step 3: Implement** — In this order, running the suite after each bullet:
+  1. Add `run.draftCache = {}` (reset in `acceptSource`) and `run.fabCache = {}`.
+  2. Rewrite `regenerate`: return when `!run.src`; `setRunState({type: "start"})`; paint the veil ("Updating draft…") over the still-visible previous result and wait `requestAnimationFrame(() => setTimeout(…, 0))`; drop the run if `gen`/`rev` changed meanwhile; `const t0 = performance.now(); const res = SBEngine.generate(SBEngine.request(project, run.src, {quality: "draft", deviceClass: deviceClass()}), {cache: run.draftCache});` map `done` → `setRunState({type: "done", quality: "draft", diagnostics: res.snapshot.diagnostics})`, `error` → `setRunState({type: "fail"})` with `run.draft.diagnostics = res.diagnostics`, `canceled` → leave the previous result. Draft acks are kept only when the new `geometryHash` equals the old one (same rule as `fabReview`, `js/app.js:837`).
+  3. `showResult(run.shown)`; delete `buildView`, `showRaster`, `rasterCard`, the deferral comment block and the `run.sheets/procW/procH/view/applied/viewToken/diagnostics/geometryHash/overlays` fields; replace the length checks with `!!(run.shown && run.shown.snapshot)`.
+  4. `renderSheetGrid` iterates `snap.layers` with `SBProof.cards(snap.layers, snap.page)`; per card: contours = ring count, cut = `SBProof.cutLengthMM(L.material)`, `bridged/culled` from `snap.cleanupReport[k]` (connected only), an "omitted" badge for `card.omitted`; roles: bonded → "base" (k = 0), "layer k+1", "top"; connected keeps "backing/mid/front" and "solid panel — frame + holes only".
+  5. Status line: `${geometry.rasterW} × ${geometry.rasterH} px · ${geometry.mmPerPxMax.toFixed(2)} mm/px · ${n} sheets · ${(ms/1000).toFixed(1)} s` (+ bridged/culled/cut totals in connected).
+  6. `updateDimbar` uses `snap.stats`.
+  7. `renderDiagnostics(r)` takes the shown result; a branch for `r.status === "error"` lists `r.diagnostics` with "No layers: …" in the summary.
+  8. Clip dialog/repairs: `viewCurrent = () => !!run.shown && run.shown.revision === project.revision`; `applied = run.shown.snapshot.repairsApplied`.
+  9. `bindControls`: geometry range inputs update their number on `input` and commit on `change`; debounce 160 → 300 ms (`js/app.js:83`).
+  10. Remove `preview.setSheets`/`maskToCanvas` and their two preview checks (`:4539-4540`, `:4629-4630`) only if `grep -n "setSheets\|maskToCanvas" js/` shows no other caller; `setSnapshot`'s `opts.bridges` path keeps `maskToCanvas` if it still uses it (`js/preview.js:156`), in which case keep the helper and drop only `setSheets`.
+  11. Retarget the listed static checks to the new names (`showResult`, `SBEngine.request`, `snapshot.cleanupReport`, `snapshot.repairsApplied`), keeping each check's intent and SRS ID.
+  12. `docs/COMPONENTS.md`: mark `SBEngine.legacyRun/legacyView/legacyDiagnostics/legacySnapshotHash/legacyCleanupReport/connectedLayers/connectedFiles` as "test oracle only (DEP-04), not called by the app since alpha.3".
+  13. `docs/QA_CHECKLIST.md`: add "Bonded preview on a colour 4096 × 3084 PNG shows no amber/dark bridge lines; Layers cards say base/top; a slider drag regenerates once on release".
+- [ ] **Step 4: Run** — E5 ✓, full suite 0 failed; manual: `python3 -m http.server 8000`, load a colour PNG under Plywood (after E7) or Acrylic, check Proof/Section/Layers/Tilt.
+- [ ] **Step 5: Commit** — `node build.js`; add `js/app.js js/preview.js test/run_tests.js docs/COMPONENTS.md docs/QA_CHECKLIST.md dist/shadowbox-studio.html`; `feat(app,preview): draft preview from SBEngine.generate in the selected mode; legacy draft path removed (alpha.3 E5)` + trailer.
+
+---
+
+#### Task E6: "Preview at fabrication resolution"; export and preview.png reuse the shown fabrication result
+
+**Files:**
+- Modify: `index.html` (review stage: `<button id="btn-fabpreview" class="btn">Preview at fabrication resolution</button>` and a `<p id="fabpreview-note" class="hint">`), `js/app.js` (`fabReview` `:818-842`, `renderFabReview` `:849`, `exportBundle` `:766-797`, `buildAndDeliver` `:901-915`, `setRunState`)
+- Test: `test/run_tests.js` — suite `index.html/app.js — alpha.3 E6 fabrication preview (PO-PREVIEW-2, LYR-06, UI-06)`
+
+**Interfaces:**
+- Consumes: E5 `showResult`, `run.shown`; E1 `SBEngine.request`.
+- Produces: `run.fab` gains `{kind: "fabrication"}` and is shown by `showFab()` = `run.shown = run.fab; showResult(run.fab)`; any geometry edit sets `run.shown = run.draft` (Stale badge) and the next draft run replaces it; `renderFabReview` is `renderDiagnostics(run.fab, {scope: "fabrication"})` (one renderer, "Acknowledge for this fabrication result" wording kept), and its items are navigable when `run.shown === run.fab`.
+
+Busy state before the blocking run: the button is disabled with the text `Generating ${W} × ${H} px at ${pitch} mm/px (about ${est} s; the page will not respond until it finishes)…`, the badge shows Processing, `#status` (aria-live) gets the same text, then the two-hop paint wait. `est` = `W·H/1e6 × msPerMpx` from `docs/perf/draft-budget.json`'s fabrication row if E4 recorded one, else omitted.
+
+- [ ] **Step 1: Write the failing tests**
+
+```js
+suite("index.html/app.js — alpha.3 E6 fabrication preview (PO-PREVIEW-2, LYR-06, UI-06)", () => {
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8"), html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+  const fn = (name) => { const i = appSrc.indexOf("function " + name + "("); return i < 0 ? "" : appSrc.slice(i, appSrc.indexOf("\n  }\n", i)); };
+  check("PO-PREVIEW-2 index.html has #btn-fabpreview", /id="btn-fabpreview"/.test(html));
+  check("PO-PREVIEW-2 the button runs fabReview and shows run.fab in every view", /btn-fabpreview/.test(appSrc) && /run\.shown = run\.fab/.test(appSrc));
+  check("NFR-02 (deviation) the busy text is painted before the blocking fabrication run", /will not respond/.test(appSrc) && /requestAnimationFrame\(/.test(fn("fabReview")));
+  check("LYR-06 exportBundle does not regenerate while fabCurrent()", /fabCurrent\(\)/.test(fn("fabReview")) && fn("exportBundle").indexOf("SBEngine.generate(") < 0);
+  check("UI-06 fab preview of revision r is not shown for r+1 (fabCurrent checks the revision; an edit shows the draft)",
+    /run\.fab\.revision === project\.revision/.test(fn("fabCurrent")) && /run\.shown = run\.draft/.test(appSrc));
+  const bd = fn("buildAndDeliver");
+  check("PO-PREVIEW-7 preview.png is rendered from the fabrication snapshot (setSnapshot of run.fab before preview.snapshot)",
+    bd.indexOf("run.fab") >= 0 && bd.indexOf("showFab(") >= 0 && bd.indexOf("showFab(") < bd.indexOf("preview.snapshot("));
+  const E = SBEngine, F = require("./fixtures.js"), px = { pixels: F.heightMap(9, 160, 120), channels: 1, w: 160, h: 120, alpha: null };
+  const p = SBSchema.withSource(SBSchema.defaults("plywood"), E.sourceRecord(px, { format: "png", decode: "raw-gray8" })); p.geometry.targetMM = 12;
+  check("LYR-06 two fabrication requests on unchanged inputs give the same geometryHash (the previewed snapshot is the exported one)",
+    E.generate(E.request(p, px, { quality: "fabrication" })).geometryHash === E.generate(E.request(p, px, { quality: "fabrication" })).geometryHash);
+});
+```
+
+- [ ] **Step 2: Run** — ✗.
+- [ ] **Step 3: Implement** — add the button and `showFab()`; `fabReview` uses `run.fabCache` and the busy text; `exportBundle` calls `fabReview()` (which reuses `run.fab` while `fabCurrent()`); `buildAndDeliver`: `const back = run.shown; showFab(); const snap = await preview.snapshot("proof"); if (back !== run.fab) { run.shown = back; showResult(back); }`. Retarget the G2.13c check that says fabrication items are not navigable, and the comment at `js/app.js:845-848`.
+- [ ] **Step 4: Run** — E6 ✓, full suite 0 failed; manual: click the button on the user's 4096 × 3084 source and check Proof/Section/Layers/Tilt and the panel switch to fabrication, then an edit returns to a Stale draft.
+- [ ] **Step 5: Commit** — `node build.js`; add `index.html js/app.js test/run_tests.js dist/shadowbox-studio.html`; `feat(app): preview at fabrication resolution; export and preview.png reuse the shown fabrication result (alpha.3 E6)` + trailer.
+
+---
+
+#### Task E7: Preset selector, Plywood default, colour sources switch to Tonal
+
+**Files:**
+- Modify: `js/schema.js` (`S.presetDiff`, `S.applyPreset`, `S.colourSourceSwitch`, `modeChangeDiff` `:1039-1050`), `js/diag.js` (register `SOURCE_COLOR_TONAL`, info, P), `index.html` (`<select id="in-preset">` above `#in-interp`), `js/app.js:38` (default), `loadFile` (`:1232-1258`), `reviewModeChange` (`:1117`)
+- Test: `test/run_tests.js` — suite `schema.js/app.js — alpha.3 E7 presets and colour sources (PRJ-01, IMG-01, PO-PREVIEW-3)`
+
+**Interfaces:**
+- Produces:
+  - `SBSchema.presetDiff(project, name) → [{path, from, to, reason}]` and `SBSchema.applyPreset(project, name, accepted) → project` — keeps `title`, `source`, `units`, `machine`, `extras`; everything else from `defaults(name)`; `revision + 1` iff `geometryKey` changes. Shown through the existing `#dlg-mode` review.
+  - `SBSchema.colourSourceSwitch(project) → {patch, project}`: `applyModeChange(project, {interpretation: {mode: "tonal"}}, true)` then `smoothing = {radius: 4, passes: 2}` (the plan's only tonal default, acrylic) and an `extras.history` entry `{op: "auto-tonal", reason: "colour source", revision}`. Polarity follows the existing map (`white-high → light-front`, `js/schema.js:347`).
+  - `modeChangeDiff` to bonded also adds `construction.guides.mode: "none" → "inset-outline"` (E10 default, Q4) when it is `"none"`.
+  - New diagnostic `SOURCE_COLOR_TONAL` (info): "Colour image: using Tonal (light/dark → layers). Height mode needs a grayscale height map."
+- App intake rule (in `loadFile`, project in height mode only):
+  1. preflight refuses with `HEIGHT_NEEDS_PNG` (JPEG) or `PNG_PALETTE` (colour palette) → apply `colourSourceSwitch`, re-run `SBSchema.intake` (now tonal → browser decode), continue.
+  2. raw decode throws `PNG_UNEQUAL_RGB` → same switch, decode on the tonal route.
+  3. RGB-equal truecolour or gray PNG → stays on the raw height route (IMG-01; Review Focus 1).
+  4. Notice in `#why-source`: the `SOURCE_COLOR_TONAL` text plus a button "Use as height map instead" offered only when the file is a PNG and `PNG_UNEQUAL_RGB` did not fire (i.e. never for a true colour image), which reverts via `applyModeChange({interpretation: {mode: "height"}})` and reloads.
+  5. A user who explicitly picks Height on a loaded colour source keeps today's refusal text.
+
+- [ ] **Step 1: Write the failing tests**
+
+```js
+suite("schema.js/app.js — alpha.3 E7 presets and colour sources (PRJ-01, IMG-01, PO-PREVIEW-3)", () => {
+  const S = SBSchema, F = require("./fixtures.js");
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8"), html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+  check("PRJ-01 app default preset is plywood", /let project = SBSchema\.defaults\("plywood"\)/.test(appSrc));
+  check("PO-PREVIEW-3 #in-preset offers Plywood (bonded) and Acrylic (connected)", /id="in-preset"/.test(html) && /value="plywood"[^>]*>Plywood/.test(html) && /value="acrylic"/.test(html));
+  const ply = S.defaults("plywood"); ply.title = "keep"; ply.source = S.sourceTemplate();
+  const acr = S.applyPreset(ply, "acrylic", true);
+  check("PRJ-02 applyPreset keeps title and source, takes the rest from the preset, bumps the revision",
+    acr.title === "keep" && JSON.stringify(acr.source) === JSON.stringify(ply.source) && acr.construction.mode === "connected-sheet" && acr.revision === ply.revision + 1 &&
+    S.presetDiff(ply, "acrylic").some((d) => d.path === "construction.mode"));
+  const sw = S.colourSourceSwitch(ply).project;
+  check("IMG-01/PO-PREVIEW-3 colour source under plywood → tonal, light-front, smoothing r4 p2, bonded kept, history recorded",
+    sw.interpretation.mode === "tonal" && sw.interpretation.polarity === "light-front" && sw.interpretation.smoothing.radius === 4 &&
+    sw.construction.mode === "bonded-relief" && sw.extras.history.some((h) => h.op === "auto-tonal") && S.validate(sw).ok);
+  const jpg = F.jpegHeader({ w: 64, h: 48 });
+  const pre = S.intake(jpg, { project: ply, deviceClass: "desktop" });
+  check("IMG-01 plywood + JPEG: preflight still names HEIGHT_NEEDS_PNG (the app switches on it); tonal accepts it",
+    pre.code === "HEIGHT_NEEDS_PNG" && S.intake(jpg, { project: sw, deviceClass: "desktop" }).code !== "HEIGHT_NEEDS_PNG");
+  const eq = new Uint8Array(32 * 32 * 3); for (let i = 0; i < eq.length; i++) eq[i] = (i / 3) & 255;
+  const pngEq = F.pngEncode({ w: 32, h: 32, colorType: 2, bitDepth: 8, data: eq });
+  checkAsync("IMG-01 RGB-equal truecolour PNG under plywood stays height (raw decode succeeds)", SBPng.decode(new Uint8Array(pngEq), { mode: "height" }).then((d) => d.channels === 1));
+  check("SOURCE_COLOR_TONAL is a registered info code", SBDiag.CODES.SOURCE_COLOR_TONAL && SBDiag.CODES.SOURCE_COLOR_TONAL.severity === "info");
+  check("PO-PREVIEW-3 loadFile switches to tonal on HEIGHT_NEEDS_PNG, PNG_PALETTE and PNG_UNEQUAL_RGB",
+    /HEIGHT_NEEDS_PNG/.test(appSrc) && /PNG_PALETTE/.test(appSrc) && /PNG_UNEQUAL_RGB/.test(appSrc) && /SBSchema\.colourSourceSwitch\(/.test(appSrc));
+  const b = S.applyModeChange(S.defaults("acrylic"), { construction: { mode: "bonded-relief" } }, true);
+  check("ASM-01 a switch to bonded sets guides.mode from none to inset-outline", b.construction.guides.mode === "inset-outline");
+});
+```
+
+(Check `F.jpegHeader` / `F.pngEncode` export names in `test/fixtures.js` before running.)
+
+- [ ] **Step 2: Run** — ✗.
+- [ ] **Step 3: Implement** — schema helpers, diag code, `modeChangeDiff` line `if (c.guides.mode === "none") add("construction.guides.mode", "none", "inset-outline", "Bonded layers are aligned by concealed scored guides (ASM-01).");`, `index.html` select, `app.js` default + `#in-preset` change → `#dlg-mode` with `presetDiff`, and the intake rule. `docs/USER_GUIDE.md`: a "Presets and colour images" paragraph.
+- [ ] **Step 4: Run** — E7 ✓, full suite 0 failed (retarget any G2.11e check that pins the bonded diff list length).
+- [ ] **Step 5: Commit** — `node build.js`; add `js/schema.js js/diag.js js/app.js index.html test/run_tests.js docs/USER_GUIDE.md dist/shadowbox-studio.html`; `feat(schema,app): preset selector, plywood default, colour sources switch to tonal with a notice (alpha.3 E7)` + trailer.
+
+---
+
+#### Task E8: Source-resolution diagnostics at load and in the draft panel
+
+**Files:**
+- Modify: `js/docs.js` (`D.sourceNotes`), `js/app.js` (`loadFile` `:1256-1257`, `refuseSource` `:1280`, `renderDiagnostics`), `js/proof.js` (`P.panelModel`)
+- Test: suite `docs.js/proof.js/app.js — alpha.3 E8 source diagnostics up front (PO-PREVIEW-4, GEO-06, NFR-04)`
+
+**Interfaces:**
+- Produces: `SBDocs.sourceNotes(warnings: Diagnostic[]) → string[]` (one line per warning: `SBDiag.describe` title + detail, the px shortfall for `FAB_EXCEEDS_SOURCE`); `SBProof.panelModel(shown, fabPlanDiagnostics) → {groups: [{title, items, ackable}]}` with a "Fabrication resolution" group (`ackable: false`, note "Acknowledged in the Fabrication review") prepended for draft results only. The plan diagnostics are `SBEngine.rasterPlan(project, {w, h}, "fabrication", dc).diagnostics`, computed in the app (shared with `updateDimbar`, `js/app.js:1179-1182`); they never enter `snapshot.diagnostics`, the draft hash or the draft acks.
+
+- [ ] **Step 1: Write the failing tests**
+
+```js
+suite("docs.js/proof.js/app.js — alpha.3 E8 source diagnostics up front (PO-PREVIEW-4, GEO-06, NFR-04)", () => {
+  const p = SBSchema.defaults("plywood"); p.geometry.targetMM = 470; p.source = SBSchema.sourceTemplate();
+  const plan = SBEngine.rasterPlan(p, { w: 4096, h: 3084 }, "fabrication", "desktop");
+  const notes = SBDocs.sourceNotes(plan.diagnostics);
+  check("PO-LASER-5 4096×3084 at 470 mm shows FAB_EXCEEDS_SOURCE at load with the px shortfall",
+    plan.diagnostics.some((d) => d.code === "FAB_EXCEEDS_SOURCE") && notes.some((l) => /px/.test(l) && /source/i.test(l)));
+  const shown = { quality: "draft", snapshot: { quality: "draft", diagnostics: [] }, diagnostics: [] };
+  const m = SBProof.panelModel(shown, plan.diagnostics);
+  check("NFR-04 draft panel model has a non-ackable Fabrication resolution group", m.groups[0].title === "Fabrication resolution" && m.groups[0].ackable === false && m.groups[0].items.length === plan.diagnostics.length);
+  check("LYR-06 a fabrication result's panel has no separate plan group (the fab run raises them itself)",
+    !SBProof.panelModel({ quality: "fabrication", snapshot: { quality: "fabrication", diagnostics: [] }, diagnostics: [] }, plan.diagnostics).groups.some((g) => g.title === "Fabrication resolution"));
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8");
+  check("PO-PREVIEW-4 loadFile shows every preflight warning (SBDocs.sourceNotes), not only EXIF_AMBIGUOUS",
+    /SBDocs\.sourceNotes\(pre\.warnings\)/.test(appSrc) && !/filter\(\(d\) => d\.code === "EXIF_AMBIGUOUS"\)/.test(appSrc));
+});
+```
+
+- [ ] **Step 2: Run** — ✗.  - [ ] **Step 3: Implement** as specified.  - [ ] **Step 4: Run** — 0 failed.
+- [ ] **Step 5: Commit** — `node build.js`; add `js/docs.js js/proof.js js/app.js test/run_tests.js dist/shadowbox-studio.html`; `feat(docs,proof,app): source-resolution diagnostics at load and in the draft panel (alpha.3 E8)` + trailer.
+
+---
+
+#### Task E9: Stroke digits and `SBGeom.interiorPoint` (G3.2 subset)
+
+**Files:**
+- Create: `js/strokefont.js`
+- Modify: `js/geom.js` (add `G.interiorPoint` and export it in the name list at `:1103`), `index.html`, `sw.js` SHELL, `test/modules.js` (order `… support.js, strokefont.js, proof.js …`)
+- Test: suite `strokefont.js/geom.js — alpha.3 E9 stroke digits and interior point (ASM-03, EXP-03)`
+
+**Interfaces:**
+- Produces: `SBFont.strokes(text: string, heightUm: integer) → {paths: number[][], wUm, hUm}` — open polylines (flat `[x0, y0, …]`, integer µm, origin top-left, Y down); alpha.3 charset `0123456789`; any other character throws `FONT_CHAR`. `SBGeom.interiorPoint(polys: Polygon[], clearanceUm: integer) → [x, y] | null` — a point inside `polys` whose distance to every ring edge is ≥ `clearanceUm`, found by deterministic grid search (64 × 64 cell centres over the bbox, then 4 refinements halving the step around the best), best = largest squared distance, ties broken by smaller y then x; `null` if the best is < clearance. Even-odd point-in-polygon over all rings with integer cross products.
+
+Glyphs on a 4 × 6 unit grid, advance 6 units, `u = heightUm / 6` and every coordinate `Math.round(v * heightUm / 6)`:
+
+```js
+  const GLYPHS = {
+    "0": [[0,0, 4,0, 4,6, 0,6, 0,0]],
+    "1": [[1,1, 2,0, 2,6]],
+    "2": [[0,0, 4,0, 4,3, 0,3, 0,6, 4,6]],
+    "3": [[0,0, 4,0, 4,6, 0,6], [0,3, 4,3]],
+    "4": [[0,0, 0,3, 4,3], [4,0, 4,6]],
+    "5": [[4,0, 0,0, 0,3, 4,3, 4,6, 0,6]],
+    "6": [[4,0, 0,0, 0,6, 4,6, 4,3, 0,3]],
+    "7": [[0,0, 4,0, 4,6]],
+    "8": [[0,0, 4,0, 4,6, 0,6, 0,0], [0,3, 4,3]],
+    "9": [[4,3, 0,3, 0,0, 4,0, 4,6, 0,6]],
+  };
+```
+
+- [ ] **Step 1: Write the failing tests**
+
+```js
+suite("strokefont.js/geom.js — alpha.3 E9 stroke digits and interior point (ASM-03, EXP-03)", () => {
+  check("E9 API present", typeof globalThis.SBFont === "object" && typeof SBGeom.interiorPoint === "function");
+  if (typeof globalThis.SBFont !== "object") return;
+  const s = SBFont.strokes("12", 3000);
+  check("EXP-03 digits are open integer polylines inside their box (no text)", s.hUm === 3000 && s.wUm === Math.round(10 * 3000 / 6) &&
+    s.paths.every((p) => p.length >= 4 && p.every(Number.isInteger) && p.every((v, i) => i % 2 ? v >= 0 && v <= 3000 : v >= 0 && v <= s.wUm)));
+  check("FONT_CHAR for a character outside the alpha.3 charset", (() => { try { SBFont.strokes("A", 3000); return false; } catch (e) { return /FONT_CHAR/.test(e.message); } })());
+  const sq = (x, y, s2) => [x, y, x + s2, y, x + s2, y + s2, x, y + s2];
+  const donut = [{ outer: sq(0, 0, 10000), holes: [[2000, 2000, 2000, 8000, 8000, 8000, 8000, 2000]] }];   // hole: negative shoelace area
+  const pt = SBGeom.interiorPoint(donut, 800);
+  check("ASM-03 donut point is in the ring, not in the hole, with clearance", pt && !(pt[0] > 2000 && pt[0] < 8000 && pt[1] > 2000 && pt[1] < 8000));
+  const crescent = SBGeom.normalize(SBGeom.difference([{ outer: sq(0, 0, 10000), holes: [] }], [{ outer: sq(3000, -1000, 9000), holes: [] }]));
+  const pc = SBGeom.interiorPoint(crescent, 1000);
+  check("ASM-03 crescent interior point is inside with clearance, not the bbox centre", pc && pc[0] < 3000 - 1000 + 1 && SBGeom.interiorPoint(crescent, 1000).join() === pc.join());
+  check("ASM-03 too-thin region gives null", SBGeom.interiorPoint([{ outer: sq(0, 0, 1000), holes: [] }], 600) === null);
+  const order = require("./modules.js").NODE_MODULES;
+  check("T0.2 strokefont.js sits after support.js and before proof.js", order.indexOf("strokefont.js") > order.indexOf("support.js") && order.indexOf("strokefont.js") < order.indexOf("proof.js"));
+});
+```
+
+- [ ] **Step 2: Run** — ✗.  - [ ] **Step 3: Implement** the module (IIFE, `global.SBFont = Object.freeze({strokes, CHARSET: "0123456789"})`) and `interiorPoint`; register in the four lists (§4 order).  - [ ] **Step 4: Run** — 0 failed (the build hygiene suite checks the lists).
+- [ ] **Step 5: Commit** — `node build.js`; add `js/strokefont.js js/geom.js index.html sw.js test/modules.js test/run_tests.js dist/shadowbox-studio.html`; `feat(strokefont,geom): stroke digits and deterministic interior point (alpha.3 E9, G3.2 subset)` + trailer.
+
+---
+
+#### Task E10: `SBGuides.build` and `validate` (G3.3 subset)
+
+**Files:**
+- Create: `js/guides.js`
+- Modify: `js/diag.js:205` (`GUIDE_OMITTED` into `AGGREGATED`), `index.html`, `sw.js`, `test/modules.js` (after `strokefont.js`)
+- Test: suite `guides.js — alpha.3 E10 concealed guides and sheet labels (ASM-01/02/03, AT-14, GEO-07)`
+
+**Interfaces:**
+- Consumes: `SBGeom.offset(polys, deltaUm, "miter")`, `intersection`, `difference`, `normalize`, `isEmpty`, `survivesInset`, `interiorPoint`; `SBFont.strokes`; `SBDiag.make`.
+- Produces: `SBGuides.build(layers: MaterialLayer[], cfg: construction.guides, ctx: {revision, quality}) → {scorePaths: number[][][] (per layer index), guides: {mode, labels: [{layer, text, atUm: [x, y], heightUm}], omitted: [{layer, part, reason}], map: null}, diagnostics: Diagnostic[]}`; `SBGuides.validate(layers, built, cfg, ctx) → Diagnostic[]` (`GUIDE_UNCONTAINED` only).
+
+Rules (all distances integer µm: `c = round(concealInsetMM·1000)`, `a = round(allowanceMM·1000)`, `fp = round(markFootprintMM·1000)`, `fh = floor(fp/2)`, `lh = round(labelHeightMM·1000)`):
+- For k = 0 … N−2 with upper = layer k+1 non-empty: `Rc_k = intersection(offset(upper.material, −(c + a + fh), "miter"), offset(lower.material, −fh, "miter"))` (normalized); `Rb_k = intersection(offset(upper.material, −(c + a), "miter"), lower.material)`. Layer-level, never per part (Appendix C, S1 cost note).
+- **Attribution:** each polygon of `Rc_k` lies inside exactly one part of k+1; attribute it by the part whose bbox contains its first outer vertex and whose polygon contains that point (even-odd). A part of k+1 with no attributed Rc polygon → `omitted.push({layer: k+1, part: id, reason: "no concealed area ≥ footprint"})` and one `GUIDE_OMITTED` diagnostic per such part with `layer: k+1, parts: [id]` (aggregated per layer by `SBDiag.aggregate`).
+- **`inset-outline`:** score paths on layer k = every ring of `Rc_k`, closed by repeating its first vertex.
+- **`interior-mark`:** per attributed Rc polygon, `q = interiorPoint([poly], fh + 300)`; arm `r = min(1500, dist − fh)` with `dist` the clearance actually found (use `interiorPoint` with descending clearances 1500+fh, 1000+fh, 600+fh, 300+fh and take the first non-null); a cross `[qx−r, qy, qx+r, qy]`, `[qx, qy−r, qx, qy+r]`; no fit → omitted as above.
+- **Sheet label** (every k ≤ N−2 with a non-empty `Rc_k`): text `String(k + 1)` (= the sheet file number), `SBFont.strokes(text, lh)`; label region = `Rc_k` shrunk so strokes clear the guide burns: `region = offset(Rc_k, −(fp + fh), "miter")`, minus, in interior-mark mode, the square of half-side `r + fp` around each cross; centre = `interiorPoint(region, ceil(halfDiag) + fh)` with `halfDiag = sqrt(wUm² + hUm²)/2` (rounded up with integer arithmetic: smallest integer d with d² ≥ (w²+h²)/4); strokes translated so the box centre is at the point. No fit → `GUIDE_OMITTED` with `parts: []`, `detail: "sheet " + (k+1) + " label did not fit; see the placement map"`. The top sheet (N−1) has no concealed area and gets no label (Q5).
+- `allowanceMM === 0` → one `ALIGN_CLEARANCE_ZERO` warning.
+- `cfg.mode === "none"` or construction ≠ bonded → `build` is not called (E11).
+- **validate (GEO-07, bug guard):** per layer k, `D = difference(offset(Rc_k, fh, "miter"), Rb_k)`; uncontained iff `SBGeom.survivesInset(D, 1)` (width ≥ 2 µm, so µm rounding slivers never block); plus every label and cross point at distance ≥ its required clearance from `Rc_k`'s boundary (recheck with the same distance routine). Any failure → `GUIDE_UNCONTAINED` (blocking).
+
+- [ ] **Step 1: Write the failing tests**
+
+```js
+suite("guides.js — alpha.3 E10 concealed guides and sheet labels (ASM-01/02/03, AT-14, GEO-07)", () => {
+  check("E10 API present", typeof globalThis.SBGuides === "object");
+  if (typeof globalThis.SBGuides !== "object") return;
+  const sq = (x, y, w, h) => [{ outer: [x, y, x + w, y, x + w, y + h, x, y + h], holes: [] }];
+  const page = { wMM: 60, hMM: 40, frameMM: 0 };
+  const mk = (index, material) => SBMaterial.assignParts([SBMaterial.withMaterial({ index, material: [], parts: [], diagnostics: [], scorePaths: [] }, SBGeom.normalize(material), { revision: 0, quality: "draft" })])[0];
+  // base, a 20×20 mm block, a crescent, a 1.5 mm sliver
+  const L0 = mk(0, sq(0, 0, 60000, 40000));
+  const L1 = mk(1, sq(5000, 5000, 20000, 20000).concat(sq(40000, 5000, 1500, 20000)));
+  const cres = SBGeom.normalize(SBGeom.difference(sq(5000, 5000, 20000, 20000), sq(11000, 4000, 20000, 22000)));
+  const L2 = mk(2, cres);
+  const cfg = SBSchema.defaults("plywood").construction.guides;
+  const b = SBGuides.build([L0, L1, L2], Object.assign({}, cfg, { mode: "inset-outline" }), { revision: 0, quality: "draft" });
+  check("ASM-01 inset-outline scores guides of layer k+1 on layer k (sheet 1 and 2), none on the top sheet",
+    b.scorePaths[0].length > 0 && b.scorePaths[1].length > 0 && b.scorePaths[2].length === 0);
+  check("AT-14 the 1.5 mm sliver and nothing else on layer 1 is omitted with GUIDE_OMITTED (warning)",
+    b.guides.omitted.filter((o) => o.layer === 1).length === 1 && b.diagnostics.some((d) => d.code === "GUIDE_OMITTED" && d.layer === 1));
+  check("AT-13 sheet labels are vector strokes with the sheet number, placed on sheets 1 and 2 only",
+    b.guides.labels.map((l) => l.text).join() === "1,2" && b.scorePaths[0].length > 4);
+  check("ASM-02/GEO-07 validate finds every score inside Rb (no GUIDE_UNCONTAINED)", SBGuides.validate([L0, L1, L2], b, cfg, { revision: 0, quality: "draft" }).length === 0);
+  const tamper = JSON.parse(JSON.stringify(b)); tamper.scorePaths[0].push([0, 0, 60000, 0]);
+  check("GEO-07 validate catches a score on visible material (GUIDE_UNCONTAINED, blocking)",
+    SBGuides.validate([L0, L1, L2], tamper, cfg, { revision: 0, quality: "draft" }).some((d) => d.code === "GUIDE_UNCONTAINED"));
+  const im = SBGuides.build([L0, L1, L2], Object.assign({}, cfg, { mode: "interior-mark" }), { revision: 0, quality: "draft" });
+  check("ASM-03 interior-mark crosses sit on a checked interior point (crescent included), deterministic",
+    im.scorePaths[1].length >= 2 && JSON.stringify(im) === JSON.stringify(SBGuides.build([L0, L1, L2], Object.assign({}, cfg, { mode: "interior-mark" }), { revision: 0, quality: "draft" })));
+  const z = SBGuides.build([L0, L1], Object.assign({}, cfg, { allowanceMM: 0 }), { revision: 0, quality: "draft" });
+  check("ASM-02 allowance 0 raises ALIGN_CLEARANCE_ZERO", z.diagnostics.some((d) => d.code === "ALIGN_CLEARANCE_ZERO"));
+  check("UI-04 GUIDE_OMITTED aggregates per layer", SBDiag.aggregate([0, 1, 2].map((i) => SBDiag.make("GUIDE_OMITTED", { revision: 0, quality: "draft", layer: 1, parts: ["L01-P00" + i] }))).length === 1);
+});
+```
+
+(Use the real `SBMaterial` constructor the existing material suites use — read `test/run_tests.js:1917-1960` and replace `mk` with it if `withMaterial`'s signature differs.)
+
+- [ ] **Step 2: Run** — ✗.  - [ ] **Step 3: Implement** `js/guides.js` per the rules; register in the four lists; add `GUIDE_OMITTED` to `AGGREGATED`.  - [ ] **Step 4: Run** — 0 failed.
+- [ ] **Step 5: Commit** — `node build.js`; add `js/guides.js js/diag.js index.html sw.js test/modules.js test/run_tests.js dist/shadowbox-studio.html`; `feat(guides): concealed inset-outline and interior-mark guides, scored sheet numbers, containment check (alpha.3 E10, G3.3 subset)` + trailer.
+
+---
+
+#### Task E11: Guides in `generate` (stage 14), in the preview, the UI and the placement map
+
+**Files:**
+- Modify: `js/engine.js:629-632` (stage 14), `:691-708` (`fabricationFiles` adds `placement_map.svg` for bonded)
+- Modify: `js/svgout.js` (`S.placementMapSVG`), `js/preview.js` (`drawCard(..., {scores: true})` draws `layer.scorePaths` as 1 px blue lines; Proof/Section/Tilt never draw them), `index.html` + `js/app.js` (`applyApplicability` `:1087`, guide controls: `#in-guides` select none / inset-outline / interior-mark, `#in-gconceal`, `#in-gallow`, `#in-gfoot`, `#in-glabel` in mm, bonded only; a Layers-card toggle `#in-guidesvis`, checked)
+- Test: suite `engine.js/svgout.js/app.js — alpha.3 E11 guides in generate (G3.1 stage 14, ASM-01/05, SUP-04, NFR-05)`
+
+**Interfaces:**
+- Consumes: E10 `SBGuides.build/validate`.
+- Produces: in bonded mode with `guides.mode !== "none"`, after `annotate` and before accounting: `const gb = SBGuides.build(layers, con.guides, dOpts); layers = layers.map((L, k) => Object.assign({}, L, {scorePaths: gb.scorePaths[k]})); diagnostics.push(...gb.diagnostics, ...SBGuides.validate(layers, gb, con.guides, dOpts)); guides = gb.guides;` — so score paths enter `layerHash`, labels/omissions enter `guideHash` (`js/engine.js:498-502`), both qualities get the same code path, and guides are rebuilt after every repair replay (SUP-04/SUP-05: no `guideRefs` invalidation needed while every generate rebuilds; `part.guideRefs` stays `[]` until G3.3). `SBSvg.placementMapSVG(snapshot, {title}) → string`: one panel per glue step k = 1…exported−1, stacked vertically in the page frame scaled to fit A4 width: layer k−1 filled light gray, layer k outlined, each part of layer k with its part ID as SVG text (not a cut file), omitted-guide parts outlined red, a heading "Step k: place sheet k+1 on sheet k". `fabricationFiles` appends it as `placement_map.svg` for bonded only.
+
+- [ ] **Step 1: Write the failing tests**
+
+```js
+suite("engine.js/svgout.js/app.js — alpha.3 E11 guides in generate (G3.1 stage 14, ASM-01/05, SUP-04, NFR-05)", () => {
+  const F = require("./fixtures.js"), E = SBEngine, S = SBSchema, px = { pixels: F.heightMap(7, 200, 200), channels: 1, w: 200, h: 200, alpha: null };
+  let p = S.withSource(S.defaults("plywood"), E.sourceRecord(px, { format: "png", decode: "raw-gray8" })); p.geometry.targetMM = 120;
+  p.construction.guides.mode = "inset-outline";
+  const d = E.generate(E.request(p, px, { quality: "draft" })).snapshot, f = E.generate(E.request(p, px, { quality: "fabrication" })).snapshot;
+  check("G3.1 bonded generate fills scorePaths on k for k+1 parts at draft and fabrication", d.layers[0].scorePaths.length > 0 && f.layers[0].scorePaths.length > 0 && d.guides && f.guides);
+  check("NFR-05 guides are deterministic and in geometryHash", E.generate(E.request(p, px, { quality: "draft" })).geometryHash === d.geometryHash &&
+    (() => { const q = JSON.parse(JSON.stringify(p)); q.construction.guides.mode = "none"; q.revision++; return E.generate(E.request(q, px, { quality: "draft" })).geometryHash !== d.geometryHash; })());
+  check("GEO-07 no GUIDE_UNCONTAINED on the fixture", !f.diagnostics.some((x) => x.code === "GUIDE_UNCONTAINED"));
+  const files = E.fabricationFiles(f, p, "#c8a26b");
+  check("ASM-01 bonded bundle contains placement_map.svg; sheet SVGs carry the scores in SCORE and no <text>",
+    files.some((x) => x.name === "placement_map.svg") && /id="SCORE">\s*<path/.test(files[0].data) && files.filter((x) => /^sheet_/.test(x.name)).every((x) => !/<text/.test(x.data)));
+  const c = S.defaults("acrylic"); c.interpretation.mode = "height"; c.interpretation.polarity = "white-high";
+  const cs = E.generate(E.request(S.withSource(c, E.sourceRecord(px, { format: "png", decode: "raw-gray8" })), px, { quality: "draft" })).snapshot;
+  check("DEP-04 connected mode gets no guides (guides null, no scores)", cs.guides === null && cs.layers.every((L) => L.scorePaths.length === 0));
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8"), html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+  check("ASM-01 guide controls exist and are bonded-only", /id="in-guides"/.test(html) && /id="in-gallow"/.test(html) && /in-guides/.test(appSrc));
+});
+```
+
+- [ ] **Step 2: Run** — ✗.  - [ ] **Step 3: Implement** stage 14, `placementMapSVG`, `fabricationFiles`, preview cards, controls (wired through the existing `SBSchema.applyControl`/`applicability` pattern; add `guides`, `gconceal`, `gallow`, `gfoot`, `glabel` to `S.applyControl` (`js/schema.js:816`) and bonded-only reasons to `S.applicability` (`:943`)). Retarget the alpha.2 check "alpha.2 export keeps the legacy flat layout: sheet_01..08.svg and proof.svg" (`test/run_tests.js:5222`) to allow `placement_map.svg` for bonded, and `EXP-01 bonded sheets are pure vector` keeps passing (scores are paths). Add `GUIDE_OMITTED` text to `docs/USER_GUIDE.md` ("place that part by the placement map").
+- [ ] **Step 4: Run** — 0 failed; manual: cards show blue concealed outlines; the Proof does not.
+- [ ] **Step 5: Commit** — `node build.js`; add `js/engine.js js/svgout.js js/preview.js js/app.js js/schema.js index.html test/run_tests.js docs/USER_GUIDE.md dist/shadowbox-studio.html`; `feat(engine,svgout,preview,app): bonded guides and sheet labels in every generate, placement map, guide controls (alpha.3 E11)` + trailer.
+
+---
+
+#### Task E12: Re-review draft repairs in the Fabrication review
+
+**Files:**
+- Modify: `js/app.js` (`clipAction` `:428`, `renderFabReview`, `renderRepairs` `:451`, `openClipDialog` `:501`)
+- Test: suite `app.js/support.js — alpha.3 E12 repair re-review at fabrication (SUP-04, PO-PREVIEW-6, EXP-07)`
+
+**Interfaces:**
+- Consumes: E1 (no `REPAIR_STALE` for unchanged settings), E2 `repairsApplied`, E6 `showFab`, shared renderer.
+- Produces: in the Fabrication review each `REPAIR_REVIEW_FAB` item shows its detail (fabrication mm² and part counts, `js/support.js:491-495`) and three actions: **Show** (`showFab()` then `focusDiagnostic(d)` on the fabrication layers, region highlighted), **Keep** (the item's acknowledge checkbox, labelled "Keep this clip at fabrication resolution"), **Revert** (`SBSupport.removeRepair(project, ri)` via `commitProject`, which makes the fab run stale and returns the view to the draft). `REPAIR_STALE` keeps its "Review clip N…" link to the draft clip dialog.
+
+- [ ] **Step 1: Write the failing tests**
+
+```js
+suite("app.js/support.js — alpha.3 E12 repair re-review at fabrication (SUP-04, PO-PREVIEW-6, EXP-07)", () => {
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8");
+  const fn = (name) => { const i = appSrc.indexOf("function " + name + "("); return i < 0 ? "" : appSrc.slice(i, appSrc.indexOf("\n  }\n", i)); };
+  check("PO-PREVIEW-6 REPAIR_REVIEW_FAB items offer Show, Keep and Revert in the Fabrication review",
+    /REPAIR_REVIEW_FAB/.test(appSrc) && /Keep this clip at fabrication resolution/.test(appSrc) && /SBSupport\.removeRepair\(/.test(appSrc) && /showFab\(\)/.test(appSrc));
+  check("UI-04 Show focuses the diagnostic on the fabrication result", /focusDiagnostic\(/.test(appSrc) && /run\.shown === run\.fab/.test(appSrc));
+  const S = SBSchema, P = SBSupport, p = S.defaults("plywood"); p.source = S.sourceTemplate();
+  const q = Object.assign(JSON.parse(JSON.stringify(p)), { revision: 3 }); q.construction.repairs = [{ op: "clip-to-lower", layer: 1, sourceRevision: 2, resultRevision: 3, keyHash: "0".repeat(64),
+    reviewed: { quality: "draft", beforeHash: "0".repeat(64), afterHash: "0".repeat(64), removedAreaMM2: 1, partCountBefore: 1, partCountAfter: 1 } }];
+  const r = P.removeRepair(q, 0);
+  check("SUP-04 Revert in the fabrication review bumps the revision (the fab result becomes stale)", r.revision === 4 && r.construction.repairs.length === 0);
+});
+```
+
+- [ ] **Step 2: Run** — ✗.  - [ ] **Step 3: Implement**.  - [ ] **Step 4: Run** — 0 failed; manual: accept a clip on the draft, click Preview at fabrication resolution, Keep, Download.
+- [ ] **Step 5: Commit** — `node build.js`; add `js/app.js test/run_tests.js dist/shadowbox-studio.html`; `feat(app): re-review draft clips in the Fabrication review (show, keep, revert) (alpha.3 E12)` + trailer.
+
+---
+
+#### Task E13: Bonded-aware ASSEMBLY.md and settings.json from the fabrication snapshot
+
+**Files:**
+- Modify: `js/docs.js` (`D.assembly`), `js/app.js` (`buildAssemblyMD` `:700-752` removed; `settingsJSON` `:754-764`; `buildAndDeliver` `:907-908`)
+- Test: suite `docs.js/app.js — alpha.3 E13 assembly and settings (ASM-05, EXP-06, PO-PREVIEW-7)`
+
+**Interfaces:**
+- Produces: `SBDocs.assembly(project, fabSnapshot, {colors, sourceName}) → string` (Markdown). Bonded: title, art and page size from `snapshot.page`, nominal/measured thickness and stack height from `stats.stockMM`/`reliefMM`, a table of **exported** sheets only (`sheet_NN.svg`, layer, parts, role base/layer/top) and a line listing omitted-trailing layers, the **glue-up order** (sheet 1 face up, then each next sheet onto the scored outlines of the previous, front face up, no mirroring), the guide explanation (mode, concealment inset, allowance, footprint; the scored outlines on a sheet show where the next sheet's parts go and are hidden once it is glued; the scored number on a sheet is that sheet's own number), omitted guides and the pointer to `placement_map.svg`, machine profile name and processing area, kerf `machine.kerfMM` "applied in your laser software, not in these files" (PO-LASER-7), and no bridge/dowel/spacer text. Connected: today's wording rebuilt from the fab snapshot (frame, holes, bridges, spacers `gapMM`). `settingsJSON()` keeps the 19-key `keep` list unchanged (the DEP-04 regex at `test/run_tests.js:3116-3134` reads it) and adds `o.project = {geometryKey: SBSchema.geometryKey(project), constructionMode, interpretationMode, thicknessMM, fabPitchMM, raster: [rasterW, rasterH], geometryHash, engineVersion}` from `run.fab.snapshot`; `fromLegacySettings` ignores unknown keys (they land in `extras.legacy`).
+
+- [ ] **Step 1: Write the failing tests**
+
+```js
+suite("docs.js/app.js — alpha.3 E13 assembly and settings (ASM-05, EXP-06, PO-PREVIEW-7)", () => {
+  const F = require("./fixtures.js"), E = SBEngine, S = SBSchema, w = 400, h = 100;
+  const px = { pixels: new Uint8Array(w * h).fill(100), channels: 1, w, h, alpha: null };
+  const p = S.withSource(S.defaults("plywood"), E.sourceRecord(px, { format: "png", decode: "raw-gray8" })); p.geometry.targetMM = 10; p.title = "t";
+  const s = E.generate(E.request(p, px, { quality: "fabrication" })).snapshot, md = SBDocs.assembly(p, s, { colors: "#c8a26b" });
+  check("ASM-05 bonded ASSEMBLY names the glue-up order, thickness, guides and the placement map; no bridge or spacer text",
+    /glue/i.test(md) && /6\.35/.test(md) && /placement_map\.svg/.test(md) && /concealment/i.test(md) && !/bridge|dowel|spacer/i.test(md));
+  check("D-4.7 ASSEMBLY rows are the exported sheets only; omitted layers are listed",
+    (md.match(/^\| sheet_\d\d\.svg/gm) || []).length === s.stats.exported && /omitted/i.test(md));
+  check("PO-LASER-7 ASSEMBLY states the machine and the external kerf", /xTool S1/.test(md) && /0\.15/.test(md));
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8");
+  check("PO-PREVIEW-7 buildAndDeliver writes SBDocs.assembly from run.fab.snapshot; buildAssemblyMD is gone",
+    /SBDocs\.assembly\(project, run\.fab\.snapshot/.test(appSrc) && !/function buildAssemblyMD\(/.test(appSrc));
+  check("EXP-06 settings.json keeps the 19 v1.1 keys and adds a project block with mode, thickness, pitch and hash",
+    /o\.project = /.test(appSrc) && /geometryHash/.test(appSrc.slice(appSrc.indexOf("function settingsJSON(")), appSrc.indexOf("function settingsJSON(") + 1500));
+  const back = S.fromLegacySettings(Object.assign({ procRes: 720, nSheets: 5 }, { project: { constructionMode: "bonded-relief" } }));
+  check("DEP-04 fromLegacySettings still loads a settings.json with the project block", back && back.project && S.validate(back.project).ok !== undefined);
+});
+```
+
+(Read `S.fromLegacySettings`'s minimum input at `js/schema.js:622` and adjust the fixture to its required keys.)
+
+- [ ] **Step 2: Run** — ✗.  - [ ] **Step 3: Implement**.  - [ ] **Step 4: Run** — 0 failed.
+- [ ] **Step 5: Commit** — `node build.js`; add `js/docs.js js/app.js test/run_tests.js dist/shadowbox-studio.html`; `feat(docs,app): bonded ASSEMBLY.md and settings.json project block from the fabrication snapshot (alpha.3 E13)` + trailer.
+
+---
+
+#### Task E14: Checkpoint v2.0.0-alpha.3
+
+**Files:** `js/app.js:23`, `sw.js:19`, `docs/CHANGELOG.md`, `docs/USER_GUIDE.md`, `docs/QA_CHECKLIST.md`, `test/run_tests.js` (`:2636` DEP-02 retarget, new checkpoint suite), `dist/shadowbox-studio.html`, this plan (tick E1–E14, Result notes).
+
+- [ ] **Step 1: Write the failing tests** — retarget `test/run_tests.js:2636` to `/const APP_VERSION\s*=\s*"2\.0\.0-alpha\.3"/` (`DEP-02 release 2.0.0-alpha.3 (APP_VERSION)`) and add:
+
+```js
+suite("CHANGELOG — checkpoint v2.0.0-alpha.3 (R9, PO-PREVIEW-1..7)", () => {
+  const cl = fs.readFileSync(path.join(__dirname, "..", "docs/CHANGELOG.md"), "utf8"), sec = (cl.split(/^## v2\.0\.0-alpha\.3\b.*$/m)[1] || "").split(/^## /m)[0];
+  check("R9 CHANGELOG v2.0.0-alpha.3 has a known-gaps table (worker, draft budget, part IDs, holes, .sbrproj, manifest, layout, legacy repairs)",
+    /known gaps/i.test(sec) && /^\|.*\|\s*$/m.test(sec) && /G4\.1/.test(sec) && /draft/i.test(sec) && /part ID/i.test(sec) && /registration holes/i.test(sec) &&
+    /\.sbrproj/.test(sec) && /manifest/i.test(sec) && /layout/i.test(sec) && /REPAIR_STALE/.test(sec));
+});
+```
+
+- [ ] **Step 2: Run** — ✗.
+- [ ] **Step 3: Implement** — bump both versions; move "Unreleased" items into `## v2.0.0-alpha.3 — <date>, real-engine preview and bonded alignment` with a summary per PO-PREVIEW-n and a **Known gaps (alpha.3)** table: no worker (G4.1) so drafts and the fabrication preview block the page; draft below the requested 2–4 Mpx (value and rationale from `docs/perf/DRAFT.md`); connected-mode drafts slower (KI-CONN-PERF); part-ID labels, the full stroke charset and the connected `<text>` label (G3.2/G3.3); interior-mark has no rotation tick; registration holes for bonded (G3.4); `.sbrproj` and undo (G3.6/G3.8); manifest and §9.4 layout (G3.9; `placement_map.svg` is in the flat layout); repairs reviewed under alpha.2 go `REPAIR_STALE` once (runtime-only, no saved projects); fabrication preview raster capped at 1600 px on screen. Update USER_GUIDE (presets, colour images, Preview at fabrication resolution, guides and labels, glue-up) and QA_CHECKLIST (the E5/E6/E11/E12 manual checks on a 4096 × 3084 colour PNG). Tick the plan.
+- [ ] **Step 4: Run** — `node test/run_tests.js` 0 failed; `node build.js`.
+- [ ] **Step 5: Commit** — add the files above; `release(app,docs): v2.0.0-alpha.3 real-engine preview and bonded alignment (checkpoint)` + trailer. No tag, no push.
+
+### E.7 Risks
+
+| # | Risk | Impact | Mitigation | Fallback |
+|---|---|---|---|---|
+| E-R1 | Warm draft on the user's colour source still takes 1–3 s per edit on the main thread; a cold one (new source, smoothing change) about 3–4 s | Feels sluggish; NFR-02 not met | E3 cache, commit-on-release sliders, 300 ms debounce, Stale veil over the previous result, E4 measured budget | Keep 720 px and record; G4.1 worker pool is the real fix (pull it forward next if the PO finds it unusable) |
+| E-R2 | The 2–4 Mpx draft the PO asked for cannot be interactive (measured 6–10 s at 1.8–3.1 Mpx tonal) | Expectation gap | `docs/perf/DRAFT.md` explains; the fabrication preview shows exact detail on demand | Q2 "Fine" option |
+| E-R3 | Removing the raster interim leaves the first load blank for 2–4 s | Looks frozen | Source image shown dimmed with "Generating…" until the first snapshot | — |
+| E-R4 | Guide offsets add seconds at fabrication pitch (S1: −1500 µm offsets on 8 dense layers 2.7 s) | Fab run nearer the 10 s target | Layer-level offsets (2 per pair) and one intersection; measure in E11 with `test/bench.js large` | Guides at fabrication only on `node test/bench.js` evidence, never silently skipped |
+| E-R5 | A guide bug raises `GUIDE_UNCONTAINED` (blocking) on every bonded export | Export blocked | Construction keeps scores inside `Rc`; validate tolerates sub-2 µm slivers (`survivesInset(D, 1)`); E10 tamper test | Set guides to None (explicit user action), never auto-downgrade |
+| E-R6 | Auto-switch to Tonal surprises a user with an RGB-saved height map | Wrong interpretation | RGB-equal PNGs stay Height; the notice names the switch; "Use as height map instead" for PNGs | — |
+| E-R7 | Memory: full-size RGBA (≈50 MiB at 4096 × 3084), K1, K2 and the fab cache (≈100–150 MiB desktop) | Mobile pressure | Mobile drops `run.fabCache` after the fabrication run and keeps one cache | G4.3 working-set check |
+| E-R8 | Static wiring checks that name legacy functions fail after E5 | Red suite mid-wave | E5 lists every check line to retarget; engine oracles untouched | — |
+| E-R9 | Tonal + Kuwahara r4 p2 on illustrations produces many parts (complexity caps) | `COMPLEXITY_LIMIT` with no layers | E5 shows the diagnostics and the "Simplify" advice; the panel branch exists | Lower sheets or enable `cleanup.simplify` |
+
+### E.8 Open questions (each with the default implementers apply unless it is truly unsafe)
+
+1. **Draft budget rule.** *Default:* largest `draftPx` in {720, 1024, 1280, 1536, 2000} whose warm-cache median for the colour → tonal bonded workload is ≤ 3.0 s on the i7-11800H; mobile capped at 720; the device cap lives in `SBSchema.limits`, not in the project key. Expected ≈1024–1280 px (≈1 Mpx), below the 2–4 Mpx example, recorded in `docs/perf/DRAFT.md`.
+2. **User "draft detail" choice (e.g. a 2.5 Mpx Fine option).** *Default:* not in alpha.3; the fabrication preview covers exact detail. Revisit with the G4.1 worker.
+3. **Paper/card preset.** Neither the plan nor the schema defines one (`SBSchema.defaults` accepts plywood|acrylic only, `js/schema.js:401-404`). *Default:* ship Plywood (bonded) and Acrylic (connected); list Paper/card as a known gap. Adding it needs thickness, minimum feature and kerf values from the PO.
+4. **Plywood guide mode.** The plan's preset says `interior-mark` (`js/schema.js:372`); an interior cross fixes position but not rotation, and `inset-outline` (the scored, concealed footprint of each upper part) fixes both. *Default:* the plywood preset and the switch to bonded use **`inset-outline`**; `interior-mark` stays selectable (position-only cross in alpha.3).
+5. **Sheet labels.** *Default:* each sheet k < N−1 gets its own sheet number (the `sheet_NN` number) scored at 3 mm in a concealed area; the top sheet has no concealed area and gets none (it is the only unlabelled sheet and is named on the placement map); if the label does not fit, `GUIDE_OMITTED` (warning) with "see the placement map".
+6. **Part-ID labels (ASM-01 "optional part ID").** *Default:* not scored in alpha.3; part IDs appear on `placement_map.svg`. No schema flag is added now; G3.3 adds `guides.partIds` with its default.
+7. **Polarity for a colour source auto-switched from Plywood.** *Default:* the existing mapping `white-high → light-front` (light areas stand forward, the tonal analogue of white-high, `js/schema.js:347`), smoothing r4 p2 (the plan's only tonal default). The user can flip to dark-front in one click.
+8. **Placement map name and format before the §9.4 layout.** *Default:* `placement_map.svg` at the ZIP root (flat layout), non-cut, with SVG text part IDs; renamed/moved in G3.9.
+9. **Fabrication-preview sharpness.** *Default:* keep the 1600 px on-screen raster (`RASTER_MAX_PX`, `js/preview.js:37`); the value of the button is exact geometry and diagnostics, not a sharper picture.
+10. **Fabrication re-review of a clip.** *Default:* Keep = acknowledge `REPAIR_REVIEW_FAB` on the fabrication snapshot (scoped to its `geometryHash`); no promotion of the stored review to fabrication quality in alpha.3 (it would re-key later entries).
+11. **Registration holes for bonded (G3.4).** *Default:* stay deferred; bonded defaults to holes off (ASM-04) and the guides are the alignment method.
+12. **Connected sheet text label (EXP-03).** *Default:* unchanged in alpha.3 (DEP-04 output stable); moves to strokes with the full charset in G3.2.
+13. **Ack reset on upgrade.** *Default:* draft acks are rescoped from `legacySnapshotHash` to `geometryHash` and reset once; alpha.2 clips go `REPAIR_STALE` once. Both are runtime-only (no `.sbrproj` yet), so no saved data is affected; recorded in the CHANGELOG.
+
+### E.9 Self-review
+
+- **Coverage:** P1 → E1–E5; P2 → E6; P3 → E7; P4 → E8; P5 → E9–E11; P6 → E1 (root cause) + E12; P7 → E6 (preview.png) + E13; checkpoint → E14. Every PO-PREVIEW-n row in E.1 names its tasks.
+- **Name consistency:** `SBEngine.request`, `SBEngine.sourceRecord`, `SBSchema.withSource`, `run.src`, `run.draft`, `run.fab`, `run.shown`, `showResult`, `showFab`, `run.draftCache`/`run.fabCache`, `snapshot.repairsApplied`, `SBProof.cutLengthMM`, `SBProof.panelModel`, `SBDocs.sourceNotes`, `SBDocs.assembly`, `SBSchema.colourSourceSwitch`/`presetDiff`/`applyPreset`, `SBFont.strokes`, `SBGeom.interiorPoint`, `SBGuides.build`/`validate`, `SBSvg.placementMapSVG`, `limits().draftPxCap` are used identically in every task.
+- **Review Focus:** each of the five lines in E.4 has its named check in the owning task (E7, E1, E10, E6, E8).
+- **Known approximations:** test snippets name fixture helpers (`F.ramp`, `F.heightMap`, `F.pngEncode`, `F.jpegHeader`) and two shapes (`SBProof.overlays().bridges`, `SBMaterial.withMaterial`) that the implementer confirms against the code before Step 2, as each task notes.
