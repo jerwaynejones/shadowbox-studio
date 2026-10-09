@@ -1,0 +1,956 @@
+{
+  "date": "2026-10-09T07:56:19.209Z",
+  "checks": {
+    "c1_noBridges": {
+      "pass": true,
+      "evidence": {
+        "runs": [
+          {
+            "quality": "draft",
+            "mode": "bonded-relief",
+            "bridged": 0,
+            "culled": 0
+          },
+          {
+            "quality": "fabrication",
+            "mode": "bonded-relief",
+            "bridged": 0,
+            "culled": 0
+          }
+        ],
+        "draftStatus": "Draft (approximate; Preview at fabrication resolution for the exact cut) · 720 × 540 px · 0.56 mm/px · 8 sheets · 2.6 s",
+        "fabStatus": "Fabrication · 3600 × 2700 px · 0.11 mm/px · 8 sheets · 23.5 s · 98325803bac9",
+        "alpha2Status": "720×540px · 8 sheets · 54 bridged · 56 culled · 12.81 m of cuts · 1499 ms · proof 5862 ms",
+        "alpha2BridgedCards": 7
+      }
+    },
+    "c2_hashes": {
+      "pass": true,
+      "evidence": {
+        "fabRunsTotal": 1,
+        "generateCallsDuringExport": 0,
+        "exportUsedSameSnapshotObject": true,
+        "fabPreviewGeometryHash": "98325803bac9d2f4f0f17f60f7fbf173c363a51cfccbe0ada365b1b8627ebf75",
+        "exportGeometryHash": "98325803bac9d2f4f0f17f60f7fbf173c363a51cfccbe0ada365b1b8627ebf75",
+        "settingsJson": "98325803bac9d2f4f0f17f60f7fbf173c363a51cfccbe0ada365b1b8627ebf75",
+        "statusLine": "Fabrication · 3600 × 2700 px · 0.11 mm/px · 8 sheets · 23.5 s · 98325803bac9",
+        "layerHashesEqual": "8/8"
+      }
+    },
+    "c4_sourceWarnings": {
+      "pass": true,
+      "evidence": {
+        "whySource": "alpha3_scene_3600x2700.png: Colour image: using Tonal (light/dark → layers). Height mode needs a grayscale height map. Change it under 2 Interpretation → Read the image as.; Fabrication resolution exceeds the source resolution: source 3600 × 2700 px is 400 × 300 px short of the 0.1 mm/px target (4000 × 3000 px), most short on the width: 3600 of 4000 px; source detail cannot be recovered, so the raster stays 3600 × 2700 px at 0.111 mm/px",
+        "interpretationAfterLoad": "tonal",
+        "draftPanelFabricationGroup": [
+          "▲WarningFabrication resolution exceeds the source resolution: source 3600 × 2700 px is 400 × 300 px short of the 0.1 mm/px target (4000 × 3000 px), most short on the width: 3600 of 4000 px; source detail cannot be recovered, so the raster stays 3600 × 2700 px at 0.111 mm/pxmeasured 3600 px vs limit 4000 pxFix: Use a higher-resolution source or a smaller artwork; the engine never upsamples, so missing source detail cannot be recovered."
+        ]
+      }
+    },
+    "c5_guidesLabels": {
+      "pass": true,
+      "evidence": {
+        "guidesMode": "inset-outline",
+        "labelsFab": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7"
+        ],
+        "labelsDraft": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7"
+        ],
+        "omittedFab": 38,
+        "guideOmittedDiagnostics": 38,
+        "labelOmissions": "none",
+        "scorePathsPerSheet": [
+          26,
+          29,
+          34,
+          33,
+          36,
+          48,
+          48,
+          0
+        ],
+        "placementMap": true,
+        "draftLegend": "Guides (approximate at draft; exact in the fabrication preview)",
+        "fabLegend": "Guides: blue lines are scored, hidden under the next sheet",
+        "independentValidateOnExportedSvgs": []
+      }
+    },
+    "c6_clip": {
+      "pass": true,
+      "evidence": {
+        "draftCodes": {
+          "SMOOTH_FALLBACK": 2,
+          "SUPPORT_NARROW": 2,
+          "BOND_UNSUPPORTED": 1,
+          "MAT_UNCALIBRATED": 1,
+          "PART_SMALL": 3,
+          "FEATURE_MARGINAL": 1,
+          "PART_THIN": 2,
+          "GUIDE_OMITTED": 4
+        },
+        "dialog": {
+          "open": true,
+          "title": "Clip Layer 3 to Layer 2",
+          "summary": "Removes 0 mm² of Layer 3 that has no material of Layer 2 under it; parts 1 → 1. Reviewed at draft quality.",
+          "acceptDisabled": false
+        },
+        "draftAfterClipCodes": {
+          "SMOOTH_FALLBACK": 2,
+          "SUPPORT_NARROW": 2,
+          "MAT_UNCALIBRATED": 1,
+          "PART_SMALL": 3,
+          "FEATURE_MARGINAL": 1,
+          "PART_THIN": 2,
+          "GUIDE_OMITTED": 4
+        },
+        "repairs": "1 reviewed repair in the project. | 1. Clip Layer 3 to Layer 2 (revision 5 → 6; reviewed at draft: −0 mm², parts 1 → 1). Applied.Revert",
+        "fabCodes": {
+          "REPAIR_REVIEW_FAB": 1,
+          "SMOOTH_FALLBACK": 2,
+          "SUPPORT_NARROW": 2,
+          "MAT_UNCALIBRATED": 1,
+          "PART_SMALL": 3,
+          "FEATURE_MARGINAL": 1,
+          "PART_THIN": 2,
+          "GUIDE_OMITTED": 4
+        },
+        "fabItem": {
+          "text": "▲WarningLayer 3Repair must be reviewed at fabrication quality: clip-to-lower 1 was reviewed at draft quality; at this resolution it removes 0 mm² and parts 1 → 1measured 0.0028 mm²Fix: Review the repair in the fabrication review before exporting.ShowRevertKeep this clip at fabrication resolution",
+          "buttons": [
+            "Show",
+            "Revert"
+          ]
+        },
+        "whyExportAtFab": "Acknowledge 16 warnings in the fabrication review, then download",
+        "whyExportAfterAck": "",
+        "download": "at09_crescent_shadowbox.zip",
+        "mainSceneBondUnsupported": [
+          0,
+          0
+        ],
+        "instrumentation": [
+          "SBEngine.TEST_HOOKS = true; SBEngine.request adds req.debug = {smoothBonded: true} to draft and fabrication requests",
+          "debugger: project.construction.cleanup = {\"minFeatureMM\":0,\"speckMM2\":4.5,\"holeMM2\":0,\"cornerStyle\":\"smooth\",\"toleranceMM\":0.05,\"simplify\":\"off\"}"
+        ]
+      }
+    },
+    "c3_draftEdges": {
+      "pass": false,
+      "note": "judged from crop_*.png: same 720 x 540 raster (0.56 mm/px) as alpha.2; more faithful (no bridges, details kept) but edges not finer; the fabrication preview is the higher-resolution view",
+      "evidence": {
+        "alpha2Status": "720×540px · 8 sheets · 54 bridged · 56 culled · 12.81 m of cuts · 1499 ms · proof 5862 ms",
+        "alpha3DraftStatus": "Draft (approximate; Preview at fabrication resolution for the exact cut) · 720 × 540 px · 0.56 mm/px · 8 sheets · 2.6 s",
+        "alpha3DraftRaster": [
+          720,
+          540
+        ],
+        "alpha3DraftMmPerPx": 0.5555555555555556,
+        "alpha3FabRaster": [
+          3600,
+          2700
+        ],
+        "alpha3FabMmPerPx": 0.11111111111111112,
+        "alpha3DraftVertices": 10002,
+        "alpha3FabVertices": 38584
+      }
+    }
+  },
+  "scene": {
+    "path": "alpha3_scene_3600x2700.png",
+    "w": 3600,
+    "h": 2700,
+    "sha256": "889a6c876ee786e21783be824d4b86e14197cf48a1059b4e0dadebd8d4e43396",
+    "generator": "tools/alpha3_scene.js"
+  },
+  "browser": {
+    "protocolVersion": "1.3",
+    "product": "Chrome/152.0.7977.82",
+    "revision": "@d04cdb24d67b081f6cf80200ffc5233f44b61109",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36",
+    "jsVersion": "15.2.124.21"
+  },
+  "ports": {
+    "alpha3": 39179,
+    "alpha2": 35661
+  },
+  "a": {
+    "url": "http://127.0.0.1:39179/index.html",
+    "screenshots": {
+      "load": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/a3_load_source_notes.png",
+      "draftDiag": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/a3_draft_diagnostics.png",
+      "draft_proof": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/a3_draft_proof.png",
+      "draft_section": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/a3_draft_section.png",
+      "draft_sheets": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/a3_draft_layers.png",
+      "draft_tilt": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/a3_draft_tilt.png",
+      "fab_proof": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/a3_fab_proof.png",
+      "fab_section": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/a3_fab_section.png",
+      "fab_sheets": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/a3_fab_layers.png",
+      "fab_tilt": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/a3_fab_tilt.png",
+      "fabReview": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/a3_fab_review.png"
+    },
+    "initial": {
+      "preset": "plywood",
+      "construction": "bonded-relief",
+      "machine": "xtool-s1-feeder",
+      "pitch": "0.1",
+      "sizeby": "height",
+      "version": "v2.0.0-alpha.3"
+    },
+    "controls": {
+      "preset": "plywood",
+      "construction": "bonded-relief",
+      "machine": "xtool-s1-feeder",
+      "pitch": "0.1",
+      "sheets": "8",
+      "sizeby": "height",
+      "target": "300"
+    },
+    "loadToDraftMs": 5094,
+    "sourceNote": "alpha3_scene_3600x2700.png: Colour image: using Tonal (light/dark → layers). Height mode needs a grayscale height map. Change it under 2 Interpretation → Read the image as.; Fabrication resolution exceeds the source resolution: source 3600 × 2700 px is 400 × 300 px short of the 0.1 mm/px target (4000 × 3000 px), most short on the width: 3600 of 4000 px; source detail cannot be recovered, so the raster stays 3600 × 2700 px at 0.111 mm/px",
+    "interpAfterLoad": "tonal",
+    "draftStatus": "Draft (approximate; Preview at fabrication resolution for the exact cut) · 720 × 540 px · 0.56 mm/px · 8 sheets · 2.6 s",
+    "draftBadge": "Draft",
+    "dimbar": [
+      "Layers: 8 requested · 8 exported",
+      "Max Z 50.8 mm · base 6.35 mm · relief 44.45 mm · nominal thickness",
+      "Pitch: 0.111 mm/px (target 0.1 mm/px) · 3600 × 2700 px, 9.7 Mpx · limited by the source: 400 × 300 px short; detail cannot be recovered",
+      "page 400 mm × 300 mm · fits xTool S1 + feeder (470 mm × 3000 mm)",
+      "Thresholds\n        Nearest-layer reference heights; tonal bands follow the tone split (balanced).\n        layer 1: 0.071 → 6.35 mmlayer 2: 0.214 → 12.7 mmlayer 3: 0.357 → 19.05 mmlayer 4: 0.500 → 25.4 mmlayer 5: 0.643 → 31.75 mmlayer 6: 0.786 → 38.1 mmlayer 7: 0.929 → 44.45 mm",
+      "Stock height excludes adhesive films and surface finishes."
+    ],
+    "draftDiagSummary": "1 blocking, 84 warnings, 3 info in this draft result. Fabrication resolution: 1 item (listed first; acknowledged in the Fabrication review).",
+    "draftPlanGroup": [
+      "▲WarningFabrication resolution exceeds the source resolution: source 3600 × 2700 px is 400 × 300 px short of the 0.1 mm/px target (4000 × 3000 px), most short on the width: 3600 of 4000 px; source detail cannot be recovered, so the raster stays 3600 × 2700 px at 0.111 mm/pxmeasured 3600 px vs limit 4000 pxFix: Use a higher-resolution source or a smaller artwork; the engine never upsamples, so missing source detail cannot be recovered."
+    ],
+    "bridgesToolHidden": true,
+    "draftCards": {
+      "legend": "Guides (approximate at draft; exact in the fabrication preview)",
+      "labels": [
+        "SHEET 1 baseretained 1200 cm² (100%) · waste 0 cm²1 contours · 140 cm cut",
+        "SHEET 2 layer 2retained 1036.5 cm² (86%) · waste 163.5 cm²61 contours · 346 cm cut",
+        "SHEET 3 layer 3retained 897.1 cm² (75%) · waste 302.9 cm²62 contours · 392.8 cm cut",
+        "SHEET 4 layer 4retained 712.3 cm² (59%) · waste 487.7 cm²57 contours · 403.7 cm cut",
+        "SHEET 5 layer 5retained 594.6 cm² (50%) · waste 605.4 cm²16 contours · 335.1 cm cut",
+        "SHEET 6 layer 6retained 440.3 cm² (37%) · waste 759.7 cm²12 contours · 309.8 cm cut",
+        "SHEET 7 layer 7retained 100.5 cm² (8%) · waste 1099.5 cm²32 contours · 201.4 cm cut",
+        "SHEET 8 topretained 100.5 cm² (8%) · waste 1099.5 cm²32 contours · 201.4 cm cut"
+      ]
+    },
+    "draftCanvas": "a3_draft_proof_canvas.png",
+    "fabButtonBefore": "Preview at fabrication resolution",
+    "fabWallMs": 25272,
+    "fabStatus": "Fabrication · 3600 × 2700 px · 0.11 mm/px · 8 sheets · 23.5 s · 98325803bac9",
+    "fabBadge": "Validated",
+    "fabButtonAfter": "Showing the fabrication result",
+    "fabReviewSummary": "Fabrication result 98325803bac9 at 3600 × 2700 px (23.5 s): 73 warnings, 3 info in this fabrication result.",
+    "whyExportAtFab": "Acknowledge 73 warnings in the fabrication review, then download",
+    "fabBridgesToolHidden": true,
+    "fabCards": {
+      "legend": "Guides: blue lines are scored, hidden under the next sheet",
+      "labels": [
+        "SHEET 1 baseretained 1200 cm² (100%) · waste 0 cm²1 contours · 140 cm cut",
+        "SHEET 2 layer 2retained 1033.1 cm² (86%) · waste 166.9 cm²35 contours · 292.1 cm cut",
+        "SHEET 3 layer 3retained 893.1 cm² (74%) · waste 306.9 cm²33 contours · 347 cm cut",
+        "SHEET 4 layer 4retained 711.1 cm² (59%) · waste 488.9 cm²14 contours · 337.1 cm cut",
+        "SHEET 5 layer 5retained 593.9 cm² (49%) · waste 606.1 cm²11 contours · 327 cm cut",
+        "SHEET 6 layer 6retained 439.7 cm² (37%) · waste 760.3 cm²11 contours · 312.3 cm cut",
+        "SHEET 7 layer 7retained 97 cm² (8%) · waste 1103 cm²25 contours · 188.9 cm cut",
+        "SHEET 8 topretained 97 cm² (8%) · waste 1103 cm²25 contours · 188.9 cm cut"
+      ]
+    },
+    "fabCanvas": "a3_fab_proof_canvas.png",
+    "acked": 31,
+    "whyExportAfterAck": "",
+    "exportDisabled": false,
+    "exportStatus": "saved alpha3_scene_3600x2700_shadowbox.zip to your downloads",
+    "files": [
+      {
+        "sameSnapshotAsLastFab": true,
+        "fabRunsBefore": 1,
+        "geometryHash": "98325803bac9d2f4f0f17f60f7fbf173c363a51cfccbe0ada365b1b8627ebf75",
+        "names": [
+          "sheet_01.svg",
+          "sheet_02.svg",
+          "sheet_03.svg",
+          "sheet_04.svg",
+          "sheet_05.svg",
+          "sheet_06.svg",
+          "sheet_07.svg",
+          "sheet_08.svg",
+          "proof.svg",
+          "placement_map.svg"
+        ]
+      }
+    ],
+    "generateCallsDuringExport": 0,
+    "runs": [
+      {
+        "quality": "draft",
+        "status": "done",
+        "ms": 2584,
+        "revision": 2,
+        "error": null,
+        "geometryHash": "6bc8aa52c9fd5affcf6defbb654cd7bf194d8f34d818c8adf72422e60f90643a",
+        "raster": [
+          720,
+          540
+        ],
+        "mmPerPx": 0.5555555555555556,
+        "mode": "bonded-relief",
+        "interp": "tonal",
+        "page": {
+          "wMM": 400,
+          "hMM": 300,
+          "frameMM": 0,
+          "artWMM": 400,
+          "artHMM": 300
+        },
+        "nLayers": 8,
+        "exported": 8,
+        "layerHashes": [
+          "fb8b4782e05bb7aaa891481f6977028348873c039abafbb88d4292ef6c59552f",
+          "a82f5f5227a92e26d0a8e53a8acd93b56c4bae4b74eb4bb541f11672668dcee7",
+          "acc22037382e42e5f256482528b2447393a8b49419cdb94f695d698e3e4480b6",
+          "d951b787fc5f3269a56d7f072c39e0b00281951230fd150e6d420f7725ea944e",
+          "0a5c4108a8180c1d9fdf19bc95a4b3c337f666658f29c14574e7ff574273df39",
+          "bae0210b2cec5594e116e47d304d077fceaa89f09ca1b292b6ea3686524eacb5",
+          "ffff6041458d87da8ef73d631ebf3c966a317346474d177838badcb8f6b32a61",
+          "b420945069ea541f9c0cfa7f899c786bd6741d9d3a1dd67c5e72acb30e68d8b2"
+        ],
+        "status2": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "bridged": 0,
+        "culled": 0,
+        "codes": {
+          "RESAMPLED": 1,
+          "EMPTY_BAND": 1,
+          "SUPPORT_NARROW": 11,
+          "FEATURE_MARGINAL": 15,
+          "IDENTICAL_LAYERS": 1,
+          "MAT_UNCALIBRATED": 1,
+          "SAMPLING_LOW": 1,
+          "NECK_NARROW": 7,
+          "PART_SMALL": 7,
+          "PART_THIN": 5,
+          "GUIDE_OMITTED": 38
+        },
+        "scoreCounts": [
+          62,
+          70,
+          65,
+          28,
+          25,
+          51,
+          51,
+          0
+        ],
+        "labels": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7"
+        ],
+        "omitted": 38,
+        "guidesMode": "inset-outline",
+        "vertices": 10002
+      },
+      {
+        "quality": "fabrication",
+        "status": "done",
+        "ms": 23361,
+        "revision": 2,
+        "error": null,
+        "geometryHash": "98325803bac9d2f4f0f17f60f7fbf173c363a51cfccbe0ada365b1b8627ebf75",
+        "raster": [
+          3600,
+          2700
+        ],
+        "mmPerPx": 0.11111111111111112,
+        "mode": "bonded-relief",
+        "interp": "tonal",
+        "page": {
+          "wMM": 400,
+          "hMM": 300,
+          "frameMM": 0,
+          "artWMM": 400,
+          "artHMM": 300
+        },
+        "nLayers": 8,
+        "exported": 8,
+        "layerHashes": [
+          "3c4a3671250a920e05266d776ede5ee8cc3f9bb8380271325dc1f5a70d5b2a7b",
+          "61fcc76daa5c71e267f1725448160f3bc36a5c1ac4fd014d2e0cc12e212e9e7f",
+          "98949c876262f791e1e998849964ab6464ab908d4b9f47ad7c90e7205ebc7b4d",
+          "1f8d3ac53d2a9f5a7ea806afc8a796f4bfea33ecdec7d49b80721ca9ec2f70cd",
+          "0b5a74f6df538793faa169493a5b7539867a6713091d34d8b36e481ade39958f",
+          "9330b4bca2bf076e2fa087902ea02b33708d87352f463a0281596378b0e8be46",
+          "a77bc74bbd4d59eeb3f9c926c0fa8defe3d2f981c9630eff6ca57a4733075b00",
+          "5134c81a92f00b645422939448ccdf0d54e5fc012770e7e98405432c2161221b"
+        ],
+        "status2": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "bridged": 0,
+        "culled": 0,
+        "codes": {
+          "FAB_EXCEEDS_SOURCE": 1,
+          "RESAMPLED": 1,
+          "EMPTY_BAND": 1,
+          "FEATURE_MARGINAL": 15,
+          "SUPPORT_NARROW": 2,
+          "IDENTICAL_LAYERS": 1,
+          "MAT_UNCALIBRATED": 1,
+          "NECK_NARROW": 7,
+          "PART_SMALL": 7,
+          "PART_THIN": 2,
+          "GUIDE_OMITTED": 38
+        },
+        "scoreCounts": [
+          26,
+          29,
+          34,
+          33,
+          36,
+          48,
+          48,
+          0
+        ],
+        "labels": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7"
+        ],
+        "omitted": 38,
+        "guidesMode": "inset-outline",
+        "vertices": 38584
+      }
+    ],
+    "zip": {
+      "name": "alpha3_scene_3600x2700_shadowbox.zip",
+      "path": "alpha3_scene_3600x2700_shadowbox.zip"
+    },
+    "exceptions": []
+  },
+  "b": {
+    "screenshots": {
+      "proof": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/a2_draft_proof.png",
+      "layers": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/a2_draft_layers.png"
+    },
+    "version": "v2.0.0-alpha.2",
+    "controls": {
+      "construction": "bonded-relief",
+      "machine": "xtool-s1-feeder",
+      "pitch": "0.1",
+      "sheets": "8",
+      "sizeby": "height",
+      "target": "300",
+      "interp": "tonal",
+      "polarity": "light-front",
+      "palette": "Midnight (Starry Night)"
+    },
+    "status": "720×540px · 8 sheets · 54 bridged · 56 culled · 12.81 m of cuts · 1499 ms · proof 5862 ms",
+    "sourceNote": null,
+    "bridgesToolHidden": true,
+    "cards": [
+      "SHEET 1 backingretained 1200 cm² (100%) · waste 0 cm²solid panel — frame + holes only",
+      "SHEET 2 midretained 1030 cm² (86%) · waste 170 cm²7 contours · 265.2 cm cut · 14 bridged · 6 culled",
+      "SHEET 3 midretained 893.2 cm² (74%) · waste 306.8 cm²1 contours · 295.4 cm cut · 10 bridged · 4 culled",
+      "SHEET 4 midretained 718.5 cm² (60%) · waste 481.5 cm²4 contours · 299.4 cm cut · 10 bridged · 2 culled",
+      "SHEET 5 midretained 305.4 cm² (25%) · waste 894.6 cm²1 contours · 129.2 cm cut · 6 bridged · 4 culled",
+      "SHEET 6 midretained 305.1 cm² (25%) · waste 894.9 cm²1 contours · 126.1 cm cut · 6 bridged · 6 culled",
+      "SHEET 7 midretained 75.4 cm² (6%) · waste 1124.6 cm²1 contours · 82.8 cm cut · 4 bridged · 17 culled",
+      "SHEET 8 frontretained 75.4 cm² (6%) · waste 1124.6 cm²1 contours · 82.8 cm cut · 4 bridged · 17 culled"
+    ],
+    "canvas": "a2_draft_proof_canvas.png",
+    "exceptions": []
+  },
+  "crops": {
+    "moon": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/crop_moon.png",
+    "city": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/crop_city.png",
+    "tree_wires": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/crop_tree_wires.png",
+    "fence": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/crop_fence.png"
+  },
+  "c": {
+    "screenshots": {
+      "draftDiag": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/c_draft_bond_unsupported.png",
+      "dialog": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/c_clip_dialog.png",
+      "fabReview": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/c_fab_review_repair.png",
+      "show": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/docs/baseline/alpha3/c_fab_show_clip.png"
+    },
+    "instrumentation": [
+      "SBEngine.TEST_HOOKS = true; SBEngine.request adds req.debug = {smoothBonded: true} to draft and fabrication requests",
+      "debugger: project.construction.cleanup = {\"minFeatureMM\":0,\"speckMM2\":4.5,\"holeMM2\":0,\"cornerStyle\":\"smooth\",\"toleranceMM\":0.05,\"simplify\":\"off\"}"
+    ],
+    "draft": {
+      "quality": "draft",
+      "status": "done",
+      "ms": 46,
+      "revision": 5,
+      "error": null,
+      "geometryHash": "cc0cfd4b5a03c1caa0a69f2f19684e2034dcf0294ba5a277750b1d6e47e5e816",
+      "raster": [
+        40,
+        40
+      ],
+      "mmPerPx": 0.05,
+      "mode": "bonded-relief",
+      "interp": "height",
+      "page": {
+        "wMM": 2,
+        "hMM": 2,
+        "frameMM": 0,
+        "artWMM": 2,
+        "artHMM": 2
+      },
+      "nLayers": 3,
+      "exported": 3,
+      "layerHashes": [
+        "10017c8cc9c4ac7abe306dc5438f65f17d0d6be14a52d91f9b597c3d71c00a79",
+        "807c1bc642feac33348f7ccef4b9b07a611627b28bde710da8da7611cda046d1",
+        "34f72406e8a293944ff47c9844649f9a8284c57752aa414f2a077cd5198fc16a"
+      ],
+      "status2": [
+        "ok",
+        "ok",
+        "ok"
+      ],
+      "bridged": 0,
+      "culled": 0,
+      "codes": {
+        "SMOOTH_FALLBACK": 2,
+        "SUPPORT_NARROW": 2,
+        "BOND_UNSUPPORTED": 1,
+        "MAT_UNCALIBRATED": 1,
+        "PART_SMALL": 3,
+        "FEATURE_MARGINAL": 1,
+        "PART_THIN": 2,
+        "GUIDE_OMITTED": 4
+      },
+      "scoreCounts": [
+        0,
+        0,
+        0
+      ],
+      "labels": [],
+      "omitted": 2,
+      "guidesMode": "inset-outline",
+      "vertices": 20
+    },
+    "clipButtons": [
+      "Clip to lower layer…"
+    ],
+    "dialog": {
+      "open": true,
+      "title": "Clip Layer 3 to Layer 2",
+      "summary": "Removes 0 mm² of Layer 3 that has no material of Layer 2 under it; parts 1 → 1. Reviewed at draft quality.",
+      "acceptDisabled": false
+    },
+    "draftAfterClip": {
+      "quality": "draft",
+      "status": "done",
+      "ms": 23,
+      "revision": 6,
+      "error": null,
+      "geometryHash": "e5716741b5e95747b828213dc44074cf8862481a7bab0d4f4315d04fd956a903",
+      "raster": [
+        40,
+        40
+      ],
+      "mmPerPx": 0.05,
+      "mode": "bonded-relief",
+      "interp": "height",
+      "page": {
+        "wMM": 2,
+        "hMM": 2,
+        "frameMM": 0,
+        "artWMM": 2,
+        "artHMM": 2
+      },
+      "nLayers": 3,
+      "exported": 3,
+      "layerHashes": [
+        "10017c8cc9c4ac7abe306dc5438f65f17d0d6be14a52d91f9b597c3d71c00a79",
+        "807c1bc642feac33348f7ccef4b9b07a611627b28bde710da8da7611cda046d1",
+        "64b7c19a0bfbd8f8685d1755e376f5e21b5209535213e08308f792fe5543fbd6"
+      ],
+      "status2": [
+        "ok",
+        "ok",
+        "ok"
+      ],
+      "bridged": 0,
+      "culled": 0,
+      "codes": {
+        "SMOOTH_FALLBACK": 2,
+        "SUPPORT_NARROW": 2,
+        "MAT_UNCALIBRATED": 1,
+        "PART_SMALL": 3,
+        "FEATURE_MARGINAL": 1,
+        "PART_THIN": 2,
+        "GUIDE_OMITTED": 4
+      },
+      "scoreCounts": [
+        0,
+        0,
+        0
+      ],
+      "labels": [],
+      "omitted": 2,
+      "guidesMode": "inset-outline",
+      "vertices": 24
+    },
+    "repairs": "1 reviewed repair in the project. | 1. Clip Layer 3 to Layer 2 (revision 5 → 6; reviewed at draft: −0 mm², parts 1 → 1). Applied.Revert",
+    "fab": {
+      "quality": "fabrication",
+      "status": "done",
+      "ms": 32,
+      "revision": 6,
+      "error": null,
+      "geometryHash": "82c9b61513af2053b560b6e3b0c51e41604aba85adbf33e30c9932a9dfaa95bf",
+      "raster": [
+        40,
+        40
+      ],
+      "mmPerPx": 0.05,
+      "mode": "bonded-relief",
+      "interp": "height",
+      "page": {
+        "wMM": 2,
+        "hMM": 2,
+        "frameMM": 0,
+        "artWMM": 2,
+        "artHMM": 2
+      },
+      "nLayers": 3,
+      "exported": 3,
+      "layerHashes": [
+        "10017c8cc9c4ac7abe306dc5438f65f17d0d6be14a52d91f9b597c3d71c00a79",
+        "807c1bc642feac33348f7ccef4b9b07a611627b28bde710da8da7611cda046d1",
+        "64b7c19a0bfbd8f8685d1755e376f5e21b5209535213e08308f792fe5543fbd6"
+      ],
+      "status2": [
+        "ok",
+        "ok",
+        "ok"
+      ],
+      "bridged": 0,
+      "culled": 0,
+      "codes": {
+        "REPAIR_REVIEW_FAB": 1,
+        "SMOOTH_FALLBACK": 2,
+        "SUPPORT_NARROW": 2,
+        "MAT_UNCALIBRATED": 1,
+        "PART_SMALL": 3,
+        "FEATURE_MARGINAL": 1,
+        "PART_THIN": 2,
+        "GUIDE_OMITTED": 4
+      },
+      "scoreCounts": [
+        0,
+        0,
+        0
+      ],
+      "labels": [],
+      "omitted": 2,
+      "guidesMode": "inset-outline",
+      "vertices": 24
+    },
+    "fabItem": {
+      "text": "▲WarningLayer 3Repair must be reviewed at fabrication quality: clip-to-lower 1 was reviewed at draft quality; at this resolution it removes 0 mm² and parts 1 → 1measured 0.0028 mm²Fix: Review the repair in the fabrication review before exporting.ShowRevertKeep this clip at fabrication resolution",
+      "buttons": [
+        "Show",
+        "Revert"
+      ]
+    },
+    "whyExportAtFab": "Acknowledge 16 warnings in the fabrication review, then download",
+    "exportDisabledAtFab": false,
+    "afterShowStatus": "Showing Layer 3: Repair must be reviewed at fabrication quality (measured 0.0028 mm²)",
+    "acked": 15,
+    "whyExportAfterAck": "",
+    "exportDisabledAfterAck": false,
+    "zip": {
+      "name": "at09_crescent_shadowbox.zip",
+      "path": "at09_crescent_shadowbox.zip"
+    },
+    "exportStatus": "saved at09_crescent_shadowbox.zip to your downloads",
+    "exceptions": []
+  },
+  "export": {
+    "zip": "alpha3_scene_3600x2700_shadowbox.zip",
+    "zipSha256": "186ae54e0c1382fa7f9ac87a008dd2642df881a41024add94a68b7b94023bbc1",
+    "files": [
+      "ASSEMBLY.md",
+      "placement_map.svg",
+      "preview.png",
+      "proof.svg",
+      "settings.json",
+      "sheet_01.svg",
+      "sheet_02.svg",
+      "sheet_03.svg",
+      "sheet_04.svg",
+      "sheet_05.svg",
+      "sheet_06.svg",
+      "sheet_07.svg",
+      "sheet_08.svg"
+    ],
+    "settingsGeometryHash": "98325803bac9",
+    "settingsProject": {
+      "geometryKey": {
+        "schema": {
+          "major": 1,
+          "minor": 0
+        },
+        "engine": {
+          "id": "sbr-engine",
+          "version": "1.0.0-dev"
+        },
+        "source": {
+          "format": "png",
+          "sampleHash": "e23596e5f8e57e9912210923501e6688417d1cb8d67f431bedabb60d821c9fdc",
+          "w": 3600,
+          "h": 2700,
+          "channels": 4,
+          "decode": "canvas-tonal",
+          "orientation": {
+            "exif": 1,
+            "exifAppliedBy": "none",
+            "rotate": 0,
+            "mirror": false
+          },
+          "alpha": {
+            "mode": "full",
+            "t": 0.5
+          }
+        },
+        "interpretation": {
+          "mode": "tonal",
+          "polarity": "light-front",
+          "thresholdRule": "balanced",
+          "manual": [],
+          "smoothing": {
+            "radiusMM": 1.65,
+            "passes": 2
+          },
+          "heightFilter": null
+        },
+        "construction": {
+          "mode": "bonded-relief",
+          "sheets": 8,
+          "frame": {
+            "enabled": false,
+            "widthMM": 0
+          },
+          "gapMM": 0,
+          "cleanup": {
+            "minFeatureMM": 1.5,
+            "speckMM2": 4.5,
+            "holeMM2": 4.5,
+            "cornerStyle": "sharp",
+            "toleranceMM": 0.05,
+            "simplify": "off"
+          },
+          "bridge": {
+            "bridgeMM": 1.8,
+            "cullBelowMM2": 25,
+            "maxBridgeMM": 40,
+            "cullEnabled": false
+          },
+          "registration": {
+            "enabled": false,
+            "diaMM": 3,
+            "edgeClearanceMM": 1,
+            "layers": "all"
+          },
+          "guides": {
+            "mode": "inset-outline",
+            "concealInsetMM": 0.5,
+            "markFootprintMM": 0.2,
+            "allowanceMM": 0.5,
+            "labelHeightMM": 3
+          },
+          "repairs": []
+        },
+        "material": {
+          "name": "1/4\" plywood (basswood or poplar)",
+          "thicknessMM": 6.35,
+          "thicknessState": "nominal",
+          "calibrated": false,
+          "minFeatureMM": 1.5,
+          "advisoryFeatureMM": 2,
+          "minPartMM2": 25,
+          "kerfMode": "external",
+          "calibration": null
+        },
+        "geometry": {
+          "sizeBy": "height",
+          "targetMM": 300,
+          "widthMM": null,
+          "heightMM": null,
+          "lockAspect": true,
+          "draftPx": 720,
+          "fabPitchMM": 0.1,
+          "resample": {
+            "height": "nearest",
+            "tonal": "area"
+          }
+        },
+        "machine": {
+          "id": "xtool-s1-feeder",
+          "name": "xTool S1 + feeder",
+          "maxProcessingHeightMM": 470,
+          "maxLengthMM": 3000,
+          "maxMaterialWidthMM": 545,
+          "maxThicknessMM": 14,
+          "kerfMM": 0.15
+        }
+      },
+      "constructionMode": "bonded-relief",
+      "interpretationMode": "tonal",
+      "thicknessMM": 6.35,
+      "fabPitchMM": 0.1,
+      "raster": [
+        3600,
+        2700
+      ],
+      "geometryHash": "98325803bac9d2f4f0f17f60f7fbf173c363a51cfccbe0ada365b1b8627ebf75",
+      "engineVersion": "1.0.0-dev"
+    },
+    "assemblyHashLine": "fabrication result 98325803bac9",
+    "sheets": [
+      {
+        "name": "sheet_01.svg",
+        "layer": 0,
+        "scorePaths": 26,
+        "cutRings": 1,
+        "hasText": false,
+        "unsupported": 0,
+        "layerHashFromSvg": "3c4a3671250a920e05266d776ede5ee8cc3f9bb8380271325dc1f5a70d5b2a7b",
+        "layerHashFabPreview": "3c4a3671250a920e05266d776ede5ee8cc3f9bb8380271325dc1f5a70d5b2a7b",
+        "equal": true
+      },
+      {
+        "name": "sheet_02.svg",
+        "layer": 1,
+        "scorePaths": 29,
+        "cutRings": 35,
+        "hasText": false,
+        "unsupported": 0,
+        "layerHashFromSvg": "61fcc76daa5c71e267f1725448160f3bc36a5c1ac4fd014d2e0cc12e212e9e7f",
+        "layerHashFabPreview": "61fcc76daa5c71e267f1725448160f3bc36a5c1ac4fd014d2e0cc12e212e9e7f",
+        "equal": true
+      },
+      {
+        "name": "sheet_03.svg",
+        "layer": 2,
+        "scorePaths": 34,
+        "cutRings": 33,
+        "hasText": false,
+        "unsupported": 0,
+        "layerHashFromSvg": "98949c876262f791e1e998849964ab6464ab908d4b9f47ad7c90e7205ebc7b4d",
+        "layerHashFabPreview": "98949c876262f791e1e998849964ab6464ab908d4b9f47ad7c90e7205ebc7b4d",
+        "equal": true
+      },
+      {
+        "name": "sheet_04.svg",
+        "layer": 3,
+        "scorePaths": 33,
+        "cutRings": 14,
+        "hasText": false,
+        "unsupported": 0,
+        "layerHashFromSvg": "1f8d3ac53d2a9f5a7ea806afc8a796f4bfea33ecdec7d49b80721ca9ec2f70cd",
+        "layerHashFabPreview": "1f8d3ac53d2a9f5a7ea806afc8a796f4bfea33ecdec7d49b80721ca9ec2f70cd",
+        "equal": true
+      },
+      {
+        "name": "sheet_05.svg",
+        "layer": 4,
+        "scorePaths": 36,
+        "cutRings": 11,
+        "hasText": false,
+        "unsupported": 0,
+        "layerHashFromSvg": "0b5a74f6df538793faa169493a5b7539867a6713091d34d8b36e481ade39958f",
+        "layerHashFabPreview": "0b5a74f6df538793faa169493a5b7539867a6713091d34d8b36e481ade39958f",
+        "equal": true
+      },
+      {
+        "name": "sheet_06.svg",
+        "layer": 5,
+        "scorePaths": 48,
+        "cutRings": 11,
+        "hasText": false,
+        "unsupported": 0,
+        "layerHashFromSvg": "9330b4bca2bf076e2fa087902ea02b33708d87352f463a0281596378b0e8be46",
+        "layerHashFabPreview": "9330b4bca2bf076e2fa087902ea02b33708d87352f463a0281596378b0e8be46",
+        "equal": true
+      },
+      {
+        "name": "sheet_07.svg",
+        "layer": 6,
+        "scorePaths": 48,
+        "cutRings": 25,
+        "hasText": false,
+        "unsupported": 0,
+        "layerHashFromSvg": "a77bc74bbd4d59eeb3f9c926c0fa8defe3d2f981c9630eff6ca57a4733075b00",
+        "layerHashFabPreview": "a77bc74bbd4d59eeb3f9c926c0fa8defe3d2f981c9630eff6ca57a4733075b00",
+        "equal": true
+      },
+      {
+        "name": "sheet_08.svg",
+        "layer": 7,
+        "scorePaths": 0,
+        "cutRings": 25,
+        "hasText": false,
+        "unsupported": 0,
+        "layerHashFromSvg": "5134c81a92f00b645422939448ccdf0d54e5fc012770e7e98405432c2161221b",
+        "layerHashFabPreview": "5134c81a92f00b645422939448ccdf0d54e5fc012770e7e98405432c2161221b",
+        "equal": true
+      }
+    ],
+    "independentGuideValidate": []
+  },
+  "exceptions": {
+    "a": [],
+    "b": [],
+    "c": []
+  },
+  "canvases": {
+    "a2Draft": "a2_draft_proof_canvas.png",
+    "a3Draft": "a3_draft_proof_canvas.png",
+    "a3Fab": "a3_fab_proof_canvas.png"
+  }
+}
