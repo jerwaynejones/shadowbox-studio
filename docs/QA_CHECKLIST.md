@@ -16,8 +16,8 @@ that added it.
       (G2.11b; same guard, `SBSchema.canGenerate`). Generation also runs on every change once a
       source exists, and `regenerate()` refuses without one.
 - [ ] After a photo or the demo is loaded, Export is enabled and the reason text is hidden.
-- [ ] Changing a slider regenerates as before (v1.1.0 behaviour); changing the palette only
-      recolours the preview and the chips.
+- [ ] Releasing a slider regenerates once (alpha.3 E5: the value follows the drag, the draft runs on
+      release); changing the palette only recolours the preview and the chips.
 
 ## Stages and ranges (UI-01, PO-LASER-4, LYR-01, G2.11b)
 
@@ -78,8 +78,23 @@ that added it.
       up and down moves the line.
 - [ ] Tilt shows "Illustrative: not to scale"; Explode spreads the layers and does not change the
       exported files; Explode and Show bridges are only shown on Tilt.
-- [ ] After a slider change the status line and Layers grid update before the proof does (a raster
-      preview shows meanwhile); the status line then ends with `proof N ms` (KI-CONN-PERF).
+- [ ] After a slider is released the previous result stays visible, dimmed, with "Updating draft…" and the
+      Processing badge; then Proof, Section, Layers and Tilt update together (alpha.3 E5; no raster interim).
 - [ ] Section shows a width dimension line under the bands, a height dimension line on the left, and
       an amber mark on the page gauge at the right that follows the drag.
 - [ ] Export from the Section tab: `preview.png` in the ZIP is the proof, not the section chart.
+
+## Real-engine draft (PO-PREVIEW-1, LYR-06, UI-05, alpha.3 E5)
+
+- [ ] Bonded preview on a colour 4096 × 3084 PNG shows no amber/dark bridge lines; Layers cards say base/top; a slider
+      drag regenerates once on release.
+- [ ] The status line starts with "Draft (approximate; …)" and names the draft raster, mm/px, sheets and seconds; in
+      Connected sheets it adds the bridged/culled counts and the cut length.
+- [ ] Switch Construction to Connected sheets: the Layers cards say backing/mid/front, sheet 1 reads "solid panel —
+      frame + holes only", and Tilt shows the amber bridges (Show bridges on).
+- [ ] Edit a setting and look at Section before the draft lands: the stale bands keep the old result's thickness
+      and gap (they are the shown result's, not the edited project's).
+- [ ] Turn on the Changes overlay in Proof: the draft is rebuilt once with the added/removed outlines (same
+      acknowledgements); with the overlay off the draft skips them.
+- [ ] Raise Sheets until a draft hits COMPLEXITY_LIMIT: the previous picture stays, the status line says the previous
+      result is still shown, and Diagnostics reads "No layers: COMPLEXITY_LIMIT…" with the cap items listed.

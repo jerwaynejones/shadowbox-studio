@@ -4,15 +4,16 @@
  * Orchestration layer: application state, the processing pipeline, UI wiring,
  * the built-in demo scene, and the export bundle.
  *
- * Pipeline (runs debounced whenever a parameter changes):
+ * Pipeline (alpha.3 E5, runs debounced whenever a geometry setting changes):
  *
- *   photo ▶ scale ▶ luminance ▶ Kuwahara ▶ thresholds ▶ nested sheet masks
- *         ▶ per sheet: open/close ▶ specks/holes ▶ ISLANDS (bridge/cull)
- *         ▶ trace ▶ simplify ▶ smooth ▶ stats
+ *   source (installed once per load: run.src + project.source)
+ *     ▶ SBEngine.request(project, run.src, {quality: "draft"}) ▶ SBEngine.generate (draft stage cache)
+ *     ▶ run.draft ▶ run.shown ▶ showResult (Proof, Section, Layers, Tilt, overlays, diagnostics, badge)
  *
- * Everything physical is specified in millimetres and converted to pixels
- * through pxPerMM = workingWidthPx / artworkWidthMM, so "1.5 mm bridges"
- * means 1.5 mm on the laser bed no matter what the preview resolution is.
+ * The draft runs the selected interpretation and construction (bonded relief never adds bridges). Export
+ * regenerates at fabrication quality through the same request builder. Everything physical is specified in
+ * millimetres and converted per raster by the engine, so the draft approximates the cut geometry; the status
+ * line says so. The v1.1.0 legacy pipeline (SBEngine.legacy*) is a DEP-04 test oracle only, never called here.
  * ==========================================================================*/
 (function () {
   "use strict";
@@ -31,8 +32,8 @@
     "Monochrome": ["#F4F4F2", "#C4C6C8", "#8B8F94", "#4A4E55", "#15181D"],
   };
 
-  // G2.11a (PRJ-01): the project (schema v1) is the single source of truth for every setting. The legacy pipeline
-  // reads the v1.1.0 view of it through SBSchema.legacyState, and every control writes through SBSchema.applyLegacy
+  // G2.11a (PRJ-01): the project (schema v1) is the single source of truth for every setting. The v1.1.0 controls and
+  // exporters read the v1.1.0 view of it through SBSchema.legacyState, and every such control writes through SBSchema.applyLegacy
   // (revision + 1 exactly when the geometry changes). Acrylic keeps today's connected tonal behaviour until the
   // G2.11b–e stages expose the plywood/bonded path.
   let project = SBSchema.defaults("acrylic");
@@ -42,33 +43,27 @@
     sourceName: null,
     sourceImage: null,   // ImageBitmap or canvas; null until the user chooses a source (no auto-demo)
     sourceW: 0, sourceH: 0,   // the decoded source's own pixel size (never downscaled silently), for the fabrication raster plan
-    revision: -1,        // project revision of the last pipeline run (the dimbar uses its counts only while current)
-    sheets: [],          // [{mask, bridges, loops, stats}]
-    procW: 0, procH: 0,
-    view: null,          // G2.12: {page, layers} canonical polygons of the last run for the review views
-    viewToken: 0,        // bumps on every run or re-render; a deferred view build runs only while still current
-    viewError: null,     // message when connectedLayers failed for this run (the views fall back to the raster)
-    overlays: null,      // G2.13b: SBProof.overlays model of the last run (cleanup changes, bridges) for the proof
     state: null,         // G2.13b (UI-05): SBDiag.STATES value of the shown result; null before the first run
-    diagnostics: null,   // G2.13c (UI-04): SBEngine.legacyDiagnostics of the shown view; null until it is built
-    diagError: null,     // message when the diagnostics could not be computed for this run
-    geometryHash: null,  // G2.13c (§9.5): SBEngine.legacySnapshotHash of the shown view; scopes the acknowledgements
-    acks: new Set(),     // G2.13c: SBDiag.ackKey strings acknowledged on run.geometryHash (cleared with a new hash)
     focus: null,         // G2.13c: the diagnostics focus shown in the proof ({layer, parts, regions, label}), re-applied per snapshot
-    applied: null,       // G2.13d: construction.repairs indices replayed on the shown view (SBEngine.legacyView); null until built
     sourceRoute: { format: "png", decode: "canvas-tonal" },   // alpha.2: the source record of the decoded pixels (fabrication request)
     // alpha.3 E1 (LYR-06): the full-size decoded source pixels, read once per load: {pixels, channels: 1|4, w, h, alpha, gen,
     // sampleHash}. project.source is the record of exactly these pixels (installed with them in acceptSource); every
     // engine request is SBEngine.request(project, run.src, …) and runs only while run.src.sampleHash matches it.
     src: null,
-    draftCache: {},      // alpha.3: the caller-owned draft stage cache (E3); reset with every new source
+    draftCache: { quality: "draft" },   // alpha.3: the caller-owned draft stage cache (E3); reset with every new source
+    // alpha.3 E5 (PO-PREVIEW-1): the draft run of SBEngine.generate at quality "draft" in the selected mode, {status,
+    // snapshot, diagnostics, error, revision, gen, ms, acks, overlays}. Its acks are keyed on its snapshot's geometryHash.
+    draft: null,
+    // alpha.3 E5 (UI-05): the one result every view reads (Proof, Section, Layers, Tilt, overlays, diagnostics, badge,
+    // clip dialog), through shown.snapshot only: run.draft (or, from E6, run.fab). null before the first run.
+    shown: null,
     // alpha.2 (LYR-06, EXP-07): the fabrication run of the last export, {status, snapshot, diagnostics, error, revision, gen,
-    // deviceClass, acks, ms}. Its acks are keyed on the fab snapshot's geometryHash; draft acks (run.acks) never carry over.
+    // deviceClass, acks, ms}. Its acks are keyed on the fab snapshot's geometryHash; draft acks (run.draft.acks) never carry over.
     fab: null,
     report: "",
   };
 
-  /** The v1.1.0 settings view of the project (plus the runtime source name), for legacyRun and the exporters. */
+  /** The v1.1.0 settings view of the project (plus the runtime source name), for the v1.1.0 controls and the exporters. */
   function cfg() {
     const src = run.sourceImage;
     const c = src ? SBSchema.legacyState(project, src.width, src.height) : SBSchema.legacyState(project);
@@ -85,7 +80,7 @@
   const $ = (id) => document.getElementById(id);
 
   // ------------------------------------------------------------- pipeline
-  const regenerateSoon = SBUtil.debounce(regenerate, 160);
+  const regenerateSoon = SBUtil.debounce(regenerate, 300);   // alpha.3 E5: sliders commit on release, so 300 ms
   /** A geometry edit: the shown result is stale at once (UI-05), then the pipeline reruns debounced. */
   function recompute() { setRunState({ type: "edit" }); regenerateSoon(); }
 
@@ -116,8 +111,10 @@
     if (whyGen) { whyGen.textContent = gate.ok ? "" : gate.reason; whyGen.hidden = gate.ok; }
     const btn = $("btn-export"), why = $("why-export");
     if (!btn || btn.dataset.busy === "1") return;
-    const blocked = !gate.ok || !run.sheets.length;
-    let disabled = blocked, text = blocked ? (gate.reason || "Generating…") : "";
+    const shown = run.shown && run.shown.snapshot;
+    const blocked = !gate.ok || !shown;
+    let disabled = blocked, text = blocked ? (gate.reason || (run.shown && run.shown.status === "error"
+      ? "The draft failed (" + (run.shown.error ? run.shown.error.code : run.shown.status) + "); change the settings" : "Generating…")) : "";
     if (!blocked && fabCurrent()) {
       // alpha.2 (EXP-07): the fabrication review of this revision decides; a blocking item disables Export.
       const g = fabGate(), f = run.fab;
@@ -129,64 +126,74 @@
     if (why) { why.textContent = text; why.hidden = !text; }
   }
 
+  /**
+   * alpha.3 E5 (PO-PREVIEW-1, LYR-06, UI-05): the draft is SBEngine.generate at quality "draft" in the selected
+   * interpretation and construction, on the installed source record and its own pixels (SBEngine.request, the same
+   * builder as the fabrication run), with the caller-owned draft stage cache. The Stale/Processing state and the
+   * "Updating draft…" veil are painted over the still-visible previous result first (a frame, then a task), because the
+   * run blocks the page until the G4.1 worker. A run superseded meanwhile (new source, new revision, newer call) is
+   * dropped. Draft acks survive only when the new snapshot has the same geometryHash (§9.5).
+   */
+  let draftToken = 0;
   function regenerate() {
     syncControls();
     updateDimbar();
     renderFabReview();   // alpha.2: a fabrication review of an older revision or source is hidden (it is not current)
     const gate = SBSchema.canGenerate(project, run.sourceImage);
     if (!gate.ok) {
+      draftToken++;   // a pending draft of the previous settings is dropped
+      setVeil(false);
       updateGate(gate);
       setStatus(gate.reason === "Choose a source" ? "Choose a source: load a photo or the Demo scene" : gate.reason);
       return;
     }
     // alpha.3 E1: the pixels and the record they run under always belong together
     if (!run.src || !project.source || run.src.sampleHash !== project.source.sampleHash) return;
-    const state = cfg();
-    const t0 = performance.now();
-
-    // 1. Scale source to working resolution.
-    const iw = run.sourceImage.width, ih = run.sourceImage.height;
-    const k = state.procRes / Math.max(iw, ih);
-    const w = Math.max(32, Math.round(iw * k));
-    const h = Math.max(32, Math.round(ih * k));
-    const cv = document.createElement("canvas");
-    cv.width = w; cv.height = h;
-    const cx = cv.getContext("2d", { willReadFrequently: true });
-    cx.drawImage(run.sourceImage, 0, 0, w, h);
-    const rgba = cx.getImageData(0, 0, w, h).data;
-
-    // 2-5. DOM-free engine (T0.5 seam). UI-05: processing → draft (the legacy run is draft quality), or failed.
+    const token = ++draftToken, gen = run.src.gen, rev = project.revision;
     setRunState({ type: "start" });
-    let out;
-    try { out = SBEngine.legacyRun(rgba, w, h, state); }
-    catch (err) {
-      setRunState({ type: "fail" });
-      setStatus(`Generation failed: ${err && err.message || err}` + (run.sheets.length ? " (the previous result is still shown)" : ""));
-      return;
-    }
-    const { sheets, totals } = out;
-    setRunState({ type: "done", quality: "draft", diagnostics: [] });
-    run.sheets = sheets;
-    run.view = null;   // G2.12: canonical polygons for Proof/Section/Tilt, rebuilt lazily per run (renderAll)
-    run.overlays = null;   // G2.13b: rebuilt with the view
-    run.viewError = null;
-    run.diagnostics = null; run.diagError = null; run.focus = null;   // G2.13c: rebuilt with the view
-    run.applied = null;   // G2.13d: rebuilt with the view
-    run.viewToken++;   // a view build still pending for the previous run is dropped
-    let totalBridged = totals.bridged, totalCulled = totals.culled, totalCutMM = totals.cutMM;
-    run.procW = w; run.procH = h; run.revision = project.revision;
+    setVeil(true);
+    setStatus("Updating draft…");
+    requestAnimationFrame(() => setTimeout(() => {
+      if (token !== draftToken) return;   // a newer call owns the veil and the run
+      if (!run.src || gen !== run.src.gen || rev !== project.revision || !project.source || run.src.sampleHash !== project.source.sampleHash) {
+        setVeil(false);   // superseded by an edit or a new source; their own regenerate follows
+        return;
+      }
+      const dc = deviceClass(), withOverlays = wantOverlays(), t0 = performance.now();
+      let res;
+      try {
+        res = SBEngine.generate(SBEngine.request(project, run.src, { quality: "draft", requestId: "draft-" + rev, deviceClass: dc }),
+          { cache: run.draftCache, overlays: withOverlays });
+      } catch (err) {   // a caller error (SOURCE_MISMATCH, CACHE_QUALITY); generate itself never throws
+        res = { status: "error", error: { code: (err && err.code) || "ENGINE_ARG", message: (err && err.message) || String(err) }, diagnostics: [] };
+      }
+      setVeil(false);
+      if (res.status === "canceled") { setRunState({ type: "fail" }); showResult(run.shown); return; }   // keep the previous result
+      const prev = run.draft, snap = res.snapshot || null;
+      const acks = prev && prev.snapshot && snap && prev.snapshot.geometryHash === snap.geometryHash ? prev.acks : new Set();
+      if (!snap || !prev || !prev.snapshot || prev.snapshot.geometryHash !== snap.geometryHash) run.focus = null;
+      run.draft = { status: res.status, snapshot: snap, diagnostics: (snap ? snap.diagnostics : res.diagnostics) || [], error: res.error || null,
+        revision: rev, gen, ms: performance.now() - t0, acks, overlays: withOverlays };
+      if (res.status === "done") setRunState({ type: "done", quality: "draft", diagnostics: snap.diagnostics });
+      else setRunState({ type: "fail" });
+      run.shown = run.draft;
+      showResult(run.shown);
+      updateGate(gate);
+    }, 0));
+  }
 
-    const ms = performance.now() - t0;
-    run.report =
-      `${w}×${h}px · ${state.nSheets} sheet${state.nSheets === 1 ? "" : "s"} · ` +
-      `${totalBridged} bridged · ${totalCulled} culled · ` +
-      `${SBUtil.fmt(totalCutMM / 1000, 2)} m of cuts · ${ms.toFixed(0)} ms`;
-    setStatus(run.report);
-    updateGate(gate);
-    updateDimbar();
-    renderDiagnostics();
+  /** The draft change-overlay polygons are built only while the Changes overlay (#in-overlays) is on (E4: ≥ 15 % of construct). */
+  function wantOverlays() {
+    const el = $("in-overlays");
+    return !!(el && el.checked);
+  }
 
-    renderAll();
+  /** The "Updating draft…" veil: the previous result stays visible, dimmed, while a draft runs (UI-05). */
+  function setVeil(on) {
+    const c = $("stackcanvas");
+    if (c) { c.style.opacity = on ? "0.55" : ""; c.setAttribute("aria-busy", on ? "true" : "false"); }
+    const g = $("sheetgrid");
+    if (g) g.style.opacity = on ? "0.55" : "";
   }
 
   /**
@@ -208,11 +215,11 @@
   }
 
   // ------------------------------------------------------------- rendering
-  function sheetColors() {
+  /** The appearance colours (a view setting, PRJ-02) for n layers, indexed by layer index (back = 0). */
+  function sheetColors(n) {
     if (project.appearance.mode === "uniform")   // MAT-04: one opaque stock colour for every layer
-      return Array.from({ length: project.construction.sheets }, () => project.appearance.color);
+      return Array.from({ length: n }, () => project.appearance.color);
     const stops = PALETTES[project.appearance.palette] || PALETTES["Midnight (Starry Night)"];
-    const n = project.construction.sheets;
     // Back sheet = lightest, front = darkest (matches dark-front stacking).
     return Array.from({ length: n }, (_, s) =>
       SBUtil.samplePalette(stops, 1 - (n === 1 ? 0 : s / (n - 1)))
@@ -220,83 +227,53 @@
   }
 
   /**
-   * G2.12: the review views are drawn from the same canonical polygons as the cut files and proof.svg
-   * (SBEngine.connectedLayers), built once per pipeline run; appearance changes only re-tint them.
-   *
-   * KI-CONN-PERF: connectedLayers runs on the main thread and, with smooth corners (the acrylic default), costs
-   * about 1.8 s on a simple 720 px draft and about 11 s on a busy one (sharp corners: 0.2–1 s), on top of
-   * legacyRun. So the build is deferred: the Layers grid, the chips, the status line and a raster composite of
-   * the new masks (preview.setSheets) are shown and painted first, then the polygons replace the raster. A newer
-   * run or re-render supersedes a pending build (run.viewToken). The build itself still blocks until G4.1 moves
-   * it to a worker. A failure (geometry, or a colour refused with COLOR) is reported in the status line and the
-   * views keep the raster composite; it never stops the grid or the chips from updating.
+   * alpha.3 E5 (UI-05, PO-PREVIEW-1): render every view from one result r (run.shown) and only from r.snapshot: the
+   * Proof, Section and Tilt (preview.setSnapshot with the snapshot's own page, layers, thickness and gap), the change
+   * overlays in the snapshot's own construction mode (bridges only in connected mode, from cleanupReport), the Layers
+   * cards, the chips, the diagnostics, the dimbar and the status line. A stale result kept on screen after an edit is
+   * therefore drawn with its own settings, never the edited project's. A failed result (no snapshot) leaves the
+   * previous picture in place and lists its diagnostics. Appearance changes call this again (no regeneration).
    */
-  function renderAll() {
-    if (!run.sheets.length) return;
-    const colors = sheetColors();
-    const token = ++run.viewToken;
-    try { renderSheetGrid(colors); renderPaletteChips(colors); }
-    catch (err) { setStatus(`${run.report} · layer cards unavailable: ${err.message || err}`); }
-    if (run.view) { showView(colors); return; }
-    showRaster(colors);
-    if (run.viewError) { setStatus(`${run.report} · proof unavailable: ${run.viewError}`); return; }
-    setStatus(`${run.report} · building proof geometry…`);
-    // Two hops (a frame, then a task) so the browser paints the status and the raster before the build blocks.
-    requestAnimationFrame(() => setTimeout(() => buildView(token), 0));
-  }
-
-  function buildView(token) {
-    if (token !== run.viewToken || run.view || !run.sheets.length) return;   // superseded, or already built
-    const t0 = performance.now();
-    try {
-      const c = cfg();
-      // G2.13d (SUP-04): the project's reviewed clip repairs are replayed on the legacy polygons (stale ones raise
-      // REPAIR_STALE and are skipped), so the views, the diagnostics and the export all show the repaired layers.
-      const v = SBEngine.legacyView(run.sheets, run.procW, run.procH, c, project);
-      run.view = { page: v.page, layers: SBMaterial.assignParts(v.layers), diagnostics: v.diagnostics };   // G2.13c: part IDs for diagnostics and focus
-      run.applied = v.applied;
-      // G2.13c (UI-04): the final-polygon checks on the view (legacy interim source until the app adopts generate).
-      // A failure here never costs the proof: the panel says so and the views still update.
+  function showResult(r) {
+    if (!r) return;
+    const snap = r.snapshot;
+    let note = "";
+    if (snap) {
+      const colors = sheetColors(snap.layers.length);
       try {
-        run.diagnostics = SBEngine.legacyDiagnostics(run.view, run.procW, run.procH, project);
-        const hash = SBEngine.legacySnapshotHash(run.view, run.procW, run.procH);
-        if (hash !== run.geometryHash) run.acks = new Set();   // acknowledgements are scoped to one snapshot (§9.5)
-        run.geometryHash = hash;
+        preview.setSnapshot({ page: snap.page, layers: snap.layers, tMM: snap.construction.tMM, gMM: snap.construction.gMM }, colors);
+        preview.setOverlays(SBProof.overlays({ cleanupReport: snap.cleanupReport, diagnostics: snap.diagnostics, mode: snap.construction.mode }));
+        if (run.focus) { try { preview.setFocus(run.focus); } catch (_) { run.focus = null; } }   // G2.13c: a new snapshot clears the focus
       } catch (err) {
-        run.diagnostics = null; run.geometryHash = null; run.acks = new Set();
-        run.diagError = String(err && err.message || err);
+        note += " · proof unavailable: " + (err.message || err);
       }
-      // G2.13b (GEO-08, UI-05): cleanup changes and bridges as cleanupReport-shaped polygons (the generate shape).
-      run.overlays = SBProof.overlays({ cleanupReport: SBEngine.legacyCleanupReport(run.sheets, run.procW, run.procH, c),
-        diagnostics: run.diagnostics || [], mode: project.construction.mode });
-    } catch (err) {
-      run.viewError = String(err && err.message || err);
-      setStatus(`${run.report} · proof unavailable: ${run.viewError}`);
-      renderDiagnostics();
-      return;
+      try { renderSheetGrid(r, colors); renderPaletteChips(colors); }
+      catch (err) { note += " · layer cards unavailable: " + (err.message || err); }
+    } else if (!run.focus) {
+      try { preview.setFocus(null); } catch (_) { /* nothing shown */ }   // a failed run keeps the picture, not its focus
     }
-    renderDiagnostics();
-    run.report += ` · proof ${(performance.now() - t0).toFixed(0)} ms`;
+    renderDiagnostics(r);
+    updateDimbar();
+    run.report = statusText(r) + note;
     setStatus(run.report);
-    showView(sheetColors());
   }
 
-  /** Feed the polygon views; a refused colour (COLOR) or any other failure falls back to the raster composite. */
-  function showView(colors) {
-    const bonded = project.construction.mode === "bonded-relief";
-    try {
-      preview.setSnapshot({ page: run.view.page, layers: run.view.layers, tMM: project.material.thicknessMM, gMM: bonded ? 0 : project.construction.gapMM },
-        colors);
-      preview.setOverlays(run.overlays);   // bridges (tilt and the proof overlay) come from cleanupReport[].bridges
-      if (run.focus) { try { preview.setFocus(run.focus); } catch (_) { run.focus = null; } }   // G2.13c: a new snapshot clears the focus
-      setStatus(run.report);
-      try { renderSheetGrid(colors); }   // G2.13a: the cards now come from the polygon snapshot
-      catch (err) { setStatus(`${run.report} · layer cards unavailable: ${err.message || err}`); }
-    } catch (err) {
-      setStatus(`${run.report} · proof unavailable: ${err.message || err}`);
-      showRaster(colors);
-      try { renderSheetGrid(colors); } catch (_) { /* the status line already reports the failure */ }   // raster cards
+  /** The standing status line of a result: the draft is approximate; a fabrication result names its geometryHash. */
+  function statusText(r) {
+    if (r.status !== "done" || !r.snapshot) {
+      return "Generation failed: " + (r.error ? r.error.code + ", " + r.error.message : r.status) +
+        (preview.hasSnapshot() ? " (the previous result is still shown)" : "");
     }
+    const s = r.snapshot, g = s.geometry, n = s.stats.exported, sec = (r.ms / 1000).toFixed(1);
+    const head = `${g.rasterW} × ${g.rasterH} px · ${g.mmPerPxMax.toFixed(2)} mm/px · ${n} sheet${n === 1 ? "" : "s"} · ${sec} s`;
+    if (s.quality === "fabrication") return `Fabrication · ${head} · ${s.geometryHash.slice(0, 12)}`;
+    let t = `Draft (approximate; Preview at fabrication resolution for the exact cut) · ${head}`;
+    if (s.construction.mode === "connected-sheet") {
+      const bridged = s.cleanupReport.reduce((a, c) => a + (c.bridged || 0), 0), culled = s.cleanupReport.reduce((a, c) => a + (c.culled || 0), 0);
+      const cutMM = s.layers.reduce((a, L) => a + (L.stats ? L.stats.cutMM : 0), 0);
+      t += ` · ${bridged} bridged · ${culled} culled · ${SBUtil.fmt(cutMM / 1000, 2)} m of cuts`;
+    }
+    return t;
   }
 
   // ------------------------------------------------------- diagnostics (G2.13c: UI-04, NFR-07, §9.5)
@@ -306,26 +283,33 @@
    * badge with a glyph icon (aria-hidden) and the severity in text. Each item (SBDiag.describe) shows where, what, the
    * measured value against the limit and the fix. An item with a layer is a <button> (click, Enter or Space) that
    * switches to the Proof and focuses that layer, its parts and region (preview.setFocus). Warnings carry an
-   * "Acknowledge" checkbox keyed by SBDiag.ackKey on run.geometryHash, so an ack never outlives the snapshot; blocking
-   * items have none (§9.5). These are draft acks: the export (alpha.2) regenerates at fabrication and is gated by its own
-   * fabrication review (renderFabReview), where these never apply.
+   * "Acknowledge" checkbox keyed by SBDiag.ackKey on the shown result's snapshot.geometryHash (r.acks), so an ack never
+   * outlives the snapshot; blocking items have none (§9.5). These are draft acks: the export regenerates at fabrication
+   * and is gated by its own fabrication review (renderFabReview), where these never apply.
+   * alpha.3 E5 (UI-04): r is the shown result (default run.shown). A failed run (status "error", e.g. COMPLEXITY_LIMIT
+   * with no layers) lists r.diagnostics under "No layers: …"; its items are not navigable (the Proof still shows the
+   * previous result) and carry no acknowledgement.
    */
-  function renderDiagnostics() {
+  function renderDiagnostics(r) {
+    r = r || run.shown;
     renderRepairs();
     const list = $("diag-list"), sum = $("diag-summary");
     if (!list || !sum) return;
     list.textContent = "";
     $("diag-clear").hidden = !run.focus;
-    if (!run.sheets.length) { sum.textContent = "Generate to check the layers"; return; }
-    if (run.viewError) { sum.textContent = "Diagnostics unavailable: the proof geometry could not be built (" + run.viewError + ")"; return; }
-    if (run.diagError) { sum.textContent = "Diagnostics unavailable: " + run.diagError; return; }
-    if (!run.diagnostics) { sum.textContent = "Checking the layers…"; return; }
-    const diags = run.diagnostics, groups = SBDiag.summarize(diags);
-    if (!groups.length) { sum.textContent = "No issues found in this draft result."; return; }
-    const acked = diags.filter((d) => SBDiag.describe(d).severity === "warning" && run.acks.has(SBDiag.ackKey(d, run.geometryHash))).length;
+    if (!r) { sum.textContent = "Generate to check the layers"; return; }
+    const failed = r.status === "error" || !r.snapshot;
+    const diags = (failed ? r.diagnostics : r.snapshot.diagnostics) || [], groups = SBDiag.summarize(diags);
+    const hash = failed ? null : r.snapshot.geometryHash, what = failed ? "" : " in this " + r.snapshot.quality + " result.";
     const noun = (g) => (g.severity === "warning" ? (g.count === 1 ? "warning" : "warnings") : g.label.toLowerCase());
-    sum.textContent = groups.map((g) => g.count + " " + noun(g) + (g.severity === "warning" && acked ? " (" + acked + " acknowledged)" : "")).join(", ") +
-      " in this draft result.";
+    if (failed) {
+      sum.textContent = "No layers: " + (r.error ? r.error.code + ", " + r.error.message : "the run did not finish") +
+        (groups.length ? " (" + groups.map((g) => g.count + " " + noun(g)).join(", ") + ")." : ".");
+    } else if (!groups.length) { sum.textContent = "No issues found" + what; return; }
+    else {
+      const acked = diags.filter((d) => SBDiag.describe(d).severity === "warning" && r.acks.has(SBDiag.ackKey(d, hash))).length;
+      sum.textContent = groups.map((g) => g.count + " " + noun(g) + (g.severity === "warning" && acked ? " (" + acked + " acknowledged)" : "")).join(", ") + what;
+    }
     for (const g of groups) {
       const li = document.createElement("li");
       li.className = "diag-group";
@@ -339,7 +323,7 @@
       diags.forEach((d) => {
         const it = SBDiag.describe(d);
         if (it.severity !== g.severity) return;
-        ul.appendChild(diagItem(d, it));
+        ul.appendChild(diagItem(d, failed ? Object.assign({}, it, { navigable: false }) : it, failed ? null : r));
       });
       list.appendChild(li);
     }
@@ -358,7 +342,8 @@
     return b;
   }
 
-  function diagItem(d, it) {
+  /** One diagnostics item; r is the result whose snapshot it belongs to (null: no acknowledgement, failed run). */
+  function diagItem(d, it, r) {
     const li = document.createElement("li");
     li.className = "diag-item";
     const go = it.navigable ? document.createElement("button") : document.createElement("div");
@@ -380,16 +365,16 @@
     li.appendChild(fix);
     const act = clipAction(d);
     if (act) li.appendChild(act);
-    if (it.severity === "warning" && run.geometryHash) {
-      const key = SBDiag.ackKey(d, run.geometryHash);
+    if (it.severity === "warning" && r && r.snapshot) {
+      const key = SBDiag.ackKey(d, r.snapshot.geometryHash);
       const lab = document.createElement("label");
       lab.className = "diag-ack";
       const cb = document.createElement("input");
       cb.type = "checkbox";
-      cb.checked = run.acks.has(key);
+      cb.checked = r.acks.has(key);
       cb.addEventListener("change", () => {
-        if (cb.checked) run.acks.add(key); else run.acks.delete(key);
-        renderDiagnostics();
+        if (cb.checked) r.acks.add(key); else r.acks.delete(key);
+        renderDiagnostics(r);
         const again = Array.from($("diag-list").querySelectorAll(".diag-ack input")).find((x) => x.dataset.key === key);
         if (again) again.focus();   // keep the keyboard position across the re-render
       });
@@ -425,8 +410,10 @@
 
   // ------------------------------------------------------- reviewed clip repair (G2.13d: SUP-04, D-4.6, PRJ-04)
 
-  /** True while the shown view is the current revision's (a proposal must be reviewed on the geometry it changes). */
-  const viewCurrent = () => !!run.view && run.applied !== null && run.revision === project.revision;
+  /** True while the shown result is the current revision's (a proposal must be reviewed on the geometry it changes). */
+  const viewCurrent = () => !!run.shown && !!run.shown.snapshot && run.shown.revision === project.revision;
+  /** alpha.3 E5: the construction.repairs indices the shown result replayed (snapshot.repairsApplied; [] without one). */
+  const shownApplied = () => (run.shown && run.shown.snapshot ? run.shown.snapshot.repairsApplied : []);
 
   /**
    * The repair action of one diagnostic item: BOND_UNSUPPORTED (bonded, layer ≥ 1) offers "Clip to lower layer…";
@@ -437,7 +424,7 @@
     let label = null, ri = -1;
     if (d.code === "BOND_UNSUPPORTED" && Number.isInteger(d.layer) && d.layer >= 1 && project.construction.mode === "bonded-relief") label = "Clip to lower layer…";
     else if (d.code === "REPAIR_STALE" || d.code === "REPAIR_REVIEW_FAB") {
-      ri = SBProof.repairForDiagnostic(d, repairs, run.applied || []);
+      ri = SBProof.repairForDiagnostic(d, repairs, shownApplied());
       if (ri >= 0) label = "Review clip " + (ri + 1) + "…";
     }
     if (!label) return null;
@@ -460,7 +447,7 @@
     if (!list || !sum) return;
     list.textContent = "";
     const repairs = project.construction.repairs;
-    const rows = SBProof.repairRows(repairs, { applied: viewCurrent() ? run.applied : undefined });
+    const rows = SBProof.repairRows(repairs, { applied: viewCurrent() ? shownApplied() : undefined });
     sum.textContent = rows.length ? rows.length + (rows.length === 1 ? " reviewed repair" : " reviewed repairs") + " in the project."
       : "No repairs. An unsupported layer offers “Clip to lower layer…”.";
     for (const r of rows) {
@@ -507,14 +494,15 @@
    */
   function openClipDialog(k, ri, opener) {
     if (!viewCurrent() || !preview.hasSnapshot()) { setStatus(`${run.report} · the result is not ready; review the clip once the proof is built`, true); return; }
+    const snap = run.shown.snapshot, applied = snap.repairsApplied;   // alpha.3 E5: reviewed on the shown result, at its own quality
     let proposal, review;
     try {
-      proposal = SBSupport.proposeClip({ layers: run.view.layers, quality: "draft", revision: project.revision }, k);
+      proposal = SBSupport.proposeClip({ layers: snap.layers, quality: snap.quality, revision: project.revision }, k);
       review = SBProof.clipReview(proposal);
     } catch (err) { setStatus(`cannot propose a clip on layer ${k + 1}: ${err.message || err}`, true); return; }
     const repairs = project.construction.repairs;
     const fromRepair = ri >= 0 && ri < repairs.length;
-    const stale = fromRepair && !run.applied.includes(ri);
+    const stale = fromRepair && !applied.includes(ri);
     const replaceable = !fromRepair || (stale && ri === repairs.length - 1);
     const dlg = $("dlg-clip"), note = $("dlg-clip-note"), accept = $("dlg-clip-accept"), revert = $("dlg-clip-revert");
     $("dlg-clip-title").textContent = review.title;
@@ -524,7 +512,7 @@
     cvs.setAttribute("aria-label", review.title + ": " + review.summary);
     let why = "";
     if (fromRepair) {
-      const row = SBProof.repairRows(repairs, { applied: run.applied })[ri];
+      const row = SBProof.repairRows(repairs, { applied })[ri];
       why = "Repair " + (ri + 1) + ": " + row.text;
       if (stale && !replaceable) why += " Later repairs depend on it: revert it first (the later ones are reverted with it), then review the clip again.";
       else if (!stale) why += " It is applied on this draft; its fabrication review happens in the export review.";
@@ -555,68 +543,45 @@
     dlg.showModal();
   }
 
-  /** The v1.1.0 raster composite of the current masks (interim view while the polygons build, and the fallback). */
-  function showRaster(colors) {
-    try { preview.setSheets(run.sheets, colors, run.procW, run.procH); } catch (_) { /* reported by the caller */ }
-  }
-
   /**
-   * The "Layers" tab: one card per sheet showing what is retained (material) and what is waste (G2.13a).
-   * Once the polygon snapshot is set, each card is drawn from layer.material through the preview's per-snapshot
-   * offscreen cache (preview.drawCard: waste hatch, then the cached layer image, no smoothing), so the cards
-   * match the Proof, and the label adds SBProof.cards retained/waste mm². Until then (KI-CONN-PERF interim) or
-   * when the proof is unavailable, the card falls back to the raster masks over the same waste hatch.
+   * The "Layers" tab: one card per layer of the shown result's snapshot showing what is retained (material) and what is
+   * waste (G2.13a). Each card is drawn from layer.material through the preview's per-snapshot offscreen cache
+   * (preview.drawCard: waste hatch, then the cached layer image, no smoothing), so the cards match the Proof; the label
+   * adds SBProof.cards retained/waste mm², the ring count and cut length (layer.stats.cutMM) and, in connected mode,
+   * the bridged/culled counts of snapshot.cleanupReport. Roles (alpha.3 E5): bonded "base", "layer k+1", "top";
+   * connected "backing" (a solid panel: frame + holes only), "mid", "front". A trailing empty layer is badged omitted.
    */
-  function renderSheetGrid(colors) {
+  function renderSheetGrid(r, colors) {
     const grid = $("sheetgrid");
     grid.innerHTML = "";
-    const poly = preview.hasSnapshot() && run.view ? run.view : null;
-    const stats = poly ? SBProof.cards(poly.layers, poly.page) : null;
-    run.sheets.forEach((sheet, s) => {
+    const snap = r.snapshot, bonded = snap.construction.mode === "bonded-relief", n = snap.layers.length;
+    const cards = SBProof.cards(snap.layers, snap.page);
+    for (const st of cards) {
+      const k = st.layerIndex, L = snap.layers.find((l) => l.index === k), rep = snap.cleanupReport[k] || {};
       const card = document.createElement("div");
       card.className = "sheetcard";
-
       const cvs = document.createElement("canvas");
-      const layer = poly ? poly.layers.find((l) => l.index === s) : null;
-      if (!poly || !preview.drawCard(cvs, layer ? layer.index : s)) rasterCard(cvs, sheet, colors[s], s === 0);
-      const st = stats ? stats.find((c) => c.layerIndex === s) : null;
+      if (!preview.drawCard(cvs, k)) { cvs.width = 4; cvs.height = 3; SBPreview.drawWasteHatch(cvs.getContext("2d"), 4, 3); }   // hatch only
       cvs.setAttribute("role", "img");
-      cvs.setAttribute("aria-label", `Sheet ${s + 1}: ` + (st
-        ? `${SBUtil.fmt(st.retainedPct, 0)}% retained material, ${SBUtil.fmt(100 - st.retainedPct, 0)}% waste (hatched)`
-        : "material in the sheet colour, waste hatched"));
-
+      cvs.setAttribute("aria-label", `Sheet ${k + 1}: ${SBUtil.fmt(st.retainedPct, 0)}% retained material, ${SBUtil.fmt(100 - st.retainedPct, 0)}% waste (hatched)`);
+      const role = bonded ? (k === 0 ? "base" : k === n - 1 ? "top" : "layer " + (k + 1)) : st.role;
+      const rings = L ? L.material.reduce((a, p) => a + 1 + (p.holes ? p.holes.length : 0), 0) : 0;
+      const cutMM = L && L.stats ? L.stats.cutMM : 0;
       const label = document.createElement("div");
       label.className = "sheetlabel";
-      const role = s === 0 ? "backing" : s === run.sheets.length - 1 ? "front" : "mid";
       label.innerHTML =
-        `<b>SHEET ${s + 1}</b> <span class="muted">${role}</span><br>` +
-        `<span class="sw sw-retained" style="background:${colors[s]}"></span>retained ` +
-        (st ? `${SBUtil.fmt(st.retainedMM2 / 100, 1)} cm² (${SBUtil.fmt(st.retainedPct, 0)}%)` : "") +
-        ` · <span class="sw sw-waste"></span>waste` +
-        (st ? ` ${SBUtil.fmt(st.wasteMM2 / 100, 1)} cm²` : "") + `<br>` +
-        (s === 0
+        `<b>SHEET ${k + 1}</b> <span class="muted">${role}</span>` + (st.omitted ? ` <span class="amber">omitted (empty)</span>` : "") + `<br>` +
+        `<span class="sw sw-retained" style="background:${colors[k]}"></span>retained ` +
+        `${SBUtil.fmt(st.retainedMM2 / 100, 1)} cm² (${SBUtil.fmt(st.retainedPct, 0)}%)` +
+        ` · <span class="sw sw-waste"></span>waste ${SBUtil.fmt(st.wasteMM2 / 100, 1)} cm²<br>` +
+        (!bonded && k === 0
           ? `solid panel — frame + holes only`
-          : `${sheet.stats.loops} contours · ${SBUtil.fmt(sheet.stats.cutMM / 10, 1)} cm cut` +
-            (sheet.stats.bridged ? ` · <span class="amber">${sheet.stats.bridged} bridged</span>` : "") +
-            (sheet.stats.culled ? ` · ${sheet.stats.culled} culled` : ""));
+          : `${rings} contours · ${SBUtil.fmt(cutMM / 10, 1)} cm cut` +
+            (!bonded && rep.bridged ? ` · <span class="amber">${rep.bridged} bridged</span>` : "") +
+            (!bonded && rep.culled ? ` · ${rep.culled} culled` : ""));
       card.append(cvs, label);
       grid.appendChild(card);
-    });
-  }
-
-  /** Interim/fallback card from the raster mask: waste hatch (SBPreview.drawWasteHatch), material in the sheet colour, bridges amber. */
-  function rasterCard(cvs, sheet, color, solid) {
-    const w = run.procW, h = run.procH;
-    cvs.width = w; cvs.height = h;
-    const c = cvs.getContext("2d");
-    SBPreview.drawWasteHatch(c, w, h);
-    const img = c.getImageData(0, 0, w, h);
-    const [r, g, b] = SBUtil.hexToRgb(color);
-    for (let i = 0, p = 0; i < w * h; i++, p += 4) {
-      if (solid || sheet.mask[i]) { img.data[p] = r; img.data[p + 1] = g; img.data[p + 2] = b; }
-      if (sheet.bridges && sheet.bridges[i]) { img.data[p] = 240; img.data[p + 1] = 162; img.data[p + 2] = 39; }
     }
-    c.putImageData(img, 0, 0);
   }
 
   function renderPaletteChips(colors) {
@@ -704,10 +669,10 @@
   }
 
   // ------------------------------------------------------------- exporting
+  // alpha.3 E5: reads the fabrication snapshot being exported (the draft masks are gone); E13 replaces it by SBDocs.assembly.
   function buildAssemblyMD(colors) {
-    const state = cfg();
-    const mmPerPx = state.widthMM / run.procW;
-    const artH = run.procH * mmPerPx;
+    const state = cfg(), fab = run.fab.snapshot, sheets = fab.layers.filter((L) => L.status !== "omitted-trailing");
+    const artH = fab.page.artHMM;
     const lines = [
       `# ${state.projectName} — assembly guide`,
       ``,
@@ -723,8 +688,8 @@
       `| # | Role | Suggested color | File |`,
       `|---|------|-----------------|------|`,
     ];
-    run.sheets.forEach((s, i) => {
-      const role = i === 0 ? "backing (solid)" : i === run.sheets.length - 1 ? "front" : "mid";
+    sheets.forEach((s, i) => {
+      const role = i === 0 ? "backing (solid)" : i === sheets.length - 1 ? "front" : "mid";
       lines.push(`| ${i + 1} | ${role} | \`${colors[i]}\` | \`sheet_${String(i + 1).padStart(2, "0")}.svg\` |`);
     });
     lines.push(
@@ -771,7 +736,7 @@
   }
 
   async function exportBundle() {
-    if (!run.sheets.length) {
+    if (!(run.shown && run.shown.snapshot)) {
       setStatus("Choose a source: load a photo or the Demo scene", true);
       return;
     }
@@ -996,7 +961,9 @@
     const v0 = cfg()[key];
     el.value = v0;
     if (out) $(out).textContent = fmt(v0);
-    el.addEventListener("input", () => {
+    // alpha.3 E5 (UI-01): the value follows the drag; the project changes (and the draft reruns) once, on release
+    el.addEventListener("input", () => { if (out) $(out).textContent = fmt(parseFloat(el.value)); });
+    el.addEventListener("change", () => {
       setLegacy(key, parseFloat(el.value));
       if (out) $(out).textContent = fmt(cfg()[key]);
       recompute();
@@ -1034,7 +1001,7 @@
 
   // ------------------------------------------------------- G2.11c control groups
   // Every G2.11c control writes through SBSchema.applyControl (lengths in project.units; invalid → unchanged). A geometry
-  // change (revision + 1) regenerates; an appearance, units or view change calls renderAll() only (PRJ-02).
+  // change (revision + 1) regenerates; an appearance, units or view change calls showResult(run.shown) only (PRJ-02).
   // The two mode selects are not in CONTROLS: a mode change is reviewed in #dlg-mode before it applies (G2.11e).
   const CONTROLS = ["polarity", "thmode", "manual-th", "smooth", "thickness", "thickstate", "gap", "units",
     "sizeby", "target", "machine", "m-height", "m-length", "m-matwidth", "m-thick", "m-kerf", "appearance", "color", "explode"];
@@ -1053,7 +1020,7 @@
     syncControls();
     if (id === "explode") preview.setExplode(Math.min(1, project.view.explodeMM / EXPLODE_MAX_MM));
     if (project.revision !== before.revision) { updateDimbar(); recompute(); }
-    else { updateDimbar(); renderAll(); }
+    else { updateDimbar(); if (id !== "explode") showResult(run.shown); }   // explode is display-only (preview.setExplode)
   }
 
   /** Show the project's values in every G2.11c control (SBSchema.controlValues), with the mode's polarity options. */
@@ -1154,12 +1121,24 @@
     for (const id of CONTROLS) {
       const el = $("in-" + id);
       // text and number entries apply on change (a half-typed value is not a geometry change); selects, colour and the
-      // explode slider apply as they move
+      // explode slider (view only) apply as they move. alpha.3 E5 (UI-01): a geometry slider shows its value while it
+      // moves and commits once on release, so a drag regenerates once.
+      if (el.type === "range" && id !== "explode") {
+        el.addEventListener("input", () => showRangeValue(id, el.value));
+        el.addEventListener("change", () => onControl(id, el.value));
+        continue;
+      }
       const live = el.tagName === "SELECT" || el.type === "range" || el.type === "color";
       el.addEventListener(live ? "input" : "change", () => onControl(id, el.value));
       if (!live) el.addEventListener("blur", syncControls);
     }
     syncControls();
+  }
+
+  /** The number next to a geometry slider while it moves (before the change commits). */
+  function showRangeValue(id, value) {
+    const out = $("out-" + id), v = parseFloat(value);
+    if (out && Number.isFinite(v)) out.textContent = id === "smooth" ? SBUtil.fmt(v, 2) + " mm" : String(v);
   }
 
   /** "mobile" on a coarse-pointer small screen, else "desktop" (SBSchema.limits budgets, PO-LASER-4). */
@@ -1181,8 +1160,8 @@
       try { plan = SBEngine.rasterPlan(project, { w: run.sourceW, h: run.sourceH }, "fabrication", deviceClass()); }
       catch (e) { sizeErr = e.message; }
     }
-    const stats = run.sheets.length && run.revision === project.revision
-      ? { requested: project.construction.sheets, exported: run.sheets.length, omitted: [] } : null;   // the legacy path exports every sheet
+    const snap = run.shown && run.shown.snapshot;
+    const stats = snap && run.shown.revision === project.revision ? snap.stats : null;   // alpha.3 E5: the shown snapshot's accounting
     const m = SBDocs.dimbarModel({ project, plan, stats });
     $("dim-layers").textContent = "Layers: " + m.layers.text;
     $("dim-z").textContent = m.z.text;
@@ -1225,8 +1204,8 @@
    * (recording the coarser fabrication pitch and a history entry through SBSchema.applyDownsample). The fabrication
    * raster and mm/px come from the raster plan, never from an assumed long side; preflight's plan and warnings
    * (FAB_PITCH_CAPPED, FAB_EXCEEDS_SOURCE, EXIF_AMBIGUOUS) are shown before decoding. The decode route is chosen at
-   * intake: a PNG loaded in tonal mode keeps its browser decode if the mode is later switched to height (interim
-   * legacy pipeline, recorded deviation 4); reload the file to take the raw height route. Every load, downsample and
+   * intake: a PNG loaded in tonal mode keeps its browser decode if the mode is later switched to height (recorded
+   * deviation 4); reload the file to take the raw height route. Every load, downsample and
    * demo takes a new sourceGen, so a slower earlier decode never overwrites a newer source.
    */
   let sourceGen = 0;
@@ -1291,7 +1270,7 @@
     return { samples: o.samples, alpha: o.alpha, w: o.w, h: o.h, channels: d.channels, policy: d.policy };
   }
 
-  /** Raw samples (1 or 3 channels, optional alpha) into an RGBA canvas for the interim legacy pipeline. */
+  /** Raw samples (1 or 3 channels, optional alpha) into an RGBA canvas (the source bitmap of the raw route). */
   function samplesToCanvas(r) {
     const c = document.createElement("canvas");
     c.width = r.w; c.height = r.h;
@@ -1307,7 +1286,7 @@
 
   /**
    * Intake step 4: the decode route preflight chose. Resolves to {bitmap, raw} at the full source size: bitmap is a
-   * canvas or ImageBitmap (the interim legacy pipeline and the views draw it), raw the SBPng samples of the raw height
+   * canvas or ImageBitmap (its size feeds the raster plan), raw the SBPng samples of the raw height
    * route ({samples, alpha, w, h, channels, policy}) or null for the browser route.
    */
   async function decodeSource(file, bytes, pre) {
@@ -1367,7 +1346,7 @@
     if (gen !== sourceGen) { if (src !== run.sourceImage && typeof src.close === "function") src.close(); return; }
     const old = run.sourceImage;
     run.src = Object.assign(px, { gen, sampleHash });
-    run.draftCache = {};
+    run.draftCache = { quality: "draft" };   // E3: a draft cache only (fabrication runs are uncached, E-R7)
     run.sourceRoute = route;   // alpha.2: the source record of the decoded pixels
     run.sourceImage = src;
     run.sourceW = src.width; run.sourceH = src.height;
@@ -1504,7 +1483,7 @@
     });
     pal.value = project.appearance.palette;
     // Appearance only: no revision change, no regeneration (PRJ-02).
-    pal.addEventListener("change", () => { setLegacy("palette", pal.value); renderAll(); });
+    pal.addEventListener("change", () => { setLegacy("palette", pal.value); showResult(run.shown); });
 
     // G2.11c: control groups, disclaimers (SBDocs.COPY) and the dimension bar
     $("disc-stock").textContent = SBDocs.COPY.MAT01;
@@ -1522,12 +1501,14 @@
     bindRange("in-holedia", "holeDiaMM", "out-holedia", (v) => v + " mm");
     bindSelect("in-corner", "cornerStyle");
 
-    // preview controls (#in-explode is a G2.11c view control: project.view.explodeMM, renderAll only)
+    // preview controls (#in-explode is a G2.11c view control: project.view.explodeMM, showResult only)
     $("in-bridgesvis").addEventListener("change", (e) =>
       preview.setShowBridges(e.target.checked));
     // G2.13b: the Changes overlay on the proof (view only: no revision change, no regeneration)
     $("in-overlays").addEventListener("change", (e) => {
       preview.setShowOverlays(e.target.checked);
+      // alpha.3 E5: a draft built without the overlay polygons (overlay off) is rebuilt with them (warm cache, same hash)
+      if (e.target.checked && run.shown && run.shown === run.draft && run.draft.snapshot && !run.draft.overlays) regenerate();
       switchTab(preview.getMode());
     });
 

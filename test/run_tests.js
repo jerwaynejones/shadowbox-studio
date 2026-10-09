@@ -4290,8 +4290,8 @@ suite("docs.js/schema.js/index.html/app.js — G2.11c control groups, dimension 
     return f > html.indexOf('id="stage-construction"') && i < html.indexOf('id="stage-review"') && /<legend>Machine<\/legend>/.test(html.slice(f, i)); })());
   check("UI-01 app.js binds every G2.11c control through SBSchema.applyControl",
     /SBSchema\.applyControl\(/.test(appSrc) && IDS.every((id) => appSrc.includes('"' + id.replace(/^in-/, "") + '"') || appSrc.includes('"' + id + '"')));
-  check("PRJ-02 app.js: an appearance/view change calls renderAll() only; a geometry change regenerates",
-    /function onControl\([\s\S]{0,900}revision !== [\s\S]{0,200}recompute\(\)[\s\S]{0,200}renderAll\(\)/.test(appSrc));
+  check("PRJ-02 app.js: an appearance/view change re-renders the shown result only (showResult(run.shown), alpha.3 E5); a geometry change regenerates",
+    /function onControl\([\s\S]{0,900}revision !== [\s\S]{0,200}recompute\(\)[\s\S]{0,200}showResult\(run\.shown\)/.test(appSrc));
   check("PO-LASER-4/NFR-04 the dimbar is drawn from SBDocs.dimbarModel with the fabrication rasterPlan before generation",
     tagOf("dimbar") !== "" && /class="dimbar"/.test(tagOf("dimbar")) && /SBDocs\.dimbarModel\(/.test(appSrc) &&
     /SBEngine\.rasterPlan\([^)]*"fabrication"/.test(appSrc) && /\.dimbar\b/.test(fs.readFileSync(path.join(root, "css", "style.css"), "utf8")));
@@ -4535,13 +4535,15 @@ suite("proof.js/preview.js/index.html/app.js — G2.12 opaque proof, stack secti
   check("G2.12 snapshot(\"proof\") captures the proof from any tab and restores the active mode (bundle preview.png)",
     xd.length === nonEmpty && xd.every((d) => d.smoothing === false && d.blur === 0) && pv.getMode() === "section");
   pv.setMode("proof");
-  const pvb = rec.ctx.SBPreview.create(rec.mkCanvas()), masks = LC.map((l, k) => (k === 1 ? new Uint8Array([0, 1, 1, 0]) : null));
-  pvb.setSnapshot(snap, pal, { bridges: { masks, w: 2, h: 2 } });
+  // alpha.3 E5 (SUP-06): bridges reach the views only as overlay polygons (SBProof.overlays from cleanupReport[].bridges)
+  const pvb = rec.ctx.SBPreview.create(rec.mkCanvas());
+  pvb.setSnapshot(snap, pal);
+  pvb.setOverlays(LC.map((l, k) => ({ layerIndex: l.index, added: null, removed: null, unsupported: [], label: "",
+    bridges: k === 1 ? [{ outer: [0, 0, 1000, 0, 1000, 1000, 0, 1000], holes: [] }] : null })));
   const bpp = (() => { rec.log.draws = []; pvb.setMode("proof"); pvb.snapshot(); return rec.log.draws.slice(); })();
   const bt_ = (() => { rec.log.draws = []; pvb.setMode("tilt"); pvb.snapshot(); return rec.log.draws.slice(); })();
   check("UI-02 bridge highlight is drawn in Tilt only, never in Proof", bpp.length === nonEmpty && bt_.length === nonEmpty + 1);
-  pvb.setSheets([{ mask: new Uint8Array(4), bridges: null }], ["#808080"], 2, 2); rec.log.draws = []; pvb.snapshot();
-  check("G2.12 setSheets (raster interim view) replaces the polygon snapshot", rec.log.draws.length === 1);
+  check("alpha.3 E5 the raster interim view is gone (no setSheets)", typeof pvb.setSheets === "undefined");
   check("UI-02 setMode refuses an unknown mode", throws(() => pv.setMode("glow"), /MODE/));
 
   // ---- markup and wiring
@@ -4553,12 +4555,13 @@ suite("proof.js/preview.js/index.html/app.js — G2.12 opaque proof, stack secti
   check("UI-02 index.html loads js/proof.js before js/preview.js; modules.js lists proof.js",
     html.indexOf('src="js/proof.js"') > 0 && html.indexOf('src="js/proof.js"') < html.indexOf('src="js/preview.js"') &&
     require("./modules.js").NODE_MODULES.includes("proof.js"));
-  check("UI-02 app.js: switchTab sets the preview mode; renderAll feeds setSnapshot from canonical polygons",
-    /preview\.setMode\(/.test(appSrc) && /preview\.setSnapshot\(/.test(appSrc) && /SBEngine\.(connectedLayers|legacyView)\(/.test(appSrc));   // G2.13d: legacyView = connectedLayers + repairs
-  check("KI-CONN-PERF app.js: renderAll defers the polygon build (raster first, rAF + task, superseded by viewToken) and reports failures",
-    (() => { const ra = appSrc.slice(appSrc.indexOf("function renderAll()"), appSrc.indexOf("function renderSheetGrid(")); return /requestAnimationFrame\(\(\) => setTimeout\(/.test(ra) &&
-      /token !== run\.viewToken/.test(ra) && /preview\.setSheets\(/.test(ra) && /proof unavailable/.test(ra) && /catch \(err\)/.test(ra) &&
-      ra.indexOf("renderSheetGrid(") < ra.search(/connectedLayers\(|legacyView\(/); })());
+  check("UI-02 app.js: switchTab sets the preview mode; showResult feeds setSnapshot from the canonical polygons of SBEngine.generate (alpha.3 E5)",
+    /preview\.setMode\(/.test(appSrc) && /preview\.setSnapshot\(/.test(appSrc) && /SBEngine\.generate\(/.test(appSrc));
+  check("KI-CONN-PERF app.js: the draft paints first (rAF + task), drops a superseded run (draftToken) and reports a proof failure (alpha.3 E5)",
+    (() => { const rg = appSrc.slice(appSrc.indexOf("function regenerate()"), appSrc.indexOf("function wantOverlays(")),
+      sr = appSrc.slice(appSrc.indexOf("function showResult("), appSrc.indexOf("function statusText("));
+      return /requestAnimationFrame\(\(\) => setTimeout\(/.test(rg) && /token !== draftToken/.test(rg) && /proof unavailable/.test(sr) && /catch \(err\)/.test(sr) &&
+        sr.indexOf("setSnapshot(") < sr.indexOf("renderSheetGrid("); })());
   check("G2.12 app.js: the export bundle image is the proof (preview.snapshot(\"proof\"))", /preview\.snapshot\("proof"\)/.test(appSrc));
   check("UI-02 the draft badge is gone; the tilt view carries an Illustrative note",
     !/Draft preview: cut files come from polygons/.test(html) && /id="tiltnote"[^>]*>[^<]*Illustrative/.test(html));
@@ -4630,17 +4633,16 @@ suite("proof.js/preview.js/app.js/style.css — G2.13a retained/waste layer card
   log.draws = []; log.strokes = 0;
   pv.drawCard(card, 99);
   check("UI-02 a layer with no material is drawn as hatch only", log.draws.length === 0 && log.strokes >= 1);
-  pv.setSheets([{ mask: new Uint8Array(4), bridges: null }], ["#808080"], 2, 2);
-  check("UI-02 setSheets drops the snapshot, so cards fall back to the raster", pv.hasSnapshot() === false);
+  check("alpha.3 E5 no raster card fallback: the preview has no setSheets", typeof pv.setSheets === "undefined" && pv.hasSnapshot() === true);
 
   // ---- wiring
   const root = path.join(__dirname, "..");
   const appSrc = fs.readFileSync(path.join(root, "js", "app.js"), "utf8"), css = fs.readFileSync(path.join(root, "css", "style.css"), "utf8");
   const grid = appSrc.slice(appSrc.indexOf("function renderSheetGrid("), appSrc.indexOf("function renderPaletteChips("));
-  check("UI-02 app.js: renderSheetGrid draws polygon cards via preview.drawCard with SBProof.cards stats, raster hatch fallback",
+  check("UI-02 app.js: renderSheetGrid draws polygon cards via preview.drawCard with SBProof.cards stats, hatch-only fallback",
     /preview\.drawCard\(/.test(grid) && /SBProof\.cards\(/.test(grid) && /hatch/i.test(grid) && /retained/.test(grid) && /waste/.test(grid));
-  check("UI-02 app.js: showView re-renders the cards once the snapshot is set",
-    (() => { const sv = appSrc.slice(appSrc.indexOf("function showView("), appSrc.indexOf("function showRaster(")); return sv.indexOf("setSnapshot(") < sv.indexOf("renderSheetGrid("); })());
+  check("UI-02 app.js: showResult re-renders the cards once the snapshot is set (alpha.3 E5)",
+    (() => { const sv = appSrc.slice(appSrc.indexOf("function showResult("), appSrc.indexOf("function statusText(")); return sv.indexOf("setSnapshot(") >= 0 && sv.indexOf("setSnapshot(") < sv.indexOf("renderSheetGrid("); })());
   check("UI-02 style.css: .sheetcard legend swatches for retained and waste (hatch, not colour alone)",
     /\.sheetcard[^{]*\.sw-waste\s*\{[^}]*repeating-linear-gradient/.test(css));
 });
@@ -4793,8 +4795,8 @@ suite("diag.js/proof.js/engine.js/preview.js/app.js — G2.13b overlays and stat
   check("UI-05 app.js: state via SBDiag.nextState (edit → stale, start → processing, done/fail), badge from SBDiag.stateBadge",
     /SBDiag\.nextState\(/.test(appSrc) && /SBDiag\.stateBadge\(/.test(appSrc) && /type: "edit"/.test(appSrc) && /type: "start"/.test(appSrc) &&
     /type: "done"/.test(appSrc) && /type: "fail"/.test(appSrc));
-  check("UI-05 app.js: overlays from SBEngine.legacyCleanupReport through SBProof.overlays; bridges no longer from masks",
-    /SBEngine\.legacyCleanupReport\(/.test(appSrc) && /SBProof\.overlays\(/.test(appSrc) && /preview\.setOverlays\(/.test(appSrc) &&
+  check("UI-05 app.js: overlays from the shown snapshot's cleanupReport through SBProof.overlays (alpha.3 E5); bridges no longer from masks",
+    /SBProof\.overlays\(\{ cleanupReport: snap\.cleanupReport/.test(appSrc) && /SBProof\.overlays\(/.test(appSrc) && /preview\.setOverlays\(/.test(appSrc) &&
     /in-overlays/.test(appSrc) && !/bridges: \{ masks:/.test(appSrc));
 });
 
@@ -4910,12 +4912,12 @@ suite("diag.js/engine.js/preview.js/app.js/style.css — G2.13c diagnostics pane
     /id="diag-panel"[^>]*aria-labelledby="h-diag"/.test(html) && /id="h-diag"/.test(html) && /id="diag-summary"[^>]*role="status"/.test(html) &&
     /id="diag-list"[^>]*class="diag-list"|class="diag-list"[^>]*id="diag-list"/.test(html) &&
     (() => { const m = /<section class="step" id="stage-review"[\s\S]*?<\/section>/.exec(html); return !!m && /id="diag-panel"/.test(m[0]); })());
-  check("UI-04 app.js: the panel is built from SBDiag.summarize / SBDiag.describe over SBEngine.legacyDiagnostics",
-    /SBDiag\.summarize\(/.test(appSrc) && /SBDiag\.describe\(/.test(appSrc) && /SBEngine\.legacyDiagnostics\(/.test(appSrc) && /SBEngine\.legacySnapshotHash\(/.test(appSrc));
+  check("UI-04 app.js: the panel is built from SBDiag.summarize / SBDiag.describe over the shown result's snapshot.diagnostics (alpha.3 E5)",
+    /SBDiag\.summarize\(/.test(appSrc) && /SBDiag\.describe\(/.test(appSrc) && /r\.snapshot\.diagnostics/.test(appSrc) && /r\.snapshot\.geometryHash/.test(appSrc));
   check("NFR-07 app.js: navigable items are <button>s (click and Enter) that switch to the Proof and call preview.setFocus",
     /createElement\("button"\)/.test(appSrc) && /preview\.setFocus\(/.test(appSrc) && /switchTab\("proof"\)/.test(appSrc));
   check("§9.5 app.js: warnings get an \"Acknowledge\" checkbox keyed by SBDiag.ackKey on the current snapshot hash; blocking never",
-    /Acknowledge/.test(appSrc) && /SBDiag\.ackKey\(/.test(appSrc) && /run\.geometryHash/.test(appSrc) && /severity === "warning"/.test(appSrc));
+    /Acknowledge/.test(appSrc) && /SBDiag\.ackKey\(d, r\.snapshot\.geometryHash\)/.test(appSrc) && /severity === "warning"/.test(appSrc));
   check("NFR-07 app.js: icons are aria-hidden and the severity is in text", /aria-hidden/.test(appSrc) && /severityLabel/.test(appSrc));
   check("UI-04 style.css: .diag-list and .badge rules; a visible keyboard focus style", /\.diag-list\b/.test(css) && /\.badge\b/.test(css) && /\.diag-list[^{]*:focus-visible/.test(css));
 });
@@ -5035,9 +5037,9 @@ suite("support.js/engine.js/proof.js/preview.js/app.js — G2.13d clip dialog an
     /<dialog id="dlg-clip"[^>]*aria-labelledby="dlg-clip-title"/.test(html) && /id="dlg-clip-canvas"/.test(html) && /id="dlg-clip-summary"/.test(html) &&
     /value="accept"/.test(/<dialog id="dlg-clip"[\s\S]*?<\/dialog>/.exec(html)[0]) && /value="cancel"/.test(/<dialog id="dlg-clip"[\s\S]*?<\/dialog>/.exec(html)[0]) &&
     (() => { const m = /<section class="step" id="stage-review"[\s\S]*?<\/section>/.exec(html); return !!m && /id="repair-list"/.test(m[0]); })());
-  check("SUP-04 app.js: Clip to lower layer opens proposeClip, Accept calls applyClip, Revert calls removeRepair; the view replays repairs",
+  check("SUP-04 app.js: Clip to lower layer opens proposeClip, Accept calls applyClip, Revert calls removeRepair; the shown result replays repairs (snapshot.repairsApplied, alpha.3 E5)",
     /Clip to lower layer/.test(appSrc) && /SBSupport\.proposeClip\(/.test(appSrc) && /SBSupport\.applyClip\(/.test(appSrc) &&
-    /SBSupport\.removeRepair\(/.test(appSrc) && /SBEngine\.legacyView\(/.test(appSrc) && /preview\.drawClipCard\(/.test(appSrc) && /Revert/.test(appSrc));
+    /SBSupport\.removeRepair\(/.test(appSrc) && /snapshot\.repairsApplied/.test(appSrc) && /preview\.drawClipCard\(/.test(appSrc) && /Revert/.test(appSrc));
   check("SUP-04 app.js: REPAIR_STALE and REPAIR_REVIEW_FAB items link back to the clip dialog; the export passes the project (alpha.2: generate replays construction.repairs at fabrication; alpha.3 E1: through SBEngine.request)",
     /REPAIR_STALE/.test(appSrc) && /REPAIR_REVIEW_FAB/.test(appSrc) && /SBProof\.repairForDiagnostic\(/.test(appSrc) &&
     /SBEngine\.request\(project, run\.src, \{ quality: "fabrication"/.test(appSrc) && /SBEngine\.fabricationFiles\([^)]*project/.test(appSrc));
@@ -5493,6 +5495,56 @@ suite("schema.js/engine.js — alpha.3 E4 draft budget (PO-PREVIEW-1)", () => {
     on.snapshot.cleanupReport.every((e, k) => e.addedMM2 === off.snapshot.cleanupReport[k].addedMM2 && e.removedMM2 === off.snapshot.cleanupReport[k].removedMM2));
   check("G2.13b overlays:false is recorded as worth it (overlay share >= 0.15 on the gating draft rows)",
     rec.rows.some((x) => x.mode === "a" && x.draftPx === rec.decision.presets.plywood && x.overlayShare >= 0.15));
+});
+
+suite("app.js — alpha.3 E5 real-engine draft (PO-PREVIEW-1, LYR-06, UI-05)", () => {
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8");
+  const pvSrc = fs.readFileSync(path.join(__dirname, "..", "js", "preview.js"), "utf8");
+  const fn = (name) => { const i = appSrc.indexOf("function " + name + "("); return i < 0 ? "" : appSrc.slice(i, appSrc.indexOf("\n  }\n", i)); };
+  check("PO-PREVIEW-1 app.js calls no SBEngine.legacy* (legacyRun, legacyView, legacyDiagnostics, legacySnapshotHash, legacyCleanupReport)", !/SBEngine\.legacy\w*\(/.test(appSrc));
+  check("PO-PREVIEW-1 regenerate calls SBEngine.generate on SBEngine.request(…, {quality: \"draft\"}) with the draft cache",
+    /SBEngine\.generate\(\s*SBEngine\.request\([^)]*quality:\s*"draft"/.test(fn("regenerate")) && /run\.draftCache/.test(fn("regenerate")));
+  check("LYR-06 regenerate no longer downsamples on a canvas (no drawImage)", fn("regenerate").length > 0 && !/drawImage\(/.test(fn("regenerate")));
+  check("UI-05 regenerate paints the Stale state before the blocking run (rAF + task)", /requestAnimationFrame\(/.test(fn("regenerate")) || /paintThen\(/.test(fn("regenerate")));
+  check("UI-04 the diagnostics panel lists res.diagnostics when generate fails with no layers (COMPLEXITY_LIMIT)",
+    /\.status === "error"/.test(appSrc) && /renderDiagnostics\(/.test(fn("regenerate") + fn("showResult")) && /No layers/.test(fn("renderDiagnostics")));
+  // buildAssemblyMD (js/app.js) still exists until E13 deletes it; it is excluded here and E13 drops the exclusion
+  check("alpha.3 no run.sheets / procW / viewToken left in app.js (outside buildAssemblyMD until E13)", !/run\.sheets\b|run\.procW|run\.viewToken/.test(appSrc.replace(fn("buildAssemblyMD"), "")));
+  check("UI-05 showResult reads only the result's snapshot (no project.* reference)", fn("showResult").length > 0 && !/\bproject\./.test(fn("showResult")));
+  check("UI-05 showResult feeds the preview from r.snapshot.page/.layers/.construction and overlays in the snapshot's own mode",
+    /preview\.setSnapshot\([^;]*\.page[^;]*\.layers[^;]*\.construction\.tMM[^;]*\.construction\.gMM/.test(fn("showResult")) &&
+    /SBProof\.overlays\(\{[^}]*cleanupReport[^}]*mode:\s*\w+\.construction\.mode/.test(fn("showResult")));
+  check("SUP-06 app.js never passes bridges to preview.setSnapshot; preview.js has no opts.bridges branch",
+    !/setSnapshot\([^;]*bridges/.test(appSrc) && !/o\.bridges|opts\.bridges/.test(pvSrc));
+  check("SUP-06 no raster bridge path survives: no setSheets / maskToCanvas in js/preview.js or js/app.js",
+    !/setSheets|maskToCanvas/.test(pvSrc) && !/setSheets|maskToCanvas|showRaster|rasterCard|buildView/.test(appSrc));
+  check("PO-PREVIEW-1 the draft status line says the draft is approximate; a fabrication result names its hash",
+    /Draft \(approximate/.test(appSrc) && /geometryHash\.slice\(0, 12\)/.test(fn("statusText")));
+  check("UI-02 renderSheetGrid iterates the shown snapshot's layers with SBProof.cards; bonded roles base / top; omitted badge",
+    /SBProof\.cards\(\s*\w+\.layers,\s*\w+\.page\)/.test(fn("renderSheetGrid")) && /"base"/.test(fn("renderSheetGrid")) && /"top"/.test(fn("renderSheetGrid")) &&
+    /omitted/.test(fn("renderSheetGrid")) && /cleanupReport/.test(fn("renderSheetGrid")) && /stats\.cutMM/.test(fn("renderSheetGrid")));
+  check("LYR-01 updateDimbar counts layers from the shown snapshot's stats", /\.snapshot\.stats|snap\.stats/.test(fn("updateDimbar")) && !/run\.sheets/.test(fn("updateDimbar")));
+  check("SUP-04 the clip dialog proposes on run.shown.snapshot at its own quality; applied = snapshot.repairsApplied",
+    /SBSupport\.proposeClip\(\{[^}]*layers:\s*\w+\.layers[^}]*quality:\s*\w+\.quality/.test(fn("openClipDialog")) && /repairsApplied/.test(appSrc) &&
+    /run\.shown\.revision === project\.revision/.test(appSrc) && !/run\.applied\b/.test(appSrc));
+  check("UI-05 draft acks are kept only for the same geometryHash", /geometryHash === [^;]*geometryHash[^;]*\.acks/.test(fn("regenerate")));
+  check("UI-01 geometry range inputs commit on change (input only updates the number); debounce 300 ms",
+    /SBUtil\.debounce\(regenerate, 300\)/.test(appSrc) && /type === "range"[\s\S]{0,400}"change"/.test(fn("bindControls")));
+  check("PO-PREVIEW-1 the overlay polygons are built only while the Changes overlay is on (generate opts.overlays)",
+    /overlays:\s*/.test(fn("regenerate")) && /in-overlays/.test(fn("regenerate") + fn("wantOverlays")));
+  // bonded never shows bridges, by construction (engine-level)
+  const F = require("./fixtures.js"), E = SBEngine, S = SBSchema, w = 200, h = 150, rgba = new Uint8Array(w * h * 4), g = F.heightMap(5, w, h);
+  for (let i = 0; i < w * h; i++) { rgba[4 * i] = g[i]; rgba[4 * i + 1] = 255 - g[i]; rgba[4 * i + 2] = (g[i] * 7) & 255; rgba[4 * i + 3] = 255; }
+  const px = { pixels: rgba, channels: 4, w, h, alpha: null };
+  let p = S.withSource(S.defaults("plywood"), E.sourceRecord(px, { format: "png", decode: "canvas-tonal" }));
+  p = S.applyModeChange(p, { interpretation: { mode: "tonal" } }, true); p.geometry.targetMM = 60;
+  const res = E.generate(E.request(p, px, { quality: "draft" }));
+  const s = res.snapshot;
+  check("PO-PREVIEW-1 bonded colour draft: no cleanupReport bridges and every SBProof.overlays(bonded) entry has bridges null",
+    res.status === "done" && s.cleanupReport.every((c) => !c.bridges && !c.bridged) &&
+    SBProof.overlays({ cleanupReport: s.cleanupReport, diagnostics: s.diagnostics, mode: "bonded-relief" }).every((o) => o.bridges === null));
+  check("UI-05 the bonded draft snapshot carries its own construction (mode, t, g = 0) for showResult",
+    s.construction.mode === "bonded-relief" && s.construction.gMM === 0 && s.construction.tMM === p.material.thicknessMM);
 });
 
 // ------------------------------------------------------------------ report

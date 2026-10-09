@@ -18,7 +18,7 @@
  * G2.13b: setOverlays() takes the SBProof.overlays model. With the Changes overlay on (setShowOverlays), the
  * proof view adds cleanup-added material in green, removed material as a dashed outline, unsupported regions in red
  * with a "!" icon and bridges in amber (connected mode, #in-bridgesvis), plus a per-layer mm² legend. Off by
- * default, so the proof stays the material alone. Overlay bridges also replace the mask bridges in the tilt view.
+ * default, so the proof stays the material alone. Overlay bridges are also the tilt view's bridge highlight.
  *
  * G2.13c: setFocus() takes a diagnostics-panel focus {layer, parts, regions, label}: the proof veils the stack, redraws
  * that layer on top and outlines its parts and regions with a dark-and-light double stroke and a text tag.
@@ -27,8 +27,9 @@
  *
  * setSnapshot() rasterizes each layer's Path2D (from the µm rings) once per snapshot into
  * an offscreen canvas; frames only composite. The explode slider is display-only: it moves
- * layers in the tilt view and never touches geometry. setSheets() keeps the v1.1.0 raster
- * path for callers that have only masks.
+ * layers in the tilt view and never touches geometry. alpha.3 E5: the v1.1.0 raster path
+ * (mask canvases and mask bridges) is gone; connected bridges reach Tilt and the Proof only
+ * through setOverlays (SBProof.overlays from snapshot.cleanupReport[].bridges).
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -70,15 +71,13 @@
 
   /**
    * Create a preview controller bound to a canvas element.
-   * Call setSnapshot() (or legacy setSheets()) after each pipeline run, then start().
+   * Call setSnapshot() after each pipeline run, then start().
    */
   P.create = function (canvas) {
     const ctx = canvas.getContext("2d");
     const state = {
       mode: "proof",
-      layers: [],        // legacy raster: [{canvas, bridgeCanvas}]
-      w: 0, h: 0,
-      snap: null,        // {page, tMM, gMM, model, images: [{layerIndex, canvas}], bridges: [canvas|null], section, sectionY}
+      snap: null,        // {page, tMM, gMM, model, images: [{layerIndex, canvas}], section, sectionY}
       tiltX: 0.35, tiltY: -0.25,   // resting pose: slightly off-axis
       targetX: 0.35, targetY: -0.25,
       explode: 0,        // 0..1
@@ -117,32 +116,11 @@
     canvas.addEventListener("touchend", onUp);
 
     /**
-     * Legacy raster path (v1.1.0).
-     * @param {Array} sheets   [{mask, bridges}] back → front
-     * @param {string[]} colors  hex per sheet
-     */
-    function setSheets(sheets, colors, w, h) {
-      state.w = w; state.h = h;
-      state.layers = sheets.map((sheet, s) => ({
-        canvas: maskToCanvas(sheet.mask, w, h, colors[s], s === 0),
-        bridgeCanvas: sheet.bridges && hasAny(sheet.bridges)
-          ? maskToCanvas(sheet.bridges, w, h, AMBER, false)
-          : null,
-      }));
-      state.overlays = null; state.overlayBridges = [];
-      state.focus = null;
-      state.snap = null;   // the raster replaces any polygon snapshot (interim view while the polygons build)
-      state.dirty = true;
-    }
-
-    /**
      * The polygon views (G2.12).
      * @param {{page: {wMM, hMM, frameMM?}, layers: MaterialLayer[], tMM: number, gMM: number}} snap
      * @param {string|string[]} colors  one hex (uniform) or a palette indexed by layer.index
-     * @param {{bridges?: {masks: Uint8Array[], w, h}}} [opts]  amber bridge highlight (tilt view only), masks over the art area
      */
-    function setSnapshot(snap, colors, opts) {
-      const o = opts || {};
+    function setSnapshot(snap, colors) {
       const model = global.SBProof.model(snap.layers, colors, {});
       const page = snap.page;
       const k = Math.min(RASTER_MAX_PX / page.wMM, RASTER_MAX_PX / page.hMM) / 1000; // px per µm
@@ -150,13 +128,8 @@
       const images = model.map((e) => ({ layerIndex: e.layerIndex, canvas: pathToCanvas(e, W, H, k) }));
       const fills = {};
       for (const e of model) fills[e.layerIndex] = e.fill;
-      let bridges = [];
-      const b = o.bridges;
-      if (b && Array.isArray(b.masks)) {
-        bridges = b.masks.map((m) => (m && hasAny(m) ? maskToCanvas(m, b.w, b.h, AMBER, false) : null));
-      }
       const prevY = state.snap && state.snap.page.hMM === page.hMM ? state.snap.sectionY : page.hMM / 2;
-      state.snap = { page, tMM: snap.tMM, gMM: snap.gMM, layers: snap.layers, model, fills, images, bridges, sectionY: prevY, section: null };
+      state.snap = { page, tMM: snap.tMM, gMM: snap.gMM, layers: snap.layers, model, fills, images, sectionY: prevY, section: null };
       state.overlays = null; state.overlayBridges = [];   // G2.13b: overlays belong to one snapshot; setOverlays after this
       state.focus = null;   // G2.13c: a focus belongs to the diagnostics of one snapshot
       setSectionY(prevY);
@@ -365,26 +338,6 @@
       return c;
     }
 
-    function maskToCanvas(mask, w, h, hex, solid) {
-      const c = document.createElement("canvas");
-      c.width = w; c.height = h;
-      const cc = c.getContext("2d");
-      const img = cc.createImageData(w, h);
-      const [r, g, b] = SBUtil.hexToRgb(hex);
-      for (let i = 0, p = 0; i < mask.length; i++, p += 4) {
-        const on = solid || mask[i];
-        img.data[p] = r; img.data[p + 1] = g; img.data[p + 2] = b;
-        img.data[p + 3] = on ? 255 : 0;
-      }
-      cc.putImageData(img, 0, 0);
-      return c;
-    }
-
-    function hasAny(arr) {
-      for (let i = 0; i < arr.length; i++) if (arr[i]) return 1;
-      return 0;
-    }
-
     function frame() {
       if (!state.running) return;
       // Ease toward target tilt; skip repaint when settled and clean.
@@ -410,19 +363,12 @@
       if (state.snap) {
         if (state.mode === "section") drawSection(cw, ch);
         else drawLayers(cw, ch, state.snap.page.wMM, state.snap.page.hMM,
-          state.snap.images.map((im) => ({ canvas: im.canvas, bridge: state.overlayBridges[im.layerIndex] || state.snap.bridges[im.layerIndex] || null,
-            pageBridge: !!state.overlayBridges[im.layerIndex] })),
-          state.snap.page.frameMM || 0);
-      } else if (state.layers.length) {
-        drawLayers(cw, ch, state.w, state.h, state.layers.map((l) => ({ canvas: l.canvas, bridge: l.bridgeCanvas })), null);
+          state.snap.images.map((im) => ({ canvas: im.canvas, bridge: state.overlayBridges[im.layerIndex] || null })));
       }
     }
 
-    /**
-     * proof / tilt composite. pageW/pageH are the drawn extent (mm for a snapshot, px for the legacy raster).
-     * frameMM (snapshot only) places the bridge masks, which cover the art area inside the frame.
-     */
-    function drawLayers(cw, ch, pageW, pageH, items, frameMM) {
+    /** proof / tilt composite of the snapshot's layer images; pageW/pageH are the page in mm. Bridge canvases are page-sized. */
+    function drawLayers(cw, ch, pageW, pageH, items) {
       const dp = global.SBProof.drawParams(state.mode === "section" ? "proof" : state.mode);
       // Fit the page into the canvas; tilt leaves breathing room for the parallax throw.
       const pad = dp.parallax ? 0.86 : 0.94;
@@ -454,10 +400,7 @@
         ctx.drawImage(items[s].canvas, ox + dx, oy + dy, dw, dh);
         ctx.restore();
         // Bridge highlight: illustrative views only, so the proof stays the material alone.
-        if (dp.illustrative && state.showBridges && items[s].bridge) {
-          const f = frameMM === null || items[s].pageBridge ? 0 : frameMM * scale;   // overlay bridges are page-sized
-          ctx.drawImage(items[s].bridge, ox + dx + f, oy + dy + f, dw - 2 * f, dh - 2 * f);
-        }
+        if (dp.illustrative && state.showBridges && items[s].bridge) ctx.drawImage(items[s].bridge, ox + dx, oy + dy, dw, dh);
       }
       if (state.mode === "proof") { drawOverlays(ox, oy, dw); drawFocus(ox, oy, dw, dh); }
     }
@@ -519,11 +462,10 @@
     }
 
     return {
-      setSheets,
       setSnapshot,
       drawCard,
       drawClipCard,
-      /** True while the polygon snapshot (not the interim raster) is the source of the views and cards. */
+      /** True once a polygon snapshot is the source of the views and cards. */
       hasSnapshot() { return !!state.snap; },
       /** "proof" | "section" | "tilt" (SBProof.drawParams validates the name). */
       setMode(mode) { global.SBProof.drawParams(mode); state.mode = mode; state.dirty = true; },
