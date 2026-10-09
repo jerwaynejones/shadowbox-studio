@@ -410,6 +410,18 @@
     alpha: { mode: "full", t: 0.5 },
   });
 
+  /**
+   * withSource(project, record) → project (alpha.3 E1, PRJ-02): a clone with `record` installed as project.source.
+   * The revision goes up by one exactly when the geometry key changes, so re-installing an identical record (the same
+   * file reloaded: same sampleHash, size and policy) changes nothing and earlier clips stay valid. Pure.
+   */
+  S.withSource = function (project, record) {
+    const q = clone(project);
+    q.source = clone(record);
+    if (JSON.stringify(S.geometryKey(q)) !== JSON.stringify(S.geometryKey(project))) q.revision = project.revision + 1;
+    return q;
+  };
+
   // ------------------------------------------------------------ validation
   const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
   const onGrid = (v) => Math.round(v * 1000) / 1000 === v;

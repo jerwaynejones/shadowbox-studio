@@ -665,23 +665,65 @@
   // ------------------------------------------------ fabrication export (checkpoint v2.0.0-alpha.2, LYR-06, EXP-07)
 
   /**
+   * sourceRecord(px: {w, h, channels}, route: {format, decode}, base?: SourceRecord) → SourceRecord (alpha.3 E1, PRJ-02).
+   * The record for pixels the app has already decoded and oriented (browser or SBEngine.orient at intake): size and
+   * channels follow the pixels, orientation is the identity {exif 1, exifAppliedBy "none"} (no second rotation), format
+   * and decode follow the route when given. Every other field of `base` (its hashes and the user's alpha policy) is kept.
+   * Pure: base is not mutated.
+   */
+  E.sourceRecord = function (px, route, base) {
+    const src = Object.assign(global.SBSchema.sourceTemplate(), base ? JSON.parse(JSON.stringify(base)) : {});
+    if (route && route.format) src.format = route.format;
+    if (route && route.decode) src.decode = route.decode;
+    src.w = px.w; src.h = px.h; src.channels = px.channels;
+    src.orientation = { exif: 1, exifAppliedBy: "none", rotate: 0, mirror: false };
+    return src;
+  };
+
+  /**
+   * sampleBytes(px: {pixels, channels, w, h, alpha}) → Uint8Array, the canonical sample stream hashed into
+   * source.sampleHash (alpha.3 E1, SUP-04): u32le(w) u32le(h) u32le(channels) u8(alpha ? 1 : 0) pixels [alpha].
+   * The alpha plane is covered, so two sources with the same samples but different transparency hash apart.
+   */
+  E.sampleBytes = function (px) {
+    const n = px.pixels.length, a = px.alpha || null, out = new Uint8Array(13 + n + (a ? a.length : 0)), dv = new DataView(out.buffer);
+    dv.setUint32(0, px.w, true); dv.setUint32(4, px.h, true); dv.setUint32(8, px.channels, true); out[12] = a ? 1 : 0;
+    out.set(px.pixels, 13);
+    if (a) out.set(a, 13 + n);
+    return out;
+  };
+
+  /**
+   * request(project, px: {pixels, channels: 1|4, w, h, alpha}, {quality, requestId?, deviceClass?}) → GenerateRequest
+   * (alpha.3 E1, LYR-06). The one request builder: the draft and the fabrication request of one project revision have
+   * the same config (the project itself, never rewritten) and the same normalizedSource; only quality differs.
+   * project.source is used as installed at intake (SBSchema.withSource); when it is set and its w, h or channels differ
+   * from the pixels, throws SOURCE_MISMATCH (the pixels and the record they run under always belong together).
+   * sourceHash is source.sampleHash (byteHash when no sample hash exists).
+   */
+  E.request = function (project, px, o) {
+    o = o || {};
+    const s = project.source;
+    if (s && (s.w !== px.w || s.h !== px.h || s.channels !== px.channels))
+      throw efail("SOURCE_MISMATCH", "project.source is " + s.w + " × " + s.h + " × " + s.channels + " but the pixels are " + px.w + " × " + px.h + " × " + px.channels);
+    return { requestId: o.requestId === undefined ? o.quality : o.requestId, revision: project.revision, engineVersion: E.VERSION, quality: o.quality,
+      normalizedSource: { pixels: px.pixels, channels: px.channels, w: px.w, h: px.h, alpha: px.alpha == null ? null : px.alpha },
+      sourceHash: s ? (s.sampleHash || s.byteHash) : null, config: project, deviceClass: o.deviceClass === undefined ? "desktop" : o.deviceClass };
+  };
+
+  /**
    * fabricationRequest(project, pixels: {pixels, channels: 1|4, w, h, alpha}, {requestId?, deviceClass?, format?, decode?})
    *   → GenerateRequest at quality "fabrication" (G2.10b rule: every export regenerates at fabrication).
-   * The app decodes and orients the source itself (browser or SBEngine.orient at intake), so the source record names
-   * the decoded pixels with exifAppliedBy "none" (no second rotation). An existing project.source keeps its hashes,
-   * format, decode and alpha policy; its size and channels follow the pixels handed over. Pure: project is not mutated.
+   * alpha.3 E1: a wrapper over SBEngine.request. Only a project without a source (the alpha.2 callers and the DEP-04
+   * path) gets a record installed here (SBEngine.sourceRecord with format/decode from the options); a project whose
+   * source is already installed is passed through unchanged, so this is exactly SBEngine.request(project, px,
+   * {quality: "fabrication", …}) and also throws SOURCE_MISMATCH. The app never calls it (it builds every request
+   * with SBEngine.request). Pure: project is not mutated.
    */
   E.fabricationRequest = function (project, px, o) {
     o = o || {};
-    const src = Object.assign(global.SBSchema.sourceTemplate(), project.source ? JSON.parse(JSON.stringify(project.source)) : {});
-    if (o.format) src.format = o.format;
-    if (o.decode) src.decode = o.decode;
-    src.w = px.w; src.h = px.h; src.channels = px.channels;
-    src.orientation = { exif: 1, exifAppliedBy: "none", rotate: 0, mirror: false };
-    const config = Object.assign({}, project, { source: src });
-    return { requestId: o.requestId === undefined ? "export" : o.requestId, revision: project.revision, engineVersion: E.VERSION, quality: "fabrication",
-      normalizedSource: { pixels: px.pixels, channels: px.channels, w: px.w, h: px.h, alpha: px.alpha == null ? null : px.alpha },
-      sourceHash: src.byteHash, config, deviceClass: o.deviceClass === undefined ? "desktop" : o.deviceClass };
+    const config = project.source ? project : Object.assign({}, project, { source: E.sourceRecord(px, o, null) });
+    return E.request(config, px, { quality: "fabrication", requestId: o.requestId === undefined ? "export" : o.requestId, deviceClass: o.deviceClass });
   };
 
   /**

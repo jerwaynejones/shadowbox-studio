@@ -5034,9 +5034,9 @@ suite("support.js/engine.js/proof.js/preview.js/app.js — G2.13d clip dialog an
   check("SUP-04 app.js: Clip to lower layer opens proposeClip, Accept calls applyClip, Revert calls removeRepair; the view replays repairs",
     /Clip to lower layer/.test(appSrc) && /SBSupport\.proposeClip\(/.test(appSrc) && /SBSupport\.applyClip\(/.test(appSrc) &&
     /SBSupport\.removeRepair\(/.test(appSrc) && /SBEngine\.legacyView\(/.test(appSrc) && /preview\.drawClipCard\(/.test(appSrc) && /Revert/.test(appSrc));
-  check("SUP-04 app.js: REPAIR_STALE and REPAIR_REVIEW_FAB items link back to the clip dialog; the export passes the project (alpha.2: generate replays construction.repairs at fabrication)",
+  check("SUP-04 app.js: REPAIR_STALE and REPAIR_REVIEW_FAB items link back to the clip dialog; the export passes the project (alpha.2: generate replays construction.repairs at fabrication; alpha.3 E1: through SBEngine.request)",
     /REPAIR_STALE/.test(appSrc) && /REPAIR_REVIEW_FAB/.test(appSrc) && /SBProof\.repairForDiagnostic\(/.test(appSrc) &&
-    /SBEngine\.fabricationRequest\(project,/.test(appSrc) && /SBEngine\.fabricationFiles\([^)]*project/.test(appSrc));
+    /SBEngine\.request\(project, run\.src, \{ quality: "fabrication"/.test(appSrc) && /SBEngine\.fabricationFiles\([^)]*project/.test(appSrc));
 });
 
 suite("schema.js/diag.js/app.js — G2.14 source intake and explicit preflight (IMG-01/07, GEO-06, NFR-04, PO-LASER-4/5, AT-22/24)", () => {
@@ -5247,8 +5247,8 @@ suite("engine.js/app.js/CHANGELOG — checkpoint v2.0.0-alpha.2 (LYR-06, EXP-07,
   const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8"), html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
   const fn = (name) => { const i = appSrc.indexOf("function " + name + "("); return i < 0 ? "" : appSrc.slice(i, appSrc.indexOf("\n  }\n", i)); };
   const ex = fn("exportBundle"), fr = fn("fabReview");
-  check("LYR-06 app.js export regenerates with SBEngine.generate at fabrication quality (SBEngine.fabricationRequest)",
-    /SBEngine\.fabricationRequest\(/.test(appSrc) && /SBEngine\.generate\(/.test(appSrc) && /fabReview\(/.test(ex));
+  check("LYR-06 app.js export regenerates with SBEngine.generate at fabrication quality (alpha.3 E1: SBEngine.request)",
+    /SBEngine\.request\(/.test(appSrc) && /SBEngine\.generate\(/.test(appSrc) && /fabReview\(/.test(ex));
   check("EXP-07 app.js export is gated by SBDiag.exportGate(…, \"fabrication\") before any file is built",
     /SBDiag\.exportGate\([^)]*"fabrication"\)/.test(appSrc) && ex.indexOf("exportGate(") >= 0 && ex.indexOf("exportGate(") < ex.indexOf("buildAndDeliver("));
   check("EXP-07 app.js: the fabrication review lists the fab snapshot's diagnostics with acks keyed on its geometryHash; draft acks are not reused",
@@ -5261,6 +5261,62 @@ suite("engine.js/app.js/CHANGELOG — checkpoint v2.0.0-alpha.2 (LYR-06, EXP-07,
   const cl = fs.readFileSync(path.join(__dirname, "..", "docs/CHANGELOG.md"), "utf8"), sec = (cl.split(/^## v2\.0\.0-alpha\.2\b.*$/m)[1] || "").split(/^## /m)[0];
   check("R9 CHANGELOG v2.0.0-alpha.2 has a known-gaps table (guides, .sbrproj, manifest, flat layout, fabrication review)",
     /known gaps/i.test(sec) && /^\|.*\|\s*$/m.test(sec) && /guides/i.test(sec) && /\.sbrproj/.test(sec) && /manifest/i.test(sec) && /flat/i.test(sec) && /fabrication/i.test(sec) && /exportGate/.test(sec));
+});
+
+// ------------------------------------------------ alpha.3 E1 (one request builder; the source record is installed at intake)
+suite("engine.js/schema.js/app.js — alpha.3 E1 shared request and installed source (LYR-06, SUP-04)", () => {
+  const F = require("./fixtures.js"), E = SBEngine, S = SBSchema, SP = SBSupport;
+  check("alpha.3 API present (SBEngine.request, SBEngine.sourceRecord, SBSchema.withSource)",
+    typeof E.request === "function" && typeof E.sourceRecord === "function" && typeof S.withSource === "function");
+  if (typeof E.request !== "function" || typeof E.sourceRecord !== "function" || typeof S.withSource !== "function") return;
+  const w = 400, h = 100, px = { pixels: F.ramp(w, h), channels: 1, w, h, alpha: null };
+  const p0 = S.defaults("plywood"); p0.geometry.targetMM = 10;
+  const p = S.withSource(p0, E.sourceRecord(px, { format: "png", decode: "raw-gray8" }));
+  check("PRJ-02 withSource installs the record and bumps the revision", p.source && p.source.w === w && p.revision === p0.revision + 1 && p0.source === null);
+  const d = E.request(p, px, { quality: "draft" }), f = E.request(p, px, { quality: "fabrication" });
+  check("LYR-06 draft and fabrication requests differ only in quality (config and normalizedSource identical)",
+    d.quality === "draft" && f.quality === "fabrication" && JSON.stringify(d.config) === JSON.stringify(f.config) &&
+    d.normalizedSource.pixels === f.normalizedSource.pixels && JSON.stringify(d.config) === JSON.stringify(p));
+  check("LYR-06 fabricationRequest on an installed source does not rewrite config.source",
+    JSON.stringify(E.fabricationRequest(p, px, { format: "png", decode: "raw-gray8" }).config.source) === JSON.stringify(p.source));
+  // The app flow that alpha.2 got wrong: review a clip on a draft generate of the installed project, export at fabrication.
+  const tall = S.defaults("plywood"); tall.geometry.targetMM = 10;
+  const hm = F.heightMap(7, 200, 200), pxh = { pixels: hm, channels: 1, w: 200, h: 200, alpha: null };
+  let q = S.withSource(tall, E.sourceRecord(pxh, { format: "png", decode: "raw-gray8" }));
+  const dr = E.generate(E.request(q, pxh, { quality: "draft" })).snapshot;
+  q = SP.applyClip(q, SP.proposeClip(dr, 1));   // replay raises REPAIR_REVIEW_FAB for any draft review, even an empty clip
+  const fr = E.generate(E.request(q, pxh, { quality: "fabrication" })).snapshot;
+  check("SUP-04 a draft-reviewed clip replays at fabrication as REPAIR_REVIEW_FAB, never REPAIR_STALE",
+    fr.diagnostics.some((x) => x.code === "REPAIR_REVIEW_FAB") && !fr.diagnostics.some((x) => x.code === "REPAIR_STALE"));
+  const warn = fr.diagnostics.filter((x) => SBDiag.CODES[x.code].severity === "warning");
+  const blocking = fr.diagnostics.filter((x) => SBDiag.CODES[x.code].severity === "blocking");
+  check("EXP-07 the clip alone never blocks: no blocking item, and acknowledging the warnings on the fab snapshot allows export",
+    blocking.length === 0 && SBDiag.exportGate(fr.diagnostics, warn.map((x) => SBDiag.ackKey(x, fr.geometryHash)), fr, "fabrication").allowed);
+  const q2 = S.withSource(q, E.sourceRecord({ w: 200, h: 200, channels: 1 }, { format: "png", decode: "raw-gray8" }, Object.assign({}, q.source, { sampleHash: "f".repeat(64) })));
+  check("PRJ-02 re-installing an identical source record changes nothing (same revision)", S.withSource(q, q.source).revision === q.revision);
+  check("SUP-04 loading a different source makes an earlier clip stale, not silently applied",
+    E.generate(E.request(q2, pxh, { quality: "fabrication" })).snapshot.diagnostics.some((x) => x.code === "REPAIR_STALE"));
+  const pol = JSON.parse(JSON.stringify(q)); pol.source.alpha = { mode: "threshold", t: 0.3 };
+  const re = S.withSource(pol, E.sourceRecord(pxh, { format: "png", decode: "raw-gray8" }, Object.assign({}, pol.source, { byteHash: pol.source.byteHash, sampleHash: pol.source.sampleHash })));
+  check("PRJ-02 reloading the same file keeps the user's source policy (source.alpha) and the revision", re.revision === pol.revision && JSON.stringify(re.source.alpha) === JSON.stringify(pol.source.alpha));
+  check("LYR-06 request refuses a source record that does not match the pixels (SOURCE_MISMATCH)",
+    (() => { try { E.request(q, { pixels: new Uint8Array(100 * 100), channels: 1, w: 100, h: 100, alpha: null }, { quality: "draft" }); return false; } catch (e) { return /SOURCE_MISMATCH/.test(e.message); } })());
+  check("LYR-06 fabricationRequest on an installed source also refuses mismatched pixels (SOURCE_MISMATCH)",
+    (() => { try { E.fabricationRequest(q, { pixels: new Uint8Array(100 * 100), channels: 1, w: 100, h: 100, alpha: null }, {}); return false; } catch (e) { return /SOURCE_MISMATCH/.test(e.message); } })());
+  const a1 = new Uint8Array(200 * 200).fill(255), a2 = new Uint8Array(200 * 200).fill(255); a2[0] = 0;
+  const sb1 = E.sampleBytes(Object.assign({}, pxh, { alpha: a1 })), sb2 = E.sampleBytes(Object.assign({}, pxh, { alpha: a2 }));
+  check("SUP-04 sampleBytes covers alpha: same gray samples, different alpha → different streams (so different sampleHash)",
+    sb1.length === sb2.length && sb1.some((v, i) => v !== sb2[i]) && E.sampleBytes(pxh).length < sb1.length);
+  checkAsync("SUP-04 sampleHash differs for the same samples with different alpha", Promise.all([SBHash.digest(sb1), SBHash.digest(sb2)]).then(([h1, h2]) => h1 !== h2));
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8");
+  const fn = (name) => { const i = appSrc.indexOf("function " + name + "("); return i < 0 ? "" : appSrc.slice(i, appSrc.indexOf("\n  }\n", i)); };
+  const acc = fn("acceptSource");
+  check("alpha.3 app.js installs the source record on the project at intake (SBSchema.withSource in acceptSource)", /SBSchema\.withSource\(/.test(acc));
+  check("alpha.3 acceptSource assigns run.src only after the hashes resolve (no await between run.src = and the project install)",
+    acc.indexOf("run.src =") >= 0 && acc.lastIndexOf("await ") < acc.indexOf("run.src =") && acc.indexOf("run.src =") < acc.indexOf("SBSchema.withSource("));
+  check("alpha.3 acceptSource installs the project without recompute() (one draft per load)", !/commitProject\(/.test(acc) && (acc.match(/regenerate\(\)/g) || []).length === 1);
+  check("LYR-06 app.js never calls fabricationRequest; regenerate and fabReview check the sample hash",
+    !/fabricationRequest\(/.test(appSrc) && /sampleHash/.test(fn("regenerate")) && /sampleHash/.test(fn("fabReview")));
 });
 
 // ------------------------------------------------------------------ report

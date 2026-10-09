@@ -3085,7 +3085,7 @@ Order is binding: E1 → E2 → E3 → E3b → E4 → E5 → E6, then E7, E8 (in
 - Produces: `SBEngine.sourceRecord(px: {w, h, channels}, route: {format, decode}, base?: SourceRecord) → SourceRecord` (orientation `{exif: 1, exifAppliedBy: "none", rotate: 0, mirror: false}`; every other field of `base`, including the user's `alpha` policy, is kept); `SBEngine.sampleBytes(px) → Uint8Array`, the canonical sample stream `u32le(w) u32le(h) u32le(channels) u8(alpha ? 1 : 0) pixels [alpha]`, so `sampleHash = SHA-256(sampleBytes(px))` covers the alpha plane of the raw gray+alpha route (`decodeRaw`, `js/app.js:1286-1290`); `SBEngine.request(project, px: {pixels, channels: 1|4, w, h, alpha}, {quality, requestId?, deviceClass?}) → GenerateRequest` (uses `project.source` as-is; `config === project` contents, never rewritten; throws `SOURCE_MISMATCH` when `project.source` is set and its `w`, `h` or `channels` differ from `px`); `SBEngine.fabricationRequest(project, px, o)` unchanged signature: installs a record only when `project.source === null` (the alpha.2 callers and checks), otherwise it is exactly `E.request(project, px, {quality: "fabrication", …})` and so also throws `SOURCE_MISMATCH`; the app never calls it after E1; `SBSchema.withSource(project, record) → project` (clone, `revision + 1` iff `geometryKey` changes).
 - App produces: `run.src = {pixels, channels, w, h, alpha, gen, sampleHash}` (read once per `sourceGen`); `project.source.byteHash`/`sampleHash` are real SHA-256 values (`SBHash.digest`), and `req.sourceHash` = `sampleHash`. `regenerate` and `fabReview` refuse to run unless `run.src.sampleHash === project.source.sampleHash` (the pixels and the record they run under always belong together).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```js
 suite("engine.js/schema.js/app.js — alpha.3 E1 shared request and installed source (LYR-06, SUP-04)", () => {
@@ -3142,12 +3142,12 @@ suite("engine.js/schema.js/app.js — alpha.3 E1 shared request and installed so
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `node test/run_tests.js --only "alpha.3 E1 "` (trailing space: the runner matches substrings, `test/run_tests.js:5269`, and `"alpha.3 E1"` would also run E10–E14)
 Expected: FAIL at "alpha.3 API present" (suite returns early).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `js/engine.js` (replace `fabricationRequest` body; keep its doc comment, add the two new docs):
 
@@ -3201,11 +3201,11 @@ Expected: FAIL at "alpha.3 API present" (suite returns early).
 - `fabReview` uses `run.src` and `SBEngine.request(project, run.src, {quality: "fabrication", requestId: "export-" + rev, deviceClass: dc})`; `regenerate` and `fabReview` return early unless `run.src && project.source && run.src.sampleHash === project.source.sampleHash`.
 - The explicit downsample and the Demo source go through `acceptSource` too, so they install their own records.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `node test/run_tests.js --only "alpha.3 E1 "` → all ✓; then `node test/run_tests.js` → 0 failed (the alpha.2 check "fabricationRequest … p.source === null" still holds because `fabricationRequest` does not mutate its input and still installs a record for a null source).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 node build.js

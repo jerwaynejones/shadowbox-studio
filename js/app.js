@@ -57,6 +57,11 @@
     focus: null,         // G2.13c: the diagnostics focus shown in the proof ({layer, parts, regions, label}), re-applied per snapshot
     applied: null,       // G2.13d: construction.repairs indices replayed on the shown view (SBEngine.legacyView); null until built
     sourceRoute: { format: "png", decode: "canvas-tonal" },   // alpha.2: the source record of the decoded pixels (fabrication request)
+    // alpha.3 E1 (LYR-06): the full-size decoded source pixels, read once per load: {pixels, channels: 1|4, w, h, alpha, gen,
+    // sampleHash}. project.source is the record of exactly these pixels (installed with them in acceptSource); every
+    // engine request is SBEngine.request(project, run.src, …) and runs only while run.src.sampleHash matches it.
+    src: null,
+    draftCache: {},      // alpha.3: the caller-owned draft stage cache (E3); reset with every new source
     // alpha.2 (LYR-06, EXP-07): the fabrication run of the last export, {status, snapshot, diagnostics, error, revision, gen,
     // deviceClass, acks, ms}. Its acks are keyed on the fab snapshot's geometryHash; draft acks (run.acks) never carry over.
     fab: null,
@@ -134,6 +139,8 @@
       setStatus(gate.reason === "Choose a source" ? "Choose a source: load a photo or the Demo scene" : gate.reason);
       return;
     }
+    // alpha.3 E1: the pixels and the record they run under always belong together
+    if (!run.src || !project.source || run.src.sampleHash !== project.source.sampleHash) return;
     const state = cfg();
     const t0 = performance.now();
 
@@ -821,18 +828,10 @@
     setStatus("generating the fabrication geometry (the page is busy until it finishes)…");
     await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));   // paint the status first
     if (gen !== sourceGen || rev !== project.revision || !run.sourceImage) return false;
-    const w = run.sourceW, h = run.sourceH;
-    const c = document.createElement("canvas");
-    c.width = w; c.height = h;
-    const cx = c.getContext("2d", { willReadFrequently: true });
-    cx.drawImage(run.sourceImage, 0, 0, w, h);
-    const rgba = new Uint8Array(cx.getImageData(0, 0, w, h).data.buffer);
-    let alpha = null;
-    for (let i = 3; i < rgba.length; i += 4) if (rgba[i] !== 255) { alpha = new Uint8Array(w * h); break; }
-    if (alpha) for (let i = 0; i < alpha.length; i++) alpha[i] = rgba[4 * i + 3];
+    // alpha.3 E1 (LYR-06): the same request builder as the draft, on the installed source record and its own pixels
+    if (!run.src || !project.source || run.src.sampleHash !== project.source.sampleHash) return false;
     const t0 = performance.now();
-    const res = SBEngine.generate(SBEngine.fabricationRequest(project, { pixels: rgba, channels: 4, w, h, alpha },
-      { requestId: "export-" + rev, deviceClass: dc, format: run.sourceRoute.format, decode: run.sourceRoute.decode }));
+    const res = SBEngine.generate(SBEngine.request(project, run.src, { quality: "fabrication", requestId: "export-" + rev, deviceClass: dc }));
     const snap = res.snapshot || null;
     const acks = run.fab && run.fab.snapshot && snap && run.fab.snapshot.geometryHash === snap.geometryHash ? run.fab.acks : new Set();
     run.fab = { status: res.status, snapshot: snap, diagnostics: (snap ? snap.diagnostics : res.diagnostics) || [], error: res.error || null,
@@ -1251,8 +1250,8 @@
       if (gen === sourceGen) showSourceProblem(`couldn’t decode ${file.name}: ${e.code ? (SBDiag.CODES[e.code] ? SBDiag.CODES[e.code].title : e.code) : e.message}`);
       return;
     }
-    if (gen !== sourceGen) { if (src.close) src.close(); return; }
-    acceptSource(file.name, src, pre.intake);
+    if (gen !== sourceGen) { if (src.bitmap.close) src.bitmap.close(); return; }
+    await acceptSource(file.name, src, pre.intake, gen, bytes);
     const notes = pre.warnings.filter((d) => d.code === "EXIF_AMBIGUOUS").map((d) => d.message);
     if (notes.length) showSourceProblem(`${file.name}: ${notes.join("; ")}`);
   }
@@ -1287,7 +1286,7 @@
     const d = await SBPng.decode(bytes, { mode: "height" });
     const o = SBEngine.orient({ samples: d.samples, alpha: d.alpha, w: d.w, h: d.h },
       { exif: d.exif || 1, exifAppliedBy: "engine", rotate: 0, mirror: false });
-    return { samples: o.samples, alpha: o.alpha, w: o.w, h: o.h, channels: d.channels };
+    return { samples: o.samples, alpha: o.alpha, w: o.w, h: o.h, channels: d.channels, policy: d.policy };
   }
 
   /** Raw samples (1 or 3 channels, optional alpha) into an RGBA canvas for the interim legacy pipeline. */
@@ -1304,28 +1303,77 @@
     return c;
   }
 
-  /** Intake step 4: the decode route preflight chose. Resolves to a canvas or ImageBitmap at the full source size. */
+  /**
+   * Intake step 4: the decode route preflight chose. Resolves to {bitmap, raw} at the full source size: bitmap is a
+   * canvas or ImageBitmap (the interim legacy pipeline and the views draw it), raw the SBPng samples of the raw height
+   * route ({samples, alpha, w, h, channels, policy}) or null for the browser route.
+   */
   async function decodeSource(file, bytes, pre) {
-    if (pre.intake.decode === "raw") return samplesToCanvas(await decodeRaw(bytes));
+    if (pre.intake.decode === "raw") { const raw = await decodeRaw(bytes); return { bitmap: samplesToCanvas(raw), raw }; }
     if (typeof createImageBitmap !== "function") throw new Error("this browser has no createImageBitmap; use a current Chrome, Firefox or Safari");
     let bmp;
     try { bmp = await createImageBitmap(file); }   // the default orientation applies EXIF, as <img> did
     catch (e) { throw new Error("the browser could not decode it"); }
     if (!bmp.width || !bmp.height) { bmp.close(); throw new Error("the image has no pixels"); }
-    return bmp;
+    return { bitmap: bmp, raw: null };
   }
 
-  /** Use a decoded source at its own size (run.sourceW/H feed the fabrication raster plan). */
-  function acceptSource(name, src, intake) {
+  /**
+   * alpha.3 E1: the engine pixels {pixels, channels: 1|4, w, h, alpha} of a decoded source, read once per load. The raw
+   * route keeps its 1-channel samples (a 3-channel raw RGB is expanded to RGBA once); the browser route reads the
+   * bitmap's RGBA at its own size. alpha is the w·h plane, or null when the source is opaque.
+   */
+  function sourcePixels(d) {
+    const r = d.raw;
+    if (r && r.channels === 1) return { pixels: r.samples, channels: 1, w: r.w, h: r.h, alpha: r.alpha || null };
+    if (r) {
+      const n = r.w * r.h, out = new Uint8Array(4 * n), ch = r.channels;
+      for (let i = 0; i < n; i++) {
+        out[4 * i] = r.samples[i * ch]; out[4 * i + 1] = r.samples[i * ch + 1]; out[4 * i + 2] = r.samples[i * ch + 2];
+        out[4 * i + 3] = r.alpha ? r.alpha[i] : 255;
+      }
+      return { pixels: out, channels: 4, w: r.w, h: r.h, alpha: r.alpha || null };
+    }
+    const img = d.bitmap, w = img.width, h = img.height;
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const cx = c.getContext("2d", { willReadFrequently: true });
+    cx.drawImage(img, 0, 0, w, h);
+    const rgba = new Uint8Array(cx.getImageData(0, 0, w, h).data.buffer);
+    let alpha = null;
+    for (let i = 3; i < rgba.length; i += 4) if (rgba[i] !== 255) { alpha = new Uint8Array(w * h); break; }
+    if (alpha) for (let i = 0; i < alpha.length; i++) alpha[i] = rgba[4 * i + 3];
+    return { pixels: rgba, channels: 4, w, h, alpha };
+  }
+
+  /**
+   * Use a decoded source ({bitmap, raw}) at its own size (run.sourceW/H feed the fabrication raster plan).
+   * alpha.3 E1 (LYR-06, SUP-04): the source record is installed on the project here, once per load, race-free. The
+   * pixels are read and both SHA-256 hashes (file bytes, SBEngine.sampleBytes) resolve first; a newer load (gen !==
+   * sourceGen) wins and this one is dropped. Then one synchronous block swaps run.src, the bitmap and project.source
+   * together and runs exactly one draft (no commitProject, whose recompute would schedule a second). Until that block,
+   * the previous source, record and revision are all still in place, so a debounced draft or an export in between
+   * runs consistently on the old source. Reloading an identical file installs an identical record (no revision bump).
+   */
+  async function acceptSource(name, decoded, intake, gen, bytes) {
+    const src = decoded.bitmap, raw = decoded.raw;
+    const route = { format: intake && intake.format === "jpeg" ? "jpeg" : "png",
+      decode: raw ? (raw.policy || "raw-gray8") : "canvas-tonal" };
+    const px = sourcePixels(decoded);
+    const byteHash = bytes ? await SBHash.digest(bytes) : null;
+    const sampleHash = await SBHash.digest(SBEngine.sampleBytes(px));
+    if (gen !== sourceGen) { if (src !== run.sourceImage && typeof src.close === "function") src.close(); return; }
     const old = run.sourceImage;
-    // alpha.2: the source record the fabrication request names (format, and the decode route the pixels came through)
-    run.sourceRoute = { format: intake && intake.format === "jpeg" ? "jpeg" : "png", decode: intake && intake.decode === "raw" ? "raw-gray8" : "canvas-tonal" };
+    run.src = Object.assign(px, { gen, sampleHash });
+    run.draftCache = {};
+    run.sourceRoute = route;   // alpha.2: the source record of the decoded pixels
     run.sourceImage = src;
     run.sourceW = src.width; run.sourceH = src.height;
     run.sourceName = name;
+    project = SBSchema.withSource(project, SBEngine.sourceRecord(px, route, Object.assign({}, project.source, { byteHash, sampleHash })));
     if (old && old !== src && typeof old.close === "function") old.close();   // release a replaced ImageBitmap
     if (project.title === "untitled") setProjectName(name.replace(/\.[^.]+$/, ""));
-    regenerate();
+    regenerate();   // syncs the controls and the dimbar to the installed project first
   }
 
   /**
@@ -1351,11 +1399,12 @@
         if (gen !== sourceGen) return;
         fromW = r.w; fromH = r.h;
         const method = project.geometry.resample.height === "area" ? "area" : "nearest";
-        c = samplesToCanvas({ w: toW, h: toH, channels: r.channels,
+        const small = { w: toW, h: toH, channels: r.channels, policy: r.policy,
           samples: SBRaster.resample(r.samples, r.channels, r.w, r.h, toW, toH, method),
-          alpha: r.alpha ? SBRaster.resample(r.alpha, 1, r.w, r.h, toW, toH, method) : null });
+          alpha: r.alpha ? SBRaster.resample(r.alpha, 1, r.w, r.h, toW, toH, method) : null };
+        c = { bitmap: samplesToCanvas(small), raw: small };
       } else {
-        const full = await decodeSource(file, bytes, pre);
+        const full = (await decodeSource(file, bytes, pre)).bitmap;
         if (gen !== sourceGen) { full.close(); return; }
         fromW = full.width; fromH = full.height;
         if ((fromW >= fromH) !== (toW >= toH) && fromW !== fromH) [toW, toH] = [toH, toW];   // the browser's orientation wins
@@ -1365,9 +1414,11 @@
         cx.imageSmoothingEnabled = true;
         cx.drawImage(full, 0, 0, toW, toH);
         full.close();
+        c = { bitmap: c, raw: null };
       }
       project = SBSchema.applyDownsample(project, { fromW, fromH, toW, toH });
-      acceptSource(file.name, c, pre.intake);
+      await acceptSource(file.name, c, pre.intake, gen, bytes);
+      if (gen !== sourceGen) return;
       setStatus(`downsampled ${file.name} to ${toW} × ${toH} px; fabrication pitch ${project.geometry.fabPitchMM} mm/px`, true);
     } catch (e) {
       if (gen === sourceGen) showSourceProblem(`couldn’t downsample ${file.name}: ${e.message}`);
@@ -1431,10 +1482,10 @@
     });
     // PRJ-01: the demo is an explicit source button; nothing loads it automatically.
     $("btn-demo").addEventListener("click", () => {
-      sourceGen++;   // a load still decoding must not replace the demo
+      const gen = ++sourceGen;   // a load still decoding must not replace the demo
       showSourceProblem(null);
       if (project.title === "untitled") setProjectName("night-over-the-valley");
-      acceptSource("demo scene", demoScene());
+      acceptSource("demo scene", { bitmap: demoScene(), raw: null }, null, gen, null);
     });
     // PO-LASER-4 (G2.11b): #in-res is the fabrication pitch in mm/px. The draft raster (720 px) is not a control.
     bindPitch();
