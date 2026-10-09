@@ -7530,7 +7530,10 @@ suite("engine/worker.js/pool.js — speed round F14 cancellation (AT-15) and wat
   try {
     // 3a. cooperative cancel, K1/K2 untouched, stale helper results dropped, supersede, overlay toggle / double submit, cancel during export
     {
-      const pool = mk({ patch: slowHelper(250, "true") }), fx = by.get("n3-draft"), fab = by.get("n3-fabrication");
+      // helperStuckMs is generous here: the abandoned 250 ms item answers ~270 ms after the cancel, which raced the 300 ms
+      // default stuck timer under machine load (the helper was then killed as stuck). This block checks the late result
+      // is dropped and the helper reused; the stuck path itself (300 ms default) is 3b.
+      const pool = mk({ patch: slowHelper(250, "true"), opts: { helperStuckMs: 15000 } }), fx = by.get("n3-draft"), fab = by.get("n3-fabrication");
       const up = (await pool.ready) && (await admitted(pool, 2));
       check("F14 the slow-helper pool is up with 2 helpers", up);
       if (up) {
@@ -7546,10 +7549,11 @@ suite("engine/worker.js/pool.js — speed round F14 cancellation (AT-15) and wat
         check(`AT-15 F14 a cooperative cancel answers canceled in ${dt.toFixed(0)} ms (< 300 ms, no watchdog) without waiting for the busy helper`,
           reached && ra.status === "canceled" && ra.response === null && dt < 300 && pool.health().watchdogKills === 0);
         check("AT-15 F14 a canceled run leaves K1/K2 unchanged (its scratch K2 is never committed)", st1.k1Key === st0.k1Key && st1.k2Key === st0.k2Key && st1.k2Bytes === st0.k2Bytes);
-        await sleep(400);
+        // wait for the event itself (every abandoned item's late result is in), not a fixed sleep
+        const settled = await until(async () => { const s = await pool.stats(); return !!s && s.staleDropped >= 1 && s.abandoned === 0; }, 15000);
         const st2 = await pool.stats();
         check(`F14 the abandoned helper item's late result (old runId) is dropped (${st2.staleDropped} dropped) and the helper is free again`,
-          st2.staleDropped >= 1 && st2.helpersAdmitted.length === 2 && st2.stuckKilled === 0);
+          settled && st2.staleDropped >= 1 && st2.abandoned === 0 && st2.helpersAdmitted.length === 2 && st2.stuckKilled === 0);
         // supersede: a draft in flight, the next draft submitted — the coordinator waits for canceled, then runs it on the cache
         const a2 = submitFx(pool, fx, { gen: 3 }, pA);
         const reached2 = await inStage(pool, a2.runId, "construct");
@@ -7593,7 +7597,9 @@ suite("engine/worker.js/pool.js — speed round F14 cancellation (AT-15) and wat
       const st = await pool.stats(), hl = pool.health();
       const r2 = await submitFx(pool, next, { gen: 2 }).done;
       check(`F14 a helper stuck in an item is reported with killHelper (stuck) and replaced from the warm spare; cancel answered in ${dt.toFixed(0)} ms`,
-        W !== Wn && reached && ra.status === "canceled" && dt < 300 && replaced && st.stuckKilled === 1 && hl.spareHelperUsed >= 1 && hl.watchdogKills === 0 &&
+        // >= 1: the 4 s helper is always killed; under machine load the other helper's abandoned item can also outlast 300 ms
+        // and is then (correctly) killed and replaced as well
+        W !== Wn && reached && ra.status === "canceled" && dt < 300 && replaced && st.stuckKilled >= 1 && hl.spareHelperUsed >= 1 && hl.watchdogKills === 0 &&
         pool.spawned.some((w) => /^sb-helper/.test(w.name) && w.terminated));
       check("F14 after the replacement the next draft equals the sync response (the spare said hello with the same modulesHash and is admitted)",
         r2.status === "done" && sameGold(next, r2.response) && Dq(r2.response, syncOf(next)) && st.helpersRefused.length === 0);
@@ -7636,21 +7642,23 @@ suite("engine/worker.js/pool.js — speed round F14 cancellation (AT-15) and wat
     // 3d. the shared cancel flag stops a coordinator inside a long serial kernel (it cannot read messages there)
     {
       const spin = (n, t) => (n === "height.js" ? t.replace("Hh.cumulativeMasks = function (added, domain, N, w, h, poll) {",
-        "Hh.cumulativeMasks = function (added, domain, N, w, h, poll) { if (N === 12 && poll && typeof self !== \"undefined\" && self.name === \"sb-coord\" && !globalThis.__spun) { globalThis.__spun = 1; for (;;) poll(); }") : t);
+        "Hh.cumulativeMasks = function (added, domain, N, w, h, poll) { if (N === 12 && poll && typeof self !== \"undefined\" && self.name === \"sb-coord\" && !globalThis.__spun) { globalThis.__spun = 1; self.postMessage({ type: \"test-spinning\" }); for (;;) poll(); }") : t);
       const pool = mk({ patch: spin, opts: { spares: false } }), fx = by.get("n12-draft");
       const up = (await pool.ready) && (await admitted(pool, 2));
-      const [go, so] = started();
-      const s = up ? submitFx(pool, fx, so) : null;
-      if (s) {
-        await go;
-        await sleep(150);
+      // cancel only once the coordinator is inside the spin (it says so first; the pool ignores the unknown type). A fixed
+      // sleep let a loaded machine cancel before the spin: the run ended cooperatively and the next draft spun forever.
+      let spinning;
+      const spun = new Promise((r) => { spinning = r; }), coord = up && pool.spawned.find((w) => w.name === "sb-coord");
+      if (coord) { const on = coord.onmessage; coord.onmessage = (ev) => { if (ev.data && ev.data.type === "test-spinning") spinning(true); on(ev); }; }
+      const s = coord ? submitFx(pool, fx) : null;
+      if (s && (await Promise.race([spun, sleep(30000).then(() => false)]))) {
         const t0 = now();
         pool.cancel(s.runId);
         const rs = await s.done, dt = now() - t0, r2 = await submitFx(pool, fx, { gen: 2 }).done;
         check(`F14 a coordinator inside cumulativeMasks sees the shared cancel flag (poll every few rows) and answers canceled in ${dt.toFixed(0)} ms without the watchdog`,
           pool.health().sharedCancel === true && rs.status === "canceled" && !rs.watchdog && dt < 300 && pool.health().watchdogKills === 0 &&
           pool.spawned.filter((w) => w.name === "sb-coord").length === 1 && r2.status === "done" && sameGold(fx, r2.response));
-      } else check("F14 the spin pool is up", false);
+      } else check("F14 the spin pool is up and its coordinator reached the spin", false);
       pool.terminate();
     }
 

@@ -13844,7 +13844,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  * (SBEngine.Canceled): pending inline items are skipped, helper items in flight are abandoned — their late itemResult
  * (old runId) is dropped (staleDropped) and a helper still busy after stuckMs (generate.stuckMs, 300 ms) is reported
  * with killHelper {reason: "stuck"} (stuckKilled). Stats add stage (the current step), sampleHash, k1Key, k2Key,
- * staleDropped, stuckKilled and sharedCancel.
+ * staleDropped, stuckKilled, abandoned (helpers still holding an abandoned item: 0 once every late result is in or
+ * its helper was killed) and sharedCancel.
  *
  * Not a page script (not in index.html); precached in sw.js SHELL so page and
  * worker always come from the same cache version (R7, F-D3).
@@ -14196,7 +14197,8 @@ const WORKER_APP_VERSION = "2.0.0-alpha.4";
             lastOrder: Object.assign({}, st.lastOrder),
             // F14
             stage: st.cur ? st.cur.stage : null, sampleHash: s ? s.sampleHash : null, k1Key: c.k1 ? c.k1.key : null, k2Key: c.k2 ? c.k2.key : null,
-            staleDropped: st.staleDropped, stuckKilled: st.stuckKilled, sharedCancel: !!st.flag });
+            staleDropped: st.staleDropped, stuckKilled: st.stuckKilled,
+            abandoned: [...st.helpers.values()].filter((h) => h.item && h.item.stale).length, sharedCancel: !!st.flag });
           break;
         }
         default:
