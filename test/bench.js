@@ -9,6 +9,18 @@
  *     node test/bench.js large --only b4,b9,r25 --caps desktop [--simplify busy] [--bonded-only] [--record]
  *     node test/bench.js caps [--large-runs N] [--record] [--quick]
  *     node test/bench.js draft [--record] [--runs N] [--warm N] [--only a,b,c] [--all] [--quick]   (alpha.3 E4, see benchDraft)
+ *     node test/bench.js draft --only a --candidates 720 --no-fab --guides none|inset-outline|interior-mark [--record-speed warm720]
+ *     node test/bench.js large --only user12 [--guides …] [--runs N] [--rows draft720,fab3600,fab4096] [--record] [--quick]
+ *
+ * Speed round F2 (S5, PO-PERF-5): every engine-driven row (draft, fabrication, user12) carries a per-stage table
+ * derived from the SBEngine.generate onProgress marks (stageDurations: a stage lasts until the next different mark,
+ * re-entered stages are summed, "setup" is the time before the first mark), including stage 14 "guides" ("guides" →
+ * "accounting") split into "guides.build" and "guides.validate" (SBGuides.build / validate, timed through a probe).
+ * --guides sets construction.guides.mode on the bonded workloads (default: the preset's). `large --only user12` is the
+ * S2 workload (4096 × 3084 RGBA alpha.3 scene, draftProject("a") settings + applyFabPitch(0.1), inset-outline): rows
+ * draft720 (cold, 4096 source), fab3600 (3600 × 2700 scene) and fab4096, serial, USER12.runs no-cache runs each;
+ * --record merges them into docs/perf/speed-round.json under `baseline` (or --speed-key). `draft --record-speed warm720`
+ * merges the draft rows (with their guides mode) into speed-round.json `warm720`.
  *
  * G2.7b (complexity caps, SRS §12.3; PO-LASER-9): `large` with --caps <desktop|mobile> runs SBConstruct.complexityGate
  * (pre-trace parts cap; --simplify busy applies the explicit busy-art simplification first at the plywood thresholds
@@ -88,7 +100,7 @@ if (MAIN) {
 const argv = MAIN ? process.argv.slice(2) : [];
 const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
 const stage = argv[0];
-const QUICK = argv.includes("--quick");
+const QUICK = argv.includes("--quick"), QUICK_ARG = QUICK;
 const RUNS = QUICK ? 1 : +arg("--runs", 15);
 const STAGES = { geom: benchGeom, support: benchSupport, large: benchLarge, "large-assemble": benchLargeAssemble, caps: benchCaps, draft: benchDraft };
 if (MAIN && !STAGES[stage]) { console.error("usage: node test/bench.js " + Object.keys(STAGES).join("|") + " [--runs N] [--json out.json] [--no-fail] [--quick]"); process.exit(2); }
@@ -398,8 +410,76 @@ function largeRow(wl, samples, src, opt) {
     wallS: +((performance.now() - t0) / 1000).toFixed(1), loadAvg: os.loadavg().map((x) => +x.toFixed(2)) });
 }
 
+/**
+ * Speed round S2 workload (F2): the user's bonded colour case. Rows: draft720 (4096 × 3084 source, draft at 720 px),
+ * fab3600 (3600 × 2700 scene) and fab4096 (4096 × 3084), fabrication at fabPitchMM 0.1 (12 Mpx raster for 4096).
+ * Every run is a fresh generate without the E3 cache (as the profile in plan F.0 and the app's fabrication review).
+ */
+const USER12 = {
+  src: [4096, 3084], fabPitchMM: 0.1, guides: "inset-outline", runs: 3,
+  rows: { draft720: { quality: "draft", draftPx: 720, w: 4096, h: 3084 }, fab3600: { quality: "fabrication", w: 3600, h: 2700 }, fab4096: { quality: "fabrication", w: 4096, h: 3084 } },
+};
+
+/** The user12 project on source px: draftProject("a") settings, applyFabPitch(USER12.fabPitchMM), guides (default inset-outline). */
+function user12Project(px, guides) {
+  const hash = require("crypto").createHash("sha256").update(SBEngine.sampleBytes(px)).digest("hex");
+  const p = SBSchema.applyFabPitch(draftProject("a", px, hash, guides || USER12.guides), USER12.fabPitchMM);
+  const v = SBSchema.validate(p);
+  if (!v.ok) throw new Error("user12 project invalid: " + JSON.stringify(v.errors.slice(0, 3)));
+  return p;
+}
+
+/** The alpha.3 scene (tools/alpha3_scene.js) as RGBA. */
+function alpha3Rgba(w, h) {
+  const rgb = require("../tools/alpha3_scene.js").scene(w, h), o = new Uint8Array(w * h * 4);
+  for (let i = 0; i < w * h; i++) { o[4 * i] = rgb[3 * i]; o[4 * i + 1] = rgb[3 * i + 1]; o[4 * i + 2] = rgb[3 * i + 2]; o[4 * i + 3] = 255; }
+  return { pixels: o, channels: 4, w, h, alpha: null };
+}
+
+function benchUser12() {
+  const os = require("os"), E = SBEngine, div = QUICK ? 8 : 1, runsN = QUICK ? 1 : +arg("--runs", USER12.runs);
+  const guides = arg("--guides", USER12.guides), ids = arg("--rows") ? arg("--rows").split(",") : Object.keys(USER12.rows);
+  if (!["none", "inset-outline", "interior-mark"].includes(guides)) throw new Error("--guides must be none|inset-outline|interior-mark");
+  const report = { stage: "large", workload: "user12", quick: QUICK, node: process.version, v8: process.versions.v8, cpu: os.cpus()[0].model, threads: os.cpus().length,
+    memGiB: +(os.totalmem() / 2 ** 30).toFixed(1), loadAvgStart: os.loadavg().map((x) => +x.toFixed(2)), rows: {} };
+  const probe = { overlayMs: 0, guidesBuild: 0, guidesValidate: 0 }, unprobe = installGuideProbe(probe);
+  try {
+    for (const id of ids) {
+      const spec = USER12.rows[id];
+      if (!spec) throw new Error("unknown user12 row " + id);
+      const w = Math.round(spec.w / div), h = Math.round(spec.h / div), px = alpha3Rgba(w, h), p = user12Project(px, guides), t0 = performance.now();
+      if (spec.draftPx) p.geometry.draftPx = QUICK ? Math.round(spec.draftPx / div) : spec.draftPx;
+      const runs = [];
+      for (let i = 0; i < runsN; i++) runs.push(draftPass(p, px, spec.quality, null, probe));
+      const g = runs[0].geometry || E.rasterPlan(p, { w, h }, spec.quality, "desktop").geometry, st = stats(runs.map((r) => r.ms));
+      const row = { source: w + "×" + h, quality: spec.quality, raster: g.rasterW + "×" + g.rasterH, mpx: +(g.rasterW * g.rasterH / 1e6).toFixed(2), guides,
+        status: runs[0].status, code: runs[0].code, runs: st.n, p50Ms: st.p50Ms, maxMs: st.maxMs, runsMs: runs.map((r) => +r.ms.toFixed(1)),
+        stagesP50Ms: stageP50(runs.map((r) => r.stages)), maxPartsPerLayer: runs[0].parts, rssMB: +(process.memoryUsage().rss / 1048576).toFixed(0),
+        wallS: +((performance.now() - t0) / 1000).toFixed(1), loadAvg: os.loadavg().map((x) => +x.toFixed(2)) };
+      report.rows[id] = row;
+      console.error(`[user12] ${id} ${row.source} ${row.quality} ${row.raster} ${row.status}${row.code ? " " + row.code : ""}: p50 ${row.p50Ms} ms (n ${row.runs}), guides ${row.stagesP50Ms.guides ?? "-"} ms, ${row.wallS} s wall`);
+    }
+  } finally { unprobe(); }
+  report.loadAvgEnd = os.loadavg().map((x) => +x.toFixed(2));
+  if (!QUICK && argv.includes("--record")) {
+    const key = arg("--speed-key", "baseline");
+    updateSpeedRound((j) => {
+      j.workload = "user12: " + USER12.src.join(" × ") + " RGBA alpha.3 scene (tools/alpha3_scene.js), draftProject(\"a\") settings (plywood auto-tonal, light-front, smoothing 1.65 mm × 2, " +
+        "bonded, 8 sheets, 300 mm high) + applyFabPitch(" + USER12.fabPitchMM + "), guides " + guides + "; draft720 on the 4096 source, fab3600 on a 3600 × 2700 scene, fab4096 on the 4096 source";
+      j[key] = Object.assign({}, j[key] || {}, { machine: report.cpu + " (" + report.threads + " threads, " + report.memGiB + " GiB), node " + report.node,
+        method: "serial SBEngine.generate, " + runsN + " no-cache runs per row (no warm-up), per-stage p50 from the onProgress marks (stageDurations), guides.build / guides.validate via the SBGuides probe",
+        loadAvgStart: report.loadAvgStart, loadAvgEnd: report.loadAvgEnd }, report.rows);
+    });
+  }
+  return report;
+}
+
 function benchLarge() {
   const only = arg("--only") ? arg("--only").split(",") : null;
+  if (only && only.includes("user12")) {
+    if (only.length > 1) throw new Error("--only user12 runs alone (it is an SBEngine.generate workload, not a LARGE_WORKLOADS row)");
+    return benchUser12();
+  }
   const div = QUICK ? 8 : 1;
   const list = LARGE_WORKLOADS.filter((wl) => !only || only.includes(wl.id))
     .map((wl) => arg("--large-runs") ? Object.assign({}, wl, { warm: 1, runs: +arg("--large-runs"), runsOverridden: true }) : wl)
@@ -713,6 +793,42 @@ function benchLargeAssemble() {
  *     node test/bench.js draft [--record] [--runs N] [--warm N] [--fab-runs N] [--only a,c] [--families realistic,busy]
  *                              [--candidates 720,1024] [--all] [--no-fab] [--quick]
  */
+/**
+ * stageDurations(seq, t0, tEnd) → {stage: ms}. seq: the onProgress marks in order, [[stage, time], …]. A stage lasts
+ * from its mark to the next mark; repeated and re-entered stages are summed ("construct" per layer, the two
+ * "complexity" gates); "setup" is t0 → first mark; "done" is not a stage. Pure (speed round F2).
+ */
+function stageDurations(seq, t0, tEnd) {
+  const d = {}, add = (k, v) => { d[k] = (d[k] || 0) + v; };
+  add("setup", (seq.length ? seq[0][1] : tEnd) - t0);
+  for (let i = 0; i < seq.length; i++) if (seq[i][0] !== "done") add(seq[i][0], (i + 1 < seq.length ? seq[i + 1][1] : tEnd) - seq[i][1]);
+  return d;
+}
+
+/** p50 per stage over a list of stage tables (a stage missing from a run counts in the runs that have it). */
+function stageP50(list) {
+  const out = {};
+  for (const k of [...new Set(list.flatMap((t) => Object.keys(t)))]) out[k] = stats(list.map((t) => t[k]).filter((v) => v !== undefined)).p50Ms;
+  return out;
+}
+
+/** Wraps globalThis.SBGuides so build/validate time lands in probe.guidesBuild/guidesValidate; returns the restore. */
+function installGuideProbe(probe) {
+  const real = globalThis.SBGuides, timed = (fn, key) => function () {
+    const t0 = performance.now(); try { return fn.apply(this, arguments); } finally { probe[key] += performance.now() - t0; } };
+  globalThis.SBGuides = Object.freeze(Object.assign({}, real, { build: timed(real.build, "guidesBuild"), validate: timed(real.validate, "guidesValidate") }));
+  return () => { globalThis.SBGuides = real; };
+}
+
+/** Reads docs/perf/speed-round.json (or {}), applies fn to it and writes it back. */
+function updateSpeedRound(fn) {
+  const f = path.join(__dirname, "..", "docs", "perf", "speed-round.json");
+  let j = {}; try { j = JSON.parse(fs.readFileSync(f, "utf8")); } catch (e) { j = {}; }
+  fn(j);
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, JSON.stringify(j, null, 1) + "\n");
+}
+
 const DRAFT = {
   src: [4096, 3084], seeds: { realistic: 2022, busy: 11 }, busyCellPx: 27,
   candidates: [720, 1024, 1280, 1536, 2000], targetP95Ms: 3000, g44P95Ms: 1500,
@@ -733,7 +849,7 @@ DRAFT.rule = "per preset, draftPx = the largest candidate in {" + DRAFT.candidat
   "fabMsPerMpx = the larger p50 of the (a) fabrication rows that finished ÷ fabrication raster Mpx (rounded up to 10 ms); mobile = 4 × desktop.";
 
 /** The draft workload project (a|b|c) on an installed source record for px (sampleHash set, so the E3 cache is used). */
-function draftProject(id, px, sampleHash) {
+function draftProject(id, px, sampleHash, guides) {
   const S = SBSchema, E = SBEngine, wl = DRAFT.workloads[id];
   let p = S.withSource(S.defaults(wl.preset), Object.assign(E.sourceRecord(px, { format: "png", decode: "canvas-tonal" }), { sampleHash }));
   if (id === "a") {
@@ -741,6 +857,7 @@ function draftProject(id, px, sampleHash) {
     p.interpretation.polarity = "light-front"; p.interpretation.smoothing = { radiusMM: 1.65, passes: 2 };
     p.construction.sheets = 8; p.geometry.sizeBy = "height"; p.geometry.targetMM = 300;
   }
+  if (guides && p.construction.mode === "bonded-relief") p.construction.guides.mode = guides;
   const v = S.validate(p);
   if (!v.ok) throw new Error("draft workload " + id + " invalid: " + JSON.stringify(v.errors.slice(0, 3)));
   return p;
@@ -756,15 +873,18 @@ function draftSource(family, w, h) {
 
 /** One timed generate; returns {ms, status, constructMs, overlayMs, raster, parts}. */
 function draftPass(p, px, quality, cache, probe) {
-  const E = SBEngine, marks = {};
-  probe.overlayMs = 0;
+  const E = SBEngine, marks = {}, seq = [];
+  probe.overlayMs = 0; probe.guidesBuild = 0; probe.guidesValidate = 0;
   const t0 = performance.now();
-  const res = E.generate(E.request(p, px, { quality }), { cache: cache || undefined, onProgress: (st) => { if (!(st in marks)) marks[st] = performance.now(); } });
+  const res = E.generate(E.request(p, px, { quality }), { cache: cache || undefined,
+    onProgress: (st) => { const t = performance.now(); seq.push([st, t]); if (!(st in marks)) marks[st] = t; } });
   const ms = performance.now() - t0;
+  const stages = stageDurations(seq, t0, t0 + ms);
+  if ("guides" in stages) { stages["guides.build"] = probe.guidesBuild; stages["guides.validate"] = probe.guidesValidate; }
   const constructMs = marks.construct !== undefined && marks.complexity !== undefined ? marks.complexity - marks.construct : null;
   const g = res.snapshot ? res.snapshot.geometry || null : null;
   return { ms, status: res.status, code: res.error ? res.error.code : null, constructMs, overlayMs: probe.overlayMs,
-    parts: res.snapshot ? Math.max(...res.snapshot.layers.map((L) => L.parts.length)) : null, geometry: g };
+    parts: res.snapshot ? Math.max(...res.snapshot.layers.map((L) => L.parts.length)) : null, geometry: g, stages };
 }
 
 /** The largest candidate on which workload `id` meets the target on both families (720 when none does). */
@@ -781,20 +901,29 @@ function decideDraft(rows, fabRows) {
   return { presets, desktopDraftPx: Math.max(presets.plywood, presets.acrylic), mobileDraftPx: DRAFT.mobileDraftPx, fabMsPerMpx: fab };
 }
 
-function benchDraft() {
+/**
+ * benchDraft(o?) — the CLI stage; o (when required, speed round F2) overrides the flags: {quick, src: [w, h],
+ * candidates (used as given), only, families, guides, warm, runs, fabRuns, noFab, all}.
+ */
+function benchDraft(o = {}) {
   const os = require("os"), S = SBSchema, E = SBEngine;
-  const div = QUICK ? 8 : 1, [SW, SH] = [Math.round(DRAFT.src[0] / div), Math.round(DRAFT.src[1] / div)];
-  const warmN = QUICK ? 1 : +arg("--warm", DRAFT.warm), runsN = QUICK ? 2 : +arg("--runs", DRAFT.runs);
-  const fabN = QUICK ? 1 : +arg("--fab-runs", DRAFT.fabRuns);
-  const ids = arg("--only") ? arg("--only").split(",") : Object.keys(DRAFT.workloads);
-  const fams = arg("--families") ? arg("--families").split(",") : DRAFT.families;
-  const cands = (arg("--candidates") ? arg("--candidates").split(",").map(Number) : DRAFT.candidates).map((c) => QUICK ? Math.max(64, Math.round(c / div)) : c);
-  const all = argv.includes("--all");
+  const QUICK = o.quick !== undefined ? !!o.quick : QUICK_ARG, flag = (k, name) => (o[k] !== undefined ? !!o[k] : argv.includes(name));
+  const list = (k, name) => (o[k] !== undefined ? o[k] : arg(name) ? arg(name).split(",") : null);
+  const num = (k, name, d) => (o[k] !== undefined ? +o[k] : +arg(name, d));
+  const div = QUICK ? 8 : 1, [SW, SH] = o.src || [Math.round(DRAFT.src[0] / div), Math.round(DRAFT.src[1] / div)];
+  const warmN = o.warm !== undefined ? +o.warm : QUICK ? 1 : num("warm", "--warm", DRAFT.warm), runsN = o.runs !== undefined ? +o.runs : QUICK ? 2 : num("runs", "--runs", DRAFT.runs);
+  const fabN = o.fabRuns !== undefined ? +o.fabRuns : QUICK ? 1 : num("fabRuns", "--fab-runs", DRAFT.fabRuns);
+  const ids = list("only", "--only") || Object.keys(DRAFT.workloads);
+  const fams = list("families", "--families") || DRAFT.families;
+  const guides = o.guides !== undefined ? o.guides : arg("--guides", null);
+  if (guides !== null && !["none", "inset-outline", "interior-mark"].includes(guides)) throw new Error("--guides must be none|inset-outline|interior-mark");
+  const cands = o.candidates ? o.candidates.map(Number) : (arg("--candidates") ? arg("--candidates").split(",").map(Number) : DRAFT.candidates).map((c) => QUICK ? Math.max(64, Math.round(c / div)) : c);
+  const all = flag("all", "--all");
   // measure above the shipped device cap (the cap is what this stage decides)
   const limits = S.limits;
   S.limits = (dc) => Object.assign({}, limits(dc), { draftPxCap: 100000 });
   // overlay probe: time the draft change-overlay polygons (bridges excluded)
-  const mp = E.maskPolygons, probe = { overlayMs: 0 };
+  const mp = E.maskPolygons, probe = { overlayMs: 0, guidesBuild: 0, guidesValidate: 0 }, unprobe = installGuideProbe(probe);
   E.maskPolygons = function (w, h, sx, sy, f, pred) {
     if (!/fin\[i\]|pre\[i\]/.test(String(pred))) return mp.apply(this, arguments);
     const t0 = performance.now(); try { return mp.apply(this, arguments); } finally { probe.overlayMs += performance.now() - t0; }
@@ -810,7 +939,8 @@ function benchDraft() {
         let over = false;
         for (const c of cands) {
           if (over && !all) { report.skipped.push({ draftPx: c, mode: id, family: fam, reason: "a smaller candidate already exceeds the target" }); continue; }
-          const p0 = draftProject(id, px, hash); p0.geometry.draftPx = c;
+          const p0 = draftProject(id, px, hash, guides); p0.geometry.draftPx = c;
+          const gmode = p0.construction.mode === "bonded-relief" ? p0.construction.guides.mode : "none";
           const cache = { quality: "draft" }, t0 = performance.now();
           let rev = p0.revision;
           const edit = (i) => { const q = JSON.parse(JSON.stringify(p0)); q.construction.sheets = p0.construction.sheets - (i % 2); q.revision = ++rev; return q; };
@@ -825,32 +955,42 @@ function benchDraft() {
           const row = { draftPx: c, raster: g.rasterW + "×" + g.rasterH, mode: id, family: fam, status: cold.status, code: cold.code,
             coldMs: +cold.ms.toFixed(1), warmP50Ms: st.p50Ms, warmP95Ms: st.p95Ms, warmMaxMs: st.maxMs, warmRuns: st.n, warmUps: warmN,
             constructP50Ms: cons.length ? stats(cons).p50Ms : null, overlayShare: share, maxPartsPerLayer: cold.parts, wallS: +((performance.now() - t0) / 1000).toFixed(1),
-            loadAvg: os.loadavg().map((x) => +x.toFixed(2)) };
+            loadAvg: os.loadavg().map((x) => +x.toFixed(2)), guides: gmode, coldStagesMs: stageP50([cold.stages]), stagesP50Ms: stageP50(warm.map((r) => r.stages)) };
           report.rows.push(row);
           console.error(`[draft] (${id}) ${fam} draftPx ${c} ${row.raster} ${row.status}${row.code ? " " + row.code : ""}: cold ${row.coldMs} ms, warm p50 ${row.warmP50Ms} ms, p95 ${row.warmP95Ms} ms (n ${st.n}), overlay share ${share}, parts ≤${cold.parts}, ${row.wallS} s wall`);
           if (st.p95Ms > DRAFT.targetP95Ms) over = true;
         }
       }
-      if (!argv.includes("--no-fab") && ids.includes("a")) {
+      if (!flag("noFab", "--no-fab") && ids.includes("a")) {
         const hash = require("crypto").createHash("sha256").update(E.sampleBytes(px)).digest("hex");
-        const p = draftProject("a", px, hash), t0 = performance.now();
+        const p = draftProject("a", px, hash, guides), t0 = performance.now();
         for (let i = 0; i < DRAFT.fabCold; i++) draftPass(p, px, "fabrication", null, probe);
         const runs = [];
         for (let i = 0; i < fabN; i++) runs.push(draftPass(p, px, "fabrication", null, probe));
         const g = runs[0].geometry, plan = E.rasterPlan(p, { w: px.w, h: px.h }, "fabrication", "desktop").geometry;
         const W = g ? g.rasterW : plan.rasterW, H = g ? g.rasterH : plan.rasterH, st = stats(runs.map((r) => r.ms));
         const row = { family: fam, mode: "a", raster: W + "×" + H, mpx: +(W * H / 1e6).toFixed(2), ms: st.p50Ms, maxMs: st.maxMs, runs: st.n, cold: DRAFT.fabCold,
-          status: runs[0].status, code: runs[0].code, maxPartsPerLayer: runs[0].parts, wallS: +((performance.now() - t0) / 1000).toFixed(1) };
+          status: runs[0].status, code: runs[0].code, maxPartsPerLayer: runs[0].parts, wallS: +((performance.now() - t0) / 1000).toFixed(1),
+          guides: p.construction.guides.mode, stages: stageP50(runs.map((r) => r.stages)) };
         report.fabRows.push(row);
         console.error(`[draft fab] (a) ${fam} ${row.raster} (${row.mpx} Mpx) ${row.status}${row.code ? " " + row.code : ""}: p50 ${row.ms} ms (${(row.ms / row.mpx).toFixed(0)} ms/Mpx), parts ≤${row.maxPartsPerLayer}, ${row.wallS} s wall`);
       }
       delete sources[fam];
     }
-  } finally { S.limits = limits; E.maskPolygons = mp; }
+  } finally { S.limits = limits; E.maskPolygons = mp; unprobe(); }
   report.loadAvgEnd = os.loadavg().map((x) => +x.toFixed(2));
   report.decision = decideDraft(report.rows, report.fabRows);
   report.overBudget = [];
-  if (!QUICK && argv.includes("--record")) {
+  const speedKey = o.recordSpeed !== undefined ? o.recordSpeed : arg("--record-speed", null);
+  if (!QUICK && speedKey) updateSpeedRound((j) => {
+    const prev = (j[speedKey] && j[speedKey].rows) || [], key = (r) => [r.mode, r.family, r.draftPx, r.guides].join("|"), mine = new Set(report.rows.map(key));
+    j[speedKey] = { machine: report.cpu + " (" + report.threads + " threads, " + report.memGiB + " GiB), node " + report.node,
+      method: "bench draft (E4/E11 method): 1 cold + " + warmN + " warm-ups + " + runsN + " warm runs, E3 cache filled, sheets 8 ↔ 7 with the revision changing; " +
+        "stagesP50Ms = p50 per stage over the warm runs (stageDurations of the onProgress marks; guides.build / guides.validate via the SBGuides probe)",
+      rows: prev.filter((r) => !mine.has(key(r))).concat(report.rows.map((r) => ({ mode: r.mode, family: r.family, draftPx: r.draftPx, raster: r.raster, guides: r.guides,
+        status: r.status, coldMs: r.coldMs, warmP50Ms: r.warmP50Ms, warmP95Ms: r.warmP95Ms, warmRuns: r.warmRuns, coldStagesMs: r.coldStagesMs, stagesP50Ms: r.stagesP50Ms, loadAvg: r.loadAvg }))) };
+  });
+  if (!QUICK && flag("record", "--record")) {
     const shortened = runsN < 15 || warmN < DRAFT.warm || fabN < DRAFT.fabRuns || fams.length < DRAFT.families.length || ids.length < 3;
     const out = {
       task: "E4", machine: report.cpu + " (" + report.threads + " threads, " + report.memGiB + " GiB), node " + report.node,
@@ -868,7 +1008,8 @@ function benchDraft() {
     fs.mkdirSync(path.dirname(DRAFT.perfJson), { recursive: true });
     fs.writeFileSync(DRAFT.perfJson, JSON.stringify(out, null, 1) + "\n");
   }
-  report.rows = report.rows.map((r) => ({ mode: r.mode, family: r.family, draftPx: r.draftPx, status: r.status, coldMs: r.coldMs, warmP95Ms: r.warmP95Ms, overlayShare: r.overlayShare }));
+  report.rows = report.rows.map((r) => ({ mode: r.mode, family: r.family, draftPx: r.draftPx, status: r.status, coldMs: r.coldMs, warmP95Ms: r.warmP95Ms, overlayShare: r.overlayShare,
+    guides: r.guides, stages: r.stagesP50Ms }));
   return report;
 }
 
@@ -889,5 +1030,5 @@ function main() {
     process.exit(1);
   }
 }
-module.exports = { DRAFT, decideDraft, LARGE_WORKLOADS, LARGE, TRACKED_LARGE, LARGE_SHORTENED, CAPS, decideLarge, decideCaps, gateLarge, knownOverLarge, largeRowFromSummary, largeMethodKind };
+module.exports = { stageDurations, benchDraft, USER12, user12Project, DRAFT, decideDraft, LARGE_WORKLOADS, LARGE, TRACKED_LARGE, LARGE_SHORTENED, CAPS, decideLarge, decideCaps, gateLarge, knownOverLarge, largeRowFromSummary, largeMethodKind };
 if (MAIN) main();

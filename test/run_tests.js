@@ -6099,6 +6099,35 @@ suite("support/engine — speed round F1 sampling on the fabrication plan (GEO-0
 })();
 
 // ------------------------------------------------ alpha.3 E12 (re-review draft repairs in the Fabrication review)
+suite("test/bench.js — speed round F2 guide stage and per-stage times (PO-PERF-5)", () => {
+  const B = require("./bench.js");
+  const sd = typeof B.stageDurations === "function" ? B.stageDurations([["orient", 0], ["resample", 2], ["construct", 5], ["construct", 6], ["complexity", 9], ["trace", 10],
+    ["complexity", 14], ["guides", 15], ["accounting", 18.5], ["hashes", 19], ["done", 20]], -1, 21) : null;
+  check("S5 stageDurations: stage → next different mark, repeated marks merged, re-entered stages summed, setup before the first mark",
+    !!sd && sd.setup === 1 && sd.orient === 2 && sd.resample === 3 && sd.construct === 4 && sd.complexity === 2 && sd.trace === 4 && sd.guides === 3.5 &&
+    sd.accounting === 0.5 && sd.hashes === 1 && !("done" in sd));
+  const run = (guides) => typeof B.benchDraft === "function" ? B.benchDraft({ quick: true, src: [200, 150], candidates: [200], only: ["a"], families: ["realistic"], guides, warm: 0, runs: 1, fabRuns: 1 }) : null;
+  const on = run("inset-outline"), off = run("none");
+  const r = on && on.rows[0], fr = on && on.fabRows[0], st = r && r.stages;
+  check("S5 bench reports a guides stage column for bonded guide workloads",
+    !!st && r.status === "done" && st.guides > 0 && st["guides.build"] > 0 && st["guides.validate"] >= 0 && st.construct > 0 && st.trace > 0 &&
+    st["guides.build"] + st["guides.validate"] <= st.guides + 1e-6 && r.guides === "inset-outline");
+  check("S5 the fabrication rows carry the same stage table (guides included)", !!fr && fr.status === "done" && fr.stages && fr.stages.guides > 0 && fr.stages.resample >= 0);
+  check("S5 --guides none removes the guides column", !!off && off.rows[0].status === "done" && !("guides" in off.rows[0].stages) && off.rows[0].guides === "none");
+  const U = B.USER12, up = U && typeof B.user12Project === "function" ? B.user12Project({ pixels: new Uint8Array(64 * 48 * 4).fill(128), channels: 4, w: 64, h: 48, alpha: null }) : null;
+  check("S2 user12 workload: 4096 × 3084 alpha.3 scene, draftProject(a) settings, fabPitch 0.1 mm, inset-outline guides, rows draft720/fab3600/fab4096",
+    !!U && U.src.join("x") === "4096x3084" && JSON.stringify(Object.keys(U.rows)) === JSON.stringify(["draft720", "fab3600", "fab4096"]) &&
+    !!up && up.geometry.fabPitchMM === 0.1 && up.construction.guides.mode === "inset-outline" && up.construction.sheets === 8 && up.interpretation.mode === "tonal" &&
+    up.interpretation.polarity === "light-front" && up.geometry.targetMM === 300);
+  const sr = (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, "..", "docs", "perf", "speed-round.json"), "utf8")); } catch (e) { return null; } })();
+  check("S5 docs/perf/speed-round.json records the alpha.3 baseline (draft720, fab3600, fab4096) with stage tables incl. guides",
+    !!sr && !!sr.baseline && ["draft720", "fab3600", "fab4096"].every((k) => sr.baseline[k] && sr.baseline[k].runs >= 3 && sr.baseline[k].p50Ms > 0 &&
+      sr.baseline[k].stagesP50Ms && sr.baseline[k].stagesP50Ms.guides > 0));
+  check("S5 speed-round.json records the warm-720 guides re-profile (build and validate separately, with and without guides)",
+    !!sr && !!sr.warm720 && Array.isArray(sr.warm720.rows) && sr.warm720.rows.some((x) => x.guides === "inset-outline" && x.stagesP50Ms["guides.build"] > 0) &&
+    sr.warm720.rows.some((x) => x.guides === "none"));
+});
+
 suite("app.js/support.js — alpha.3 E12 repair re-review at fabrication (SUP-04, PO-PREVIEW-6, EXP-07)", () => {
   const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8");
   const fn = (name) => { const i = appSrc.indexOf("function " + name + "("); return i < 0 ? "" : appSrc.slice(i, appSrc.indexOf("\n  }\n", i)); };
