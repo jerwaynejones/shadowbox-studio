@@ -58,6 +58,11 @@
  *   SBSchema.toMM / fromMM           lossless units, quantized to 0.001 mm.
  *   SBSchema.modeChangeDiff(p, patch) → [{path, from, to, reason}] (G2.11e).
  *   SBSchema.applyModeChange(p, patch, accepted) → project (Cancel: unchanged; Accept: diff targets, revision + 1) (G2.11e).
+ *   SBSchema.presetDiff(p, name)     → [{path, from, to, reason}]: the settings a preset change replaces (alpha.3 E7).
+ *   SBSchema.applyPreset(p, name, accepted) → project: settings from defaults(name); title, source, units, machine,
+ *                                    extras kept; revision + 1 iff geometryKey changes (alpha.3 E7, PRJ-02).
+ *   SBSchema.colourSourceSwitch(p)   → {patch, project}: height → tonal for a colour source (smoothing r1.65 p2,
+ *                                    extras.history "auto-tonal"; alpha.3 E7, IMG-01, PO-PREVIEW-3).
  *   SBSchema.sourceTemplate()        a valid placeholder `source` record.
  *   SBSchema.legacyState(p, w?, h?)  → the 19 v1.1.0 settings keys (G2.11a
  *                                    controller adapter for legacyRun).
@@ -378,7 +383,7 @@
         cleanup: { minFeatureMM: 1.5, speckMM2: 4.5, holeMM2: 4.5, cornerStyle: "sharp", toleranceMM: 0.05, simplify: "off" },
         bridge: { bridgeMM: 1.8, cullBelowMM2: 25, maxBridgeMM: 40, cullEnabled: false },
         registration: { enabled: false, diaMM: 3, edgeClearanceMM: 1, layers: "all" },
-        guides: { mode: "interior-mark", concealInsetMM: 0.5, markFootprintMM: 0.2, allowanceMM: 0.5, labelHeightMM: 3 },
+        guides: { mode: "inset-outline", concealInsetMM: 0.5, markFootprintMM: 0.2, allowanceMM: 0.5, labelHeightMM: 3 },
         repairs: [] };
       p.material = { name: "1/4\" plywood (basswood or poplar)", thicknessMM: 6.35, thicknessState: "nominal", calibrated: false,
         minFeatureMM: 1.5, advisoryFeatureMM: 2.0, minPartMM2: 25, kerfMode: "external", calibration: null };
@@ -1092,6 +1097,7 @@
         add("construction.bridge.cullEnabled", c.bridge.cullEnabled, c.bridge.cullEnabled, "Used in bonded mode: removing small parts is an explicit opt-in.");
         add("construction.cleanup.cornerStyle", c.cleanup.cornerStyle, c.cleanup.cornerStyle, "Not used in bonded mode: bonded contours are unsmoothed (D1).");
         add("construction.cleanup.toleranceMM", c.cleanup.toleranceMM, c.cleanup.toleranceMM, "Not used in bonded mode: bonded contours are unsmoothed (D1).");
+        if (c.guides.mode === "none") add("construction.guides.mode", "none", "inset-outline", "Bonded layers are aligned by concealed scored guides (ASM-01).");
       } else {
         add("construction.gapMM", c.gapMM, c.gapMM === 0 ? 3 : c.gapMM, "Connected sheets are separated by spacers: default gap 3 mm.");
         for (const k of ["bridgeMM", "maxBridgeMM", "cullBelowMM2"]) add("construction.bridge." + k, c.bridge[k], c.bridge[k], "Used in connected mode: loose islands are bridged or culled.");
@@ -1134,6 +1140,65 @@
     if (!S.validate(p).ok) return clone(project);
     if (JSON.stringify(S.geometryKey(p)) !== JSON.stringify(S.geometryKey(project))) p.revision = project.revision + 1;
     return p;
+  };
+
+  // ------------------------------------------------------------ presets and colour sources (alpha.3 E7, PRJ-01/02, IMG-01)
+  // A preset change keeps who the project is and what it was made from; every setting section comes from the preset.
+  const PRESET_SECTIONS = ["interpretation", "construction", "material", "appearance", "view", "geometry"];
+  const PRESET_LABEL = { plywood: "Plywood (bonded)", acrylic: "Acrylic (connected)" };
+  /**
+   * presetDiff(project, name) → [{path, from, to, reason}] (alpha.3 E7, PRJ-02): every setting leaf that differs between
+   * the project and SBSchema.defaults(name), in the #dlg-mode review shape. title, source, units, machine and extras are
+   * kept (and the identity fields, acks and engine); arrays and null/object changes are one entry. Unknown preset → SCHEMA_PRESET.
+   */
+  S.presetDiff = function (project, name) {
+    const d = S.defaults(name), out = [], why = PRESET_LABEL[name] + " preset value.";
+    const walk = (path, a, b) => {
+      if (isObj(a) && isObj(b)) {
+        for (const k of Object.keys(b)) walk(path + "." + k, a[k], b[k]);
+        for (const k of Object.keys(a)) if (!(k in b)) out.push({ path: path + "." + k, from: clone(a[k]), to: null, reason: why });
+        return;
+      }
+      if (JSON.stringify(a) !== JSON.stringify(b)) out.push({ path, from: a === undefined ? null : clone(a), to: clone(b), reason: why });
+    };
+    for (const sec of PRESET_SECTIONS) walk(sec, project[sec], d[sec]);
+    return out;
+  };
+
+  /**
+   * applyPreset(project, name, accepted) → project (alpha.3 E7, PRJ-02): Cancel (accepted false) returns an unchanged
+   * copy; Accept takes every setting section from SBSchema.defaults(name) and keeps title, source, units, machine and
+   * extras (and the identity fields and acks). revision + 1 exactly when geometryKey changes. A result that fails
+   * SBSchema.validate leaves the project unchanged. Pure.
+   */
+  S.applyPreset = function (project, name, accepted) {
+    const d = S.defaults(name);
+    if (!accepted) return clone(project);
+    const p = clone(project);
+    for (const sec of PRESET_SECTIONS) p[sec] = clone(d[sec]);
+    if (!S.validate(p).ok) return clone(project);
+    if (JSON.stringify(S.geometryKey(p)) !== JSON.stringify(S.geometryKey(project))) p.revision = project.revision + 1;
+    return p;
+  };
+
+  /** The tonal smoothing a colour source gets when it is switched from height (the plan's only tonal default, E3b). */
+  const AUTO_TONAL_SMOOTHING = { radiusMM: 1.65, passes: 2 };
+  /**
+   * colourSourceSwitch(project) → {patch, project} (alpha.3 E7, IMG-01, PO-PREVIEW-3): a colour source that height mode
+   * refuses (JPEG, colour palette PNG, unequal-RGB PNG) switches the project to tonal: SBSchema.applyModeChange(project,
+   * {interpretation: {mode: "tonal"}}, true) (polarity white-high → light-front, black-high → dark-front), smoothing
+   * r 1.65 mm p 2, construction kept, and an extras.history entry {op: "auto-tonal", reason: "colour source", revision}.
+   * A project already in tonal mode comes back unchanged. Pure.
+   */
+  S.colourSourceSwitch = function (project) {
+    const patch = { interpretation: { mode: "tonal", smoothing: clone(AUTO_TONAL_SMOOTHING) } };
+    if (project.interpretation.mode !== "height") return { patch, project: clone(project) };
+    const p = S.applyModeChange(project, { interpretation: { mode: "tonal" } }, true);
+    p.interpretation.smoothing = clone(AUTO_TONAL_SMOOTHING);
+    p.revision = JSON.stringify(S.geometryKey(p)) !== JSON.stringify(S.geometryKey(project)) ? project.revision + 1 : project.revision;
+    const hist = Array.isArray(p.extras.history) ? p.extras.history : [];
+    p.extras = Object.assign({}, p.extras, { history: hist.concat([{ op: "auto-tonal", reason: "colour source", revision: p.revision }]) });
+    return { patch, project: p };
   };
 
   global.SBSchema = S;

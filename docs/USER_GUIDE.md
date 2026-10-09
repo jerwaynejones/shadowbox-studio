@@ -4,6 +4,21 @@ Every control, what it does physically, and how to troubleshoot a result.
 
 ## Step 1 — Photo
 
+**Presets and colour images.** The Preset select sets every setting at once:
+**Plywood (bonded relief)**, the default, glues the layers face to face, reads
+the image as a height map and aligns the layers with concealed scored guides
+(inset outlines); **Acrylic (connected sheets)** stacks tonal sheets on
+spacers. Changing the preset lists every value it will replace in a review
+dialog first; the title, the loaded image, the units and the machine are kept.
+Height mode needs a grayscale height map (an 8-bit gray PNG, or an RGB PNG
+whose three channels are equal). When you load a colour image under a height
+preset (a JPEG, a colour palette PNG or a colour PNG), the app switches the
+reading to **Tonal** (light tones in front, 1.65 mm smoothing, the construction
+is kept) and says so under the Source buttons: "Colour image: using Tonal". To
+read it differently, change **Read the image as** under Interpretation; a
+grayscale height map loads as Height without any switch. Paper/card is not a
+preset yet.
+
 **Load photo / Demo scene.** Any image works, but the craft favors photos with
 a clear subject and readable tonal separation: silhouettes at dusk, a bird
 against sky, a landscape with distinct planes. The demo scene is a procedural

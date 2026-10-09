@@ -5611,6 +5611,54 @@ suite("index.html/app.js — alpha.3 E6 fabrication preview (PO-PREVIEW-2, LYR-0
     g1.status === "done" && typeof g1.snapshot.geometryHash === "string" && g1.snapshot.geometryHash === g2.snapshot.geometryHash);
 });
 
+suite("schema.js/app.js — alpha.3 E7 presets and colour sources (PRJ-01, IMG-01, PO-PREVIEW-3)", () => {
+  const S = SBSchema, F = require("./fixtures.js");
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8"), html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+  const fn = (name) => { const i = appSrc.indexOf("function " + name + "("); return i < 0 ? "" : appSrc.slice(i, appSrc.indexOf("\n  }\n", i)); };
+  check("PRJ-01 app default preset is plywood", /let project = SBSchema\.defaults\("plywood"\)/.test(appSrc));
+  check("PO-PREVIEW-3 #in-preset offers Plywood (bonded) and Acrylic (connected)", /id="in-preset"/.test(html) && /value="plywood"[^>]*>Plywood/.test(html) && /value="acrylic"/.test(html));
+  check("PO-PREVIEW-3 #in-preset sits above #in-interp", html.indexOf('id="in-preset"') > 0 && html.indexOf('id="in-preset"') < html.indexOf('id="in-interp"'));
+  const ply = S.defaults("plywood"); ply.title = "keep"; ply.source = S.sourceTemplate();
+  const acr = S.applyPreset(ply, "acrylic", true);
+  check("PRJ-02 applyPreset keeps title and source, takes the rest from the preset, bumps the revision",
+    acr.title === "keep" && JSON.stringify(acr.source) === JSON.stringify(ply.source) && acr.construction.mode === "connected-sheet" && acr.revision === ply.revision + 1 &&
+    S.presetDiff(ply, "acrylic").some((d) => d.path === "construction.mode"));
+  check("PRJ-02 applyPreset keeps units, machine and extras; Cancel (accepted false) and the same preset change nothing",
+    (() => { const q = JSON.parse(JSON.stringify(ply)); q.units = "in"; q.extras = { history: [{ op: "x" }] };
+      const r = S.applyPreset(q, "acrylic", true);
+      return r.units === "in" && JSON.stringify(r.extras) === JSON.stringify(q.extras) && JSON.stringify(r.machine) === JSON.stringify(q.machine) &&
+        JSON.stringify(S.applyPreset(q, "acrylic", false)) === JSON.stringify(q) && JSON.stringify(S.applyPreset(q, "plywood", true)) === JSON.stringify(q) &&
+        S.presetDiff(q, "plywood").length === 0 && S.validate(r).ok; })());
+  check("PRJ-02 presetDiff entries carry {path, from, to, reason}", S.presetDiff(ply, "acrylic").every((d) => typeof d.reason === "string" && d.reason.length > 0 && "from" in d && "to" in d));
+  const sw = S.colourSourceSwitch(ply).project;
+  check("IMG-01/PO-PREVIEW-3 colour source under plywood → tonal, light-front, smoothing r4 p2, bonded kept, history recorded",
+    sw.interpretation.mode === "tonal" && sw.interpretation.polarity === "light-front" && sw.interpretation.smoothing.radiusMM === 1.65 &&
+    sw.interpretation.smoothing.passes === 2 &&
+    sw.construction.mode === "bonded-relief" && sw.extras.history.some((h) => h.op === "auto-tonal") && S.validate(sw).ok);
+  check("PO-PREVIEW-3 colourSourceSwitch returns its patch and is pure", (() => { const before = JSON.stringify(ply), r = S.colourSourceSwitch(ply);
+    return JSON.stringify(ply) === before && r.patch && r.patch.interpretation.mode === "tonal"; })());
+  const jpg = F.jpegHeader({ w: 64, h: 48 });
+  const pre = S.intake(jpg, { project: ply, deviceClass: "desktop" });
+  check("IMG-01 plywood + JPEG: preflight still names HEIGHT_NEEDS_PNG (the app switches on it); tonal accepts it",
+    pre.code === "HEIGHT_NEEDS_PNG" && S.intake(jpg, { project: sw, deviceClass: "desktop" }).code !== "HEIGHT_NEEDS_PNG");
+  const eq = new Uint8Array(32 * 32 * 3); for (let i = 0; i < eq.length; i++) eq[i] = (i / 3) & 255;
+  const pngEq = F.pngEncode({ w: 32, h: 32, colorType: 2, bitDepth: 8, data: eq });
+  checkAsync("IMG-01 RGB-equal truecolour PNG under plywood stays height (raw decode succeeds)", SBPng.decode(new Uint8Array(pngEq), { mode: "height" }).then((d) => d.channels === 1));
+  check("IMG-01 RGB-equal truecolour PNG under plywood passes preflight on the raw route (no switch)",
+    (() => { const r = S.intake(new Uint8Array(pngEq), { project: ply, deviceClass: "desktop" }); return r.ok && r.intake.decode === "raw"; })());
+  check("SOURCE_COLOR_TONAL is a registered info code", SBDiag.CODES.SOURCE_COLOR_TONAL && SBDiag.CODES.SOURCE_COLOR_TONAL.severity === "info");
+  check("PO-PREVIEW-3 loadFile switches to tonal on HEIGHT_NEEDS_PNG, PNG_PALETTE and PNG_UNEQUAL_RGB",
+    /HEIGHT_NEEDS_PNG/.test(appSrc) && /PNG_PALETTE/.test(appSrc) && /PNG_UNEQUAL_RGB/.test(appSrc) && /SBSchema\.colourSourceSwitch\(/.test(appSrc));
+  check("PO-PREVIEW-3 the switch is only taken in height mode and the notice is SOURCE_COLOR_TONAL in #why-source",
+    /interpretation\.mode === "height"/.test(appSrc) && /SOURCE_COLOR_TONAL/.test(appSrc));
+  check("PO-PREVIEW-3 #in-preset opens the #dlg-mode review from SBSchema.presetDiff and applies SBSchema.applyPreset",
+    /in-preset/.test(appSrc) && /SBSchema\.presetDiff\(/.test(appSrc) && /SBSchema\.applyPreset\(/.test(appSrc));
+  const b = S.applyModeChange(S.defaults("acrylic"), { construction: { mode: "bonded-relief" } }, true);
+  check("ASM-01 a switch to bonded sets guides.mode from none to inset-outline", b.construction.guides.mode === "inset-outline");
+  check("ASM-01/Q4 the plywood preset uses inset-outline guides", S.defaults("plywood").construction.guides.mode === "inset-outline");
+  check("PO-PREVIEW-3 no 'Use as height map instead' button (it could never succeed)", !/Use as height map instead/.test(appSrc) && !/Use as height map instead/.test(html));
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

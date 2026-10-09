@@ -553,6 +553,12 @@ button.diag-go:hover .diag-msg { text-decoration: underline; }
 
     <section class="step" id="stage-source" tabindex="-1" aria-labelledby="h-source">
       <h2 id="h-source"><span class="stepnum">1</span> Source</h2>
+      <!-- alpha.3 E7 (PRJ-01, PO-PREVIEW-3): the preset; a change is reviewed in #dlg-mode. Plywood is the default. -->
+      <div class="row"><label for="in-preset">Preset</label>
+        <select id="in-preset">
+          <option value="plywood">Plywood (bonded relief)</option>
+          <option value="acrylic">Acrylic (connected sheets)</option>
+        </select></div>
       <div class="row btnrow">
         <label class="btn primary filebtn">
           Load photo<input id="filein" type="file" accept="image/*">
@@ -2165,7 +2171,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  * (plan Appendix C, S4/S4b), the G2.14 intake codes SOURCE_TOO_LARGE,
  * SOURCE_TOO_MANY_PIXELS, SOURCE_FORMAT and HEIGHT_NEEDS_PNG (IMG-01/07)
  * and the intake warning EXIF_AMBIGUOUS (Appendix C, S4b), plus
- * GEO_MULTIPART, which SBGeom.validate reports under D3. Programmer-error
+ * GEO_MULTIPART, which SBGeom.validate reports under D3. alpha.3 E7 adds
+ * SOURCE_COLOR_TONAL (info): a colour source auto-switched to tonal at load. Programmer-error
  * throws (GEO_MULTIPART_POLYGON, GEO_OFFSET_NONINTEGER, GEO_INSET_NOT_DYADIC)
  * are not user diagnostics.
  *
@@ -2326,6 +2333,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       "No action needed; use a matching source size to avoid resampling."],
     ["BUSY_SIMPLIFIED", I, P, "Busy art was simplified",
       "Small parts were dropped and close parts merged at the minimum feature size; set Simplify busy art to off to keep every part."],
+    // alpha.3 E7 (IMG-01, PO-PREVIEW-3): a colour source that height mode refuses switched the project to tonal at load
+    ["SOURCE_COLOR_TONAL", I, P, "Colour image: using Tonal (light/dark \u2192 layers). Height mode needs a grayscale height map.",
+      "No action needed; change Read the image as (Interpretation) to choose another reading, or load a grayscale height map for Height."],
   ];
 
   const CODES = {};
@@ -2652,6 +2662,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *   SBSchema.toMM / fromMM           lossless units, quantized to 0.001 mm.
  *   SBSchema.modeChangeDiff(p, patch) → [{path, from, to, reason}] (G2.11e).
  *   SBSchema.applyModeChange(p, patch, accepted) → project (Cancel: unchanged; Accept: diff targets, revision + 1) (G2.11e).
+ *   SBSchema.presetDiff(p, name)     → [{path, from, to, reason}]: the settings a preset change replaces (alpha.3 E7).
+ *   SBSchema.applyPreset(p, name, accepted) → project: settings from defaults(name); title, source, units, machine,
+ *                                    extras kept; revision + 1 iff geometryKey changes (alpha.3 E7, PRJ-02).
+ *   SBSchema.colourSourceSwitch(p)   → {patch, project}: height → tonal for a colour source (smoothing r1.65 p2,
+ *                                    extras.history "auto-tonal"; alpha.3 E7, IMG-01, PO-PREVIEW-3).
  *   SBSchema.sourceTemplate()        a valid placeholder `source` record.
  *   SBSchema.legacyState(p, w?, h?)  → the 19 v1.1.0 settings keys (G2.11a
  *                                    controller adapter for legacyRun).
@@ -2972,7 +2987,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
         cleanup: { minFeatureMM: 1.5, speckMM2: 4.5, holeMM2: 4.5, cornerStyle: "sharp", toleranceMM: 0.05, simplify: "off" },
         bridge: { bridgeMM: 1.8, cullBelowMM2: 25, maxBridgeMM: 40, cullEnabled: false },
         registration: { enabled: false, diaMM: 3, edgeClearanceMM: 1, layers: "all" },
-        guides: { mode: "interior-mark", concealInsetMM: 0.5, markFootprintMM: 0.2, allowanceMM: 0.5, labelHeightMM: 3 },
+        guides: { mode: "inset-outline", concealInsetMM: 0.5, markFootprintMM: 0.2, allowanceMM: 0.5, labelHeightMM: 3 },
         repairs: [] };
       p.material = { name: "1/4\" plywood (basswood or poplar)", thicknessMM: 6.35, thicknessState: "nominal", calibrated: false,
         minFeatureMM: 1.5, advisoryFeatureMM: 2.0, minPartMM2: 25, kerfMode: "external", calibration: null };
@@ -3686,6 +3701,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
         add("construction.bridge.cullEnabled", c.bridge.cullEnabled, c.bridge.cullEnabled, "Used in bonded mode: removing small parts is an explicit opt-in.");
         add("construction.cleanup.cornerStyle", c.cleanup.cornerStyle, c.cleanup.cornerStyle, "Not used in bonded mode: bonded contours are unsmoothed (D1).");
         add("construction.cleanup.toleranceMM", c.cleanup.toleranceMM, c.cleanup.toleranceMM, "Not used in bonded mode: bonded contours are unsmoothed (D1).");
+        if (c.guides.mode === "none") add("construction.guides.mode", "none", "inset-outline", "Bonded layers are aligned by concealed scored guides (ASM-01).");
       } else {
         add("construction.gapMM", c.gapMM, c.gapMM === 0 ? 3 : c.gapMM, "Connected sheets are separated by spacers: default gap 3 mm.");
         for (const k of ["bridgeMM", "maxBridgeMM", "cullBelowMM2"]) add("construction.bridge." + k, c.bridge[k], c.bridge[k], "Used in connected mode: loose islands are bridged or culled.");
@@ -3728,6 +3744,65 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     if (!S.validate(p).ok) return clone(project);
     if (JSON.stringify(S.geometryKey(p)) !== JSON.stringify(S.geometryKey(project))) p.revision = project.revision + 1;
     return p;
+  };
+
+  // ------------------------------------------------------------ presets and colour sources (alpha.3 E7, PRJ-01/02, IMG-01)
+  // A preset change keeps who the project is and what it was made from; every setting section comes from the preset.
+  const PRESET_SECTIONS = ["interpretation", "construction", "material", "appearance", "view", "geometry"];
+  const PRESET_LABEL = { plywood: "Plywood (bonded)", acrylic: "Acrylic (connected)" };
+  /**
+   * presetDiff(project, name) → [{path, from, to, reason}] (alpha.3 E7, PRJ-02): every setting leaf that differs between
+   * the project and SBSchema.defaults(name), in the #dlg-mode review shape. title, source, units, machine and extras are
+   * kept (and the identity fields, acks and engine); arrays and null/object changes are one entry. Unknown preset → SCHEMA_PRESET.
+   */
+  S.presetDiff = function (project, name) {
+    const d = S.defaults(name), out = [], why = PRESET_LABEL[name] + " preset value.";
+    const walk = (path, a, b) => {
+      if (isObj(a) && isObj(b)) {
+        for (const k of Object.keys(b)) walk(path + "." + k, a[k], b[k]);
+        for (const k of Object.keys(a)) if (!(k in b)) out.push({ path: path + "." + k, from: clone(a[k]), to: null, reason: why });
+        return;
+      }
+      if (JSON.stringify(a) !== JSON.stringify(b)) out.push({ path, from: a === undefined ? null : clone(a), to: clone(b), reason: why });
+    };
+    for (const sec of PRESET_SECTIONS) walk(sec, project[sec], d[sec]);
+    return out;
+  };
+
+  /**
+   * applyPreset(project, name, accepted) → project (alpha.3 E7, PRJ-02): Cancel (accepted false) returns an unchanged
+   * copy; Accept takes every setting section from SBSchema.defaults(name) and keeps title, source, units, machine and
+   * extras (and the identity fields and acks). revision + 1 exactly when geometryKey changes. A result that fails
+   * SBSchema.validate leaves the project unchanged. Pure.
+   */
+  S.applyPreset = function (project, name, accepted) {
+    const d = S.defaults(name);
+    if (!accepted) return clone(project);
+    const p = clone(project);
+    for (const sec of PRESET_SECTIONS) p[sec] = clone(d[sec]);
+    if (!S.validate(p).ok) return clone(project);
+    if (JSON.stringify(S.geometryKey(p)) !== JSON.stringify(S.geometryKey(project))) p.revision = project.revision + 1;
+    return p;
+  };
+
+  /** The tonal smoothing a colour source gets when it is switched from height (the plan's only tonal default, E3b). */
+  const AUTO_TONAL_SMOOTHING = { radiusMM: 1.65, passes: 2 };
+  /**
+   * colourSourceSwitch(project) → {patch, project} (alpha.3 E7, IMG-01, PO-PREVIEW-3): a colour source that height mode
+   * refuses (JPEG, colour palette PNG, unequal-RGB PNG) switches the project to tonal: SBSchema.applyModeChange(project,
+   * {interpretation: {mode: "tonal"}}, true) (polarity white-high → light-front, black-high → dark-front), smoothing
+   * r 1.65 mm p 2, construction kept, and an extras.history entry {op: "auto-tonal", reason: "colour source", revision}.
+   * A project already in tonal mode comes back unchanged. Pure.
+   */
+  S.colourSourceSwitch = function (project) {
+    const patch = { interpretation: { mode: "tonal", smoothing: clone(AUTO_TONAL_SMOOTHING) } };
+    if (project.interpretation.mode !== "height") return { patch, project: clone(project) };
+    const p = S.applyModeChange(project, { interpretation: { mode: "tonal" } }, true);
+    p.interpretation.smoothing = clone(AUTO_TONAL_SMOOTHING);
+    p.revision = JSON.stringify(S.geometryKey(p)) !== JSON.stringify(S.geometryKey(project)) ? project.revision + 1 : project.revision;
+    const hist = Array.isArray(p.extras.history) ? p.extras.history : [];
+    p.extras = Object.assign({}, p.extras, { history: hist.concat([{ op: "auto-tonal", reason: "colour source", revision: p.revision }]) });
+    return { patch, project: p };
   };
 
   global.SBSchema = S;
@@ -9035,9 +9110,10 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
 
   // G2.11a (PRJ-01): the project (schema v1) is the single source of truth for every setting. The v1.1.0 controls and
   // exporters read the v1.1.0 view of it through SBSchema.legacyState, and every such control writes through SBSchema.applyLegacy
-  // (revision + 1 exactly when the geometry changes). Acrylic keeps today's connected tonal behaviour until the
-  // G2.11b–e stages expose the plywood/bonded path.
-  let project = SBSchema.defaults("acrylic");
+  // (revision + 1 exactly when the geometry changes). alpha.3 E7 (PRJ-01, PO-PREVIEW-3): the app starts on the Plywood
+  // (bonded) preset; #in-preset switches presets through the #dlg-mode review (SBSchema.presetDiff / applyPreset).
+  let project = SBSchema.defaults("plywood");
+  let presetName = "plywood";   // the preset #in-preset shows: the last one applied (settings may have been edited since)
 
   // Runtime only, never saved: the loaded source and the last pipeline result.
   const run = {
@@ -10209,7 +10285,31 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     let diff;
     try { diff = SBSchema.modeChangeDiff(project, patch); } catch (e) { restore(); return; }
     if (diff.length === 0) return;
+    reviewDiff(diff, "Review mode change", "Apply the " + key + " mode change?", sel, restore,
+      () => commitProject(SBSchema.applyModeChange(project, patch, true), id));
+  }
+
+  /**
+   * alpha.3 E7 (PRJ-02, PO-PREVIEW-3): changing #in-preset is reviewed in the same #dlg-mode dialog, listing
+   * SBSchema.presetDiff(project, name). Accept applies SBSchema.applyPreset(…, true) (title, source, units, machine and
+   * extras kept); Cancel or Escape restores the select. A preset whose values the project already has applies at once.
+   */
+  function reviewPreset(name) {
+    const sel = $("in-preset"), restore = () => { sel.value = presetName; };
+    let diff;
+    try { diff = SBSchema.presetDiff(project, name); } catch (e) { restore(); return; }
+    if (diff.length === 0) { presetName = name; restore(); return; }
+    const label = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : name;
+    reviewDiff(diff, "Review preset change: " + label, "Apply the " + label + " preset?", sel, restore, () => {
+      presetName = name;
+      commitProject(SBSchema.applyPreset(project, name, true), "preset");
+    });
+  }
+
+  /** The #dlg-mode review of a diff [{path, from, to, reason}]: Accept runs onAccept; the select is restored and focused either way. */
+  function reviewDiff(diff, title, confirmText, sel, restore, onAccept) {
     const dlg = $("dlg-mode"), list = $("dlg-mode-list");
+    $("dlg-mode-title").textContent = title;
     list.innerHTML = "";
     for (const d of diff) {
       const li = document.createElement("li"), path = document.createElement("span"), what = document.createElement("span");
@@ -10222,11 +10322,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       list.appendChild(li);
     }
     const finish = (accepted) => {
-      if (accepted) commitProject(SBSchema.applyModeChange(project, patch, true), id);
-      restore();   // the select shows the project's mode (Cancel: the old one)
+      if (accepted) onAccept();
+      restore();   // the select shows the project's mode or preset (Cancel: the old one)
       sel.focus();
     };
-    if (typeof dlg.showModal !== "function") { finish(window.confirm("Apply the " + key + " mode change?")); return; }
+    if (typeof dlg.showModal !== "function") { finish(window.confirm(confirmText)); return; }
     dlg.returnValue = "";
     dlg.addEventListener("close", () => finish(dlg.returnValue === "accept"), { once: true });
     dlg.showModal();
@@ -10237,6 +10337,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       const el = $("in-" + id);
       el.addEventListener("change", () => { if (el.value !== project[MODE_CONTROLS[id]].mode) reviewModeChange(id, el.value); });
     }
+    const presetSel = $("in-preset");
+    presetSel.value = presetName;
+    presetSel.addEventListener("change", () => { if (presetSel.value !== presetName) reviewPreset(presetSel.value); });
     // G2.11d: the bonded cull opt-in (construction.bridge.cullEnabled) is a checkbox
     $("in-cullon").addEventListener("change", (e) => onControl("cullon", e.target.checked));
     for (const id of CONTROLS) {
@@ -10343,19 +10446,53 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     try { bytes = new Uint8Array(await file.arrayBuffer()); }
     catch (e) { if (gen === sourceGen) showSourceProblem(`couldn’t read ${file.name}`); return; }
     if (gen !== sourceGen) return;
-    const pre = SBSchema.intake(bytes, { project, deviceClass: dc });
+    let pre = SBSchema.intake(bytes, { project, deviceClass: dc }), autoTonal = false;
+    // alpha.3 E7 (IMG-01, PO-PREVIEW-3): in height mode a colour source that height refuses (a JPEG, a colour palette
+    // PNG) switches to tonal (SBSchema.colourSourceSwitch) and is taken on the browser route. RGB-equal truecolour and
+    // gray PNGs stay on the raw height route (they are valid height maps; Review Focus 1).
+    if (!pre.ok && project.interpretation.mode === "height" && COLOUR_REFUSALS.includes(pre.code)) {
+      const tonal = SBSchema.intake(bytes, { project: SBSchema.colourSourceSwitch(project).project, deviceClass: dc });
+      if (tonal.ok || tonal.suggestDownsamplePx) { pre = tonal; autoTonal = true; }
+      if (!tonal.ok && tonal.suggestDownsamplePx) {   // the explicit downsample re-runs intake against the project: switch it now
+        switchToTonal();
+        refuseSource(file, bytes, pre, colourNotice());
+        return;
+      }
+    }
     if (!pre.ok) { refuseSource(file, bytes, pre); return; }
     setStatus(`loading ${file.name}…`);
     let src;
     try { src = await decodeSource(file, bytes, pre); }
     catch (e) {
-      if (gen === sourceGen) showSourceProblem(`couldn’t decode ${file.name}: ${e.code ? (SBDiag.CODES[e.code] ? SBDiag.CODES[e.code].title : e.code) : e.message}`);
-      return;
+      if (gen !== sourceGen) return;
+      // a truecolour PNG whose channels differ is only found while decoding (raw route): switch and decode on the tonal route
+      if (e.code === "PNG_UNEQUAL_RGB" && project.interpretation.mode === "height") {
+        pre = SBSchema.intake(bytes, { project: SBSchema.colourSourceSwitch(project).project, deviceClass: dc });
+        autoTonal = true;
+        if (!pre.ok) { refuseSource(file, bytes, pre); return; }
+        try { src = await decodeSource(file, bytes, pre); } catch (e2) { if (gen === sourceGen) showSourceProblem(decodeProblem(file, e2)); return; }
+      } else { showSourceProblem(decodeProblem(file, e)); return; }
     }
     if (gen !== sourceGen) { if (src.bitmap.close) src.bitmap.close(); return; }
-    await acceptSource(file.name, src, pre.intake, gen, bytes);
+    await acceptSource(file.name, src, pre.intake, gen, bytes, autoTonal);
+    if (gen !== sourceGen) return;
     const notes = pre.warnings.filter((d) => d.code === "EXIF_AMBIGUOUS").map((d) => d.message);
+    if (autoTonal) notes.unshift(colourNotice());
     if (notes.length) showSourceProblem(`${file.name}: ${notes.join("; ")}`);
+  }
+
+  // alpha.3 E7: the preflight refusals of a colour source in height mode (PNG_UNEQUAL_RGB is found while decoding)
+  const COLOUR_REFUSALS = ["HEIGHT_NEEDS_PNG", "PNG_PALETTE"];
+  /** The SOURCE_COLOR_TONAL notice with a pointer to the Interpretation control (no "use as height" button: it could never succeed). */
+  function colourNotice() {
+    return SBDiag.CODES.SOURCE_COLOR_TONAL.title + " Change it under 2 Interpretation \u2192 Read the image as.";
+  }
+  /** Apply SBSchema.colourSourceSwitch to the project now (height mode only), through the one commit path. */
+  function switchToTonal() {
+    if (project.interpretation.mode === "height") commitProject(SBSchema.colourSourceSwitch(project).project, "interp");
+  }
+  function decodeProblem(file, e) {
+    return `couldn’t decode ${file.name}: ${e.code ? (SBDiag.CODES[e.code] ? SBDiag.CODES[e.code].title : e.code) : e.message}`;
   }
 
   /** The fabrication plan text (pitch, cap, shortfall) for a plan, as the dimbar words it. */
@@ -10367,8 +10504,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    * Show a preflight refusal with what preflight already knows before decoding: the plan at the file's own size and,
    * for SOURCE_TOO_MANY_PIXELS, the pitch and raster the explicit downsample would give, then offer the button.
    */
-  function refuseSource(file, bytes, pre) {
+  function refuseSource(file, bytes, pre, note) {
     const parts = [`${file.name}: ${pre.reason}`];
+    if (note) parts.push(note);
     const sug = pre.suggestDownsamplePx;
     let target = null;
     if (sug) {
@@ -10379,7 +10517,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       } catch (e) { /* the size cannot be resolved: the dimbar says why once a source loads */ }
     } else if (pre.rasterPlan) parts.push(`At this size: ${planText(pre.rasterPlan)}.`);
     for (const d of pre.warnings) if (d.code === "EXIF_AMBIGUOUS") parts.push(d.message + ".");
-    showSourceProblem(parts.join(" "), target ? () => downsampleExplicitly(file, bytes) : null,
+    showSourceProblem(parts.join(" "), target ? () => downsampleExplicitly(file, bytes, note) : null,
       target ? `Downsample to ${target.w} × ${target.h} px` : "");
   }
 
@@ -10457,7 +10595,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    * the previous source, record and revision are all still in place, so a debounced draft or an export in between
    * runs consistently on the old source. Reloading an identical file installs an identical record (no revision bump).
    */
-  async function acceptSource(name, decoded, intake, gen, bytes) {
+  async function acceptSource(name, decoded, intake, gen, bytes, autoTonal) {
     const src = decoded.bitmap, raw = decoded.raw;
     const route = { format: intake && intake.format === "jpeg" ? "jpeg" : "png",
       decode: raw ? (raw.policy || "raw-gray8") : "canvas-tonal" };
@@ -10472,6 +10610,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     run.sourceImage = src;
     run.sourceW = src.width; run.sourceH = src.height;
     run.sourceName = name;
+    // alpha.3 E7: a colour source loaded in height mode switches the project to tonal in the same block as its record
+    if (autoTonal && project.interpretation.mode === "height") project = SBSchema.colourSourceSwitch(project).project;
     project = SBSchema.withSource(project, SBEngine.sourceRecord(px, route, Object.assign({}, project.source, { byteHash, sampleHash })));
     if (old && old !== src && typeof old.close === "function") old.close();   // release a replaced ImageBitmap
     if (project.title === "untitled") setProjectName(name.replace(/\.[^.]+$/, ""));
@@ -10487,11 +10627,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    * tonal sources use the browser's drawImage (recorded deviation 6). When the browser did not rotate an EXIF 5..8
    * (or did rotate an ambiguous) file as parsed, the target follows what the browser decoded (Appendix C).
    */
-  async function downsampleExplicitly(file, bytes) {
+  async function downsampleExplicitly(file, bytes, note) {
     const gen = ++sourceGen;
     showSourceProblem(null);
     const pre = SBSchema.intake(bytes, { project, deviceClass: deviceClass() });
-    if (!pre.ok && !pre.suggestDownsamplePx) { refuseSource(file, bytes, pre); return; }
+    if (!pre.ok && !pre.suggestDownsamplePx) { refuseSource(file, bytes, pre, note); return; }
     if (pre.ok) { loadFile(file); return; }   // nothing to reduce any more (limits or mode changed)
     let { w: toW, h: toH } = SBSchema.downsampleTarget(pre);
     setStatus(`downsampling ${file.name} to ${toW} × ${toH} px…`);
@@ -10523,8 +10663,15 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       await acceptSource(file.name, c, pre.intake, gen, bytes);
       if (gen !== sourceGen) return;
       setStatus(`downsampled ${file.name} to ${toW} × ${toH} px; fabrication pitch ${project.geometry.fabPitchMM} mm/px`, true);
+      if (note) showSourceProblem(`${file.name}: ${note}`);   // alpha.3 E7: the SOURCE_COLOR_TONAL notice stays visible
     } catch (e) {
-      if (gen === sourceGen) showSourceProblem(`couldn’t downsample ${file.name}: ${e.message}`);
+      if (gen !== sourceGen) return;
+      if (e.code === "PNG_UNEQUAL_RGB" && project.interpretation.mode === "height") {   // alpha.3 E7: colour PNG → tonal, then retry
+        switchToTonal();
+        await downsampleExplicitly(file, bytes, colourNotice());
+        return;
+      }
+      showSourceProblem(`couldn’t downsample ${file.name}: ${e.message}`);
     }
   }
 

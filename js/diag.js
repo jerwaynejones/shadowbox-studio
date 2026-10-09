@@ -34,7 +34,8 @@
  * (plan Appendix C, S4/S4b), the G2.14 intake codes SOURCE_TOO_LARGE,
  * SOURCE_TOO_MANY_PIXELS, SOURCE_FORMAT and HEIGHT_NEEDS_PNG (IMG-01/07)
  * and the intake warning EXIF_AMBIGUOUS (Appendix C, S4b), plus
- * GEO_MULTIPART, which SBGeom.validate reports under D3. Programmer-error
+ * GEO_MULTIPART, which SBGeom.validate reports under D3. alpha.3 E7 adds
+ * SOURCE_COLOR_TONAL (info): a colour source auto-switched to tonal at load. Programmer-error
  * throws (GEO_MULTIPART_POLYGON, GEO_OFFSET_NONINTEGER, GEO_INSET_NOT_DYADIC)
  * are not user diagnostics.
  *
@@ -195,6 +196,9 @@
       "No action needed; use a matching source size to avoid resampling."],
     ["BUSY_SIMPLIFIED", I, P, "Busy art was simplified",
       "Small parts were dropped and close parts merged at the minimum feature size; set Simplify busy art to off to keep every part."],
+    // alpha.3 E7 (IMG-01, PO-PREVIEW-3): a colour source that height mode refuses switched the project to tonal at load
+    ["SOURCE_COLOR_TONAL", I, P, "Colour image: using Tonal (light/dark \u2192 layers). Height mode needs a grayscale height map.",
+      "No action needed; change Read the image as (Interpretation) to choose another reading, or load a grayscale height map for Height."],
   ];
 
   const CODES = {};

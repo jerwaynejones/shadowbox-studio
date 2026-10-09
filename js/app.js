@@ -34,9 +34,10 @@
 
   // G2.11a (PRJ-01): the project (schema v1) is the single source of truth for every setting. The v1.1.0 controls and
   // exporters read the v1.1.0 view of it through SBSchema.legacyState, and every such control writes through SBSchema.applyLegacy
-  // (revision + 1 exactly when the geometry changes). Acrylic keeps today's connected tonal behaviour until the
-  // G2.11b–e stages expose the plywood/bonded path.
-  let project = SBSchema.defaults("acrylic");
+  // (revision + 1 exactly when the geometry changes). alpha.3 E7 (PRJ-01, PO-PREVIEW-3): the app starts on the Plywood
+  // (bonded) preset; #in-preset switches presets through the #dlg-mode review (SBSchema.presetDiff / applyPreset).
+  let project = SBSchema.defaults("plywood");
+  let presetName = "plywood";   // the preset #in-preset shows: the last one applied (settings may have been edited since)
 
   // Runtime only, never saved: the loaded source and the last pipeline result.
   const run = {
@@ -1208,7 +1209,31 @@
     let diff;
     try { diff = SBSchema.modeChangeDiff(project, patch); } catch (e) { restore(); return; }
     if (diff.length === 0) return;
+    reviewDiff(diff, "Review mode change", "Apply the " + key + " mode change?", sel, restore,
+      () => commitProject(SBSchema.applyModeChange(project, patch, true), id));
+  }
+
+  /**
+   * alpha.3 E7 (PRJ-02, PO-PREVIEW-3): changing #in-preset is reviewed in the same #dlg-mode dialog, listing
+   * SBSchema.presetDiff(project, name). Accept applies SBSchema.applyPreset(…, true) (title, source, units, machine and
+   * extras kept); Cancel or Escape restores the select. A preset whose values the project already has applies at once.
+   */
+  function reviewPreset(name) {
+    const sel = $("in-preset"), restore = () => { sel.value = presetName; };
+    let diff;
+    try { diff = SBSchema.presetDiff(project, name); } catch (e) { restore(); return; }
+    if (diff.length === 0) { presetName = name; restore(); return; }
+    const label = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : name;
+    reviewDiff(diff, "Review preset change: " + label, "Apply the " + label + " preset?", sel, restore, () => {
+      presetName = name;
+      commitProject(SBSchema.applyPreset(project, name, true), "preset");
+    });
+  }
+
+  /** The #dlg-mode review of a diff [{path, from, to, reason}]: Accept runs onAccept; the select is restored and focused either way. */
+  function reviewDiff(diff, title, confirmText, sel, restore, onAccept) {
     const dlg = $("dlg-mode"), list = $("dlg-mode-list");
+    $("dlg-mode-title").textContent = title;
     list.innerHTML = "";
     for (const d of diff) {
       const li = document.createElement("li"), path = document.createElement("span"), what = document.createElement("span");
@@ -1221,11 +1246,11 @@
       list.appendChild(li);
     }
     const finish = (accepted) => {
-      if (accepted) commitProject(SBSchema.applyModeChange(project, patch, true), id);
-      restore();   // the select shows the project's mode (Cancel: the old one)
+      if (accepted) onAccept();
+      restore();   // the select shows the project's mode or preset (Cancel: the old one)
       sel.focus();
     };
-    if (typeof dlg.showModal !== "function") { finish(window.confirm("Apply the " + key + " mode change?")); return; }
+    if (typeof dlg.showModal !== "function") { finish(window.confirm(confirmText)); return; }
     dlg.returnValue = "";
     dlg.addEventListener("close", () => finish(dlg.returnValue === "accept"), { once: true });
     dlg.showModal();
@@ -1236,6 +1261,9 @@
       const el = $("in-" + id);
       el.addEventListener("change", () => { if (el.value !== project[MODE_CONTROLS[id]].mode) reviewModeChange(id, el.value); });
     }
+    const presetSel = $("in-preset");
+    presetSel.value = presetName;
+    presetSel.addEventListener("change", () => { if (presetSel.value !== presetName) reviewPreset(presetSel.value); });
     // G2.11d: the bonded cull opt-in (construction.bridge.cullEnabled) is a checkbox
     $("in-cullon").addEventListener("change", (e) => onControl("cullon", e.target.checked));
     for (const id of CONTROLS) {
@@ -1342,19 +1370,53 @@
     try { bytes = new Uint8Array(await file.arrayBuffer()); }
     catch (e) { if (gen === sourceGen) showSourceProblem(`couldn’t read ${file.name}`); return; }
     if (gen !== sourceGen) return;
-    const pre = SBSchema.intake(bytes, { project, deviceClass: dc });
+    let pre = SBSchema.intake(bytes, { project, deviceClass: dc }), autoTonal = false;
+    // alpha.3 E7 (IMG-01, PO-PREVIEW-3): in height mode a colour source that height refuses (a JPEG, a colour palette
+    // PNG) switches to tonal (SBSchema.colourSourceSwitch) and is taken on the browser route. RGB-equal truecolour and
+    // gray PNGs stay on the raw height route (they are valid height maps; Review Focus 1).
+    if (!pre.ok && project.interpretation.mode === "height" && COLOUR_REFUSALS.includes(pre.code)) {
+      const tonal = SBSchema.intake(bytes, { project: SBSchema.colourSourceSwitch(project).project, deviceClass: dc });
+      if (tonal.ok || tonal.suggestDownsamplePx) { pre = tonal; autoTonal = true; }
+      if (!tonal.ok && tonal.suggestDownsamplePx) {   // the explicit downsample re-runs intake against the project: switch it now
+        switchToTonal();
+        refuseSource(file, bytes, pre, colourNotice());
+        return;
+      }
+    }
     if (!pre.ok) { refuseSource(file, bytes, pre); return; }
     setStatus(`loading ${file.name}…`);
     let src;
     try { src = await decodeSource(file, bytes, pre); }
     catch (e) {
-      if (gen === sourceGen) showSourceProblem(`couldn’t decode ${file.name}: ${e.code ? (SBDiag.CODES[e.code] ? SBDiag.CODES[e.code].title : e.code) : e.message}`);
-      return;
+      if (gen !== sourceGen) return;
+      // a truecolour PNG whose channels differ is only found while decoding (raw route): switch and decode on the tonal route
+      if (e.code === "PNG_UNEQUAL_RGB" && project.interpretation.mode === "height") {
+        pre = SBSchema.intake(bytes, { project: SBSchema.colourSourceSwitch(project).project, deviceClass: dc });
+        autoTonal = true;
+        if (!pre.ok) { refuseSource(file, bytes, pre); return; }
+        try { src = await decodeSource(file, bytes, pre); } catch (e2) { if (gen === sourceGen) showSourceProblem(decodeProblem(file, e2)); return; }
+      } else { showSourceProblem(decodeProblem(file, e)); return; }
     }
     if (gen !== sourceGen) { if (src.bitmap.close) src.bitmap.close(); return; }
-    await acceptSource(file.name, src, pre.intake, gen, bytes);
+    await acceptSource(file.name, src, pre.intake, gen, bytes, autoTonal);
+    if (gen !== sourceGen) return;
     const notes = pre.warnings.filter((d) => d.code === "EXIF_AMBIGUOUS").map((d) => d.message);
+    if (autoTonal) notes.unshift(colourNotice());
     if (notes.length) showSourceProblem(`${file.name}: ${notes.join("; ")}`);
+  }
+
+  // alpha.3 E7: the preflight refusals of a colour source in height mode (PNG_UNEQUAL_RGB is found while decoding)
+  const COLOUR_REFUSALS = ["HEIGHT_NEEDS_PNG", "PNG_PALETTE"];
+  /** The SOURCE_COLOR_TONAL notice with a pointer to the Interpretation control (no "use as height" button: it could never succeed). */
+  function colourNotice() {
+    return SBDiag.CODES.SOURCE_COLOR_TONAL.title + " Change it under 2 Interpretation \u2192 Read the image as.";
+  }
+  /** Apply SBSchema.colourSourceSwitch to the project now (height mode only), through the one commit path. */
+  function switchToTonal() {
+    if (project.interpretation.mode === "height") commitProject(SBSchema.colourSourceSwitch(project).project, "interp");
+  }
+  function decodeProblem(file, e) {
+    return `couldn’t decode ${file.name}: ${e.code ? (SBDiag.CODES[e.code] ? SBDiag.CODES[e.code].title : e.code) : e.message}`;
   }
 
   /** The fabrication plan text (pitch, cap, shortfall) for a plan, as the dimbar words it. */
@@ -1366,8 +1428,9 @@
    * Show a preflight refusal with what preflight already knows before decoding: the plan at the file's own size and,
    * for SOURCE_TOO_MANY_PIXELS, the pitch and raster the explicit downsample would give, then offer the button.
    */
-  function refuseSource(file, bytes, pre) {
+  function refuseSource(file, bytes, pre, note) {
     const parts = [`${file.name}: ${pre.reason}`];
+    if (note) parts.push(note);
     const sug = pre.suggestDownsamplePx;
     let target = null;
     if (sug) {
@@ -1378,7 +1441,7 @@
       } catch (e) { /* the size cannot be resolved: the dimbar says why once a source loads */ }
     } else if (pre.rasterPlan) parts.push(`At this size: ${planText(pre.rasterPlan)}.`);
     for (const d of pre.warnings) if (d.code === "EXIF_AMBIGUOUS") parts.push(d.message + ".");
-    showSourceProblem(parts.join(" "), target ? () => downsampleExplicitly(file, bytes) : null,
+    showSourceProblem(parts.join(" "), target ? () => downsampleExplicitly(file, bytes, note) : null,
       target ? `Downsample to ${target.w} × ${target.h} px` : "");
   }
 
@@ -1456,7 +1519,7 @@
    * the previous source, record and revision are all still in place, so a debounced draft or an export in between
    * runs consistently on the old source. Reloading an identical file installs an identical record (no revision bump).
    */
-  async function acceptSource(name, decoded, intake, gen, bytes) {
+  async function acceptSource(name, decoded, intake, gen, bytes, autoTonal) {
     const src = decoded.bitmap, raw = decoded.raw;
     const route = { format: intake && intake.format === "jpeg" ? "jpeg" : "png",
       decode: raw ? (raw.policy || "raw-gray8") : "canvas-tonal" };
@@ -1471,6 +1534,8 @@
     run.sourceImage = src;
     run.sourceW = src.width; run.sourceH = src.height;
     run.sourceName = name;
+    // alpha.3 E7: a colour source loaded in height mode switches the project to tonal in the same block as its record
+    if (autoTonal && project.interpretation.mode === "height") project = SBSchema.colourSourceSwitch(project).project;
     project = SBSchema.withSource(project, SBEngine.sourceRecord(px, route, Object.assign({}, project.source, { byteHash, sampleHash })));
     if (old && old !== src && typeof old.close === "function") old.close();   // release a replaced ImageBitmap
     if (project.title === "untitled") setProjectName(name.replace(/\.[^.]+$/, ""));
@@ -1486,11 +1551,11 @@
    * tonal sources use the browser's drawImage (recorded deviation 6). When the browser did not rotate an EXIF 5..8
    * (or did rotate an ambiguous) file as parsed, the target follows what the browser decoded (Appendix C).
    */
-  async function downsampleExplicitly(file, bytes) {
+  async function downsampleExplicitly(file, bytes, note) {
     const gen = ++sourceGen;
     showSourceProblem(null);
     const pre = SBSchema.intake(bytes, { project, deviceClass: deviceClass() });
-    if (!pre.ok && !pre.suggestDownsamplePx) { refuseSource(file, bytes, pre); return; }
+    if (!pre.ok && !pre.suggestDownsamplePx) { refuseSource(file, bytes, pre, note); return; }
     if (pre.ok) { loadFile(file); return; }   // nothing to reduce any more (limits or mode changed)
     let { w: toW, h: toH } = SBSchema.downsampleTarget(pre);
     setStatus(`downsampling ${file.name} to ${toW} × ${toH} px…`);
@@ -1522,8 +1587,15 @@
       await acceptSource(file.name, c, pre.intake, gen, bytes);
       if (gen !== sourceGen) return;
       setStatus(`downsampled ${file.name} to ${toW} × ${toH} px; fabrication pitch ${project.geometry.fabPitchMM} mm/px`, true);
+      if (note) showSourceProblem(`${file.name}: ${note}`);   // alpha.3 E7: the SOURCE_COLOR_TONAL notice stays visible
     } catch (e) {
-      if (gen === sourceGen) showSourceProblem(`couldn’t downsample ${file.name}: ${e.message}`);
+      if (gen !== sourceGen) return;
+      if (e.code === "PNG_UNEQUAL_RGB" && project.interpretation.mode === "height") {   // alpha.3 E7: colour PNG → tonal, then retry
+        switchToTonal();
+        await downsampleExplicitly(file, bytes, colourNotice());
+        return;
+      }
+      showSourceProblem(`couldn’t downsample ${file.name}: ${e.message}`);
     }
   }
 

@@ -64,6 +64,12 @@
 
     <section class="step" id="stage-source" tabindex="-1" aria-labelledby="h-source">
       <h2 id="h-source"><span class="stepnum">1</span> Source</h2>
+      <!-- alpha.3 E7 (PRJ-01, PO-PREVIEW-3): the preset; a change is reviewed in #dlg-mode. Plywood is the default. -->
+      <div class="row"><label for="in-preset">Preset</label>
+        <select id="in-preset">
+          <option value="plywood">Plywood (bonded relief)</option>
+          <option value="acrylic">Acrylic (connected sheets)</option>
+        </select></div>
       <div class="row btnrow">
         <label class="btn primary filebtn">
           Load photo<input id="filein" type="file" accept="image/*">
