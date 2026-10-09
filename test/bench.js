@@ -8,6 +8,7 @@
  *     node test/bench.js large-assemble --logs f.log=log,g.log=live [--env run.json] [--loads l.txt=label,…] [--record]
  *     node test/bench.js large --only b4,b9,r25 --caps desktop [--simplify busy] [--bonded-only] [--record]
  *     node test/bench.js caps [--large-runs N] [--record] [--quick]
+ *     node test/bench.js draft [--record] [--runs N] [--warm N] [--only a,b,c] [--all] [--quick]   (alpha.3 E4, see benchDraft)
  *
  * G2.7b (complexity caps, SRS §12.3; PO-LASER-9): `large` with --caps <desktop|mobile> runs SBConstruct.complexityGate
  * (pre-trace parts cap; --simplify busy applies the explicit busy-art simplification first at the plywood thresholds
@@ -89,7 +90,7 @@ const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] :
 const stage = argv[0];
 const QUICK = argv.includes("--quick");
 const RUNS = QUICK ? 1 : +arg("--runs", 15);
-const STAGES = { geom: benchGeom, support: benchSupport, large: benchLarge, "large-assemble": benchLargeAssemble, caps: benchCaps };
+const STAGES = { geom: benchGeom, support: benchSupport, large: benchLarge, "large-assemble": benchLargeAssemble, caps: benchCaps, draft: benchDraft };
 if (MAIN && !STAGES[stage]) { console.error("usage: node test/bench.js " + Object.keys(STAGES).join("|") + " [--runs N] [--json out.json] [--no-fail] [--quick]"); process.exit(2); }
 
 function timeRuns(fn, runs, warm) {
@@ -692,6 +693,185 @@ function benchLargeAssemble() {
     rows: rows.map((r) => ({ id: r.id, source: r.source, finalP95Ms: r.stages.final.p95Ms, connectedP95Ms: r.stages.finalConnected.p95Ms, workingSetMiB: r.workingSetMiB, xRef: r.xRef })) };
 }
 
+// =========================================================================== stage "draft" (alpha.3 E4)
+/**
+ * Draft budget (plan Appendix E, task E4; PO-PREVIEW-1, amends PO-LASER-4). The draft preview runs SBEngine.generate at
+ * quality "draft" with the caller-owned stage cache (E3). Source: DRAFT.src (4096 × 3084, the user's colour image size)
+ * RGBA built from the bench's art generators, realistic (F.heightMap) and busy (F.busyHeightMap) families, with the
+ * colour channels of the E3 suite (R = g, G = 3g mod 256, B = 255 − g). Workloads (DRAFT.workloads): (a) plywood
+ * auto-tonal (bonded, light-front, smoothing 1.65 mm × 2, 8 sheets, 300 mm high), (b) plywood height (reported), (c)
+ * acrylic connected (smooth corners, KI-CONN-PERF). Per draftPx candidate and family: 1 cold run (empty cache), DRAFT.warm
+ * warm-ups and DRAFT.runs warm runs, each with a changed `sheets` value (8 ↔ 7) so construct reruns while the K1/K2 cache
+ * stays warm; cold, warm p50 and warm p95 per row, plus the share of construct spent in the draft change-overlay
+ * polygons (SBEngine.maskPolygons for e.added/e.removed; bridge polygons excluded). Candidates run in ascending order and
+ * a workload/family stops at the first candidate whose warm p95 exceeds the target (larger rasters are never faster;
+ * --all disables this). Fabrication rows: workload (a) per family at the fabrication raster, no cache (as the app),
+ * DRAFT.fabCold + DRAFT.fabRuns runs; fabMsPerMpx = the larger p50 ÷ raster Mpx of the families that finished.
+ * The bench measures above the shipped device cap: SBSchema.limits is wrapped for the run so draftPxCap does not clamp.
+ * --record writes docs/perf/draft-budget.json; decideDraft reproduces its decision (test "alpha.3 E4").
+ *
+ *     node test/bench.js draft [--record] [--runs N] [--warm N] [--fab-runs N] [--only a,c] [--families realistic,busy]
+ *                              [--candidates 720,1024] [--all] [--no-fab] [--quick]
+ */
+const DRAFT = {
+  src: [4096, 3084], seeds: { realistic: 2022, busy: 11 }, busyCellPx: 27,
+  candidates: [720, 1024, 1280, 1536, 2000], targetP95Ms: 3000, g44P95Ms: 1500,
+  warm: 3, runs: 15, fabCold: 1, fabRuns: 5, mobileDraftPx: 720, mobileK: 4,
+  families: ["realistic", "busy"],
+  workloads: {
+    a: { preset: "plywood", gates: "plywood", label: "plywood auto-tonal (tonal, light-front, smoothing 1.65 mm × 2 passes, bonded, 8 sheets, 300 mm high)" },
+    b: { preset: "plywood", gates: null, label: "plywood height (white-high, bonded, 8 sheets, 300 mm high; reported, not gating)" },
+    c: { preset: "acrylic", gates: "acrylic", label: "acrylic connected (tonal dark-front, smoothing 1.65 mm × 2, smooth corners, 5 sheets, 300 mm wide; KI-CONN-PERF)" },
+  },
+  perfJson: path.join(__dirname, "..", "docs", "perf", "draft-budget.json"),
+};
+DRAFT.rule = "per preset, draftPx = the largest candidate in {" + DRAFT.candidates.join(", ") + "} whose warm-cache p95 (≥ 15 warm runs, E3 cache " +
+  "filled, sheets changed between runs) is ≤ 3.0 s on BOTH the realistic and the busy art family for the preset's workload " +
+  "(plywood: (a) auto-tonal; acrylic: (c) connected) on the reference machine; 720 when none qualifies (recorded as a known gap, G4.1). " +
+  "Desktop draftPxCap = the larger of the two preset values; mobile draftPxCap = 720 (mobile ≈ 4× slower, k provisional as in D.8). " +
+  "Deviation: 3.0 s p95 is twice the G4.4 desktop draft target (p95 ≤ 1.5 s, which needs the G4.1 worker pool); G4.4 re-measures against 1.5 s. " +
+  "fabMsPerMpx = the larger p50 of the (a) fabrication rows that finished ÷ fabrication raster Mpx (rounded up to 10 ms); mobile = 4 × desktop.";
+
+/** The draft workload project (a|b|c) on an installed source record for px (sampleHash set, so the E3 cache is used). */
+function draftProject(id, px, sampleHash) {
+  const S = SBSchema, E = SBEngine, wl = DRAFT.workloads[id];
+  let p = S.withSource(S.defaults(wl.preset), Object.assign(E.sourceRecord(px, { format: "png", decode: "canvas-tonal" }), { sampleHash }));
+  if (id === "a") {
+    p = S.applyModeChange(p, { interpretation: { mode: "tonal" } }, true);
+    p.interpretation.polarity = "light-front"; p.interpretation.smoothing = { radiusMM: 1.65, passes: 2 };
+    p.construction.sheets = 8; p.geometry.sizeBy = "height"; p.geometry.targetMM = 300;
+  }
+  const v = S.validate(p);
+  if (!v.ok) throw new Error("draft workload " + id + " invalid: " + JSON.stringify(v.errors.slice(0, 3)));
+  return p;
+}
+
+/** RGBA source of one art family at DRAFT.src (colour channels as in the E3 suite). */
+function draftSource(family, w, h) {
+  const g = family === "busy" ? F.busyHeightMap(DRAFT.seeds.busy, w, h, DRAFT.busyCellPx) : F.heightMap(DRAFT.seeds.realistic, w, h);
+  const rgba = new Uint8Array(w * h * 4);
+  for (let i = 0; i < w * h; i++) { rgba[4 * i] = g[i]; rgba[4 * i + 1] = (g[i] * 3) & 255; rgba[4 * i + 2] = 255 - g[i]; rgba[4 * i + 3] = 255; }
+  return { pixels: rgba, channels: 4, w, h, alpha: null };
+}
+
+/** One timed generate; returns {ms, status, constructMs, overlayMs, raster, parts}. */
+function draftPass(p, px, quality, cache, probe) {
+  const E = SBEngine, marks = {};
+  probe.overlayMs = 0;
+  const t0 = performance.now();
+  const res = E.generate(E.request(p, px, { quality }), { cache: cache || undefined, onProgress: (st) => { if (!(st in marks)) marks[st] = performance.now(); } });
+  const ms = performance.now() - t0;
+  const constructMs = marks.construct !== undefined && marks.complexity !== undefined ? marks.complexity - marks.construct : null;
+  const g = res.snapshot ? res.snapshot.geometry || null : null;
+  return { ms, status: res.status, code: res.error ? res.error.code : null, constructMs, overlayMs: probe.overlayMs,
+    parts: res.snapshot ? Math.max(...res.snapshot.layers.map((L) => L.parts.length)) : null, geometry: g };
+}
+
+/** The largest candidate on which workload `id` meets the target on both families (720 when none does). */
+function draftPick(rows, id) {
+  const ok = (c) => DRAFT.families.every((f) => rows.some((r) => r.mode === id && r.family === f && r.draftPx === c && r.warmP95Ms !== null && r.warmP95Ms <= DRAFT.targetP95Ms));
+  return DRAFT.candidates.filter(ok).reduce((a, c) => Math.max(a, c), DRAFT.candidates[0]);
+}
+
+/** decideDraft(rows, fabRows) → decision (the recorded rule; pure, also used by the test). */
+function decideDraft(rows, fabRows) {
+  const presets = { plywood: draftPick(rows, "a"), acrylic: draftPick(rows, "c") };
+  const done = (fabRows || []).filter((r) => r.status === "done");
+  const fab = done.length ? Math.ceil(Math.max(...done.map((r) => r.ms / r.mpx)) / 10) * 10 : null;
+  return { presets, desktopDraftPx: Math.max(presets.plywood, presets.acrylic), mobileDraftPx: DRAFT.mobileDraftPx, fabMsPerMpx: fab };
+}
+
+function benchDraft() {
+  const os = require("os"), S = SBSchema, E = SBEngine;
+  const div = QUICK ? 8 : 1, [SW, SH] = [Math.round(DRAFT.src[0] / div), Math.round(DRAFT.src[1] / div)];
+  const warmN = QUICK ? 1 : +arg("--warm", DRAFT.warm), runsN = QUICK ? 2 : +arg("--runs", DRAFT.runs);
+  const fabN = QUICK ? 1 : +arg("--fab-runs", DRAFT.fabRuns);
+  const ids = arg("--only") ? arg("--only").split(",") : Object.keys(DRAFT.workloads);
+  const fams = arg("--families") ? arg("--families").split(",") : DRAFT.families;
+  const cands = (arg("--candidates") ? arg("--candidates").split(",").map(Number) : DRAFT.candidates).map((c) => QUICK ? Math.max(64, Math.round(c / div)) : c);
+  const all = argv.includes("--all");
+  // measure above the shipped device cap (the cap is what this stage decides)
+  const limits = S.limits;
+  S.limits = (dc) => Object.assign({}, limits(dc), { draftPxCap: 100000 });
+  // overlay probe: time the draft change-overlay polygons (bridges excluded)
+  const mp = E.maskPolygons, probe = { overlayMs: 0 };
+  E.maskPolygons = function (w, h, sx, sy, f, pred) {
+    if (!/fin\[i\]|pre\[i\]/.test(String(pred))) return mp.apply(this, arguments);
+    const t0 = performance.now(); try { return mp.apply(this, arguments); } finally { probe.overlayMs += performance.now() - t0; }
+  };
+  const report = { stage: "draft", quick: QUICK, node: process.version, v8: process.versions.v8, cpu: os.cpus()[0].model, threads: os.cpus().length,
+    memGiB: +(os.totalmem() / 2 ** 30).toFixed(1), loadAvgStart: os.loadavg().map((x) => +x.toFixed(2)), rows: [], fabRows: [], skipped: [] };
+  const sources = {};
+  try {
+    for (const fam of fams) {
+      const px = sources[fam] = draftSource(fam, SW, SH);
+      const hash = require("crypto").createHash("sha256").update(E.sampleBytes(px)).digest("hex");
+      for (const id of ids) {
+        let over = false;
+        for (const c of cands) {
+          if (over && !all) { report.skipped.push({ draftPx: c, mode: id, family: fam, reason: "a smaller candidate already exceeds the target" }); continue; }
+          const p0 = draftProject(id, px, hash); p0.geometry.draftPx = c;
+          const cache = { quality: "draft" }, t0 = performance.now();
+          let rev = p0.revision;
+          const edit = (i) => { const q = JSON.parse(JSON.stringify(p0)); q.construction.sheets = p0.construction.sheets - (i % 2); q.revision = ++rev; return q; };
+          const cold = draftPass(p0, px, "draft", cache, probe);
+          for (let i = 0; i < warmN; i++) draftPass(edit(i + 1), px, "draft", cache, probe);
+          const warm = [];
+          for (let i = 0; i < runsN; i++) warm.push(draftPass(edit(i), px, "draft", cache, probe));
+          const st = stats(warm.map((r) => r.ms));
+          const cons = warm.map((r) => r.constructMs).filter((v) => v !== null), ovl = warm.map((r) => r.overlayMs);
+          const share = cons.length ? +(ovl.reduce((a, b) => a + b, 0) / cons.reduce((a, b) => a + b, 0)).toFixed(3) : null;
+          const g = cold.geometry || E.rasterPlan(p0, { w: px.w, h: px.h }, "draft", "desktop").geometry;   // an error run has no snapshot
+          const row = { draftPx: c, raster: g.rasterW + "×" + g.rasterH, mode: id, family: fam, status: cold.status, code: cold.code,
+            coldMs: +cold.ms.toFixed(1), warmP50Ms: st.p50Ms, warmP95Ms: st.p95Ms, warmMaxMs: st.maxMs, warmRuns: st.n, warmUps: warmN,
+            constructP50Ms: cons.length ? stats(cons).p50Ms : null, overlayShare: share, maxPartsPerLayer: cold.parts, wallS: +((performance.now() - t0) / 1000).toFixed(1),
+            loadAvg: os.loadavg().map((x) => +x.toFixed(2)) };
+          report.rows.push(row);
+          console.error(`[draft] (${id}) ${fam} draftPx ${c} ${row.raster} ${row.status}${row.code ? " " + row.code : ""}: cold ${row.coldMs} ms, warm p50 ${row.warmP50Ms} ms, p95 ${row.warmP95Ms} ms (n ${st.n}), overlay share ${share}, parts ≤${cold.parts}, ${row.wallS} s wall`);
+          if (st.p95Ms > DRAFT.targetP95Ms) over = true;
+        }
+      }
+      if (!argv.includes("--no-fab") && ids.includes("a")) {
+        const hash = require("crypto").createHash("sha256").update(E.sampleBytes(px)).digest("hex");
+        const p = draftProject("a", px, hash), t0 = performance.now();
+        for (let i = 0; i < DRAFT.fabCold; i++) draftPass(p, px, "fabrication", null, probe);
+        const runs = [];
+        for (let i = 0; i < fabN; i++) runs.push(draftPass(p, px, "fabrication", null, probe));
+        const g = runs[0].geometry, plan = E.rasterPlan(p, { w: px.w, h: px.h }, "fabrication", "desktop").geometry;
+        const W = g ? g.rasterW : plan.rasterW, H = g ? g.rasterH : plan.rasterH, st = stats(runs.map((r) => r.ms));
+        const row = { family: fam, mode: "a", raster: W + "×" + H, mpx: +(W * H / 1e6).toFixed(2), ms: st.p50Ms, maxMs: st.maxMs, runs: st.n, cold: DRAFT.fabCold,
+          status: runs[0].status, code: runs[0].code, maxPartsPerLayer: runs[0].parts, wallS: +((performance.now() - t0) / 1000).toFixed(1) };
+        report.fabRows.push(row);
+        console.error(`[draft fab] (a) ${fam} ${row.raster} (${row.mpx} Mpx) ${row.status}${row.code ? " " + row.code : ""}: p50 ${row.ms} ms (${(row.ms / row.mpx).toFixed(0)} ms/Mpx), parts ≤${row.maxPartsPerLayer}, ${row.wallS} s wall`);
+      }
+      delete sources[fam];
+    }
+  } finally { S.limits = limits; E.maskPolygons = mp; }
+  report.loadAvgEnd = os.loadavg().map((x) => +x.toFixed(2));
+  report.decision = decideDraft(report.rows, report.fabRows);
+  report.overBudget = [];
+  if (!QUICK && argv.includes("--record")) {
+    const shortened = runsN < 15 || warmN < DRAFT.warm || fabN < DRAFT.fabRuns || fams.length < DRAFT.families.length || ids.length < 3;
+    const out = {
+      task: "E4", machine: report.cpu + " (" + report.threads + " threads, " + report.memGiB + " GiB), node " + report.node,
+      workload: SW + " × " + SH + " RGBA (" + (SW * SH / 1e6).toFixed(1) + " Mpx), realistic (F.heightMap seed " + DRAFT.seeds.realistic + ") and busy (F.busyHeightMap seed " +
+        DRAFT.seeds.busy + ", " + DRAFT.busyCellPx + " px cells) art families, colour channels R = g, G = 3g mod 256, B = 255 − g; modes: " +
+        Object.entries(DRAFT.workloads).map(([k, v]) => "(" + k + ") " + v.label).join("; "),
+      rule: DRAFT.rule,
+      method: { candidates: DRAFT.candidates, cold: 1, warmUps: warmN, warmRuns: runsN, fabCold: DRAFT.fabCold, fabRuns: fabN, earlyStop: !all, shortened,
+        warm: "E3 cache filled; construction.sheets alternates 8 ↔ 7 (5 ↔ 4 for acrylic) and the revision changes between runs, so construct reruns",
+        overlayShare: "Σ draft change-overlay polygon time (SBEngine.maskPolygons for e.added/e.removed) ÷ Σ construct-stage time over the warm runs" },
+      loadAvgStart: report.loadAvgStart, loadAvgEnd: report.loadAvgEnd,
+      rows: report.rows, fabRows: report.fabRows, skipped: report.skipped, decision: report.decision,
+      informational: { plywoodHeightDraftPx: draftPick(report.rows, "b"), note: "workload (b) under the same rule; reported, not gating (the plywood preset follows (a), the auto-tonal colour route)" },
+    };
+    fs.mkdirSync(path.dirname(DRAFT.perfJson), { recursive: true });
+    fs.writeFileSync(DRAFT.perfJson, JSON.stringify(out, null, 1) + "\n");
+  }
+  report.rows = report.rows.map((r) => ({ mode: r.mode, family: r.family, draftPx: r.draftPx, status: r.status, coldMs: r.coldMs, warmP95Ms: r.warmP95Ms, overlayShare: r.overlayShare }));
+  return report;
+}
+
 function main() {
   if ((stage === "large" || stage === "caps") && typeof global.gc !== "function") { // the working-set pass needs gc()
     const r = require("child_process").spawnSync(process.execPath, ["--expose-gc", __filename, ...argv], { stdio: "inherit" });
@@ -709,5 +889,5 @@ function main() {
     process.exit(1);
   }
 }
-module.exports = { LARGE_WORKLOADS, LARGE, TRACKED_LARGE, LARGE_SHORTENED, CAPS, decideLarge, decideCaps, gateLarge, knownOverLarge, largeRowFromSummary, largeMethodKind };
+module.exports = { DRAFT, decideDraft, LARGE_WORKLOADS, LARGE, TRACKED_LARGE, LARGE_SHORTENED, CAPS, decideLarge, decideCaps, gateLarge, knownOverLarge, largeRowFromSummary, largeMethodKind };
 if (MAIN) main();

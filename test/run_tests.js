@@ -2915,7 +2915,8 @@ suite("schema.js — project v1 (PRJ-01/02, MAT-02/03, §9.1)", () => {
   check("PO-LASER-3 default sizes by height", p.geometry.sizeBy === "height" && p.geometry.targetMM === 300);
   const sz = SBSchema.resolveSize({ ...p, construction: { ...p.construction, frame: { enabled: true, widthMM: 10 } } }, 4000, 3000);
   check("PO-LASER-3 height mode: page 300 high, art 280 × 373.333", sz.pageHMM === 300 && sz.artHMM === 280 && sz.artWMM === 373.333 && sz.pageWMM === 393.333);
-  check("PO-LASER-4 fab pitch 0.1 mm, draft 720", p.geometry.fabPitchMM === 0.1 && p.geometry.draftPx === 720 && !("fabPx" in p.geometry));
+  check("PO-LASER-4/PO-PREVIEW-1 fab pitch 0.1 mm, draft from docs/perf/draft-budget.json", p.geometry.fabPitchMM === 0.1 && !("fabPx" in p.geometry) &&
+    p.geometry.draftPx === JSON.parse(fs.readFileSync(path.join(__dirname, "..", "docs/perf/draft-budget.json"), "utf8")).decision.presets.plywood);
   check("PO-LASER-4 measured pixel budgets (G2.2b): desktop 25 Mpx, mobile 1 Mpx", SBSchema.limits("desktop").fabPxBudget === 25e6 && SBSchema.limits("mobile").fabPxBudget === 1e6);
   check("PO-LASER-6 advisory below minFeature rejected", !SBSchema.validate({ ...p, material: { ...p.material, advisoryFeatureMM: 1 } }).ok);
   check("PO-LASER-8 thickness 6.35 nominal, editable", p.material.thicknessMM === 6.35 && p.material.thicknessState === "nominal" &&
@@ -5454,6 +5455,44 @@ suite("schema.js/engine.js — alpha.3 E3b physical filter radii and draft fidel
     big.every((k) => Math.abs(d.layers[k].stats.areaMM2 - f.layers[k].stats.areaMM2) <= TOL * f.layers[k].stats.areaMM2));
   check("LYR-06 draft vs fabrication: part counts within a factor of 2 per layer",
     f.layers.every((L, k) => { const a = d.layers[k].parts.length, b = L.parts.length; return Math.max(a, b) <= PARTS * Math.max(1, Math.min(a, b)); }));
+});
+
+suite("schema.js/engine.js — alpha.3 E4 draft budget (PO-PREVIEW-1)", () => {
+  const rec = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "docs/perf/draft-budget.json"), "utf8"));
+  const L = SBSchema.limits;
+  check("PO-PREVIEW-1 draft budget equals docs/perf/draft-budget.json (desktop cap, mobile cap, preset draftPx)",
+    L("desktop").draftPxCap === rec.decision.desktopDraftPx && L("mobile").draftPxCap === rec.decision.mobileDraftPx &&
+    rec.decision.desktopDraftPx === Math.max(rec.decision.presets.plywood, rec.decision.presets.acrylic) &&
+    SBSchema.defaults("plywood").geometry.draftPx === rec.decision.presets.plywood && SBSchema.defaults("acrylic").geometry.draftPx === rec.decision.presets.acrylic);
+  check("PO-PREVIEW-2 limits().fabMsPerMpx equals the recorded fabrication row (desktop) and × 4 (mobile)",
+    L("desktop").fabMsPerMpx === rec.decision.fabMsPerMpx && L("mobile").fabMsPerMpx === 4 * rec.decision.fabMsPerMpx);
+  const p = SBSchema.defaults("plywood"); p.source = SBSchema.sourceTemplate();
+  const m = SBEngine.rasterPlan(p, { w: 4096, h: 3084 }, "draft", "mobile").geometry, d = SBEngine.rasterPlan(p, { w: 4096, h: 3084 }, "draft", "desktop").geometry;
+  check("PO-PREVIEW-1 rasterPlan applies the mobile draftPxCap without changing the project key",
+    Math.max(m.rasterW, m.rasterH) === Math.min(p.geometry.draftPx, 720) && Math.max(d.rasterW, d.rasterH) === Math.min(p.geometry.draftPx, rec.decision.desktopDraftPx));
+  check("PO-PREVIEW-1 the rationale names the rule (p95, both families, G4.4 deviation), machine and workload",
+    /3\.0 s/.test(rec.rule) && /p95/.test(rec.rule) && /1\.5 s/.test(rec.rule) && /11800H/.test(rec.machine) && /4096/.test(rec.workload) && /busy/.test(rec.workload) && /realistic/.test(rec.workload));
+  // the recorded decision is the rule applied to the recorded rows (bench decideDraft), and a cap above the project value never upsamples
+  const B = require("./bench.js");
+  check("PO-PREVIEW-1 decideDraft reproduces the recorded decision from the recorded rows",
+    typeof B.decideDraft === "function" && JSON.stringify(B.decideDraft(rec.rows, rec.fabRows)) === JSON.stringify(rec.decision));
+  const q = JSON.parse(JSON.stringify(p)); q.geometry.draftPx = 300;
+  const qm = SBEngine.rasterPlan(q, { w: 4096, h: 3084 }, "draft", "mobile").geometry;
+  check("PO-PREVIEW-1 a project draftPx below the device cap is kept (min(draftPx, cap)); the cap is not a project field",
+    Math.max(qm.rasterW, qm.rasterH) === 300 && !("draftPxCap" in q.geometry));
+  // E4: the measured overlay share of construct is >= 0.15 (docs/perf/draft-budget.json), so generate takes opts.overlays:false
+  const F = require("./fixtures.js"), w = 200, h = 150, gm = F.heightMap(5, w, h), rgba = new Uint8Array(w * h * 4);
+  for (let i = 0; i < w * h; i++) { rgba[4 * i] = gm[i]; rgba[4 * i + 1] = (gm[i] * 3) & 255; rgba[4 * i + 2] = 255 - gm[i]; rgba[4 * i + 3] = 255; }
+  const px = { pixels: rgba, channels: 4, w, h, alpha: null };
+  let r = SBSchema.withSource(SBSchema.defaults("plywood"), SBEngine.sourceRecord(px, { format: "png", decode: "canvas-tonal" }));
+  r = SBSchema.applyModeChange(r, { interpretation: { mode: "tonal" } }, true); r.geometry.targetMM = 120;
+  const on = SBEngine.generate(SBEngine.request(r, px, { quality: "draft" })), off = SBEngine.generate(SBEngine.request(r, px, { quality: "draft" }), { overlays: false });
+  const has = (res) => res.snapshot.cleanupReport.some((e) => "added" in e || "removed" in e);
+  check("G2.13b overlays:false omits added/removed, geometryHash unchanged",
+    on.status === "done" && off.status === "done" && has(on) && !has(off) && on.geometryHash === off.geometryHash &&
+    on.snapshot.cleanupReport.every((e, k) => e.addedMM2 === off.snapshot.cleanupReport[k].addedMM2 && e.removedMM2 === off.snapshot.cleanupReport[k].removedMM2));
+  check("G2.13b overlays:false is recorded as worth it (overlay share >= 0.15 on the gating draft rows)",
+    rec.rows.some((x) => x.mode === "a" && x.draftPx === rec.decision.presets.plywood && x.overlayShare >= 0.15));
 });
 
 // ------------------------------------------------------------------ report

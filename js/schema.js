@@ -146,10 +146,19 @@
   // meets the 10 s bonded target and 512 MiB, never below the realistic art measured at that budget; the test
   // "§12.3/PO-LASER-9 desktop caps equal the measured decision" keeps them in step.
   const DESKTOP_CAPS = { maxPartsPerLayer: 258, maxVerticesPerLayer: 132000, maxVerticesTotal: 356000 };   // c208 row (+ c200 vertices), 2026-10-08
+  // alpha.3 E4 (PO-PREVIEW-1/2, amends PO-LASER-4): the draft budget measured by `node test/bench.js draft --record`
+  // (docs/perf/draft-budget.json, docs/perf/DRAFT.md). draftPxCap bounds the draft raster's long side per device
+  // (rasterPlan uses min(geometry.draftPx, draftPxCap); not a project field, so the project key is the same on every
+  // device): desktop = the larger preset decision, mobile 720 (≈ 4× slower, k provisional as in D.8). fabMsPerMpx is the
+  // measured fabrication cost for the busy text's estimate (E6; the offline app cannot read docs/): mobile = 4 × desktop.
+  // The test "PO-PREVIEW-1 draft budget equals docs/perf/draft-budget.json" keeps them in step; E11 re-measures.
+  const DRAFT_BUDGET = { desktopDraftPx: 720, mobileDraftPx: 720, fabMsPerMpx: 2410 };   // measured 2026-10-08 (E4)
   const LIMITS = {
     desktop: { deviceClass: "desktop", fabPxBudget: 25000000, maxPartsPerLayer: DESKTOP_CAPS.maxPartsPerLayer,
-      maxVerticesPerLayer: DESKTOP_CAPS.maxVerticesPerLayer, maxVerticesTotal: DESKTOP_CAPS.maxVerticesTotal },
-    mobile: { deviceClass: "mobile", fabPxBudget: 1000000, maxPartsPerLayer: 100, maxVerticesPerLayer: 20000, maxVerticesTotal: 20000 },
+      maxVerticesPerLayer: DESKTOP_CAPS.maxVerticesPerLayer, maxVerticesTotal: DESKTOP_CAPS.maxVerticesTotal,
+      draftPxCap: DRAFT_BUDGET.desktopDraftPx, fabMsPerMpx: DRAFT_BUDGET.fabMsPerMpx },
+    mobile: { deviceClass: "mobile", fabPxBudget: 1000000, maxPartsPerLayer: 100, maxVerticesPerLayer: 20000, maxVerticesTotal: 20000,
+      draftPxCap: DRAFT_BUDGET.mobileDraftPx, fabMsPerMpx: 4 * DRAFT_BUDGET.fabMsPerMpx },
   };
   // G2.14 (IMG-07, SRS §12.3): the source envelope. Over-limit input is rejected before decode, or downsampled only
   // through the explicit button (applyDownsample); never silently reduced (NFR-04). Limits are inclusive.
@@ -375,7 +384,7 @@
         minFeatureMM: 1.5, advisoryFeatureMM: 2.0, minPartMM2: 25, kerfMode: "external", calibration: null };
       p.appearance = { mode: "uniform", color: "#C8A26B", palette: "dusk" };
       p.geometry = { sizeBy: "height", targetMM: 300, widthMM: null, heightMM: null, lockAspect: true,
-        draftPx: 720, fabPitchMM: 0.1, resample: { height: "nearest", tonal: "area" } };
+        draftPx: 720, fabPitchMM: 0.1, resample: { height: "nearest", tonal: "area" } };   // E4: draftPx = decision.presets.plywood
       return p;
     },
     // Acrylic shadowbox: the v1.1.0 connected tonal defaults (app.js state), on the new model.
@@ -393,7 +402,7 @@
         minFeatureMM: 1.2, advisoryFeatureMM: 1.2, minPartMM2: 9, kerfMode: "external", calibration: null };
       p.appearance = { mode: "palette", color: "#C8A26B", palette: "Midnight (Starry Night)" };
       p.geometry = { sizeBy: "width", targetMM: 324, widthMM: 300, heightMM: null, lockAspect: true,
-        draftPx: 720, fabPitchMM: 0.1, resample: { height: "nearest", tonal: "area" } };
+        draftPx: 720, fabPitchMM: 0.1, resample: { height: "nearest", tonal: "area" } };   // E4: draftPx = decision.presets.acrylic
       return p;
     },
   };
@@ -785,7 +794,7 @@
 
   /**
    * The fabrication pitch control (G2.11b, PO-LASER-4): `#in-res` is a number input in mm/px with these bounds; the
-   * draft raster (geometry.draftPx, 720 px) is not a user control. The schema itself admits 0.01–2 mm (G2.1).
+   * draft raster (geometry.draftPx, the measured E4 budget, docs/perf/DRAFT.md) is not a user control. The schema itself admits 0.01–2 mm (G2.1).
    */
   S.FAB_PITCH = deepFreeze({ min: 0.05, max: 2, step: 0.01, defaultMM: 0.1 });
 

@@ -367,7 +367,9 @@
    * rasterPlan(project, {w, h}, "draft"|"fabrication", deviceClass) → {quality, geometry: GeometryConfig, diagnostics}
    * deep-frozen (LYR-06, GEO-06, NFR-04, PO-LASER-4/5). Reads only source.w and source.h, so it runs before any
    * decode. Sizes come from SBSchema.resolveSize on the oriented source.
-   *   draft:        SBRaster.rasterSize (geometry.draftPx long side); no pitch, no budget, no pitch diagnostics.
+   *   draft:        SBRaster.rasterSize at min(geometry.draftPx, limits(deviceClass).draftPxCap) on the long side
+   *                 (alpha.3 E4, PO-PREVIEW-1: the measured device cap of docs/perf/draft-budget.json; the cap is not a
+   *                 project field, so the project key is the same on every device); no pitch, no budget, no pitch diagnostics.
    *   fabrication:  SBRaster.fabRaster at round(fabPitchMM·1000) µm under limits(deviceClass).fabPxBudget, with
    *                 FAB_PITCH_CAPPED / FAB_EXCEEDS_SOURCE (quality "fabrication", the project revision).
    * resample follows the G2.0 policy for interpretation.mode (height "area" only when geometry.resample.height
@@ -386,7 +388,7 @@
     const g = project.geometry, diagnostics = [];
     let W, H, targetPitchUm = null, pitchUm = null, pxBudget = null, capped = "none", shortPx = null;
     if (quality === "draft") {
-      const r = R.rasterSize(srcW, srcH, g.draftPx);
+      const r = R.rasterSize(srcW, srcH, Math.min(g.draftPx, lim.draftPxCap));
       W = r.W; H = r.H;
     } else {
       targetPitchUm = Math.round(g.fabPitchMM * 1000);
@@ -460,7 +462,7 @@
   const codedError = (e) => ({ code: (e && e.code) || "ENGINE_INTERNAL", message: (e && e.message) || String(e) });
 
   /**
-   * generate(req: GenerateRequest, {isCanceled?, onProgress?, cache?}) → GenerateResponse (§3, §9.3; plan G2.10a).
+   * generate(req: GenerateRequest, {isCanceled?, onProgress?, cache?, overlays?}) → GenerateResponse (§3, §9.3; plan G2.10a).
    *
    * req = {requestId, revision, engineVersion, quality, normalizedSource: {pixels, channels: 1|4, w, h, alpha}, sourceHash,
    *        config: Project, deviceClass?: "desktop"|"mobile" (default "desktop"; rasterPlan and the complexity caps),
@@ -473,6 +475,9 @@
    *   the cache is bypassed. cache.quality is the quality it serves (an untagged cache takes the first request's);
    *   a mismatch throws CACHE_QUALITY (the one caller error that throws), so a draft cache never feeds a
    *   fabrication run. Cached arrays are never written by later stages and never appear in the response.
+   * overlays (alpha.3 E4): false skips the draft change-overlay polygons (cleanupReport[k].added/.removed; their mm²
+   *   figures stay). They measured >= 15 % of construct on the draft budget rows (docs/perf/draft-budget.json); they are
+   *   display data outside the hash input, so geometryHash is unchanged.
    * Stages (§11.1), cancelable between stages and inside the engine's own per-layer loops:
    *   1  orient (EXIF only when engine-applied, then rotate, mirror)            SBEngine.orient
    *   2  resample to SBEngine.rasterPlan(config, source, quality, deviceClass)   its FAB_* diagnostics; never upsample
@@ -528,7 +533,7 @@
     }
     let res;
     try {
-      res = run(req, head, step, fail, cache);
+      res = run(req, head, step, fail, cache, opts.overlays !== false);
     } catch (e) {
       res = e instanceof Canceled ? Object.assign({}, head, { status: "canceled" }) : Object.assign({}, head, { status: "error", error: codedError(e), diagnostics: [] });
     }
@@ -545,7 +550,7 @@
     return H.hashJSON({ labels: guides.labels || [], omitted: guides.omitted || [], map: guides.map === undefined ? null : guides.map });
   };
 
-  function run(req, head, step, fail, cache) {
+  function run(req, head, step, fail, cache, overlays) {
     const R = global.SBRaster, Hh = global.SBHeight, C = global.SBConstruct, M = global.SBMaterial, S = global.SBSupport, D = global.SBDiag, G = global.SBGeom;
     const p = req.config, quality = req.quality, deviceClass = req.deviceClass === undefined ? "desktop" : req.deviceClass;
     if (quality !== "draft" && quality !== "fabrication") return fail("ENGINE_ARG", "quality must be draft|fabrication (got " + quality + ")");
@@ -640,7 +645,7 @@
       const b = built.bridges[k];
       if (b) { const poly = E.maskPolygons(W, H, geo.sxUm, geo.syUm, fUm, (i) => b[i]); if (poly) e.bridges = poly; }
       // G2.13b (GEO-08, UI-05): change overlays at draft quality only, so the fabrication budget is unchanged.
-      if (quality === "draft") {
+      if (quality === "draft" && overlays) {   // alpha.3 E4: opts.overlays:false skips them (display data only)
         const pre = masks[k], fin = built.final[k];
         if (r.addedPx) e.added = E.maskPolygons(W, H, geo.sxUm, geo.syUm, fUm, (i) => fin[i] && !pre[i]);
         if (r.removedPx) e.removed = E.maskPolygons(W, H, geo.sxUm, geo.syUm, fUm, (i) => pre[i] && !fin[i]);

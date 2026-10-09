@@ -1,0 +1,472 @@
+{
+ "task": "E4",
+ "machine": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (16 threads, 62.5 GiB), node v26.7.0",
+ "workload": "4096 × 3084 RGBA (12.6 Mpx), realistic (F.heightMap seed 2022) and busy (F.busyHeightMap seed 11, 27 px cells) art families, colour channels R = g, G = 3g mod 256, B = 255 − g; modes: (a) plywood auto-tonal (tonal, light-front, smoothing 1.65 mm × 2 passes, bonded, 8 sheets, 300 mm high); (b) plywood height (white-high, bonded, 8 sheets, 300 mm high; reported, not gating); (c) acrylic connected (tonal dark-front, smoothing 1.65 mm × 2, smooth corners, 5 sheets, 300 mm wide; KI-CONN-PERF)",
+ "rule": "per preset, draftPx = the largest candidate in {720, 1024, 1280, 1536, 2000} whose warm-cache p95 (≥ 15 warm runs, E3 cache filled, sheets changed between runs) is ≤ 3.0 s on BOTH the realistic and the busy art family for the preset's workload (plywood: (a) auto-tonal; acrylic: (c) connected) on the reference machine; 720 when none qualifies (recorded as a known gap, G4.1). Desktop draftPxCap = the larger of the two preset values; mobile draftPxCap = 720 (mobile ≈ 4× slower, k provisional as in D.8). Deviation: 3.0 s p95 is twice the G4.4 desktop draft target (p95 ≤ 1.5 s, which needs the G4.1 worker pool); G4.4 re-measures against 1.5 s. fabMsPerMpx = the larger p50 of the (a) fabrication rows that finished ÷ fabrication raster Mpx (rounded up to 10 ms); mobile = 4 × desktop.",
+ "method": {
+  "candidates": [
+   720,
+   1024,
+   1280,
+   1536,
+   2000
+  ],
+  "cold": 1,
+  "warmUps": 3,
+  "warmRuns": 15,
+  "fabCold": 1,
+  "fabRuns": 5,
+  "earlyStop": true,
+  "shortened": false,
+  "warm": "E3 cache filled; construction.sheets alternates 8 ↔ 7 (5 ↔ 4 for acrylic) and the revision changes between runs, so construct reruns",
+  "overlayShare": "Σ draft change-overlay polygon time (SBEngine.maskPolygons for e.added/e.removed) ÷ Σ construct-stage time over the warm runs"
+ },
+ "loadAvgStart": [
+  6.44,
+  5.59,
+  5.66
+ ],
+ "loadAvgEnd": [
+  38.11,
+  27.09,
+  15.23
+ ],
+ "rows": [
+  {
+   "draftPx": 720,
+   "raster": "720×542",
+   "mode": "a",
+   "family": "realistic",
+   "status": "done",
+   "code": null,
+   "coldMs": 3603.5,
+   "warmP50Ms": 1763.8,
+   "warmP95Ms": 1973.9,
+   "warmMaxMs": 1973.9,
+   "warmRuns": 15,
+   "warmUps": 3,
+   "constructP50Ms": 651.8,
+   "overlayShare": 0.442,
+   "maxPartsPerLayer": 126,
+   "wallS": 35.2,
+   "loadAvg": [
+    6.06,
+    5.6,
+    5.66
+   ]
+  },
+  {
+   "draftPx": 1024,
+   "raster": "1024×771",
+   "mode": "a",
+   "family": "realistic",
+   "status": "done",
+   "code": null,
+   "coldMs": 4768.9,
+   "warmP50Ms": 2752,
+   "warmP95Ms": 3215.9,
+   "warmMaxMs": 3215.9,
+   "warmRuns": 15,
+   "warmUps": 3,
+   "constructP50Ms": 1226.2,
+   "overlayShare": 0.388,
+   "maxPartsPerLayer": 133,
+   "wallS": 53.8,
+   "loadAvg": [
+    6.95,
+    5.95,
+    5.78
+   ]
+  },
+  {
+   "draftPx": 720,
+   "raster": "720×542",
+   "mode": "b",
+   "family": "realistic",
+   "status": "done",
+   "code": null,
+   "coldMs": 1136.6,
+   "warmP50Ms": 1000.7,
+   "warmP95Ms": 1053.7,
+   "warmMaxMs": 1053.7,
+   "warmRuns": 15,
+   "warmUps": 3,
+   "constructP50Ms": 498.9,
+   "overlayShare": 0.288,
+   "maxPartsPerLayer": 97,
+   "wallS": 18.3,
+   "loadAvg": [
+    6.56,
+    5.92,
+    5.78
+   ]
+  },
+  {
+   "draftPx": 1024,
+   "raster": "1024×771",
+   "mode": "b",
+   "family": "realistic",
+   "status": "done",
+   "code": null,
+   "coldMs": 2222.3,
+   "warmP50Ms": 1727.8,
+   "warmP95Ms": 1811.5,
+   "warmMaxMs": 1811.5,
+   "warmRuns": 15,
+   "warmUps": 3,
+   "constructP50Ms": 995,
+   "overlayShare": 0.294,
+   "maxPartsPerLayer": 88,
+   "wallS": 32.5,
+   "loadAvg": [
+    6.42,
+    5.95,
+    5.79
+   ]
+  },
+  {
+   "draftPx": 1280,
+   "raster": "1280×964",
+   "mode": "b",
+   "family": "realistic",
+   "status": "done",
+   "code": null,
+   "coldMs": 3112.8,
+   "warmP50Ms": 2516.9,
+   "warmP95Ms": 3350,
+   "warmMaxMs": 3350,
+   "warmRuns": 15,
+   "warmUps": 3,
+   "constructP50Ms": 1531.2,
+   "overlayShare": 0.29,
+   "maxPartsPerLayer": 99,
+   "wallS": 47.4,
+   "loadAvg": [
+    5.85,
+    5.85,
+    5.76
+   ]
+  },
+  {
+   "draftPx": 720,
+   "raster": "720×542",
+   "mode": "c",
+   "family": "realistic",
+   "status": "done",
+   "code": null,
+   "coldMs": 10192.2,
+   "warmP50Ms": 8573.7,
+   "warmP95Ms": 8902.9,
+   "warmMaxMs": 8902.9,
+   "warmRuns": 15,
+   "warmUps": 3,
+   "constructP50Ms": 752.9,
+   "overlayShare": 0.225,
+   "maxPartsPerLayer": 1,
+   "wallS": 150.6,
+   "loadAvg": [
+    4.35,
+    5.13,
+    5.5
+   ]
+  },
+  {
+   "draftPx": 720,
+   "raster": "720×542",
+   "mode": "a",
+   "family": "busy",
+   "status": "error",
+   "code": "COMPLEXITY_LIMIT",
+   "coldMs": 3298.7,
+   "warmP50Ms": 1938.1,
+   "warmP95Ms": 2180.1,
+   "warmMaxMs": 2180.1,
+   "warmRuns": 15,
+   "warmUps": 3,
+   "constructP50Ms": 1857.5,
+   "overlayShare": 0.769,
+   "maxPartsPerLayer": null,
+   "wallS": 37.4,
+   "loadAvg": [
+    5.02,
+    5.05,
+    5.39
+   ]
+  },
+  {
+   "draftPx": 1024,
+   "raster": "1024×771",
+   "mode": "a",
+   "family": "busy",
+   "status": "error",
+   "code": "COMPLEXITY_LIMIT",
+   "coldMs": 4953,
+   "warmP50Ms": 3424,
+   "warmP95Ms": 3766.9,
+   "warmMaxMs": 3766.9,
+   "warmRuns": 15,
+   "warmUps": 3,
+   "constructP50Ms": 3282.8,
+   "overlayShare": 0.749,
+   "maxPartsPerLayer": null,
+   "wallS": 65,
+   "loadAvg": [
+    4.78,
+    4.94,
+    5.32
+   ]
+  },
+  {
+   "draftPx": 720,
+   "raster": "720×542",
+   "mode": "b",
+   "family": "busy",
+   "status": "error",
+   "code": "COMPLEXITY_LIMIT",
+   "coldMs": 1980,
+   "warmP50Ms": 1510.9,
+   "warmP95Ms": 1732.4,
+   "warmMaxMs": 1732.4,
+   "warmRuns": 15,
+   "warmUps": 3,
+   "constructP50Ms": 1475.4,
+   "overlayShare": 0.743,
+   "maxPartsPerLayer": null,
+   "wallS": 28.4,
+   "loadAvg": [
+    4.61,
+    4.88,
+    5.29
+   ]
+  },
+  {
+   "draftPx": 1024,
+   "raster": "1024×771",
+   "mode": "b",
+   "family": "busy",
+   "status": "error",
+   "code": "COMPLEXITY_LIMIT",
+   "coldMs": 2945.7,
+   "warmP50Ms": 2597,
+   "warmP95Ms": 2910.4,
+   "warmMaxMs": 2910.4,
+   "warmRuns": 15,
+   "warmUps": 3,
+   "constructP50Ms": 2529.6,
+   "overlayShare": 0.709,
+   "maxPartsPerLayer": null,
+   "wallS": 48.9,
+   "loadAvg": [
+    6.27,
+    5.27,
+    5.4
+   ]
+  },
+  {
+   "draftPx": 1280,
+   "raster": "1280×964",
+   "mode": "b",
+   "family": "busy",
+   "status": "error",
+   "code": "COMPLEXITY_LIMIT",
+   "coldMs": 3900.8,
+   "warmP50Ms": 3530.4,
+   "warmP95Ms": 3883.6,
+   "warmMaxMs": 3883.6,
+   "warmRuns": 15,
+   "warmUps": 3,
+   "constructP50Ms": 3423.7,
+   "overlayShare": 0.657,
+   "maxPartsPerLayer": null,
+   "wallS": 66.2,
+   "loadAvg": [
+    5.09,
+    5.15,
+    5.35
+   ]
+  },
+  {
+   "draftPx": 720,
+   "raster": "720×542",
+   "mode": "c",
+   "family": "busy",
+   "status": "done",
+   "code": null,
+   "coldMs": 27229,
+   "warmP50Ms": 26073.1,
+   "warmP95Ms": 28511.1,
+   "warmMaxMs": 28511.1,
+   "warmRuns": 15,
+   "warmUps": 3,
+   "constructP50Ms": 2217.7,
+   "overlayShare": 0.354,
+   "maxPartsPerLayer": 3,
+   "wallS": 453,
+   "loadAvg": [
+    6.82,
+    6.33,
+    5.75
+   ]
+  }
+ ],
+ "fabRows": [
+  {
+   "family": "realistic",
+   "mode": "a",
+   "raster": "3985×3000",
+   "mpx": 11.96,
+   "ms": 28817.7,
+   "maxMs": 29667.7,
+   "runs": 5,
+   "cold": 1,
+   "status": "done",
+   "code": null,
+   "maxPartsPerLayer": 112,
+   "wallS": 173.1
+  },
+  {
+   "family": "busy",
+   "mode": "a",
+   "raster": "3985×3000",
+   "mpx": 11.96,
+   "ms": 58138,
+   "maxMs": 58516.6,
+   "runs": 5,
+   "cold": 1,
+   "status": "error",
+   "code": "COMPLEXITY_LIMIT",
+   "maxPartsPerLayer": null,
+   "wallS": 340
+  }
+ ],
+ "skipped": [
+  {
+   "draftPx": 1280,
+   "mode": "a",
+   "family": "realistic",
+   "reason": "a smaller candidate already exceeds the target"
+  },
+  {
+   "draftPx": 1536,
+   "mode": "a",
+   "family": "realistic",
+   "reason": "a smaller candidate already exceeds the target"
+  },
+  {
+   "draftPx": 2000,
+   "mode": "a",
+   "family": "realistic",
+   "reason": "a smaller candidate already exceeds the target"
+  },
+  {
+   "draftPx": 1536,
+   "mode": "b",
+   "family": "realistic",
+   "reason": "a smaller candidate already exceeds the target"
+  },
+  {
+   "draftPx": 2000,
+   "mode": "b",
+   "family": "realistic",
+   "reason": "a smaller candidate already exceeds the target"
+  },
+  {
+   "draftPx": 1024,
+   "mode": "c",
+   "family": "realistic",
+   "reason": "a smaller candidate already exceeds the target"
+  },
+  {
+   "draftPx": 1280,
+   "mode": "c",
+   "family": "realistic",
+   "reason": "a smaller candidate already exceeds the target"
+  },
+  {
+   "draftPx": 1536,
+   "mode": "c",
+   "family": "realistic",
+   "reason": "a smaller candidate already exceeds the target"
+  },
+  {
+   "draftPx": 2000,
+   "mode": "c",
+   "family": "realistic",
+   "reason": "a smaller candidate already exceeds the target"
+  },
+  {
+   "draftPx": 1280,
+   "mode": "a",
+   "family": "busy",
+   "reason": "a smaller candidate already exceeds the target"
+  },
+  {
+   "draftPx": 1536,
+   "mode": "a",
+   "family": "busy",
+   "reason": "a smaller candidate already exceeds the target"
+  },
+  {
+   "draftPx": 2000,
+   "mode": "a",
+   "family": "busy",
+   "reason": "a smaller candidate already exceeds the target"
+  },
+  {
+   "draftPx": 1536,
+   "mode": "b",
+   "family": "busy",
+   "reason": "a smaller candidate already exceeds the target"
+  },
+  {
+   "draftPx": 2000,
+   "mode": "b",
+   "family": "busy",
+   "reason": "a smaller candidate already exceeds the target"
+  },
+  {
+   "draftPx": 1024,
+   "mode": "c",
+   "family": "busy",
+   "reason": "a smaller candidate already exceeds the target"
+  },
+  {
+   "draftPx": 1280,
+   "mode": "c",
+   "family": "busy",
+   "reason": "a smaller candidate already exceeds the target"
+  },
+  {
+   "draftPx": 1536,
+   "mode": "c",
+   "family": "busy",
+   "reason": "a smaller candidate already exceeds the target"
+  },
+  {
+   "draftPx": 2000,
+   "mode": "c",
+   "family": "busy",
+   "reason": "a smaller candidate already exceeds the target"
+  }
+ ],
+ "decision": {
+  "presets": {
+   "plywood": 720,
+   "acrylic": 720
+  },
+  "desktopDraftPx": 720,
+  "mobileDraftPx": 720,
+  "fabMsPerMpx": 2410
+ },
+ "informational": {
+  "plywoodHeightDraftPx": 1024,
+  "note": "workload (b) under the same rule; reported, not gating (the plywood preset follows (a), the auto-tonal colour route)"
+ },
+ "notes": [
+  "Recorded 2026-10-08 with `node test/bench.js draft --record` (full method: 1 cold + 3 warm-ups + 15 warm runs per row, early stop per mode and family).",
+  "The raster of the COMPLEXITY_LIMIT rows (no snapshot) was filled in after the run from SBEngine.rasterPlan for the same draftPx; the bench now does this itself.",
+  "The (a) realistic 1024 row overlapped a run of the test suite on the same machine (one extra single-threaded process); the decision does not depend on it, because (a) busy at 1024 measures p95 3766.9 ms.",
+  "Background load: 1-minute load average 4.3-7.0 during the draft rows (desktop processes, ≈ 16 threads); it rose to 38 during the busy fabrication row (another workload on the machine), so that row and the late (c) busy row are loaded figures.",
+  "The busy family exceeds the desktop parts cap (258 parts/layer) in bonded mode at every measured draftPx and at the fabrication raster: those rows time the rejection (COMPLEXITY_LIMIT), which is what the user waits for. fabMsPerMpx uses the rows that finished (realistic)."
+ ]
+}
