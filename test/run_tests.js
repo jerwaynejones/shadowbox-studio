@@ -6920,6 +6920,204 @@ suite("worker.js/pool.js/diag.js — speed round F11 coordinator, SBPool, handsh
   }
 });
 
+// ------------------------------------------------ speed round F12 (S1): adversarial executor and pool-size equality
+// makeAdvExec(E, seed, stats) → an in-process exec.map for SBEngine.generateAsync that behaves like a hostile pool: every
+// item's arguments are structuredClone'd with its declared transfers (so the generator's copies are really detached, as
+// in a postMessage), the items complete in a seeded random order with seeded random delays (setImmediate hops and
+// setTimeout), results are cloned, and the batch settles only after every item (BatchError). Self-contained: it is
+// stringified into the F12 worker threads.
+function makeAdvExec(E, seed, stats) {
+  let s = seed >>> 0;
+  const rnd = () => { s = (s + 0x6d2b79f5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const hop = () => new Promise((r) => setImmediate(r));
+  const delay = async () => { const x = rnd(); if (x < 0.1) await new Promise((r) => setTimeout(r, Math.floor(rnd() * 3))); else for (let i = Math.floor(x * 4); i > 0; i--) await hop(); };
+  return {
+    map: async (kind, items, o) => {
+      const fn = E.TASKS[kind], n = items.length, out = new Array(n), errs = [];
+      if (typeof fn !== "function") throw new Error("F12 exec: no kernel " + kind);
+      // post: every item's args cloned now, its declared transfers detached on the generator's side (F.3 ownership)
+      const args = items.map((a, i) => {
+        const tr = (o && o.transfer && o.transfer[i]) || [];
+        for (const v of tr) if (!ArrayBuffer.isView(v) || v.byteOffset !== 0 || v.byteLength !== v.buffer.byteLength) throw new Error("F12 exec: " + kind + "#" + i + " transfers a non-whole buffer");
+        const c = structuredClone(a, { transfer: tr.map((v) => v.buffer) });
+        if (tr.some((v) => v.byteLength !== 0)) throw new Error("F12 exec: " + kind + "#" + i + " transfer did not detach");
+        stats.transferred += tr.length;
+        return c;
+      });
+      // complete in a seeded random permutation, with random delays between completions
+      const order = items.map((_, i) => i);
+      for (let i = n - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = order[i]; order[i] = order[j]; order[j] = t; }
+      if (order.some((v, i) => v !== i)) stats.reordered++;
+      stats.batches++;
+      stats.items += n;
+      await Promise.all(order.map(async (i, at) => {
+        for (let h = 0; h < at % 3; h++) await hop();   // completions interleave with other items' delays
+        await delay();
+        try { out[i] = structuredClone(fn(...args[i])); } catch (e) { errs.push({ index: i, error: e }); }
+      }));
+      if (errs.length) throw new E.BatchError(errs);
+      return out;
+    },
+  };
+}
+// The F12 corpus thread: loads the modules and the corpus, then for each fixture id it is given runs the sync driver
+// once and the adversarial executor for every seed; posts the digests, the strict comparison and the sync response.
+const F12_THREAD = `
+"use strict";
+const { parentPort, workerData } = require("worker_threads");
+const fs = require("fs"), path = require("path"), vm = require("vm");
+globalThis.crypto ??= require("crypto").webcrypto;
+const T = workerData.testDir;
+for (const f of require(path.join(T, "modules.js")).NODE_MODULES) vm.runInThisContext(fs.readFileSync(path.join(T, "..", "js", f), "utf8"), { filename: f });
+const C = require(path.join(T, "pool_corpus.js")), E = SBEngine, byId = new Map(C.corpus().map((fx) => [fx.id, fx]));
+const makeAdvExec = (${makeAdvExec.toString()});
+const fnv = (str) => { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 0x01000193) >>> 0; return h; };
+parentPort.on("message", async (id) => {
+  if (id === null) { process.exit(0); return; }
+  const fx = byId.get(id), reqOf = () => E.request(fx.project, fx.source, { quality: fx.quality, deviceClass: fx.deviceClass, requestId: fx.id, draftCapPx: fx.draftCapPx });
+  const sync = E.generate(reqOf(), { overlays: fx.overlays }), runs = [];
+  for (const seed of workerData.seeds) {
+    const stats = { batches: 0, reordered: 0, items: 0, transferred: 0 };
+    let r, threw = null;
+    try { r = await E.generateAsync(reqOf(), { overlays: fx.overlays, exec: makeAdvExec(E, (seed * 2654435761) ^ fnv(id), stats) }); } catch (e) { threw = String(e && e.message); }
+    runs.push({ seed, digest: r ? C.digest(r) : null, strict: !!r && C.deepEqualStrict(r, sync), threw, stats });
+  }
+  parentPort.postMessage({ id, runs, sync });
+});
+`;
+
+suite("engine — speed round F12 pool equality (NFR-05)", async () => {
+  const E = SBEngine, C = require("./pool_corpus.js"), Dq = C.deepEqualStrict, shim = require("./node_worker_shim.js"), { Worker } = require("worker_threads");
+  const JS = path.join(__dirname, "..", "js"), text = (n) => fs.readFileSync(path.join(JS, n), "utf8");
+  const gold = JSON.parse(fs.readFileSync(path.join(__dirname, "golden", "pool-equality.json"), "utf8"));
+  const fields = ["status", "code", "geometryHash", "layerHashes", "diagSha", "cleanupSha", "supportSha", "guidesSha", "statsSha", "wholeSha"];
+  const goldDigest = (fx, d) => { const g = gold.fixtures[fx.id]; return !!g && !!d && fields.every((k) => JSON.stringify(d[k]) === JSON.stringify(g[k])); };
+  const sameGold = (fx, r) => goldDigest(fx, C.digest(r));
+  const APPV = (text("app.js").match(/const APP_VERSION = "([^"]+)"/) || [])[1];
+  const all = C.corpus().filter((fx) => !fx.slow), byId = new Map(all.map((fx) => [fx.id, fx]));
+  const SEEDS = Array.from({ length: 20 }, (_, i) => i + 1);
+  const reqOf = (fx) => E.request(fx.project, fx.source, { quality: fx.quality, deviceClass: fx.deviceClass, requestId: fx.id, draftCapPx: fx.draftCapPx });
+
+  // ---- Step 1: the adversarial executor, 20 seeds over the whole non-slow corpus (fixtures spread over worker threads)
+  const sync = new Map();
+  {
+    const nThreads = Math.max(1, Math.min(12, require("os").cpus().length - 1)), todo = all.map((fx) => fx.id), got = [];
+    await Promise.all(Array.from({ length: Math.min(nThreads, todo.length) }, () => new Promise((resolve, reject) => {
+      const w = new Worker(F12_THREAD, { eval: true, workerData: { testDir: __dirname, seeds: SEEDS } });
+      const next = () => w.postMessage(todo.length ? todo.shift() : null);
+      w.on("message", (m) => { got.push(m); next(); });
+      w.on("error", reject);
+      w.on("exit", () => resolve());
+      next();
+    })));
+    const bad = [], strictBad = [], threw = [], tot = { batches: 0, reordered: 0, items: 0, transferred: 0 };
+    for (const m of got) {
+      const fx = byId.get(m.id);
+      sync.set(m.id, m.sync);
+      for (const r of m.runs) {
+        if (r.threw) threw.push(m.id + "@" + r.seed + ": " + r.threw);
+        else if (!goldDigest(fx, r.digest)) bad.push(m.id + "@" + r.seed);
+        else if (!r.strict) strictBad.push(m.id + "@" + r.seed);
+        for (const k of Object.keys(tot)) tot[k] += r.stats[k];
+      }
+    }
+    const runs = got.length * SEEDS.length;
+    check(`NFR-05 F12 adversarial executor (seeded random completion order and delays, transferred args, cloned results): ${SEEDS.length} seeds × the whole non-slow corpus ` +
+      `give the golden digests (${runs - bad.length - threw.length}/${all.length * SEEDS.length})` + (bad.length || threw.length ? " — differ: " + bad.concat(threw).slice(0, 12).join("; ") : ""),
+      got.length === all.length && bad.length === 0 && threw.length === 0);
+    check("NFR-05 F12 every adversarial response deepEqualStrict the sync driver's response" + (strictBad.length ? " — differ: " + strictBad.slice(0, 12).join("; ") : ""),
+      got.length === all.length && strictBad.length === 0);
+    check(`F12 the executor really reorders and transfers (${tot.reordered}/${tot.batches} multi-item batches permuted, ${tot.items} items, ${tot.transferred} buffers detached)`,
+      tot.reordered > tot.batches / 2 && tot.transferred > 1000);
+    check("F12 the sync responses from the corpus threads equal the golden (the thread loads the same modules)", all.every((fx) => sync.has(fx.id) && sameGold(fx, sync.get(fx.id))));
+  }
+  { // error precedence under random completion order: faults in two random construct items raise the lower index
+    const fx = byId.get("n12-draft"), coded = (code) => Object.assign(new Error("injected " + code), { code });
+    const wrong = [];
+    for (const seed of SEEDS) {
+      const a = seed % 12, b = (seed * 7 + 3) % 12, lo = Math.min(a, b === a ? (a + 5) % 12 : b), hi = Math.max(a, b === a ? (a + 5) % 12 : b);
+      const ex = makeAdvExec(E, seed, { batches: 0, reordered: 0, items: 0, transferred: 0 }), inner = ex.map;
+      ex.map = (kind, items, o) => (kind !== "construct" ? inner(kind, items, o) : inner(kind, items.map((it, i) => (i === lo || i === hi ? [-1 - i].concat(it.slice(1)) : it)), o));
+      const ck = SBConstruct.constructLayer;
+      let r;
+      try {
+        SBConstruct.constructLayer = function (k) { if (k < 0) throw coded("F12_FAULT_" + (-1 - k)); return ck.apply(this, arguments); };
+        r = await E.generateAsync(reqOf(fx), { exec: ex });
+      } finally { SBConstruct.constructLayer = ck; }
+      if (!(r.status === "error" && r.error.code === "F12_FAULT_" + lo && r.error.message === "injected F12_FAULT_" + lo)) wrong.push(seed + ": " + lo + "/" + hi + " → " + (r.error ? r.error.code : r.status));
+    }
+    check("F12 with two faulting construct items the lowest index's error wins under every seed's completion order" + (wrong.length ? " — " + wrong.join("; ") : ""), wrong.length === 0);
+  }
+
+  // ---- Step 2: the real pool (worker threads through the shim) for P = 0, 1, 2, 3, 8 helpers
+  vm.runInThisContext(text("pool.js"), { filename: "pool.js" });
+  const pools = [];
+  const mk = (o) => {
+    o = o || {};
+    const spawned = [];
+    const pool = SBPool.create(Object.assign({
+      appVersion: APPV, helpers: 2, helloTimeoutMs: 20000,
+      loadText: async (n) => (o.patch ? o.patch(n, text(n)) : text(n)),   // a consistent deploy: the page reads the texts the workers run
+      spawn: (name) => { const w = shim.spawn(path.join(JS, "worker.js"), { name, patch: o.patch || null }); spawned.push(w); return w; },
+    }, o.opts || {}));
+    pool.spawned = spawned;
+    pools.push(pool);
+    return pool;
+  };
+  const srcOf = (fx) => Object.assign({ sampleHash: fx.project.source.sampleHash }, fx.source);
+  const submitFx = (pool, fx) => { pool.setSource(srcOf(fx)); return pool.submit(reqOf(fx), { sampleHash: fx.project.source.sampleHash, gen: 1, overlays: fx.overlays }); };
+  const admitted = async (p, n) => { await p.helpersReady; for (let i = 0; i < 300; i++) { const s = await p.stats(); if (s && s.helpersAdmitted.length >= n) return true; await new Promise((r) => setTimeout(r, 10)); } return false; };
+  try {
+    const SIZES = [0, 1, 2, 3, 8];
+    const res = await Promise.all(SIZES.map(async (P) => {
+      const pool = mk({ opts: { helpers: P } }), out = { P, up: await pool.ready, bad: [], strictBad: [], stats: null };
+      if (!out.up || !(await admitted(pool, P))) { out.up = false; return out; }
+      for (const fx of all) {
+        let r;
+        try { r = await submitFx(pool, fx).done; } catch (e) { out.bad.push(fx.id + " (" + e.code + ")"); continue; }
+        if (r.status !== r.response.status || !sameGold(fx, r.response)) out.bad.push(fx.id);
+        else if (!sync.has(fx.id) || !Dq(r.response, sync.get(fx.id))) out.strictBad.push(fx.id);
+      }
+      out.stats = await pool.stats();
+      pool.terminate();
+      return out;
+    }));
+    for (const o of res)
+      check(`NFR-05 worker pool hashes equal for pool sizes 1, 2, N — P = ${o.P}: the whole non-slow corpus equals the golden digests` +
+        (o.bad.length ? " — differ: " + o.bad.join(", ") : ""), o.up && o.bad.length === 0);
+    for (const o of res)
+      check(`NFR-05 F12 P = ${o.P}: every pooled response deepEqualStrict the sync response` + (o.strictBad.length ? " — differ: " + o.strictBad.join(", ") : ""), o.up && o.strictBad.length === 0);
+    check("F12 P = 0 runs every item inline; P ≥ 1 admits all P helpers and runs items on them",
+      res.every((o) => o.stats && o.stats.helpersAdmitted.length === o.P && (o.P === 0 ? o.stats.itemsHelper === 0 && o.stats.itemsInline > 0 : o.stats.itemsHelper > 0)));
+
+    // a delayed low-index item with a fast-failing high-index item: the low index's error, through real workers
+    {
+      const patch = (n, t) => (n === "construct.js" ? t.replace("C.constructLayer = function (k, a) {",
+        'C.constructLayer = function (k, a) { if (k === 2) { const t0 = Date.now(); while (Date.now() - t0 < 400) {} const e = new Error("injected F12_SLOW_2"); e.code = "F12_SLOW_2"; throw e; }' +
+        ' if (k === 6) { const e = new Error("injected F12_FAST_6"); e.code = "F12_FAST_6"; throw e; }') : t);
+      const pf = mk({ patch, opts: { helpers: 3 } }), fx = byId.get("n12-draft");
+      const r = (await pf.ready) && (await admitted(pf, 3)) ? await submitFx(pf, fx).done : null, st = await pf.stats();
+      check("NFR-05 F12 through real workers a slow failing item 2 beats a fast failing item 6 (lowest index, code and message verbatim)",
+        !!r && r.status === "error" && r.response.error.code === "F12_SLOW_2" && r.response.error.message === "injected F12_SLOW_2" && st.helpersAdmitted.length === 3 && st.itemsHelper > 0);
+      pf.terminate();
+    }
+    // a helper killed mid-item: the item re-runs inline in the coordinator, no error is surfaced, the result is the serial one
+    {
+      const patch = (n, t) => (n === "construct.js" ? t.replace("C.constructLayer = function (k, a) {",
+        'C.constructLayer = function (k, a) { if (k === 3 && typeof self !== "undefined" && /^sb-helper/.test(String(self.name)) && typeof process !== "undefined") { const t0 = Date.now(); while (Date.now() - t0 < 20) {} process.exit(7); }') : t);
+      const pk = mk({ patch, opts: { helpers: 2 } }), fx = byId.get("n12-draft");
+      const r = (await pk.ready) && (await admitted(pk, 2)) ? await submitFx(pk, fx).done : null, st = await pk.stats();
+      const helpersSpawned = pk.spawned.filter((w) => /^sb-helper/.test(w.name));
+      check("NFR-05 F12 a helper killed mid-item yields the serial result (item re-run inline, no error surfaced)",
+        !!r && r.status === "done" && sameGold(fx, r.response) && sync.has(fx.id) && Dq(r.response, sync.get(fx.id)) &&
+        helpersSpawned.length > 2 && helpersSpawned.some((w) => w.terminated) && st.itemsInline > 0);
+      pk.terminate();
+    }
+  } finally {
+    for (const p of pools) p.terminate();
+  }
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {
