@@ -13,12 +13,22 @@
  *     recorder (F11 Phase B gate, reused by the F16a bench modes); unsupported (zeros) where longtask is not observable.
  *   SBPool.memoryBudget(deviceMemory, deviceClass) → bytes (F13): min(1 GiB, deviceMemory·128 MiB) desktop when
  *     deviceMemory is finite, else 512 MiB; mobile 192 MiB.
- *   SBPool.create({spawn?, workerUrl?, helpers?, deviceClass?, appVersion, engineVersion?, loadText?, moduleBase?,
- *                  modulesHash?, helloTimeoutMs?, onState?, memoryBudget?, watchdogMs?, helperStuckMs?, spares?}) → pool
+ *   SBPool.ladder({protocol, inlined}) → the worker rungs to try, in order (F16): "url" (js/worker.js) for a page that
+ *     loads its module files over http(s) (index.html), "blob" for the single-file bundle (inlined texts, any scheme,
+ *     file:// included); none for file:// index.html, which runs the serial fallback at once.
+ *   SBPool.inlinedSources(document) → {modules: {name: text}, worker: text} | null: the bundle's module texts
+ *     (script elements with data-sbmod="name") and worker.js (the script element of type "text/sb-worker"), framing newlines removed (build.js).
+ *   SBPool.blobSource(inlined) → the Blob worker's source: defines self.SB_INLINED (the module texts) and evaluates
+ *     worker.js as its own script (importScripts of a blob: URL the worker makes); worker.js then importScripts each
+ *     module from its inlined text. modulesHash is computed from the same texts on both sides.
+ *   SBPool.create({spawn?, rungs?, inlined?, workerUrl?, helpers?, deviceClass?, appVersion, engineVersion?, loadText?,
+ *                  moduleBase?, modulesHash?, helloTimeoutMs?, onState?, memoryBudget?, watchdogMs?, helperStuckMs?,
+ *                  spares?}) → pool
  *     pool.ready      Promise<boolean>: true once a coordinator's hello matched; false when the pool fell back
  *     pool.helpersReady  Promise: settles once every first-spawn helper said hello or failed (until then, and for a
  *                     refused helper, the coordinator runs items inline — same results)
  *     pool.mode       "starting" | "pool" | "fallback" | "closed";  pool.notice: the fallback's user-facing text
+ *     pool.rung       the ladder rung whose coordinator came up ("url", "blob", or a test rung's name), else null
  *     pool.setSource({sampleHash, pixels, alpha, w, h, channels})  posts a transferred COPY, once per sampleHash
  *     pool.submit(req, {sampleHash, gen, overlays, mainBytes, onAck, onStart, onProgress}) → {runId, done}
  *        F13: the generate message carries budgetBytes (the create option memoryBudget, else
@@ -47,10 +57,15 @@
  * abandoned item for helperStuckMs (300 ms) is reported by the coordinator with killHelper {reason: "stuck"} and replaced
  * from the warm spare helper (new hello, modulesHash checked by the coordinator). spares: false skips both spares.
  * Handshake (§9.3, F.3, R7): the coordinator's hello must carry this page's engineVersion and appVersion and the
- * modulesHash of the module texts the page loads (loadText; skipped only when they cannot be read). A mismatch, a boot
- * error or no hello within helloTimeoutMs terminates it and respawns once (same URL, no ?v=); a second failure is the
- * fallback (the caller runs the sync driver; version skew says "Reload to update"). Helpers are admitted by the
- * coordinator (same modulesHash); killHelper terminates a refused one and respawns a crashed one.
+ * modulesHash of the module texts the page loads (loadText; the inlined texts in the bundle; skipped only when they
+ * cannot be read). A mismatch, a boot error (an error or messageerror event) or no hello within helloTimeoutMs
+ * terminates it and respawns once on the same rung (same URL, no ?v=); a second failure moves to the next rung, and a
+ * Worker constructor that throws moves on at once. A rung counts as up only after its hello. With no rung left the pool
+ * is the fallback (the caller runs the sync driver with the "reduced responsiveness" notice; version skew says "Reload
+ * to update"). Ladder (F16): spawn (one rung, tests) or rungs [{name, spawn}] override the default
+ * SBPool.ladder({location.protocol, inlined}), inlined defaulting to SBPool.inlinedSources(document). Helpers and the
+ * spares are spawned from the rung that came up; the coordinator admits helpers (same modulesHash); killHelper
+ * terminates a refused one and respawns a crashed one.
  * ==========================================================================*/
 "use strict";
 
@@ -59,6 +74,31 @@
 
   /** F13 (NFR-04, F.3): the estBytes admission budget in bytes; SBEngine.memoryBudget (512 MiB without deviceMemory). */
   P.memoryBudget = function (deviceMemory, deviceClass) { return global.SBEngine.memoryBudget(deviceMemory, deviceClass); };
+
+  /** F16: the worker rungs to try, in order; [] → the serial fallback. */
+  P.ladder = function (env) {
+    env = env || {};
+    if (env.inlined) return ["blob"];
+    return env.protocol === "http:" || env.protocol === "https:" ? ["url"] : [];
+  };
+
+  /** F16: the bundle's inlined texts read back from the DOM, or null (index.html, no document). */
+  P.inlinedSources = function (doc) {
+    if (!doc || typeof doc.querySelectorAll !== "function" || typeof doc.querySelector !== "function") return null;
+    const unframe = (t) => String(t).replace(/^\n/, "").replace(/\n$/, "");   // build.js frames each text with one newline
+    const wk = doc.querySelector('script[type="text/sb-worker"]');
+    const els = Array.from(doc.querySelectorAll("script[data-sbmod]"));
+    if (!wk || els.length === 0) return null;
+    const modules = {};
+    for (const el of els) modules[el.getAttribute("data-sbmod")] = unframe(el.textContent);
+    return { modules, worker: unframe(wk.textContent) };
+  };
+
+  /** F16: the Blob worker's source text (SB_INLINED, then worker.js evaluated as its own classic script). */
+  P.blobSource = function (inlined) {
+    return '"use strict";\nself.SB_INLINED = ' + JSON.stringify(inlined.modules) + ";\n" +
+      "importScripts(URL.createObjectURL(new Blob([" + JSON.stringify(inlined.worker) + '], { type: "text/javascript" })));\n';
+  };
 
   P.helperCount = function (hc, deviceClass) {
     const cap = deviceClass === "mobile" ? 4 : 8, n = Number.isFinite(hc) ? Math.floor(hc) - 1 : 1;
@@ -110,11 +150,28 @@
   P.create = function (o) {
     o = o || {};
     const E = global.SBEngine, H = global.SBHash;
-    const spawn = typeof o.spawn === "function" ? o.spawn : (name) => new global.Worker(o.workerUrl || "js/worker.js", { name });
+    // F16: the ladder of worker rungs (URL worker, Blob worker from the inlined texts), then the serial fallback
+    const inlined = o.inlined !== undefined ? o.inlined : P.inlinedSources(global.document);
+    const blob = { url: null };
+    const blobUrl = () => {
+      if (!blob.url) blob.url = global.URL.createObjectURL(new global.Blob([P.blobSource(inlined)], { type: "text/javascript" }));
+      return blob.url;
+    };
+    const revokeBlob = () => { if (blob.url) { try { global.URL.revokeObjectURL(blob.url); } catch (_) { /* gone */ } blob.url = null; } };
+    const RUNGS = {
+      url: (name) => new global.Worker(o.workerUrl || "js/worker.js", { name }),
+      blob: (name) => new global.Worker(blobUrl(), { name }),
+    };
+    const rungs = typeof o.spawn === "function" ? [{ name: "custom", spawn: o.spawn }]
+      : Array.isArray(o.rungs) ? o.rungs.slice()
+      : P.ladder({ protocol: global.location && global.location.protocol, inlined: !!inlined }).map((name) => ({ name, spawn: RUNGS[name] }));
+    const spawn = (name) => rungs[st.rung].spawn(name);
     const nHelpers = Number.isInteger(o.helpers) && o.helpers >= 0 ? o.helpers
       : P.helperCount(global.navigator && global.navigator.hardwareConcurrency, o.deviceClass || "desktop");
     const expect = { engineVersion: o.engineVersion || E.VERSION, appVersion: o.appVersion };
-    const loadText = typeof o.loadText === "function" ? o.loadText : (n) => global.fetch((o.moduleBase || "js/") + n).then((r) => {
+    const loadText = typeof o.loadText === "function" ? o.loadText
+      : inlined ? (n) => (typeof inlined.modules[n] === "string" ? Promise.resolve(inlined.modules[n]) : Promise.reject(new Error("no inlined text for " + n)))
+      : (n) => global.fetch((o.moduleBase || "js/") + n).then((r) => {
       if (!r.ok) throw new Error("cannot read " + n);
       return r.text();
     });
@@ -126,11 +183,11 @@
     const spares = o.spares !== false;
     const now = () => (global.performance && typeof global.performance.now === "function" ? global.performance.now() : Date.now());
 
-    const st = { coord: null, spawns: 0, crashes: 0, runSeq: 0, outbox: [], runs: new Map(), helpers: new Map(), helperCrashes: new Map(),
+    const st = { coord: null, rung: 0, spawns: 0, crashes: 0, runSeq: 0, outbox: [], runs: new Map(), helpers: new Map(), helperCrashes: new Map(),
       statsWaiters: [], lastSource: null, postedHash: undefined, hashMemo: null,
       spareCoord: null, spareCoordBooting: null, spareHelper: null, respawnAt: null, flag: makeFlag(),
       health: { coordSpawns: 0, watchdogKills: 0, crashes: 0, resubmits: 0, lastRespawnMs: null, spareCoordUsed: 0, spareHelperUsed: 0 } };
-    const pool = { mode: "starting", notice: null, ready: null, helpersReady: null };
+    const pool = { mode: "starting", notice: null, rung: null, ready: null, helpersReady: null };
     let readyResolve, helpersResolve;
     pool.ready = new Promise((r) => { readyResolve = r; });
     pool.helpersReady = new Promise((r) => { helpersResolve = r; });
@@ -171,6 +228,8 @@
       killHelpers();
       killSpares();
       st.outbox.length = 0;
+      revokeBlob();
+      pool.rung = null;
       setMode("fallback", reason === "version" ? "A newer version of Shadowbox Studio is installed. Reload to update."
         : "Background processing is unavailable; the preview runs on the page (reduced responsiveness).");
       rejectAll("POOL_UNAVAILABLE", "the worker pool is unavailable (" + reason + ")");
@@ -181,10 +240,15 @@
       w.terminate();
       if (st.coord !== w) return;
       st.coord = null;
-      if (st.spawns < 2) startCoord(); else fallback(reason);
+      if (st.spawns < 2) startCoord(); else nextRung(reason);
+    }
+    /** F16: this rung failed twice (or its Worker constructor threw): the next rung, else the serial fallback. */
+    function nextRung(reason) {
+      if (st.rung + 1 < rungs.length) { st.rung++; st.spawns = 0; startCoord(); } else fallback(reason);
     }
     /** The coordinator (or a spare) is admitted: the cancel flag, ports re-brokered to the live helpers, the outbox. */
     function up() {
+      pool.rung = rungs[st.rung].name;
       setMode("pool");
       if (st.flag) { try { st.coord.postMessage({ type: "cancelFlag", flag: st.flag }); } catch (_) { st.flag = null; } }
       for (let id = 1; id <= nHelpers; id++) { const w = st.helpers.get(id); if (w) broker(id, w); else spawnHelper(id); }
@@ -264,9 +328,10 @@
     }
 
     function startCoord() {
+      if (st.rung >= rungs.length) { fallback("spawn"); return; }
       st.spawns++;
       let w;
-      try { w = spawn("sb-coord"); } catch (e) { fallback("spawn"); return; }
+      try { w = spawn("sb-coord"); } catch (e) { nextRung("spawn"); return; }
       st.health.coordSpawns++;
       st.coord = w;
       watchBoot(w, (ok, reason) => {
@@ -440,6 +505,7 @@
       killSpares();
       st.outbox.length = 0;
       rejectAll("POOL_UNAVAILABLE", "the worker pool was closed");
+      revokeBlob();
       setMode("closed");
       readyResolve(false);
       helpersResolve(0);

@@ -17,6 +17,13 @@
  *                       are Node's (global MessageChannel), which carry
  *                       onmessage / postMessage like the browser's.
  *
+ * spawnSource(source, {name}) (speed round F16) runs a worker built from a
+ * source text instead of a file, as the page's Blob worker is (SBPool's "blob"
+ * rung: SB_INLINED plus worker.js, evaluated by importScripts of blob: URLs the
+ * worker makes itself). Inside the thread, Blob remembers its string parts and
+ * URL.createObjectURL returns a blob: URL that importScripts resolves to them,
+ * since Node's importScripts stand-in is synchronous and Node's Blob is not.
+ *
  * patch(name, text) → text (optional, a self-contained function: it is sent to
  * the thread as source) rewrites a module text as the thread reads it, for both
  * importScripts and fetch, so a test can build a version-skewed or fault-injecting
@@ -39,7 +46,15 @@ const read = (url) => {
 };
 globalThis.self = globalThis;
 self.name = workerData.name;
-self.importScripts = (...urls) => { for (const u of urls) vm.runInThisContext(read(u), { filename: String(u) }); };
+const blobs = new Map();
+{
+  const RealBlob = globalThis.Blob;
+  globalThis.Blob = class extends RealBlob { constructor(parts, o) { super(parts, o); this.sbText = (parts || []).map(String).join(""); } };
+  URL.createObjectURL = (b) => { const u = "blob:sb-shim/" + (blobs.size + 1); blobs.set(u, b.sbText); return u; };
+  URL.revokeObjectURL = (u) => { blobs.delete(String(u)); };
+}
+const load = (u) => (String(u).startsWith("blob:") ? blobs.get(String(u)) : read(u));
+self.importScripts = (...urls) => { for (const u of urls) { const t = load(u); if (t === undefined) throw new Error("importScripts: cannot load " + u); vm.runInThisContext(t, { filename: String(u) }); } };
 self.fetch = async (url) => { let t; try { t = read(url); } catch (e) { return { ok: false, status: 404, text: async () => "" }; } return { ok: true, status: 200, text: async () => t }; };
 self.postMessage = (m, transfer) => parentPort.postMessage(m, transfer);
 const listeners = [];
@@ -49,14 +64,24 @@ parentPort.on("message", (data) => {
   if (typeof self.onmessage === "function") self.onmessage(ev);
   for (const f of listeners) f(ev);
 });
-vm.runInThisContext(read(workerData.script), { filename: workerData.script });
+if (workerData.source !== null) vm.runInThisContext(workerData.source, { filename: "blob:sb-worker" });
+else vm.runInThisContext(read(workerData.script), { filename: workerData.script });
 `;
 
 /** spawn(script, {name, patch}) → Worker-like wrapper around a worker_threads Worker running script. */
 function spawn(script, o) {
   o = o || {};
   const abs = path.resolve(script);
-  const w = new Worker(BOOT, { eval: true, workerData: { dir: path.dirname(abs), script: path.basename(abs), name: o.name || "", patch: o.patch ? String(o.patch) : null } });
+  return wrap(new Worker(BOOT, { eval: true, workerData: { dir: path.dirname(abs), script: path.basename(abs), source: null, name: o.name || "", patch: o.patch ? String(o.patch) : null } }), o);
+}
+
+/** spawnSource(source, {name}) → the same wrapper around a worker running the source text (the page's Blob worker). */
+function spawnSource(source, o) {
+  o = o || {};
+  return wrap(new Worker(BOOT, { eval: true, workerData: { dir: process.cwd(), script: null, source: String(source), name: o.name || "", patch: null } }), o);
+}
+
+function wrap(w, o) {
   const self = {
     name: o.name || "",
     terminated: false,
@@ -77,4 +102,4 @@ function spawn(script, o) {
   return self;
 }
 
-module.exports = { spawn };
+module.exports = { spawn, spawnSource };

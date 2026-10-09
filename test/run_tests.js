@@ -7666,6 +7666,188 @@ suite("app.js/index.html/schema.js — speed round F15 app wiring, progress UI a
     a.status === "done" && b.status === "done" && a.snapshot.geometryHash === b.snapshot.geometryHash);
 });
 
+// ------------------------------------------------ speed round F16 (dist/ Blob worker and fallback ladder)
+suite("build.js/pool.js/worker.js — speed round F16 dist/ Blob worker and the fallback ladder (PO-PERF-1, NFR-02, NFR-05, §9.3, F-D5)", async () => {
+  const root = path.join(__dirname, ".."), JS = path.join(root, "js"), E = SBEngine, S = SBSchema, F = require("./fixtures.js");
+  const C = require("./pool_corpus.js"), Dq = C.deepEqualStrict, shim = require("./node_worker_shim.js");
+  const text = (n) => fs.readFileSync(path.join(JS, n), "utf8");
+  const gold = JSON.parse(fs.readFileSync(path.join(__dirname, "golden", "pool-equality.json"), "utf8"));
+  const fields = ["status", "code", "geometryHash", "layerHashes", "diagSha", "cleanupSha", "supportSha", "guidesSha", "statsSha", "wholeSha"];
+  const sameGold = (id, r) => { const d = C.digest(r), g = gold.fixtures[id]; return !!g && fields.every((k) => JSON.stringify(d[k]) === JSON.stringify(g[k])); };
+  const APPV = (text("app.js").match(/const APP_VERSION = "([^"]+)"/) || [])[1];
+  const WMODS = JSON.parse((text("worker.js").match(/const WORKER_MODULES = (\[[^\]]*\]);/) || [, "[]"])[1]);
+
+  // ---- the bundle (build.js ran in the "build" suite; run it again so this suite stands alone)
+  require("child_process").execFileSync(process.execPath, [path.join(root, "build.js")], { stdio: "ignore" });
+  const dist = fs.readFileSync(path.join(root, "dist", "shadowbox-studio.html"), "utf8");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const pageMods = [...html.matchAll(/<script src="js\/([\w./-]+)"><\/script>/g)].map((m) => m[1]);
+  const tags = [...dist.matchAll(/<script\b([^>]*)>/g)].map((m) => m[1]);
+  /** A minimal document over the bundle (script elements: getAttribute, textContent) for SBPool.inlinedSources. */
+  const fakeDoc = (src) => {
+    const els = [...src.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)].map((m) => {
+      const attrs = {}; for (const a of m[1].matchAll(/([\w-]+)="([^"]*)"/g)) attrs[a[1]] = a[2];
+      return { getAttribute: (k) => (k in attrs ? attrs[k] : null), textContent: m[2] };
+    });
+    return {
+      querySelectorAll: (sel) => (sel === "script[data-sbmod]" ? els.filter((e) => e.getAttribute("data-sbmod") !== null) : []),
+      querySelector: (sel) => (sel === 'script[type="text/sb-worker"]' ? els.find((e) => e.getAttribute("type") === "text/sb-worker") || null : null),
+    };
+  };
+  check("F16 dist has no <script src= at all", !/<script[^>]*\ssrc=/i.test(dist));
+  check("F16 every page module is inlined once, as <script data-sbmod=\"<name>\"> in index.html order, its text verbatim and exactly once",
+    pageMods.length > 20 && JSON.stringify(tags.filter((t) => /data-sbmod=/.test(t)).map((t) => t.match(/data-sbmod="([^"]+)"/)[1])) === JSON.stringify(pageMods) &&
+    pageMods.every((n) => { const t = text(n), i = dist.indexOf(t); return i >= 0 && dist.indexOf(t, i + 1) < 0 && dist.includes('<script data-sbmod="' + n + '">\n' + t + "\n</script>"); }));
+  check("F16 one <script type=\"text/sb-worker\"> block carries js/worker.js verbatim (and worker.js is not a page script)",
+    tags.filter((t) => /type="text\/sb-worker"/.test(t)).length === 1 && dist.includes('<script type="text/sb-worker">\n' + text("worker.js") + "\n</script>") &&
+    dist.indexOf(text("worker.js")) === dist.lastIndexOf(text("worker.js")) && !pageMods.includes("worker.js"));
+  check("F16 build.js refuses a module text that would end or nest its <script> element", /<\\?\/script|<\/script/i.test(fs.readFileSync(path.join(root, "build.js"), "utf8")) &&
+    /throw new Error\([^)]*script/i.test(fs.readFileSync(path.join(root, "build.js"), "utf8")));
+  const wsrc = text("worker.js");
+  check("F16 worker.js: under SB_INLINED the modules are evaluated by importScripts of blob: URLs the worker makes from the inlined texts (no fetch)",
+    /typeof SB_INLINED !== "undefined"[\s\S]{0,600}URL\.createObjectURL\(new Blob\([\s\S]{0,300}importScripts/.test(wsrc));
+
+  // F.4 #4: browser-vs-Node hash equality is claimed only for hashes free of implementation-approximated maths. Math.hypot
+  // lives in trace.js pointSegDist (rdp → SBTrace.simplify) and util.js loopLength; both are reached only from
+  // SBEngine.legacyRun (the v1.1.0 path), which generate's pipeline never calls, so they never feed a generate hash.
+  {
+    const all = fs.readdirSync(JS).filter((n) => n.endsWith(".js")).map((n) => [n, text(n)]);
+    const hyp = all.flatMap(([n, t]) => (t.match(/Math\.hypot\(/g) || []).map(() => n));
+    const eng = text("engine.js"), lr0 = eng.indexOf("E.legacyRun = function"), lr1 = eng.indexOf("\n  };\n", lr0);
+    const users = (re) => all.filter(([n, t]) => re.test(t.replace(/^\s*(\/\/|\*).*$/gm, ""))).map(([n]) => n);
+    check("F.4 #4 F16 Math.hypot appears only in trace.js pointSegDist and util.js loopLength",
+      JSON.stringify(hyp.sort()) === '["trace.js","trace.js","trace.js","util.js"]' && /function pointSegDist[\s\S]{0,400}Math\.hypot/.test(text("trace.js")) &&
+      /U\.loopLength = function[\s\S]{0,200}Math\.hypot/.test(text("util.js")));
+    check("F.4 #4 F16 pointSegDist (via SBTrace.simplify) and loopLength are used only inside SBEngine.legacyRun, which nothing in js/ calls",
+      lr0 > 0 && JSON.stringify(users(/SBTrace\.simplify\(|SBUtil\.loopLength\(/)) === '["engine.js"]' &&
+      [...eng.matchAll(/SBTrace\.simplify\(|SBUtil\.loopLength\(/g)].every((m) => m.index > lr0 && m.index < lr1) &&
+      /pointSegDist\(/.test(text("trace.js").slice(text("trace.js").indexOf("function rdp"))) &&
+      all.every(([n, t]) => !/legacyRun\(/.test(t.replace(/^\s*(\/\/|\*).*$/gm, "").replace(/E\.legacyRun = function \(/, ""))));
+  }
+
+  vm.runInThisContext(text("pool.js"), { filename: "pool.js" });
+  const P = SBPool;
+  check("F16 SBPool.ladder, inlinedSources and blobSource exist", typeof P.ladder === "function" && typeof P.inlinedSources === "function" && typeof P.blobSource === "function");
+  if (typeof P.ladder !== "function" || typeof P.inlinedSources !== "function" || typeof P.blobSource !== "function") return;
+  check("F16 ladder: index.html over http(s) → [url]; the bundle (inlined texts) → [blob] on any scheme; file:// index.html → [] (the serial fallback)",
+    JSON.stringify(P.ladder({ protocol: "https:", inlined: false })) === '["url"]' && JSON.stringify(P.ladder({ protocol: "http:", inlined: false })) === '["url"]' &&
+    JSON.stringify(P.ladder({ protocol: "file:", inlined: true })) === '["blob"]' && JSON.stringify(P.ladder({ protocol: "https:", inlined: true })) === '["blob"]' &&
+    JSON.stringify(P.ladder({ protocol: "file:", inlined: false })) === "[]" && JSON.stringify(P.ladder({})) === "[]");
+  const inl = P.inlinedSources(fakeDoc(dist));
+  check("F16 inlinedSources reads every module text and the worker text back from the bundle, verbatim",
+    !!inl && pageMods.every((n) => inl.modules[n] === text(n)) && inl.worker === text("worker.js") && WMODS.length > 20 && WMODS.every((n) => typeof inl.modules[n] === "string"));
+  check("F16 inlinedSources is null for index.html (no inlined texts) and without a document", P.inlinedSources(fakeDoc(html)) === null && P.inlinedSources(undefined) === null);
+  if (!inl) return;
+  const blobSrc = P.blobSource(inl);
+  check("F16 blobSource defines SB_INLINED before worker.js runs, and worker.js runs as its own script (its \"use strict\" kept)",
+    typeof blobSrc === "string" && /self\.SB_INLINED = /.test(blobSrc) && /importScripts\(URL\.createObjectURL\(new Blob\(/.test(blobSrc) &&
+    blobSrc.indexOf("self.SB_INLINED") < blobSrc.indexOf("importScripts(") && !blobSrc.includes(text("worker.js")));
+
+  const pools = [];
+  const reqOf = (fx, cap) => E.request(fx.project, fx.source, { quality: fx.quality, deviceClass: fx.deviceClass, requestId: fx.id, draftCapPx: cap === undefined ? fx.draftCapPx : cap });
+  const srcOf = (fx) => Object.assign({ sampleHash: fx.project.source.sampleHash }, fx.source);
+  const codeOf = async (p) => { try { await p; return null; } catch (e) { return e instanceof Error ? e.code : "not-an-Error"; } };
+  const blobRung = (spawned) => ({ name: "blob", spawn: (name) => { const w = shim.spawnSource(blobSrc, { name }); spawned.push(w); return w; } });
+  /** Fake workers for the failure rungs: a constructor throw, an async error / messageerror event, or no hello at all. */
+  const fake = (kind, spawned) => ({ name: kind, spawn: (name) => {
+    if (kind === "throw") { spawned.push({ name, threw: true }); throw new Error("SecurityError: cannot construct a Worker here"); }
+    const w = { name, terminated: false, onmessage: null, onerror: null, onmessageerror: null, postMessage() {}, terminate() { w.terminated = true; } };
+    if (kind === "error") setTimeout(() => { if (!w.terminated && w.onerror) w.onerror({ message: "failed to load worker script" }); }, 5);
+    if (kind === "messageerror") setTimeout(() => { if (!w.terminated && w.onmessageerror) w.onmessageerror({ data: null }); }, 5);
+    spawned.push(w);
+    return w;
+  } });
+  const mk = (rungs, o) => {
+    const pool = P.create(Object.assign({ appVersion: APPV, helpers: 2, helloTimeoutMs: 20000, rungs, inlined: inl }, o || {}));
+    pools.push(pool);
+    return pool;
+  };
+  try {
+    const byId = new Map(C.corpus().map((fx) => [fx.id, fx]));
+    const five = ["h-bonded-draft", "h-connected-fabrication", "t-connected-frame-draft", "n3-fabrication", "alpha-domain-draft"].map((id) => byId.get(id));
+
+    // 1. the Blob rung: the bundle's worker, built from the inlined texts, passes the handshake and equals the serial engine
+    const spawned = [];
+    const pool = mk([blobRung(spawned)]);
+    const up = await pool.ready;
+    check("F16 the Blob worker (SB_INLINED + worker.js) says hello with this page's versions and the inlined texts' modulesHash; rung \"blob\" is up",
+      up === true && pool.mode === "pool" && pool.rung === "blob");
+    if (up) {
+      await pool.helpersReady;
+      const bad = [];
+      for (const fx of five) {
+        pool.setSource(srcOf(fx));
+        const r = await pool.submit(reqOf(fx), { sampleHash: fx.project.source.sampleHash, gen: 1, overlays: fx.overlays }).done;
+        const sync = E.generate(reqOf(fx), { overlays: fx.overlays });
+        if (!(r.status === sync.status && sameGold(fx.id, r.response) && Dq(r.response, sync))) bad.push(fx.id);
+      }
+      check("NFR-05 F16 the Blob-worker pool (2 helpers) equals the serial golden and the sync response (deepEqualStrict) on 5 fixtures" + (bad.length ? " — " + bad.join(", ") : ""), bad.length === 0);
+      check("F16 Blob helpers are spawned from the same rung (the coordinator admits them by modulesHash)",
+        spawned.filter((w) => /^sb-helper-\d/.test(w.name)).length >= 2 && (await pool.stats()).helpersAdmitted.length >= 2 && (await pool.stats()).itemsHelper > 0);
+    }
+
+    // 2. a failed rung ladders on: constructor throw → next rung at once; async error → one respawn, then the next rung
+    {
+      const s1 = [], s2 = [];
+      const p1 = mk([fake("throw", s1), blobRung(s2)], { helpers: 0 });
+      check("F16 a Worker constructor throw moves to the next rung at once (no retry) and the Blob rung comes up", (await p1.ready) === true && p1.rung === "blob" && s1.length === 1);
+      const s3 = [], s4 = [];
+      const p2 = mk([fake("error", s3), blobRung(s4)], { helpers: 0 });
+      check("F16 an async error event before hello: terminated, one respawn on that rung, then the next rung (counts as up only after hello)",
+        (await p2.ready) === true && p2.rung === "blob" && s3.length === 2 && s3.every((w) => w.terminated));
+    }
+
+    // 3. every failure mode with no rung left → the F15 serial fallback with the "reduced responsiveness" notice
+    for (const kind of ["throw", "error", "messageerror", "silent"]) {
+      const s = [], states = [];
+      const p = mk([fake(kind, s)], { helloTimeoutMs: 150, helpers: 1, onState: (x) => states.push(x) });
+      const ok = await p.ready;
+      check("F16 forced Worker failure (" + kind + ") → fallback with the \"reduced responsiveness\" notice; submit rejects POOL_UNAVAILABLE",
+        ok === false && p.mode === "fallback" && /reduced responsiveness/.test(p.notice || "") && p.rung === null &&
+        states.some((x) => x.mode === "fallback" && /reduced responsiveness/.test(x.notice || "")) &&
+        (await codeOf(p.submit(reqOf(five[0]), { sampleHash: null, gen: 1 }).done)) === "POOL_UNAVAILABLE");
+    }
+    {
+      const p = mk([], {});
+      check("F16 no rung (file:// index.html) → the serial fallback at once", (await p.ready) === false && p.mode === "fallback" && /reduced responsiveness/.test(p.notice || ""));
+    }
+
+    // 4. the fallback's sync driver equals the pooled response at the same pinned draftCapPx (F-D5)
+    if (up) {
+      const fbCap = S.limits("desktop").draftPxFallback, bad = [];
+      for (const fx of five) {
+        pool.setSource(srcOf(fx));
+        const r = await pool.submit(reqOf(fx, fbCap), { sampleHash: fx.project.source.sampleHash, gen: 2, overlays: fx.overlays }).done;
+        const serial = E.generate(reqOf(fx, fbCap), { overlays: fx.overlays });
+        if (!(r.response && Dq(r.response, serial))) bad.push(fx.id);
+      }
+      check("F-D5 F16 the serial fallback (SBEngine.generate) and the Blob-worker pool give identical responses at the same pinned draftCapPx (" + fbCap + ")" +
+        (bad.length ? " — " + bad.join(", ") : ""), bad.length === 0);
+
+      // at each mode's own cap: the pooled cap vs the fallback's 720 → the expected (serial) draft geometryHash, different when the caps differ
+      const w = 1100, h = 820, px = { pixels: F.heightMap(21, w, h), channels: 1, w, h, alpha: null };
+      const rec = E.sourceRecord(px, { format: "png", decode: "raw-gray8" });
+      rec.sampleHash = SBHash.sha256(E.sampleBytes(px));
+      const proj = JSON.parse(JSON.stringify(S.withSource(S.defaults("plywood"), rec)));
+      proj.geometry.targetMM = 60; proj.geometry.draftPx = 1100;
+      const sh = proj.source.sampleHash, pooledCap = S.limits("desktop").draftPxCap, hiCap = Math.max(pooledCap, 1024);
+      pool.setSource(Object.assign({ sampleHash: sh }, px));
+      const at = async (cap) => {
+        const req = () => E.request(proj, px, { quality: "draft", deviceClass: "desktop", requestId: "f16-" + cap, draftCapPx: cap });
+        const r = await pool.submit(req(), { sampleHash: sh, gen: 3 }).done, s = E.generate(req());
+        return { pooled: r.response && r.response.snapshot ? r.response.snapshot.geometryHash : null, serial: s.snapshot ? s.snapshot.geometryHash : null };
+      };
+      const a = await at(fbCap), b = await at(pooledCap), c = await at(hiCap);
+      check("F-D5 F16 at each mode's own cap the pooled and serial draft geometryHash are equal (fallback " + fbCap + ", pooled " + pooledCap + ")",
+        !!a.pooled && a.pooled === a.serial && !!b.pooled && b.pooled === b.serial);
+      check("F-D5 F16 720 vs a raised pooled cap (" + hiCap + ") give different draft geometryHash (the raster is hash input); equal caps give equal hashes",
+        !!c.pooled && c.pooled === c.serial && c.pooled !== a.pooled && (pooledCap === fbCap ? b.pooled === a.pooled : b.pooled !== a.pooled));
+    }
+  } finally {
+    for (const p of pools) p.terminate();
+  }
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

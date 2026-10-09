@@ -62,8 +62,20 @@ const WORKER_APP_VERSION = "2.0.0-alpha.3";
 
   /** The module texts (for modulesHash), then the modules themselves, in WORKER_MODULES order. */
   async function loadModules() {
-    // F16: a Blob worker built from the bundle's inlined texts sets SB_INLINED and has already evaluated them
-    if (typeof SB_INLINED !== "undefined") return WORKER_MODULES.map((n) => SB_INLINED[n]);
+    // F16: the dist/ Blob worker (SBPool.blobSource) defines SB_INLINED = {name: text} from the bundle's inlined module
+    // texts. Each is evaluated as its own classic script, exactly as importScripts of the file would (own "use strict"
+    // prologue, global top-level bindings), from a blob: URL this worker makes; nothing is fetched (file:// has no js/).
+    if (typeof SB_INLINED !== "undefined") {
+      const texts = WORKER_MODULES.map((n) => {
+        if (typeof SB_INLINED[n] !== "string") throw new Error("worker: no inlined text for " + n);
+        return SB_INLINED[n];
+      });
+      for (const t of texts) {
+        const url = URL.createObjectURL(new Blob([t], { type: "text/javascript" }));
+        try { self.importScripts(url); } finally { URL.revokeObjectURL(url); }
+      }
+      return texts;
+    }
     const texts = await Promise.all(WORKER_MODULES.map(async (n) => {
       const r = await fetch(n);
       if (!r.ok) throw new Error("worker: cannot load " + n + " (" + r.status + ")");

@@ -33,10 +33,26 @@ html = html.replace(
   () => "<style>\n" + fs.readFileSync(path.join(root, "css/style.css"), "utf8") + "\n</style>"
 );
 
-// Inline each script in order.
+// Speed round F16 (PO-PERF-1): every module is inlined once, in page order, as
+// <script data-sbmod="<name>"> (name relative to js/, as worker.js's WORKER_MODULES
+// spells it), and js/worker.js once as an inert <script type="text/sb-worker">. The
+// page runs the modules as before; SBPool.inlinedSources reads the same texts back
+// from the DOM (one leading and one trailing newline of framing) and starts the
+// coordinator and helpers as a Blob worker built from them (SBPool.blobSource), so
+// dist/ runs the worker pool from file:// with no sibling files and no second copy.
+// A text that could end its <script> element (</script) or start a nested one
+// (<script, which the parser treats specially after <!--) would corrupt the bundle.
+const inlined = (name) => {
+  const text = fs.readFileSync(path.join(root, "js", name), "utf8");
+  if (/<\/script|<script/i.test(text)) throw new Error("js/" + name + " contains a <script or </script sequence and cannot be inlined");
+  return text;
+};
 html = html.replace(/<script src="js\/([\w./-]+)"><\/script>/g, (_, name) =>
-  "<script>\n" + fs.readFileSync(path.join(root, "js", name), "utf8") + "\n</script>"
+  '<script data-sbmod="' + name + '">\n' + inlined(name) + "\n</script>"
 );
+if (/<script[^>]*\ssrc=/i.test(html)) throw new Error("the bundle still references an external script");
+const lastScript = html.lastIndexOf("</script>") + "</script>".length;
+html = html.slice(0, lastScript) + '\n<script type="text/sb-worker">\n' + inlined("worker.js") + "\n</script>" + html.slice(lastScript);
 
 // Preserve the upstream MIT copyright and permission notice in the bundle
 // (NFR-11). It goes in a comment right after the doctype, so it leads the file
