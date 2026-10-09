@@ -2695,11 +2695,11 @@ Each task below is fully specified. It is expanded into step-level TDD before ex
 
 | Task | Work | Files / interfaces | Named checks / evidence | Reqs |
 |---|---|---|---|---|
-| **G4.0** Service-worker update gating (**before G4.1**) | Remove the unconditional `skipWaiting()` (`sw.js:46-48`). A waiting worker shows "Update available"; `skipWaiting` runs only on user action and never while the project is unsaved or an export is in progress. One cache per version; visible cache/update status. Because a dedicated worker's `importScripts` goes through the controlling SW, the worker must never mix versions (G4.1 handshake). | `sw.js:19-66`, `app.js:664` | `DEP-02 sw.js has no unconditional skipWaiting in install`; `DEP-02 VERSION == APP_VERSION` (T0.2); AT-23 evidence | DEP-02 |
-| **G4.1** Worker pool, cancel and stale handling (§9.3; expanded 2026-10-08, KI-CONN-PERF) | **Worker pool:** a pool of Web Workers sized `min(navigator.hardwareConcurrency − 1, cap)` (at least 1; cap recorded per device class, e.g. 8 desktop / 4 mobile) parallelises the per-layer and per-adjacent-pair stages — trace / `SBMaterial.fromMasks`, connected smoothing, the adjacent-pair differences, the support pass, `layerSVG` and the layer hashes — and merges results in a **deterministic order** (layer index, then pair index), so `materialHash`, `layerHash` and `geometryHash` are unchanged by pool size or scheduling (test: hashes equal for pool sizes 1, 2 and N). Every pool worker passes the engine-version handshake. The pool may be pulled earlier than G4 if performance blocks progress. `js/worker.js` `importScripts`s the pure modules in §4 order and runs `SBEngine.generate`. Messages follow §3 `GenerateRequest`/`GenerateResponse`: `engineVersion` is checked both ways (a mismatch rejects and reloads the worker), `status: "progress"` messages are posted per stage, and the response carries `validatedLayers`, `diagnostics` and `geometryHash`. The controller accepts a response only if `requestId` and `revision` match. It **transfers a copy** of `normalizedSource.pixels`, so the project keeps its own copy. Cancel = `worker.terminate()` plus respawn (< 500 ms). Packaging runs in the worker. `build.js` **changes**: it emits the worker modules as `<script type="text/sb-worker">` and starts a Blob worker in `dist/`. On `file://` failure it falls back to chunked main-thread execution with a notice. | `SBDiag.acceptResult(active, response) → boolean` (pure) | `AT-15 stale response discarded`; `§9.3 engineVersion mismatch rejected`; `AT-15 cancel during export keeps last revision and source`; `§9.3 progress messages precede done`; `NFR-05 worker pool hashes equal for pool sizes 1, 2, N`; `§9.3 every pool worker passes the engine-version handshake`; four-list consistency extended to `worker.js` | NFR-02, UI-06, §9.3, NFR-09, KI-CONN-PERF |
+| **G4.0** Service-worker update gating (**before G4.1**) | **Speed round (2026-10-09): the minimal gating (no unconditional `skipWaiting`, user-gated update, `worker.js`/`pool.js` in `SHELL`) moved to Appendix F task F10; the cache/update status UI stays here (F-D3).** Remove the unconditional `skipWaiting()` (`sw.js:46-48`; now `sw.js:64`). A waiting worker shows "Update available"; `skipWaiting` runs only on user action and never while the project is unsaved or an export is in progress. One cache per version; visible cache/update status. Because a dedicated worker's `importScripts` goes through the controlling SW, the worker must never mix versions (G4.1 handshake). | `sw.js:19-66`, `app.js:664` | `DEP-02 sw.js has no unconditional skipWaiting in install`; `DEP-02 VERSION == APP_VERSION` (T0.2); AT-23 evidence | DEP-02 |
+| **G4.1** Worker pool, cancel and stale handling (§9.3; expanded 2026-10-08, KI-CONN-PERF) | **Pulled forward 2026-10-09 into Appendix F (speed round, PO-PERF-1): the coordinator worker, helper pool, deterministic merge, handshake, progress, `SBDiag.acceptResult`, cancel, `dist/` Blob worker and fallback move to tasks F9–F16, together with this row's tests. Changes recorded there: cooperative cancel before `terminate()` (F-D2), the module list follows `test/modules.js` rather than §4, raster kernels (area resample, Kuwahara) are also banded. Still here after the round: packaging in the worker (F-D4) and tonal decode in the worker.** **Worker pool:** a pool of Web Workers sized `min(navigator.hardwareConcurrency − 1, cap)` (at least 1; cap recorded per device class, e.g. 8 desktop / 4 mobile) parallelises the per-layer and per-adjacent-pair stages — trace / `SBMaterial.fromMasks`, connected smoothing, the adjacent-pair differences, the support pass, `layerSVG` and the layer hashes — and merges results in a **deterministic order** (layer index, then pair index), so `materialHash`, `layerHash` and `geometryHash` are unchanged by pool size or scheduling (test: hashes equal for pool sizes 1, 2 and N). Every pool worker passes the engine-version handshake. The pool may be pulled earlier than G4 if performance blocks progress. `js/worker.js` `importScripts`s the pure modules in §4 order and runs `SBEngine.generate`. Messages follow §3 `GenerateRequest`/`GenerateResponse`: `engineVersion` is checked both ways (a mismatch rejects and reloads the worker), `status: "progress"` messages are posted per stage, and the response carries `validatedLayers`, `diagnostics` and `geometryHash`. The controller accepts a response only if `requestId` and `revision` match. It **transfers a copy** of `normalizedSource.pixels`, so the project keeps its own copy. Cancel = `worker.terminate()` plus respawn (< 500 ms). Packaging runs in the worker. `build.js` **changes**: it emits the worker modules as `<script type="text/sb-worker">` and starts a Blob worker in `dist/`. On `file://` failure it falls back to chunked main-thread execution with a notice. | `SBDiag.acceptResult(active, response) → boolean` (pure) | `AT-15 stale response discarded`; `§9.3 engineVersion mismatch rejected`; `AT-15 cancel during export keeps last revision and source`; `§9.3 progress messages precede done`; `NFR-05 worker pool hashes equal for pool sizes 1, 2, N`; `§9.3 every pool worker passes the engine-version handshake`; four-list consistency extended to `worker.js` | NFR-02, UI-06, §9.3, NFR-09, KI-CONN-PERF |
 | **G4.2** Draft vs fabrication pipelining | The G2.10b rule is already enforced. This task makes the fab generation run in the worker while the UI stays responsive, caches the last fab snapshot per revision, and shows "Preparing fabrication geometry…" in the export flow. | `js/app.js`, `js/worker.js` | `LYR-06 export regenerates at the fabrication rasterPlan (G2.1b) in worker`; `LYR-06 cached fab snapshot reused only for the same revision` | LYR-06 |
 | **G4.3** Resource envelope (complexity caps moved to G2.7b, 2026-10-08) | `deviceClass()` uses `deviceMemory` plus coarse pointer, with a user override. `SBSchema.limits(deviceClass).fabPxBudget` carries the G2.2b budgets (PO-LASER-4: desktop 25 Mpx, mobile 1 Mpx). The working-set estimate is `w·h·bytesPerStage` on the `rasterPlan` raster; over budget means reject or offer an explicit downsample. The per-device complexity caps and busy-art simplification are **G2.7b** (moved forward after G2.2b); G4.3 re-checks them on the reference devices with the G4.4 numbers. Also applies the mobile `.sbrproj` 64 MiB limit. | `SBSchema.estimateWorkingSet(w, h, N)`, `SBSchema.limits(deviceClass)` | `NFR-04 estimate > 192 MiB on mobile → reject code`; `§9.4 mobile maxBytes 64 MiB` | IMG-07, NFR-04 |
-| **G4.4** Benchmarks | `test/bench.js <stage>`: 5 warmups then 30 runs, reporting p50/p95/max as JSON in `docs/perf/`, plus an in-app `?bench`. Workloads: the SRS §12.3 desktop reference (1536 × 1536 samples, 8 layers; the NFR-03 acceptance workload, unchanged), the **mobile reference (768 × 768 samples, 6 layers, ≤100 parts/layer, ≤20,000 vertices)**, and the **laser-detail workloads of G2.2b** (desktop and mobile at their pixel budgets, PO-LASER-9), re-measured on the reference machines against the targets recorded in D6. Cancellation latency is measured in both. **KI-B1 (tracked):** B1 keeps its 2 s budget; G4.4 resolves the ≈2.14 s p95 overrun from the S6 T-split by optimizing `SBGeom` normalize (numeric vertex keys, skip noding when no collinear contact exists, normalize once per boolean; S5 F5 measured worst-case union + normalize 19 s vs 5.9 s for the union alone), then removes the `TRACKED.B1` entry from `test/bench.js`. | — | Desktop p95: draft ≤ 1.5 s, final plus validation ≤ 10 s, package ≤ 5 s. **Mobile p95: final plus validation ≤ 8 s**, measured on the recorded ≥4 GB device. Cancel ≤ 500 ms on both. **Laser-detail p95 within the D6 targets** (10 s unless G2.2b recorded a relaxed one). | NFR-02, NFR-03, AT-24, PO-LASER-9 |
+| **G4.4** Benchmarks | **Speed round 2026-10-09 (Appendix F):** per-stage and guide-stage columns, `--pool N`, the `user12` fabrication workload and the draft-budget sweep move to tasks F2, F17 and F18 (`docs/perf/speed-round.json`); the single-thread hotspot work of S5 (F3–F8) lands there, and KI-B1 normalize work moves there only if it stays on the critical path (F18). Reference-machine re-measurement, mobile, cancel latency and the 1.5 s draft target stay here. `test/bench.js <stage>`: 5 warmups then 30 runs, reporting p50/p95/max as JSON in `docs/perf/`, plus an in-app `?bench`. Workloads: the SRS §12.3 desktop reference (1536 × 1536 samples, 8 layers; the NFR-03 acceptance workload, unchanged), the **mobile reference (768 × 768 samples, 6 layers, ≤100 parts/layer, ≤20,000 vertices)**, and the **laser-detail workloads of G2.2b** (desktop and mobile at their pixel budgets, PO-LASER-9), re-measured on the reference machines against the targets recorded in D6. Cancellation latency is measured in both. **KI-B1 (tracked):** B1 keeps its 2 s budget; G4.4 resolves the ≈2.14 s p95 overrun from the S6 T-split by optimizing `SBGeom` normalize (numeric vertex keys, skip noding when no collinear contact exists, normalize once per boolean; S5 F5 measured worst-case union + normalize 19 s vs 5.9 s for the union alone), then removes the `TRACKED.B1` entry from `test/bench.js`. | — | Desktop p95: draft ≤ 1.5 s, final plus validation ≤ 10 s, package ≤ 5 s. **Mobile p95: final plus validation ≤ 8 s**, measured on the recorded ≥4 GB device. Cancel ≤ 500 ms on both. **Laser-detail p95 within the D6 targets** (10 s unless G2.2b recorded a relaxed one). | NFR-02, NFR-03, AT-24, PO-LASER-9 |
 | **G4.5** Accessibility | Keyboard path through stages, tabs, diagnostics and dialogs; `aria-live` status; focus styles; `prefers-reduced-motion` disables the tilt animation; **200% zoom** layout check; audit in `docs/A11Y_AUDIT.md`; browser matrix in `docs/ACCEPTANCE.md` | `index.html`, `css/style.css`, `app.js` | AT-20 evidence, including 200% zoom and reduced motion, and proof/section available without tilt | NFR-07, NFR-08, UI-04 |
 | **G4.6** Local server path and deployment docs | README (replacing "No server" at `README.md:18`): serve locally with `python3 -m http.server 8000` (or any static server) and open `http://localhost:8000`. Production needs HTTPS for the service worker and workers. `file://` gives reduced responsiveness (open question 10). The T0.2 four-list test stays the only `SHELL` guard; there is no generated `SHELL`. | `README.md`, `docs/DEPLOY.md` | `DEP-01 README documents local server and HTTPS`; AT-23 evidence | DEP-01 |
 | **G4.7** Locality and reproducible build | A test checks that no remote URL appears in `index.html` or `dist/` in a **loading context** (`src=`, `href=`, `url(`, `fetch(`, `importScripts(`, `import(`), plus any literal `https?://` outside an allow-list of XML namespace URIs (`http://www.w3.org/2000/svg`, `http://www.w3.org/1999/xlink`) and comments. `build.js` writes `dist/BUILD.json` with a **source-tree content hash** (SHA-256 over the inlined inputs in order), the per-file hashes and the component list. It records no git commit. | `build.js`, `run_tests.js` | `NFR-01 no remote URLs in bundle (namespaces allow-listed)`; `DEP-03 build twice → identical dist and BUILD.json`; `NFR-11 every vendor file listed in COMPONENTS.md with matching SHA-256` | NFR-01, NFR-11, DEP-03 |
@@ -4027,3 +4027,382 @@ Every point was checked against the tree at `c165e04`. Accepted points are appli
 24. Circular point recheck — **accepted**: replaced by the independent buffer test (item 3).
 
 Rejected outright: none.
+
+## Appendix F — speed round (G4.1 worker pool pulled forward)
+
+**v2.0.0-alpha.3 → speed round (before G3) Implementation Plan**
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Make the fabrication preview of the user's ~12 Mpx bonded colour illustration finish in ≤ 10 s (stretch ~5 s) with the page responsive throughout, and make the draft about 2000 px on the long side (≈ 0.2 mm/px) within the 3.0 s warm-draft rule, by (a) speeding up the hot kernels on one thread with bit-identical outputs, (b) running `SBEngine.generate` in a coordinator Web Worker, and (c) fanning the per-layer and per-adjacent-pair stages out to a pool of helper workers with a fixed merge order. Draft-only sampling shortfall stops blocking (S4), and the guide stage is measured and benched (S5).
+
+**Architecture:** `run()` (`js/engine.js:553-752`) becomes a generator, `runSteps`, that `yield`s a batch `{kind, items}` at every parallel point and folds the results in item order in its own body. Two drivers resume it: the **sync driver** (`SBEngine.generate`, unchanged signature, used by Node tests, bench and the no-worker fallback) runs each item inline in index order; the **async driver** (in the coordinator worker) posts items to helpers and resumes with the results sorted by item index, whatever order they completed in. Both call the same kernel functions from a frozen `SBEngine.TASKS` table, so serial and pooled runs are bit-identical by construction; tests prove it. The main thread only posts requests, receives `ack`/`progress`/`result`, and paints.
+
+**Tech Stack:** Plain ES2020 classic-script IIFEs, no npm; Node built-ins for tests (`node test/run_tests.js`), bench (`node test/bench.js`) and build (`node build.js`); `worker_threads` only inside a test/bench shim; Web Workers + `MessageChannel` in browsers; Clipper2 through `SBGeom`.
+
+**Spec:** `docs/SRS_Stacked_Relief.md`; this plan's G4.0/G4.1/G4.4 rows (§10), Global Constraints, Appendices C–E; the product-owner request of 2026-10-09 recorded in F.0.
+
+### F.0 Why this round exists (measured on alpha.3, 2026-10-09)
+
+Machine: i7-11800H (8 cores / 16 threads), Linux, Node v26.7.0, Chromium and Firefox; second machine MacBook Air M5 (Safari later). User: xTool S1, bonded plywood relief from colour illustrations ~4096 × 3084.
+
+1. **Fabrication preview freezes the page.** 9.7 Mpx: ~23.4 s in the browser (Node: 19.4–19.7 s); the user's 4096 source (3985 × 3000, 12 Mpx at 0.1 mm): 28.1 s in Node. Everything runs on the main thread (`fabReview`, `js/app.js:959-994`, sync call at `:978`).
+2. **The draft stayed at 720 px.** Warm draft p95 3.76 s at 720 px in the browser, over the 3.0 s E4 rule (`docs/perf/draft-budget.json`), so `DRAFT_BUDGET.desktopDraftPx` is 720 (`js/schema.js:163`) and both presets carry `draftPx: 720` (`js/schema.js:395`, `:413`). At 300 mm high the 4096 × 3084 art is ≈ 398 mm wide, so 720 px is ≈ 0.55 mm/px (staircase edges).
+3. **A blocking `SAMPLING_LOW` that only applies to the draft.** `SBSupport.featureChecks` judges `minFeatureMM / mmPerPxMax` of the raster it was given (`js/support.js:336-339`), and `run()` passes the draft raster's pitch (`js/engine.js:697-698`). Plywood's 1.5 mm minimum feature at 0.55 mm/px is 2.7 samples → blocking at draft, while fabrication (0.1 mm/px, 15 samples) passes.
+4. **Guide stage cost was unmeasured.** Profile: 311–542 ms at draft, ~1.47 s at fabrication (7 pairs), the third-largest fabrication stage.
+
+Profile of `generate` (scratchpad `prof.js`, cold, no E3 cache; per-stage wall ms):
+
+| stage | draft 720 | fab 3600 (9.7 Mpx) | fab 4096 (12 Mpx) | where |
+|---|---|---|---|---|
+| resample | 690–2035 | 10 (method none) | **4967** | `js/raster.js:278`; the area path allocates `rows` = h·W·c Float64 (`:303`), ≈ 393 MB at 4096 |
+| interpret (Kuwahara dominant) | 213–306 | **4022–4246** | 4833 | `kuwaharaOnce` `js/raster.js:97`, `boxSum` closure `:113`, `SBUtilClampI` `:140` |
+| masks | 23–27 | 480–548 | 616 | `Hh.cumulativeMasks` `js/height.js:60` |
+| construct | 561–842 | **10200–10714** | **13058** | `morph`/`diff` `js/construct.js:71-84`; `windowAny` `js/morph.js:79` 29.8 % self; `M.components` `:133` 10.2 %; draft overlays `E.maskPolygons` `js/engine.js:121` (401 ms / 14 calls) |
+| trace | 145–241 | 2042–2100 | 2252 | `M.fromMasks` `js/material.js:234`; `T.trace` Map corner table `js/trace.js:35-45` |
+| validate + features | 110–250 | 610–670 | 646 | `js/support.js:211-262`, `:319-360` |
+| guides | 311–542 | 1464–1481 | 1465 | `SBGuides.build`/`validate` `js/guides.js:73`, `:148` |
+| **total** | 2532–3449 | **19426–19660** | **28129** | |
+
+Parallel structure (verified against the code): bonded construct is independent per layer (`C.bonded`, `js/construct.js:105-116`; slowest layer ≈ 2.1 s of 10.2 s); trace and polygon conversion are per layer (`js/material.js:249-275`) except the connected-mode `smoothStack` barrier (`:256-260`); support is per adjacent pair except the `reach`/`pairs` fold (`js/support.js:211-262`); feature checks are per layer after a header (`js/support.js:334-342`); guides are per pair with an ordered append (`js/guides.js:73-142`, `:152-165`); layer hashes are per layer (`js/engine.js:738`).
+
+Baseline before this round: `node test/run_tests.js` → **1661 passed, 0 failed** (2026-10-09, alpha.3 + `b7f1a30`).
+
+### F.1 Goals and traceability
+
+Product-owner requirements of 2026-10-09 that the SRS does not state are `PO-PERF-n`. This table extends the §1 traceability matrix.
+
+| Goal | ID | Requirement | SRS / PO links | Tasks |
+|---|---|---|---|---|
+| S1 | **PO-PERF-1** | `SBEngine.generate` runs off the main thread: one coordinator worker plus a helper pool sized `clamp(hardwareConcurrency − 1, 1, cap)` (cap 8 desktop, 4 mobile). Per-layer and per-adjacent-pair stages (construct incl. draft overlays, trace/`fromMasks` conversion, support pairs, feature checks, guides build/validate, layer hashes) and row-band raster kernels (area resample, Kuwahara) are parallel. **Bit-identical** to the serial engine (whole response minus timing equal, incl. `geometryHash`, `layerHashes`, diagnostics order) for every pool size and completion order. Engine-version handshake both ways; superseded drafts cancelled; serial fallback (file:// index.html, a refused Blob worker); `dist/` runs a Blob worker built from the inlined module texts; progress/busy UI without freezing. | NFR-02, NFR-05, NFR-09, UI-05, UI-06, §9.3, AT-15, AT-24; plan G4.0, G4.1; R7 | F9–F16 |
+| S2 | **PO-PERF-2** | Fabrication preview of the user's bonded 12 Mpx case (4096 × 3084 tonal, plywood, 8 sheets, 300 mm, 0.1 mm pitch, inset-outline guides) ≤ **10 s** on the i7-11800H in Chromium (stretch ≈ 5 s); no main-thread task > 100 ms while it runs; peak memory inside the F.3 budget. | NFR-03 (laser-detail row, PO-LASER-9), NFR-04, NFR-02 | F3–F8, F13, F18 |
+| S3 | **PO-PERF-3** | Desktop draft long side raised to the largest of {1280, 1536, 1792, 2000} whose **warm p95 ≤ 2.5 s** in Chromium and Firefox on the i7 (0.5 s headroom under the 3.0 s E4 rule) and ≤ 3.0 s on the M5 Air in Chromium; debounced (300 ms, `js/app.js:90`); mobile and the no-worker fallback keep 720. Decision recorded in `docs/perf/draft-budget.json` and `DRAFT.md`. | NFR-03 (draft), PO-PREVIEW-1, GEO-06 | F17 |
+| S4 | **PO-PERF-4** | `SAMPLING_LOW` is judged against the **fabrication** raster predicted by `E.rasterPlan(…, "fabrication", deviceClass)`, at both qualities. A draft-only shortfall is at most the new info `DRAFT_COARSER` ("draft is coarser than fabrication"). Recorded as deviation F-D1. | GEO-06, PO-LASER-4, PO-LASER-6, UI-04 | F1 |
+| S5 | **PO-PERF-5** | Guide stage (stage 14) timed at draft and fabrication in `bench large` and `bench draft`; profile-led single-thread hotspots (resample, `windowAny`/erode, `components`/`fillHoles`, Kuwahara, `T.trace`, draft overlays; KI-B1 normalize/T-split if still on the critical path) optimised **without changing outputs** (oracle tests). KI-CONN-PERF re-measured with the pool and reported (non-goal: fixing it). | NFR-03, NFR-05, KI-B1, KI-CONN-PERF | F2–F8, F18 |
+
+Non-goals: any G3 feature; connected-mode KI-CONN-PERF work beyond what the pool gives for free (numbers reported only); packaging (`buildAndDeliver`) in the worker (stays on main, `preview.snapshot("proof")` needs the DOM); tonal decode in the worker (`createImageBitmap`/canvas stays on main, `js/app.js:1544-1573`).
+
+### F.2 Draft scoring and merge decisions
+
+Three drafts were scored 1–5 (5 = best) by expected speedup, risk (5 = lowest), determinism (5 = strongest guarantee) and effort (5 = least).
+
+| draft | speedup | risk | determinism | effort | notes |
+|---|---|---|---|---|---|
+| layer-pool (one lead worker, per-layer/pair/tile units) | 5 | 2 | 4 | 2 | Best test matrix (golden corpus first, hidden-state audit, adversarial order, lowest-index error). Two defects: per-tile Kuwahara rebuilds SAT rows `0..y1+r` (exact but O(h²/tiles) redundant), and the trace rewrite keeps an "insertion-order" table although `T.trace` iterates **sorted** corners (`js/trace.js:59`). |
+| stage-pipeline (coordinator + sub-workers, `SBTasks`, `SBPack`) | 5 | 3 | 5 | 2 | Correct Kuwahara tiling (ship slices of the **global** SAT; a band-local SAT changes Float64 operands). LPT ordering, `estBytes` memory gate, 100 ms ack, main-thread watchdog, Blob built from the already-inlined module texts, the schema `draftPx` ≤ 2000 limit and that both preset and `DRAFT_BUDGET` must rise. New module and codec add surface. |
+| optimise-first (serial kernels, then coordinator, then helpers) | 4 | 5 | 5 | 4 | Each phase ships value on its own: Phase A speeds up the serial fallback too, Phase B alone fixes the freeze. Kernel oracles; correct trace argument; dilation fusion; reuses `runComponents` (`js/construct.js:130`). Defers Kuwahara tiling. |
+
+**Backbone: optimise-first** (phases A → B → C, kernels as exports of their own modules, `E.TASKS`). **Grafted:** from layer-pool, the golden equality corpus before any refactor (F0), the hidden-state audit (F0), the adversarial completion-order executor (F12), the lowest-unit-index error rule (F9), and the exact row-band resample (F3); from stage-pipeline, global-SAT-slice Kuwahara bands (F6, F13, used for the S2 stretch), LPT + `estBytes` memory gate (F13), the ≤ 100 ms `ack` and main-thread watchdog (F11, F14), Blob from inlined texts (F16), the 2000 px schema ceiling and preset + `DRAFT_BUDGET` change (F17), polygon packing only if measured (F11).
+
+Decisions taken while merging (verified against the tree):
+- **Trace table:** `T.trace` sorts corner keys ascending (`js/trace.js:59`) and corners only lose bits; a typed `Uint8Array` scanned ascending is equivalent. No insertion-order array (layer-pool F20d rejected).
+- **`runComponents`** (`js/construct.js:130`) labels runs of non-zero pixels only; `fillHoles` needs components of 0. F5 adds a `value` parameter when moving it to `SBMorph`.
+- **Dilation fusion** (optimise-first F2d): `M.dilate` is a clipped Chebyshev window (`js/morph.js:104-109`), and clipped box dilations compose on a rectangle (`dilate_a ∘ dilate_b = dilate_{a+b}`), so `open(r)` then `close(r')` = `erode_r → dilate_{r+r'} → erode_{r'}`. `M.erode` never erodes the 1-px border and is unaffected. Shipped only behind the exhaustive small-mask test.
+- **`SBDiag.acceptResult` does not exist yet** (it is a G4.1 interface, `js/diag.js` has no such function); F11 creates it.
+- **Worker module list** follows `test/modules.js` (24 modules, = `index.html` minus `preview.js`/`app.js`), not the §4 text, which has drifted.
+- **Cancel:** cooperative first (keeps the draft cache), `terminate()` + respawn after 300 ms without a `canceled` reply (deviation F-D2 from G4.1's terminate-only).
+- **One module list, no `modulelist.js`:** `js/worker.js` holds `WORKER_MODULES`; the hygiene test parses it (fewer files than layer-pool F13).
+- **Packing codec:** not built up front; F11 measures the structured-clone cost of the largest fabrication response and builds the `Int32Array` codec only if it exceeds 50 ms on the main thread.
+
+### F.2a Deviations recorded by this round
+
+- **F-D1 (S4, GEO-06 semantics).** `SAMPLING_LOW` at draft quality is judged on the fabrication raster plan, not the evaluated draft raster; the doc comments at `js/support.js:51` and `js/engine.js:180` (legacy pitch) are updated. Diagnostics are not hash input (`js/engine.js:739-740`), so no hash changes; draft diagnostics and their acks change. New info code `DRAFT_COARSER`.
+- **F-D2 (G4.1 cancel).** Cooperative cancel at every yield, hard `terminate()` only after 300 ms; NFR-02's 500 ms cancel still holds.
+- **F-D3 (G4.0 scope).** Only the minimal G4.0 lands here (no unconditional `skipWaiting`, user-gated update, `worker.js`/`pool.js` in `SHELL`); the cache/update status UI stays in G4.0 proper.
+- **F-D4 (G4.1 scope).** Packaging stays on the main thread; G4.1's "packaging runs in the worker" remains in G4.1.
+- **F-D5 (draft budget depends on runtime).** The desktop draft cap is the pooled decision only when the pool is up; in the no-worker fallback `rasterPlan` uses 720. The raster is in `geometryHash`, so draft acks do not carry across those modes (fabrication is unaffected).
+
+### F.3 Global Constraints
+
+All of the plan's **Global Constraints** and E.3 apply. In addition, for this round:
+
+- **Bit-identity is the gate.** Every kernel change ships with an oracle (the old function moved verbatim into `test/oracle_kernels.js`) and a byte-equality test; every refactor leaves `test/golden/pool-equality.json` (F0) unchanged. No change to `SBSchema.ENGINE.version` in this round.
+- **Merge order** is item order (layer index, then pair index) in the generator body; scheduling, completion order and pool size never reach a fold. Map/Set insertion and diagnostics concatenation stay where they are today.
+- Kuwahara bands read slices of the **global** summed-area tables; never a band-local SAT.
+- Workers never set `SBEngine.TEST_HOOKS` (`req.debug` stays refused, `js/engine.js:526`). Errors cross `postMessage` as `{code, message}` and are rebuilt with `.code`; responses are re-`deepFreeze`d on receipt.
+- **Memory budget (NFR-04):** in-flight helper work ≤ `min(1 GiB, deviceMemory·128 MiB)` desktop, 192 MiB mobile, enforced by `estBytes` admission (F13).
+- After every task: `node test/run_tests.js` all green; when shipped code (`js/`, `index.html`, `css/`, `sw.js`) changes, `node build.js` and commit `dist/shadowbox-studio.html` with the task. Commit only the task's files; messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. No push, no tags.
+
+### F.4 Review Focus
+
+1. **A fold that depends on completion order** (diagnostics, `assignParts` ids, `supportGraph` edge order). Test: F12 adversarial executor over the F0 corpus, 20 seeds.
+2. **Kuwahara pass 2 on Float32 non-integer input.** Banding must give byte-equal `Float32Array`s for passes 1–3, all radii, band counts 1–9 and `r` larger than the band. Test in F6.
+3. **Edit during a fabrication run / two drafts in flight.** The stale result is never shown (`acceptResult`), the next draft still hits K1/K2 after a cooperative cancel. Test in F14.
+4. **`dist/` opened from file:// in Firefox and Chromium.** Blob worker boots or the cooperative fallback runs with the notice; hashes equal Node. Test in F16 (G4.8 subset).
+5. **A finer draft trips complexity caps or new diagnostics** that 720 did not. F17 records cap hits per candidate size and rejects sizes that hit a cap on the alpha.3 scene.
+
+### F.5 File structure
+
+| File | Change | Responsibility after this round |
+|---|---|---|
+| `js/raster.js` | Modify | Streaming exact area resample; `R.resampleRows`; Kuwahara interior fast path; `R.kuwaharaSAT`, `R.kuwaharaRows` (band kernel over global SAT slices). |
+| `js/morph.js` | Modify | Branch-free `windowAny`; fused erode/dilate indicator loops; `M.runComponents(mask, w, h, value)`; run-based `fillHoles`/`removeSpecks`; `M.components` kept for other callers. |
+| `js/construct.js` | Modify | `C.constructLayer(k, …)` kernel; `morph` with fused dilations; `C.bonded`/`C.connected` as maps over it; uses `SBMorph.runComponents`. |
+| `js/trace.js` | Modify | Typed corner table in `T.trace`. |
+| `js/material.js` | Modify | `M.traceLayer`, `M.convertLayer`; `fromMasks` as a sync wrapper. |
+| `js/support.js` | Modify | `S.supportPair` + serial fold; `S.featureLayer`; `featureChecks` head with `samplingMmPerPx`. |
+| `js/guides.js` | Modify | `buildPair`, `validatePair` on the frozen export; `build`/`validate` as ordered folds (split, not changed). |
+| `js/engine.js` | Modify | `runSteps` generator, sync driver, `E.generateAsync`, `E.TASKS`; bbox-cropped overlays; S4 fabrication-plan sampling. |
+| `js/diag.js` | Modify | `DRAFT_COARSER` (info); `SBDiag.acceptResult(active, response)`. |
+| `js/schema.js` | Modify | `DRAFT_BUDGET.desktopDraftPx`, preset `draftPx` (F17); `draftPxFallback`. |
+| `js/worker.js` | **Create** | `WORKER_MODULES`; roles `coord`/`helper`; protocol; handshake. Not in `index.html`; in `SHELL`. |
+| `js/pool.js` | **Create** | `SBPool` (main thread): spawn, broker ports, mode ladder, watchdog, `submit`/`cancel`/`setSource`. In `index.html` before `app.js` and in `SHELL`; not in `test/modules.js`. |
+| `js/app.js` | Modify | `regenerate`/`fabReview` on `SBPool`; progress UI; fab Cancel; fallback branch keeps today's shape. |
+| `sw.js` | Modify | No unconditional `skipWaiting`; user-gated update; `worker.js`, `pool.js` in `SHELL`; `VERSION`. |
+| `build.js` | Modify | `data-sbmod` on inlined modules; `worker.js` as `<script type="text/sb-worker">`. |
+| `test/oracle_kernels.js` | **Create** | Verbatim pre-change kernels (resample, windowAny/erode/dilate, components/fillHoles/removeSpecks, kuwaharaOnce/kuwaharaDomainOnce, T.trace, maskPolygons). |
+| `test/pool_corpus.js`, `test/golden/pool-equality.json` | **Create** | Fixture matrix and response digests captured on unmodified alpha.3. |
+| `test/node_worker_shim.js` | **Create** | `worker_threads` adapter (`self`, `importScripts` via `vm.runInThisContext`, `postMessage`, ports). |
+| `test/bench.js` | Modify | Guide columns, all stage times, `--pool N`, `--draft-sweep`; writes `docs/perf/speed-round.json`. |
+| `test/run_tests.js` | Modify | New F suites; hygiene extended to worker lists; retargeted app.js source checks. |
+| `docs/perf/speed-round.json`, `docs/perf/draft-budget.json`, `docs/perf/DRAFT.md`, `docs/perf/large-image.json` | Create/Modify | Measurements and decisions. |
+| `docs/CHANGELOG.md`, `docs/ARCHITECTURE.md`, `docs/QA_CHECKLIST.md` | Modify | Release notes, worker architecture, manual checks. |
+
+### F.6 Tasks
+
+Order is binding: F0 → F1 → F2 → (F3–F8 in any order, each oracle-gated) → F9 → F10 → F11 → F12 → F13 → F14 → F15 → F16 → F17 → F18. F1 (S4) is independent and may land first. Phase gates: after F8 the serial fab-12 Mpx run is re-profiled (expect ≈ 11–13 s); after F11 the page is responsive with any pool size; after F13 S2 is measured.
+
+---
+
+#### Task F0: Pool-equality golden corpus and hidden-state audit (no behaviour change)
+
+**Files:** Create `test/pool_corpus.js`, `test/golden/pool-equality.json`; Modify `test/run_tests.js` (suite `engine — speed round F0 golden corpus (NFR-05)`), `test/capture_golden.js` (`--pool-equality`).
+
+**Interfaces:** `corpus() → [{id, project, source, quality, overlays}]`; `digest(response) → {status, code, geometryHash, layerHashes, diagSha, cleanupSha, supportSha, guidesSha, statsSha, wholeSha}`, where `wholeSha = sha256(stableStringify(response minus requestId/timing))`.
+
+- [ ] **Step 1:** Write `corpus()`: alpha.3 scene (`tools/alpha3_scene.js`) at 900 × 675 and 1800 × 1350, draft and fabrication; height mode; tonal light-front and dark-front; bonded and connected (connected smoothing exercises the `smoothStack` barrier); frame on/off with registration holes; replayed repairs (one clip); guides `none`/`inset-outline`/`interior-mark`; alpha domain (`kuwaharaDomainOnce`); N = 2, 3, 8, 12; trailing-empty layers; `EMPTY_BAND`; a `COMPLEXITY_LIMIT` error; `simplify: "busy"`; mobile `deviceClass`; odd rasters (1 × N, 3 × 2). Fixtures above 2 Mpx are tagged `slow` and run only with `--slow`.
+- [ ] **Step 2:** Capture `test/golden/pool-equality.json` with `node test/capture_golden.js --pool-equality` on the unmodified tree; commit it.
+- [ ] **Step 3:** Add the check `NFR-05 F0 every corpus response digest equals test/golden/pool-equality.json` (sync driver). Run: PASS.
+- [ ] **Step 4 (audit):** grep `js/geom.js`, `js/vendor/clipper2.js`, `js/trace.js`, `js/morph.js`, `js/support.js`, `js/guides.js`, `js/construct.js`, `js/material.js` for module-level `let`/memo/counter state that can depend on call history. Record each in `docs/ARCHITECTURE.md` (speed-round section) as "pure" or "per-call reset required"; any history-dependent state is made per-call in this task (golden unchanged).
+- [ ] **Step 5:** `node test/run_tests.js` green; commit `test(speed): F0 pool-equality golden corpus and module-state audit`.
+
+#### Task F1 (S4): Judge `SAMPLING_LOW` on the fabrication raster
+
+**Files:** Modify `js/support.js:319-339` (`featureChecks` head), `js/engine.js:697-698`, `js/diag.js` (code table near `:87`), `test/run_tests.js` (PLAN code list near `:1763-1767`; new suite `support/engine — speed round F1 sampling on the fabrication plan (GEO-06, PO-PERF-4)`); doc comments `js/support.js:51`, `js/engine.js:178-180`.
+
+**Interfaces:** `featureChecks(layers, cfg)` accepts optional `cfg.samplingMmPerPx` (finite > 0); `SAMPLING_LOW` uses `samplingMmPerPx ?? mmPerPxMax`. `DRAFT_COARSER` (info, no ack): emitted at draft when the draft pitch alone gives < 3 samples but the fabrication plan gives ≥ 3; `measured` = draft samples, `limit` = 3, detail "draft is coarser than fabrication; detail is checked at the fabrication pitch (X mm/px, Y samples)".
+
+- [ ] **Step 1: failing tests**
+
+```js
+suite("support/engine — speed round F1 sampling on the fabrication plan (GEO-06, PO-PERF-4)", () => {
+  const S = SBSchema, E = SBEngine, F = require("./fixtures.js");
+  const base = { minFeatureMM: 1.5, mmPerPxMax: 0.55, calibrated: true };
+  const codes = (ds) => ds.map((d) => d.code);
+  check("F1 featureChecks without samplingMmPerPx is unchanged (0.55 mm/px → SAMPLING_LOW)",
+    codes(SBSupport.featureChecks([], base)).includes("SAMPLING_LOW"));
+  check("F1 samplingMmPerPx 0.1 judges the fabrication pitch (no SAMPLING_LOW)",
+    !codes(SBSupport.featureChecks([], { ...base, samplingMmPerPx: 0.1 })).includes("SAMPLING_LOW"));
+  const w = 1024, h = 771, px = { pixels: F.heightMap(2022, w, h), channels: 1, w, h, alpha: null };
+  let p = S.withSource(S.defaults("plywood"), E.sourceRecord(px, { format: "png", decode: "raw-gray8" }));
+  p.geometry.sizeBy = "height"; p.geometry.targetMM = 300;
+  const d = E.generate(E.request(p, px, { quality: "draft" }));
+  check("PO-PERF-4 default plywood draft: no blocking SAMPLING_LOW, DRAFT_COARSER info present",
+    !codes(d.diagnostics).includes("SAMPLING_LOW") && d.diagnostics.some((x) => x.code === "DRAFT_COARSER" && x.severity === "info"));
+  const q = JSON.parse(JSON.stringify(p)); q.geometry.fabPitchMM = 0.6;
+  check("GEO-06 a coarse fabrication pitch still blocks at draft and at fabrication",
+    ["draft", "fabrication"].every((qq) => codes(E.generate(E.request(q, px, { quality: qq })).diagnostics).includes("SAMPLING_LOW")));
+  // geometryHash/layerHashes unchanged: checked against the F0 golden corpus in Step 4 (diagnostics are not hash input).
+});
+```
+
+- [ ] **Step 2:** Run `node test/run_tests.js --only "speed round F1"`: FAIL (no `DRAFT_COARSER`).
+- [ ] **Step 3:** Implement: in `run()` compute `fabGeo = quality === "fabrication" ? geo : E.rasterPlan(p, {w: ns.w, h: ns.h}, "fabrication", deviceClass).geometry` (sizes only, `js/engine.js:379`) and pass `samplingMmPerPx: fabGeo.mmPerPxMax`; in `featureChecks` emit `DRAFT_COARSER` when `cfg.quality === "draft"` and the draft samples < 3 ≤ fabrication samples. Register `DRAFT_COARSER` in `js/diag.js` and the PLAN info list. Update the two doc comments (F-D1).
+- [ ] **Step 4:** Full suite green (the F0 golden changes **only** in `diagSha`/`wholeSha` of draft fixtures that had a draft-only `SAMPLING_LOW`; re-capture with a commit note listing those fixture ids; `geometryHash`/`layerHashes` unchanged). `node build.js`; commit `fix(engine,support,diag): S4 judge SAMPLING_LOW on the fabrication raster (PO-PERF-4, F-D1)` with `dist/`.
+
+#### Task F2 (S5): Guide stage and per-stage times in the bench
+
+**Files:** Modify `test/bench.js` (`benchLarge` `:401`, `benchDraft` `:784`, `draftPass`), create `docs/perf/speed-round.json`.
+
+- [ ] **Step 1:** Derive per-stage durations from `onProgress` marks (stage name → next mark), including `guides` (`"guides"` → `"accounting"`, `js/engine.js:711-719`) and `resample`/`resample-cached`/`interpret`/`interpret-cached`. Add `--guides none|inset-outline|interior-mark` (default from the preset).
+- [ ] **Step 2:** Add `bench large --only user12` (the S2 workload: 4096 × 3084 RGBA alpha.3 scene, `draftProject("a")` settings + `applyFabPitch(0.1)`, inset-outline) and record the alpha.3 baseline (serial, 3 runs) into `docs/perf/speed-round.json` `{baseline: {draft720, fab3600, fab4096}}` with stage tables.
+- [ ] **Step 3:** Test `S5 bench reports a guides stage column for bonded guide workloads` (runs `benchDraft` in `--quick` on a 200 px fixture via `require`). Suite green; commit `bench(speed): F2 guide stage and per-stage times (PO-PERF-5)`.
+
+#### Task F3 (S5): Streaming exact area resample and row bands
+
+**Files:** Modify `js/raster.js:278-325`; create `test/oracle_kernels.js` (move today's `R.resample` verbatim as `oracleResample`); `test/run_tests.js` suite `raster — speed round F3 streaming resample (NFR-05)`.
+
+**Interfaces:** `R.resampleRows(pixels, channels, w, h, W, H, method, Y0, Y1) → Uint8Array` of rows `[Y0, Y1)`; `R.resample` = `resampleRows(…, 0, H)`.
+
+- [ ] **Step 1: failing test** — random sizes 1–97 × 1–83, channels 1–4, W/H including identity on one axis, prime ratios and upsampling; `Buffer.compare(R.resample(...), oracleResample(...)) === 0`; band split at 1..9 bands concatenated equals whole. Also `R.resampleRows` exists.
+- [ ] **Step 2:** Implement: for each output row Y, accumulate the horizontal sums of only its `vy` source rows into a W·c Float64 accumulator with a small LRU of horizontal-sum rows (each source row feeds ≤ 2 output rows); specialise c = 4 and c = 1. Exactness: every term is an integer ≤ 255·w·h < 2^53 (`js/raster.js:300` comment), so the sum order cannot change a bit; `halfUp` unchanged.
+- [ ] **Step 3:** Suite and F0 golden green; bench `user12` resample (expect 4.97 s → ≈ 0.4–0.6 s; peak allocation −393 MB). `node build.js`; commit with `dist/`.
+
+#### Task F4 (S5): Faster `windowAny`, fused erode/dilate, fused dilations in `morph`
+
+**Files:** Modify `js/morph.js:79-125`, `js/construct.js:71-78`; oracle copies of `windowAny`, `M.dilate`, `M.erode`, `M.open`, `M.close`, `morph`.
+
+- [ ] **Step 1: failing tests** — exhaustive over all 4 × 4 and 5 × 3 masks, r = 0..4; random 64 × 48 masks with r ≥ w, w < 3, h < 3; `morph` (open → close → fillHoles) byte-equal to the oracle chain for featR 0..9.
+- [ ] **Step 2:** Row pass: scan 1-runs and `fill(1, max(0, a−r), min(w, b+r))`. Column pass: head/body/tail loops without per-pixel bounds tests. `M.erode`/`M.dilate`: build the indicator inside the row pass (an `invert` flag), no extra full plane. `morph`: `erode_r → dilate_{r+r'} → erode_{r'}` with `r' = max(1, r−1)` (F.2 proof), scratch buffers reused.
+- [ ] **Step 3:** Suite, golden green; bench construct at fab 3600 (expect `windowAny` 6.2 s → ≈ 2 s). Commit with `dist/`.
+
+#### Task F5 (S5): Run-based hole filling and speck removal
+
+**Files:** Modify `js/morph.js:133-200` (add `M.runComponents(mask, w, h, value)`; rewrite `fillHoles`/`removeSpecks`), `js/construct.js:130` (delegate to `SBMorph.runComponents(mask, w, h, 1)`); oracle copies.
+
+- [ ] **Step 1: failing tests** — 200 seeded random masks (sizes 1 × 1 to 120 × 90, densities 0.05–0.95, all-0/all-1): returned counts and mutated masks byte-equal to the oracle; `C.complexityGate` outputs unchanged.
+- [ ] **Step 2:** Implement: area = Σ run lengths per root; border touch = run on row 0 or h−1, or `x0 === 0`, or `x1 === w`; fill/kill pass over runs. `M.components` stays (grep callers first).
+- [ ] **Step 3:** Suite, golden green; bench (expect components + fillHoles + erode copies 3.6 s → ≈ 0.6 s at fab 3600, −80 MB per call). Commit with `dist/`.
+
+#### Task F6 (S5, S2 stretch): Kuwahara fast path and band kernel
+
+**Files:** Modify `js/raster.js:49-140`; oracle copies of `kuwaharaOnce`/`kuwaharaDomainOnce`.
+
+**Interfaces:** `R.kuwaharaSAT(src, w, h, domain?) → {sat, sat2, cnt?}` (today's build loop, unchanged); `R.kuwaharaRows(src, w, h, r, satSlice, y0, y1, domain?) → Float32Array` where `satSlice` holds global SAT rows `[max(0, y0−r), min(h, y1+r)+1]` and their offset; `kuwaharaOnce` = SAT + one band `[0, h)`.
+
+- [ ] **Step 1: failing tests** — random Float32 inputs (integer and non-integer), ties (constant regions), domain masks with holes and edge strips; r = 1..12; passes 1–3; band counts 1..9 and bands thinner than r: concatenated bands byte-equal the oracle.
+- [ ] **Step 2:** Implement: inline `boxSum`; interior block (`r ≤ x < w−r`, `r ≤ y < h−r`) with constant `n = (r+1)²` and no clamps; border strips keep the clamped path; same operand order `T[a]−T[b]−T[c]+T[d]`, `s/n`, `s2/n − mean*mean`, strict `<`, quadrants q = 0..3.
+- [ ] **Step 3:** Suite, golden green; bench interpret (expect 4.0–4.8 s → ≈ 1.6–2.0 s serial). Commit with `dist/`.
+
+#### Task F7 (S5): Typed corner table in `T.trace`
+
+**Files:** Modify `js/trace.js:35-100`; oracle copy.
+
+- [ ] **Step 1: failing test** — random masks (incl. 1 × 1, checkerboards, full, empty, holes touching the border): loops deep-equal the oracle.
+- [ ] **Step 2:** Replace the `outgoing` Map with `Uint8Array((w+1)(h+1))`; scan corners ascending (equivalent to the sorted key snapshot at `:59`, since corners only lose bits); inline `at`.
+- [ ] **Step 3:** Suite, golden green; bench trace (expect 2.1 s → ≈ 1.1 s at fab). Commit with `dist/`.
+
+#### Task F8 (S5, S3): Cheaper draft overlays
+
+**Files:** Modify `js/engine.js:121` (`E.maskPolygonsCrop(mask, x0, y0, x1, y1, …)`), `js/engine.js:641-651`; `C.constructLayer` (F9) can emit the change masks.
+
+- [ ] **Step 1: failing test** — `cleanupReport` (`added`/`removed`/`bridges`) deep-equal the oracle path on the F0 draft fixtures.
+- [ ] **Step 2:** Compute the change mask's bbox in the `diff` pass; trace only the crop and offset by `(x0, y0)` (row-major corner order is preserved inside a crop).
+- [ ] **Step 3:** Suite, golden green; bench draft overlays (expect 0.57 s → ≈ 0.15 s at 720). Commit with `dist/`. **Phase A gate:** re-profile `user12` serial; record in `speed-round.json` `phaseA` (expect ≈ 11–13 s).
+
+#### Task F9 (S1): Generator pipeline, kernels and the sync driver
+
+**Files:** Modify `js/engine.js:517-752`, `js/construct.js:91-117`, `js/material.js:234-275`, `js/support.js:193-262`, `:319-360`, `js/guides.js:73-168`.
+
+**Interfaces (all pure, plain data or typed arrays in and out):**
+- `C.constructLayer(k, {mask, W, H, px, bonded, wantChange}) → {final, report, bridges?, change?}` (connected runs `SBIslands.resolve` inside, per layer).
+- `M.traceLayer(mask, k, W, H) → {any, base, loops}`; `M.convertLayer(t, k, ctx) → MaterialLayer` (`fromPixelLoops`, `union`, `normalize`, frame, holes, `buildLayer`); bonded uses one fused kernel; connected keeps `smoothStack` as a serial step between the two batches.
+- `S.supportPair(lo, up, k, cfg) → {U, items, pairs: [[i, j, area]…] (ordered), identical}`; the serial fold keeps `reach[k]`, `edges`, `perLayer` (`js/support.js:244`).
+- `S.featureLayer(L, k, cfg) → diagnostics[]`; `featureChecks` = head + `flatMap`.
+- `SBGuides.buildPair(k, lower, upper, P, dOpts) → {paths, labels, omitted, diagnostics}`, `SBGuides.validatePair(k, lower, upper, paths, P, dOpts) → diagnostics[]` (added to the frozen export; `build`/`validate` become folds).
+- `E.TASKS` (frozen name → kernel), `function* runSteps(req, head, step, fail, cache, overlays)`, `E.generate` (sync driver), `E.generateAsync(req, {exec, …})` where `exec.map(kind, items, {transfer, estBytes}) → Promise<results[]>` in item order.
+- Errors: when several items throw, the driver raises the **lowest item index** error (what serial raises first).
+
+- [ ] **Step 1: failing tests** — `E.TASKS` names; each split function deep-equals its pre-split wrapper on the F0 fixtures; an in-process `exec` that runs items in reverse order gives the golden digests; injected faults in items 5 and 2 raise item 2's code.
+- [ ] **Step 2:** Implement the split (move code, never rewrite maths); old exported names stay as sync wrappers.
+- [ ] **Step 3:** Full suite + F0 golden green (whole-response equal). Commit with `dist/`.
+
+#### Task F10 (S1): Minimal G4.0 and worker-list hygiene
+
+**Files:** Modify `sw.js:24-64`, `js/app.js:1820-1830` (update prompt), `index.html` (`js/pool.js` before `js/app.js`), `test/run_tests.js:267-299`.
+
+- [ ] **Step 1: failing tests** — `DEP-02 sw.js has no unconditional skipWaiting in install`; `build: SHELL == index.html scripts + js/worker.js`; `build: worker WORKER_MODULES == test/modules.js`; `build: pool.js is a DOM module (not in the Node list)`.
+- [ ] **Step 2:** Remove `self.skipWaiting()` from install; `message {type: "skipWaiting"}` handler; app shows "Update available — reload" only when nothing is unsaved and no export or fabrication is in flight (F-D3). Add the files to `SHELL`.
+- [ ] **Step 3:** Suite green; `node build.js`; commit with `dist/`.
+
+#### Task F11 (S1): Coordinator worker, `SBPool`, handshake, progress, `acceptResult`
+
+**Files:** Create `js/worker.js`, `js/pool.js`, `test/node_worker_shim.js`; Modify `js/diag.js` (`SBDiag.acceptResult`).
+
+**Protocol:** main → coord: `source {sampleHash, pixels, alpha, w, h, channels}` (a transferred **copy**, once per `sampleHash`), `generate {req minus pixels, overlays, runId}`, `cancel {runId}`; coord → main: `hello {engineVersion, appVersion, modulesHash}`, `ack {runId}` (on receipt, ≤ 100 ms, NFR-02), `progress {runId, stage, frac, sub}` (≤ 10 Hz), `result {runId, response}`, `canceled {runId}`, `error {runId, code, message}`. The coordinator owns K1/K2 (`run.draftCache` moves into it) and rebuilds `normalizedSource` from the sticky source.
+
+- [ ] **Step 1: failing tests** (Node, through the shim) — round trip equals the sync digest on the F0 non-slow fixtures; `§9.3 engineVersion mismatch rejected` (both directions); `§9.3 progress messages precede done` and are monotone; `NFR-02 ack before work`; `acceptResult` drops wrong `requestId`/`revision`; `.code` survives; response frozen after receipt.
+- [ ] **Step 2:** Implement; mismatch → terminate, one respawn with `?v=APP_VERSION`, then fallback (F16) plus "Reload to update". Measure structured-clone time of the largest fabrication response on the main thread; build the `Int32Array` polygon codec only if > 50 ms (decision recorded).
+- [ ] **Step 3:** Suite green; commit with `dist/`. **Phase B gate:** fabrication runs in the coordinator; record main-thread longest task.
+
+#### Task F12 (S1): Adversarial executor and pool-size equality
+
+**Files:** Modify `test/run_tests.js` (suite `engine — speed round F12 pool equality (NFR-05)`).
+
+- [ ] **Step 1:** In-process `exec` that structured-clones arguments and results and completes items in seeded random order with random delays; 20 seeds over the F0 corpus; digests equal golden.
+- [ ] **Step 2:** Real pool (shim) sizes 1, 2, 3, 8: `NFR-05 worker pool hashes equal for pool sizes 1, 2, N` plus whole-response equality.
+- [ ] **Step 3:** Commit.
+
+#### Task F13 (S1, S2): Helper pool, scheduling, memory gate, band kernels
+
+**Files:** Modify `js/worker.js`, `js/pool.js`, `js/engine.js` (yield points).
+
+- [ ] **Step 1: failing tests** — memory gate at 64 MiB serialises and stays identical; LPT order changes dispatch only (digests equal); Kuwahara and resample bands through the pool byte-equal serial.
+- [ ] **Step 2:** Main creates `P − 1` helpers and a `MessageChannel` per helper (no nested workers). Yield points in order: resample bands (fab only), Kuwahara bands per pass (global SAT built in the coordinator, slices copied), `constructLayer` k = 1..N−1 (masks transferred out and back), overlays, `traceLayer`/`convertLayer`, `featureLayer`, `supportPair`, `buildPair` then `validatePair`, layer hashes. Serial: thresholds/bands, `assignParts`, `annotate`, accounting, `geometryHash`. Dispatch largest first (cost = `addedPx`); admission by `estBytes` (bonded layer ≈ 5·W·H after F4/F5).
+- [ ] **Step 3:** Suite green; bench `user12 --pool 8` and record in `speed-round.json` `phaseC`. Commit with `dist/`.
+
+#### Task F14 (S1): Cancellation (AT-15) and watchdog
+
+- [ ] **Step 1: failing tests** — `AT-15 stale response discarded`; superseded draft returns `canceled` and the next draft reports `resample-cached`; stuck coordinator is terminated after 300 ms and respawned in < 500 ms, next draft correct (cold); helper results with an old `runId` dropped; `AT-15 cancel during export keeps last revision and source`.
+- [ ] **Step 2:** Cancel flag checked at every `step()` and before every dispatch; busy stale helpers terminated and respawned from a warm spare; watchdog on main.
+- [ ] **Step 3:** Commit with `dist/`.
+
+#### Task F15 (S1): App wiring and progress UI
+
+**Files:** Modify `js/app.js:192-245`, `:925-994`; `css/`; `test/run_tests.js:4559-4563`, `:5045`, `:5260`, `:5331`, `:5587`.
+
+- [ ] **Step 1: failing tests** — `regenerate`/`fabReview` call `SBPool.submit(` and gate on `SBDiag.acceptResult`; the literal `SBEngine.generate(`, rAF + `setTimeout` and "will not respond" text exist **only** in the fallback branch; an edit cancels an in-flight fabrication ("fabrication restarted"); fab Cancel button.
+- [ ] **Step 2:** Implement; progress bar + stage label from `progress` (throttled per rAF); `fabMsPerMpx` kept as ETA, re-measured separately for pool and fallback (F17).
+- [ ] **Step 3:** Commit with `dist/`.
+
+#### Task F16 (S1): `dist/` Blob worker and fallback ladder
+
+**Files:** Modify `build.js:36-39`, `js/pool.js`; add `test/browser.html` subset (G4.8).
+
+- [ ] **Step 1: failing tests** — `dist` has no `<script src=`; each module text appears once (`data-sbmod`) and one `text/sb-worker` block; forced `Worker` failure → cooperative inline driver (`setTimeout(0)` per batch) with the "reduced responsiveness" notice and identical digests.
+- [ ] **Step 2:** Ladder: URL worker (http(s)) → Blob from inlined texts + `worker.js` (`importScripts` guarded by `typeof SB_INLINED`) → cooperative inline. `chromium --headless=new --dump-dom file://…dist/shadowbox-studio.html?run` and Firefox: round trip, cancel, `geometryHash` equal to Node on 5 fixtures.
+- [ ] **Step 3:** Commit with `dist/`.
+
+#### Task F17 (S3): Draft budget re-measured and raised
+
+**Files:** Modify `js/schema.js:163`, `:395`, `:413`; `docs/perf/draft-budget.json`, `docs/perf/DRAFT.md`; `test/run_tests.js:5471` (PO-PREVIEW-1 check).
+
+- [ ] **Step 1:** `node test/bench.js draft --draft-sweep 1280,1536,1792,2000 --pool 8 --record` plus the in-app `?bench` in Chromium and Firefox on the i7 and Chromium on the M5: warm p95 (≥ 15 warm runs, K1/K2 hit, threshold edit), K2-miss p95 (smoothing edit), cold-after-source, preview render time (`preview.js`), parts/vertices and cap hits per size.
+- [ ] **Step 2:** Apply the F.7 rule; set `DRAFT_BUDGET.desktopDraftPx` and both preset `draftPx` (schema ceiling 2000, `js/schema.js:562`); `draftPxFallback: 720` used by `rasterPlan` when the pool is not up (F-D5); mobile 720. Saved projects whose `draftPx` equals 720 are migrated on load with a log line (Q2).
+- [ ] **Step 3:** Update PO-PREVIEW-1 test; suite green; `node build.js`; commit with `dist/`.
+
+#### Task F18 (S2, S5): Final measurement, records and checkpoint docs
+
+- [ ] **Step 1:** `bench large --only user12 --pool 0,1,8` (3 runs each), fab 3600 and draft 720/decided size; KI-CONN-PERF connected rows with the pool; KI-B1 B1 re-run; guide stage at draft and fabrication. Write `docs/perf/speed-round.json` `final` and the `large-image.json` rows.
+- [ ] **Step 2:** If `user12` pooled p95 > 10 s or a single serial stage > 1 s remains on the critical path, profile and fix it in this task (output-identical, oracle-gated) before closing; otherwise record the stretch status.
+- [ ] **Step 3:** `docs/CHANGELOG.md`, `docs/ARCHITECTURE.md` (worker architecture), `docs/QA_CHECKLIST.md` (manual: page responsive during fab, cancel, file:// dist). Suite green; commit.
+
+### F.7 Measurement plan
+
+| what | command / where | metric | runs | pass rule |
+|---|---|---|---|---|
+| S2 fabrication, user case | `node test/bench.js large --only user12 --pool 8` (Node) and `?bench=fab` in Chromium on the i7 | wall p50/p95, per-stage, peak RSS sum across workers | 1 warm + 5 | p95 ≤ 10 s Chromium (stretch ≈ 5 s); memory inside F.3 budget |
+| S2 responsiveness | Chromium Performance panel / `PerformanceObserver('longtask')` in `?bench=fab` | longest main-thread task during a fab run | 5 | ≤ 100 ms; `ack` ≤ 100 ms |
+| S1 equality | F0, F12, F16 tests | digests | every commit | identical |
+| S1 cancel | F14 tests + `?bench=cancel` | cancel → `canceled`/respawn | 20 | ≤ 500 ms (NFR-02) |
+| S3 draft | `bench draft --draft-sweep … --pool 8` + `?bench=draft` (Chromium, Firefox on i7; Chromium on M5) | warm p95, K2-miss p95, cold p95, preview render ms | ≥ 15 warm | largest size with warm p95 ≤ 2.5 s (i7, both browsers) and ≤ 3.0 s (M5); smaller decision wins; reject a size that hits a complexity cap on the alpha.3 scene |
+| S5 guides and stages | `bench large`/`bench draft` stage columns | ms per stage incl. `guides` | as above | recorded at draft and fab, serial and pooled |
+| Phase deltas | `speed-round.json` `baseline`, `phaseA`, `phaseC`, `final` | stage tables | 3 | recorded |
+| KI-CONN-PERF, KI-B1 | `bench large --caps desktop` connected rows; `bench geom` | p95 | as today | reported only |
+
+Expected (from the profile; to be replaced by measurements): fab 12 Mpx ≈ 28.1 s → ≈ 11–13 s after Phase A (serial) → ≈ 4–6 s pooled (resample ≈ 0.2–0.5, interpret ≈ 0.8–2.2 depending on Kuwahara banding, construct ≈ 0.9–1.2, trace ≈ 0.35, validate + features ≈ 0.2–0.3, guides ≈ 0.35). Warm draft at 2000 × 1506 pooled ≈ 1.2–1.9 s; 1536 is the safe fallback.
+
+### F.8 Risks
+
+| # | Risk | Mitigation |
+|---|---|---|
+| F-R1 | A faster kernel changes a bit | Oracle per kernel (F3–F8), F0 golden, each kernel its own commit; Kuwahara keeps operand order and global SAT slices |
+| F-R2 | Hidden module state or completion-order folds break equality in some orders only | F0 audit; folds in the generator body; F12 adversarial executor, 20 seeds |
+| F-R3 | Memory multiplies with workers (7 × 12 Mpx layers; source copies) | `estBytes` gate (F13), F5 removes 8 B/px `components` buffers, masks transferred not cloned, source posted once per `sampleHash` |
+| F-R4 | Version skew page/coordinator/helpers via the SW cache (R7) | F10 before F11; `hello` with `engineVersion` + `appVersion` + `modulesHash` |
+| F-R5 | Blob worker refused on file:// or by CSP | Ladder to cooperative inline (F16); headless check in Chromium and Firefox |
+| F-R6 | Cancel latency inside a long serial kernel in the coordinator | Everything > 300 ms is banded; watchdog terminate; next draft cold |
+| F-R7 | Structured-clone cost of 356k-vertex responses on main | Measured in F11; `Int32Array` codec if > 50 ms |
+| F-R8 | Finer draft trips caps or slows preview rendering | F17 records cap hits and render ms; rule counts them |
+| F-R9 | app.js source-pinning tests churn | Fallback branch keeps the pinned shape; tests extended, not loosened |
+| F-R10 | Refactoring the frozen `SBGuides` and multi-layer APIs | Move code only; old names kept as sync wrappers; F0 golden |
+| F-R11 | M5 E-cores slow the critical layer | LPT ordering; M5 measured in F17/F18 before claiming S2/S3 there |
+
+### F.9 Open questions (defaults apply unless unsafe)
+
+1. **Pull minimal G4.0 into this round?** Default **yes** (R7 prerequisite; F-D3).
+2. **Draft ceiling and saved projects.** Default: top out at **2000** (schema `draftPx` 64–2000, no schema change); migrate saved projects whose `draftPx` is exactly 720 on load, logged.
+3. **Pool cap and memory budget.** Default: cap 8 desktop / 4 mobile; budget `min(1 GiB, deviceMemory·128 MiB)` desktop, 192 MiB mobile.
+4. **Cancel semantics.** Default: cooperative first, `terminate()` after 300 ms (F-D2).
+5. **`DRAFT_COARSER` placement.** Default: details list only, with a one-line hint on the draft badge; wording "Draft is coarser than fabrication; detail is checked at the fabrication pitch".
+6. **An edit during fabrication.** Default: cancels it and shows "fabrication restarted"; Export waits for an in-flight fabrication.
+7. **Packaging in the worker.** Default **later** (F-D4).
+8. **Kuwahara banding across workers.** Default: implemented (F6/F13) because interpret is the post-pool critical path; switch off by config if F12 ever disagrees.
+9. **Draft budget dependent on runtime pool.** Default **yes** (F-D5).
+10. **Version label.** Default: ship as `v2.0.0-alpha.4` in F18 (APP_VERSION + sw `VERSION`), engine version unchanged.
+
+### F.10 Self-review
+
+- Every S-goal maps to tasks (F.1) and to measured pass rules (F.7). S1 → F9–F16; S2 → F3–F8, F13, F18; S3 → F17; S4 → F1; S5 → F2–F8, F18.
+- References re-checked on 2026-10-09 against `b7f1a30`: `js/engine.js:121, 517-545, 553-752, 576-623, 637-654, 697-698, 711-719, 738-740`; `js/morph.js:79, 104-125, 133, 170, 187`; `js/raster.js:49, 61, 97, 113, 140, 157, 212, 278, 300-303`; `js/construct.js:71-84, 91-117, 130, 253, 267`; `js/material.js:234, 249-275`; `js/support.js:51, 211-262, 319-342`; `js/guides.js:52, 73, 148-168`; `js/trace.js:35-59`; `js/height.js:60`; `js/schema.js:156, 163, 395, 413, 562`; `js/diag.js:87`; `js/app.js:90, 192-245, 959-994, 1544, 1820-1830`; `sw.js:19, 24, 64`; `build.js:37-39`; `test/run_tests.js:267-299, 1763-1767, 4559, 5045, 5260, 5331, 5471, 5587`; `test/bench.js:401, 736, 784`. Corrections versus the drafts: `SBDiag.acceptResult` is new; `T.trace` order is sorted, not insertion; `runComponents` needs a `value` parameter; the plan's G4.0 cites `sw.js:46-48`, the line is now `sw.js:64`.
+- No placeholder steps: each task names files, interfaces, failing tests, the implementation rule and the gate.
