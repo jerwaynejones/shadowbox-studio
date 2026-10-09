@@ -272,8 +272,31 @@ suite("build — hygiene (four-list rule, inline bundle, versions)", () => {
   const tags = [...html.matchAll(/<script src="js\/([\w./-]+\.js)"><\/script>/g)].map((m) => m[1]);
   const shell = [...sw.matchAll(/"\.\/js\/([\w./-]+\.js)"/g)].map((m) => m[1]);
   const { NODE_MODULES } = require("./modules.js");
-  const domOnly = new Set(["preview.js", "app.js"]);
-  check("build: index.html scripts == sw.js SHELL (same order)", JSON.stringify(tags) === JSON.stringify(shell));
+  const domOnly = new Set(["pool.js", "preview.js", "app.js"]);
+  // F10 (S1, R7): the coordinator worker (js/worker.js) is not a page script, but it is precached with the shell so
+  // page and worker always come from the same cache version.
+  check("build: SHELL == index.html scripts + js/worker.js", JSON.stringify(tags.concat(["worker.js"])) === JSON.stringify(shell));
+  check("build: pool.js is a DOM module (not in the Node list)",
+    tags.includes("pool.js") && tags.indexOf("pool.js") < tags.indexOf("app.js") && !NODE_MODULES.includes("pool.js"));
+  {
+    const wsrc = fs.readFileSync(path.join(root, "js/worker.js"), "utf8");
+    const m = wsrc.match(/WORKER_MODULES\s*=\s*(\[[\s\S]*?\])/);
+    let list = null;
+    try { list = m && JSON.parse(m[1]); } catch (_) { list = null; }
+    check("build: worker WORKER_MODULES == test/modules.js", Array.isArray(list) && JSON.stringify(list) === JSON.stringify(NODE_MODULES));
+  }
+  {
+    // DEP-02 (G4.0 minimal, F-D3): a new worker waits; it activates only on the page's explicit skipWaiting message.
+    const install = (sw.match(/addEventListener\("install"[\s\S]*?\n\}\);/) || [""])[0];
+    check("DEP-02 sw.js has no unconditional skipWaiting in install", install !== "" && !/skipWaiting\s*\(/.test(install));
+    const msg = (sw.match(/addEventListener\("message"[\s\S]*?\n\}\);/) || [""])[0];
+    check("DEP-02 sw.js skipWaiting only from a {type: \"skipWaiting\"} message",
+      /skipWaiting\s*\(/.test(msg) && /type\s*===\s*"skipWaiting"/.test(msg) && (sw.match(/skipWaiting\s*\(/g) || []).length === 1);
+    const upd = app.slice(app.indexOf("function updateReady"), app.indexOf("function registerServiceWorker"));
+    check("DEP-02 update prompt is gated on unsaved work, export and fabrication in flight",
+      app.includes("function updateReady") && /hasUnsavedWork\(\)/.test(upd) && /btn-export/.test(upd) && /fabInFlight/.test(upd) &&
+      /postMessage\(\{\s*type:\s*"skipWaiting"\s*\}\)/.test(app) && /controllerchange/.test(app));
+  }
   check("build: Node list == index.html scripts minus DOM modules",
     JSON.stringify(NODE_MODULES) === JSON.stringify(tags.filter((t) => !domOnly.has(t))));
   require("child_process").execFileSync(process.execPath, [path.join(root, "build.js")], { stdio: "ignore" });

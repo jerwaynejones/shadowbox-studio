@@ -8,6 +8,10 @@
  * the fresh shell under a new cache key and deletes the old caches on
  * activate, so returning users move cleanly onto the new build.
  *
+ * Updates are user-gated (DEP-02): a new worker installs its cache and waits;
+ * it activates only when the page posts {type: "skipWaiting"} on the user's
+ * request, then the page reloads onto the new version.
+ *
  * Strategy: cache-first for the known app shell. Everything the app needs is
  * local and versioned, so serving from cache is both correct and instant, and
  * the app keeps working with no network at all. Requests we don't recognize
@@ -50,8 +54,12 @@ const SHELL = [
   "./js/zip.js",
   "./js/docs.js",
   "./js/engine.js",
+  "./js/pool.js",
   "./js/preview.js",
   "./js/app.js",
+  // The engine worker (speed round F10/F11) is not a page script; it is precached with the shell so the page and the
+  // worker always come from this one cache version (R7). Its URL carries no ?v= (caches.match is exact).
+  "./js/worker.js",
   "./icons/icon.svg",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
@@ -60,8 +68,10 @@ const SHELL = [
 ];
 
 self.addEventListener("install", (event) => {
-  // Take over as soon as installed rather than waiting for old tabs to close.
-  self.skipWaiting();
+  // DEP-02 (G4.0 minimal, F-D3): no skipWaiting here. A new version waits until the page asks for it (the "message"
+  // handler below), which the page does only on the user's click and never while there is unsaved work or an export
+  // or fabrication run in flight, so an update never interrupts a project or mixes engine assets from two releases.
+  // The very first install has no previous worker to wait for and activates at once.
   event.waitUntil(
     caches.open(CACHE).then((cache) =>
       // addAll fails the whole install if any file 404s, which is what we want:
@@ -69,6 +79,11 @@ self.addEventListener("install", (event) => {
       cache.addAll(SHELL)
     )
   );
+});
+
+// DEP-02: the page's "Update available — reload" action posts {type: "skipWaiting"} to the waiting worker.
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "skipWaiting") self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
