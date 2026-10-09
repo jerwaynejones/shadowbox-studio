@@ -6,6 +6,36 @@ const fs = require("fs"), path = require("path"), vm = require("vm"), crypto = r
 const GOLDEN = path.join(__dirname, "golden", "sheetmasks.json");
 const LEGACY_SVG = path.join(__dirname, "golden", "legacy_svg.json");
 const rel = (p) => path.relative(process.cwd(), p);
+// ---- speed round F0 (plan Appendix F, NFR-05): the pool-equality golden. Handled before the legacy guard below.
+//   node test/capture_golden.js --pool-equality                      write test/golden/pool-equality.json (refuses to overwrite)
+//   node test/capture_golden.js --pool-equality --recapture id1,id2  rewrite only the named fixtures' entries
+if (process.argv.includes("--pool-equality")) {
+  const POOL = path.join(__dirname, "golden", "pool-equality.json");
+  const ri = process.argv.indexOf("--recapture"), recapture = ri > 0 ? String(process.argv[ri + 1] || "").split(",").filter(Boolean) : null;
+  const exists = fs.existsSync(POOL);
+  if (exists && !recapture) { console.error("capture_golden: " + rel(POOL) + " already exists; name the fixtures to replace with --recapture id1,id2,…"); process.exit(1); }
+  if (!exists && recapture) { console.error("capture_golden: --recapture needs an existing " + rel(POOL)); process.exit(1); }
+  globalThis.crypto ??= crypto.webcrypto;
+  for (const f of require("./modules.js").NODE_MODULES) vm.runInThisContext(fs.readFileSync(path.join(__dirname, "..", "js", f), "utf8"), { filename: f });
+  const C = require("./pool_corpus.js"), all = C.corpus(), ids = all.map((fx) => fx.id);
+  const unknown = (recapture || []).filter((id) => !ids.includes(id));
+  if (unknown.length) { console.error("capture_golden: unknown fixture ids: " + unknown.join(", ")); process.exit(1); }
+  const out = exists ? JSON.parse(fs.readFileSync(POOL, "utf8")) : { capturedFrom: null, engineVersion: SBEngine.VERSION, fixtures: {} };
+  if (!exists) {
+    try { out.capturedFrom = require("child_process").execSync("git rev-parse --short HEAD", { cwd: path.join(__dirname, ".."), stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch (e) { out.capturedFrom = "unknown"; }
+  }
+  for (const fx of all) {
+    if (recapture && !recapture.includes(fx.id)) continue;
+    const t = Date.now(), r = C.run(fx);
+    out.fixtures[fx.id] = Object.assign({ slow: fx.slow }, C.digest(r));
+    console.log("  " + fx.id + " " + r.status + " (" + (Date.now() - t) + " ms)");
+  }
+  if (recapture) out.recaptured = (out.recaptured || []).concat([{ ids: recapture, engineVersion: SBEngine.VERSION }]);
+  fs.mkdirSync(path.dirname(POOL), { recursive: true });
+  fs.writeFileSync(POOL, JSON.stringify(out, null, 1) + "\n");
+  console.log("capture_golden: " + (recapture ? "re-captured " + recapture.length + " fixture(s) in " : "wrote ") + rel(POOL) + " (" + Object.keys(out.fixtures).length + " fixtures)");
+  process.exit(0);
+}
 if (fs.existsSync(GOLDEN) && fs.existsSync(LEGACY_SVG)) {
   console.error("capture_golden: " + rel(GOLDEN) + " and " + rel(LEGACY_SVG) + " already exist; refusing to overwrite persisted goldens.");
   process.exit(1);

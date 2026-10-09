@@ -427,3 +427,35 @@ Laser-detail performance targets (PO-LASER-9). Measured columns filled by G2.2b 
 | Connected mode (KI-CONN-PERF) | SRS desktop reference and the budget rows | G2.2b (reported) | not gating; resolved in G4 (G4.1 pool, smoothing) | — | 16.5 s (SRS), 47.3 s (`r25`), 11.5 s (`r1`) | — | — |
 
 Support stage (G2.7, 2026-10-08): the rows above were timed with the pre-G2.7 support pass (one layer-level intersection per pair, `classifyContact` then `survivesInset` per piece). `test/bench.js large` now times `SBSupport.validate` (bonded-relief, 1.5 / 2.0 mm, upward differences reused) in that slot; its p95 on the dense geom page is **1.32 s** (B3b, under the 3 s B3 budget; `docs/perf/SUPPORT.md`). The large rows were **not** re-run in G2.7 (the long large-image benchmark was out of scope for this task; only `large --quick` was run as a smoke check). Their support p95 is recorded with the G2.7b runs: **87–107 ms** on realistic `r25`, and 0.4–0.95 s on busy art at 176–340 parts/layer (`docs/perf/LARGE_IMAGE.md` "G2.7b"). With the complexity gate, `r25` measures 7.61 s bonded (estimate 256 ms).
+
+## Speed round (Appendix F): module-state audit (F0)
+
+Plan Appendix F task F0 (2026-10-09, NFR-05). Before the worker pool (F9–F16) runs kernels in several realms and in any
+completion order, every pure module was audited for module-level `let`/memo/counter/scratch state that could make a
+result depend on call history. "Pure" means no module-level mutable state: every call allocates its own working
+arrays and exported data is deep-frozen. "Per-call reset" means module-level state exists but every call writes it
+before reading it. The audit is pinned by `test/run_tests.js` (suite `js/* — speed round F0 module-state audit`: no
+module-level `let`/`var`, every exported data value of the `SB*` globals deep-frozen, the clipper2 static list) and by
+the golden corpus `test/golden/pool-equality.json` (`test/pool_corpus.js`; responses re-run in reverse order after
+the whole corpus are `deepEqualStrict`).
+
+| Module | Verdict | Notes |
+|---|---|---|
+| `js/geom.js` | pure | Module constants `KLIM`, `LIM`, `NO_SCORES` (read-only); scratch typed arrays are allocated per call. Clipper2 objects are created per boolean/offset call. |
+| `js/vendor/clipper2.js` | per-call reset | Static `ClipperBase.openPathsEnabled` is rewritten from the instance's `hasOpenPaths` at the start of every execute; static `RectClip64._intResult` is a scratch object written before it is read on every `getIntersection` (and `SBGeom` never calls `rectClip`). `Tolerance`, `arc_const`, `maxSafeDelta` are never assigned. Engine state (`minimaList`, `scanlineHeap`, `outrecList` …) is per instance. Each worker realm loads its own copy. |
+| `js/trace.js` | pure | `DX`/`DY` read-only; `SBTrace.SMOOTH_LEVELS` was an exported mutable array that `smoothLevel` validates against, now frozen (F0; outputs unchanged). |
+| `js/morph.js` | pure | All buffers per call. |
+| `js/support.js` | pure | `MODES`, `QUALITIES` read-only. |
+| `js/guides.js` | pure | `ARMS`, `SLIVER_UM` read-only; `SBGuides` is frozen. |
+| `js/strokefont.js` | pure | `GLYPHS` read-only (`strokes` returns fresh arrays); `SBFont` is frozen. |
+| `js/construct.js` | pure | `DEVICES` read-only. |
+| `js/material.js` | pure | `VALIDATE_CODES` (a `Set`, read-only); smoothing diagnostics maps are per call. |
+| `js/islands.js` | pure | The generation-stamped `visited` array is allocated per call. |
+| `js/raster.js` | pure | `METHODS` read-only; SAT and resample buffers per call. |
+| `js/height.js` | pure | `FILTER_OPS`, `FILTER_MAX_R` read-only. |
+| `js/diag.js` | pure | `TABLE`, `CODES` (exported frozen), `AGGREGATED`, `SEVERITIES` read-only. |
+| `js/util.js` | pure | The CRC-32 table is built once at load and only read. |
+| `js/engine.js` | pure | `SBEngine.TEST_HOOKS` is a process flag set only by the Node test runner (never in the browser, never by a worker; `req.debug` stays refused there). The E3 stage cache is caller-owned (`opts.cache`), not module state. |
+| `js/hash.js`, `js/schema.js` | pure | SHA-256 copies `H0` per call; schema tables are read-only. |
+
+Consequence for the pool: no module needs a per-call reset hook; a helper realm may run any sequence of items.

@@ -5942,6 +5942,107 @@ suite("engine.js/svgout.js/app.js — alpha.3 E11 guides in generate (G3.1 stage
   check("ASM-05 USER_GUIDE explains GUIDE_OMITTED (place that part by the placement map)", /GUIDE_OMITTED/.test(ug) && /place that part by the placement map/.test(ug));
 });
 
+// ------------------------------------------------ speed round F0 (plan Appendix F): pool-equality golden corpus, module-state audit
+suite("engine — speed round F0 golden corpus (NFR-05)", () => {
+  const C = require("./pool_corpus.js"), E = SBEngine, S = SBSchema, SLOW = process.argv.includes("--slow");
+  const GOLD = path.join(__dirname, "golden", "pool-equality.json");
+  const all = C.corpus(), ids = all.map((fx) => fx.id);
+  check("F0 corpus API (corpus, run, digest, deepEqualStrict) and unique fixture ids",
+    typeof C.corpus === "function" && typeof C.run === "function" && typeof C.digest === "function" && typeof C.deepEqualStrict === "function" && new Set(ids).size === ids.length);
+  check("F0 every fixture pins geometry.draftPx and draftCapPx (integer, draftPx ≤ draftCapPx ≤ today's device cap, so the cap never binds)",
+    all.every((fx) => Number.isInteger(fx.draftCapPx) && Number.isInteger(fx.project.geometry.draftPx) && fx.project.geometry.draftPx <= fx.draftCapPx &&
+      fx.draftCapPx <= S.limits(fx.deviceClass).draftPxCap));
+  check("F0 every fixture project validates and its source matches project.source (w, h, channels, sampleHash)",
+    all.every((fx) => S.validate(fx.project).ok && fx.project.source.w === fx.source.w && fx.project.source.h === fx.source.h &&
+      fx.project.source.channels === fx.source.channels && fx.project.source.sampleHash === SBHash.sha256(E.sampleBytes(fx.source))));
+  const P = (fx) => fx.project, con = (fx) => P(fx).construction;
+  const covered = {
+    "draft and fabrication": ["draft", "fabrication"].every((q) => all.some((fx) => fx.quality === q)),
+    "height and tonal": ["height", "tonal"].every((m) => all.some((fx) => P(fx).interpretation.mode === m)),
+    "light-front and dark-front": ["light-front", "dark-front"].every((m) => all.some((fx) => P(fx).interpretation.polarity === m)),
+    "bonded and connected (smooth)": all.some((fx) => con(fx).mode === "bonded-relief") && all.some((fx) => con(fx).mode === "connected-sheet" && con(fx).cleanup.cornerStyle === "smooth"),
+    "frame on and off, registration holes": all.some((fx) => con(fx).frame.enabled) && all.some((fx) => !con(fx).frame.enabled) && all.some((fx) => con(fx).registration.enabled && con(fx).frame.enabled && con(fx).mode === "connected-sheet"),
+    "replayed repair": all.some((fx) => con(fx).repairs.length === 1),
+    "guides none / inset-outline / interior-mark": ["none", "inset-outline", "interior-mark"].every((g) => all.some((fx) => con(fx).mode === "bonded-relief" && con(fx).guides.mode === g)),
+    "alpha domain": all.some((fx) => fx.source.alpha && P(fx).source.alpha.mode === "threshold" && P(fx).interpretation.mode === "tonal" && P(fx).interpretation.smoothing.radiusMM > 0),
+    "N = 2, 3, 8, 12": [2, 3, 8, 12].every((n) => all.some((fx) => con(fx).sheets === n)),
+    "simplify busy": all.some((fx) => con(fx).cleanup.simplify === "busy"),
+    "mobile deviceClass": all.some((fx) => fx.deviceClass === "mobile"),
+    "overlays off": all.some((fx) => fx.quality === "draft" && fx.overlays === false),
+    "odd rasters 1 × N and 3 × 2": all.some((fx) => fx.source.w === 1) && all.some((fx) => fx.source.w === 3 && fx.source.h === 2),
+    "alpha.3 scene 900 × 675 and 1800 × 1350 (slow)": all.some((fx) => fx.source.w === 900 && fx.source.h === 675) && all.some((fx) => fx.source.w === 1800 && fx.source.h === 1350 && fx.slow),
+  };
+  const miss = Object.keys(covered).filter((k) => !covered[k]);
+  check("F0 the corpus covers the Step 1 matrix" + (miss.length ? " (missing: " + miss.join("; ") + ")" : ""), miss.length === 0);
+  check("F0 fixtures above " + C.SLOW_PX / 1e6 + " Mpx (and only those) are tagged slow", all.every((fx) => fx.slow === fx.source.w * fx.source.h > C.SLOW_PX));
+  // deepEqualStrict semantics (F9/F12/F16 live comparisons)
+  const D = C.deepEqualStrict;
+  check("F0 deepEqualStrict: equal values, -0 ≠ 0, NaN = NaN, undefined key ≠ missing key, key order ignored",
+    D({ a: [1, { b: "x" }], c: null }, { c: null, a: [1, { b: "x" }] }) && !D({ a: -0 }, { a: 0 }) && D({ a: NaN }, { a: NaN }) && !D({ a: undefined }, {}) && !D({}, { a: undefined }));
+  check("F0 deepEqualStrict: typed arrays by constructor and bytes; array length and extra properties count",
+    D(new Uint8Array([1, 2]), new Uint8Array([1, 2])) && !D(new Uint8Array([1, 2]), new Int8Array([1, 2])) && !D(new Float32Array([0]), new Float32Array([-0])) &&
+    !D([1, 2], [1, 2, undefined]) && !D(Object.assign([1], { x: 1 }), [1]) && !D([1], { 0: 1, length: 1 }));
+  check("F0 digest has the documented fields", (() => { const d = C.digest({ status: "error", error: { code: "X", message: "m" }, diagnostics: [] });
+    return JSON.stringify(Object.keys(d)) === JSON.stringify(["status", "code", "geometryHash", "layerHashes", "diagSha", "cleanupSha", "supportSha", "guidesSha", "statsSha", "wholeSha"]) && d.code === "X" && d.geometryHash === null; })());
+  check("F0 wholeSha ignores requestId and timing only", (() => { const r = { requestId: "a", status: "done", diagnostics: [] };
+    const a = C.digest(r).wholeSha; return a === C.digest(Object.assign({}, r, { requestId: "b", timing: { ms: 1 } })).wholeSha && a !== C.digest(Object.assign({}, r, { revision: 1 })).wholeSha; })());
+  // the golden
+  let gold = null;
+  try { gold = JSON.parse(fs.readFileSync(GOLD, "utf8")); } catch (e) { gold = null; }
+  check("F0 test/golden/pool-equality.json exists, names this engine version and covers exactly the corpus ids (slow tags equal)",
+    !!gold && gold.engineVersion === E.VERSION && JSON.stringify(Object.keys(gold.fixtures).sort()) === JSON.stringify(ids.slice().sort()) &&
+    all.every((fx) => gold.fixtures[fx.id].slow === fx.slow));
+  if (!gold) return;
+  const run = all.filter((fx) => SLOW || !fx.slow), bad = [], noBranch = [], live = new Map();
+  const fields = ["status", "code", "geometryHash", "layerHashes", "diagSha", "cleanupSha", "supportSha", "guidesSha", "statsSha", "wholeSha"];
+  for (const fx of run) {
+    const r = C.run(fx), d = C.digest(r), g = gold.fixtures[fx.id];
+    if (!g || fields.some((k) => JSON.stringify(d[k]) !== JSON.stringify(g[k]))) bad.push(fx.id + (g ? " [" + fields.filter((k) => JSON.stringify(d[k]) !== JSON.stringify(g[k])).join(",") + "]" : ""));
+    if (!fx.expect(r)) noBranch.push(fx.id);
+    if (live.size < 3 && !fx.slow && fx.source.w * fx.source.h <= 60000) live.set(fx.id, r);
+  }
+  check("NFR-05 F0 every corpus response digest equals test/golden/pool-equality.json" + (SLOW ? " (incl. slow)" : " (" + run.length + " of " + all.length + "; --slow runs all)") +
+    (bad.length ? " — differ: " + bad.join("; ") : ""), bad.length === 0 && run.length > 0);
+  check("F0 every fixture still exercises its branch (expect predicate)" + (noBranch.length ? " — not: " + noBranch.join(", ") : ""), noBranch.length === 0);
+  // hidden-state audit, dynamic half: after the whole corpus has run (call history), the small fixtures re-run in
+  // reverse order and give deepEqualStrict responses (no module-level state that depends on call history)
+  const again = [...live.keys()].reverse().filter((id) => !C.deepEqualStrict(live.get(id), C.run(all.find((fx) => fx.id === id))));
+  check("NFR-05 F0 audit: re-running fixtures after the corpus (reverse order) gives deepEqualStrict responses" + (again.length ? " — differ: " + again.join(", ") : ""),
+    live.size >= 2 && again.length === 0);
+});
+
+suite("js/* — speed round F0 module-state audit (NFR-05)", () => {
+  const MODS = require("./modules.js").NODE_MODULES, src = (f) => fs.readFileSync(path.join(__dirname, "..", "js", f), "utf8");
+  const own = MODS.filter((f) => !f.startsWith("vendor/"));
+  // static half: no module-level let/var (top level of each module's IIFE is two-space indented; column-0 declarations too)
+  const topLet = own.filter((f) => /^(?: {2})?(?:let|var) /m.test(src(f)));
+  check("NFR-05 F0 audit: no module-level let/var in the pure modules" + (topLet.length ? " — found in " + topLet.join(", ") : ""), topLet.length === 0);
+  // every exported data value is deep-frozen (functions and getters excepted; SBEngine.TEST_HOOKS is a primitive flag)
+  const deepFrozen = (v, seen) => {
+    if (v === null || (typeof v !== "object" && typeof v !== "function")) return true;
+    if (seen.has(v)) return true; seen.add(v);
+    if (typeof v === "function") return true;
+    if (ArrayBuffer.isView(v) || !Object.isFrozen(v)) return false;
+    return Reflect.ownKeys(v).every((k) => { const d = Object.getOwnPropertyDescriptor(v, k); return !("value" in d) || deepFrozen(d.value, seen); });
+  };
+  const globals = Object.keys(globalThis).filter((k) => /^SB[A-Z]/.test(k));
+  const open = [];
+  for (const n of globals) for (const k of Reflect.ownKeys(globalThis[n])) {
+    const d = Object.getOwnPropertyDescriptor(globalThis[n], k);
+    if ("value" in d && typeof d.value !== "function" && !deepFrozen(d.value, new Set())) open.push(n + "." + String(k));
+  }
+  check("NFR-05 F0 audit: every exported data value of the pure modules is deep-frozen" + (open.length ? " — mutable: " + open.join(", ") : ""), globals.length >= 20 && open.length === 0);
+  const cl = src("vendor/clipper2.js");
+  const statics = (cl.match(/static [A-Za-z_$]+=/g) || []).map((s) => s.slice(7, -1)).sort();
+  check("NFR-05 F0 audit: clipper2 static fields are the five recorded in ARCHITECTURE.md (openPathsEnabled, _intResult reset per call; constants)",
+    JSON.stringify(statics) === JSON.stringify(["Tolerance", "_intResult", "arc_const", "maxSafeDelta", "openPathsEnabled"].sort()) &&
+    /\.openPathsEnabled=this\.hasOpenPaths/.test(cl) && !/rectClip|RectClip/.test(src("geom.js")));
+  const arch = fs.readFileSync(path.join(__dirname, "..", "docs", "ARCHITECTURE.md"), "utf8"), sec = (arch.split(/^## Speed round \(Appendix F\)/m)[1] || "").split(/^## /m)[0];
+  const audited = ["geom.js", "vendor/clipper2.js", "trace.js", "morph.js", "support.js", "guides.js", "strokefont.js", "construct.js", "material.js", "islands.js", "raster.js", "height.js", "diag.js", "util.js", "engine.js"];
+  check("NFR-05 F0 ARCHITECTURE.md speed-round section records every audited module as pure or per-call reset",
+    audited.every((f) => new RegExp("`js/" + f.replace(/[.\/]/g, (c) => "\\" + c) + "`[^\\n]*\\b(pure|per-call reset)\\b").test(sec)) && /_intResult/.test(sec) && /TEST_HOOKS/.test(sec));
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

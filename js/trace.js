@@ -252,7 +252,9 @@
     }
     return pts;
   }
-  const LEVELS = ["raw", "rdp", "chaikin"];
+  // Frozen (speed round F0 audit): the exported list is also the validation list of smoothLevel, so no caller can
+  // change it between calls (no call-history-dependent module state, NFR-05).
+  const LEVELS = Object.freeze(["raw", "rdp", "chaikin"]);
   T.SMOOTH_LEVELS = LEVELS;
   /**
    * One smoothing level of a closed pixel loop (plan G1.2):
