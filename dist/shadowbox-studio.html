@@ -7921,7 +7921,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    * Applies orientTransform in one pass, before interpretation (G2.5, IMG-04/05). samples may carry several
    * interleaved channels (length = w·h·c, kept in order per pixel) and keep their array type; alpha (one channel,
    * or null) moves with them so the domain A stays registered. Pure. Runs exactly once: an input already marked
-   * oriented is refused with ORIENT_TWICE.
+   * oriented is refused with ORIENT_TWICE. At the identity orientation the input arrays are returned uncopied
+   * (alpha.3 E3); callers must not write into the result.
    */
   E.orient = function (raster, orientation) {
     if (!raster || typeof raster !== "object") throw efail("ENGINE_ARG", "raster must be {samples, alpha, w, h}");
@@ -7933,6 +7934,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     if (alpha && alpha.length !== n) throw efail("ENGINE_ARG", "alpha length " + alpha.length + " != w·h " + n);
     checkOrientation(orientation);
     const ch = samples.length / n, t = orientTransform(orientation, w, h), [a, b, c, d, e, f] = t.m, W2 = t.W;
+    // alpha.3 E3 (NFR-05): identity fast path, no copy. Safe because no later generate stage writes into its input.
+    if (a === 1 && b === 0 && c === 0 && d === 0 && e === 1 && f === 0 && W2 === w && t.H === h) return { samples, alpha, w, h, oriented: true };
     const out = new samples.constructor(samples.length), outA = alpha ? new alpha.constructor(n) : null;
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const s = y * w + x, dst = (d * x + e * y + f) * W2 + (a * x + b * y + c);
@@ -8061,12 +8064,19 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   const codedError = (e) => ({ code: (e && e.code) || "ENGINE_INTERNAL", message: (e && e.message) || String(e) });
 
   /**
-   * generate(req: GenerateRequest, {isCanceled?, onProgress?}) → GenerateResponse (§3, §9.3; plan G2.10a).
+   * generate(req: GenerateRequest, {isCanceled?, onProgress?, cache?}) → GenerateResponse (§3, §9.3; plan G2.10a).
    *
    * req = {requestId, revision, engineVersion, quality, normalizedSource: {pixels, channels: 1|4, w, h, alpha}, sourceHash,
    *        config: Project, deviceClass?: "desktop"|"mobile" (default "desktop"; rasterPlan and the complexity caps),
    *        debug?: {smoothBonded: true} (test-only; refused unless SBEngine.TEST_HOOKS)}.
    * Synchronous and pure (inputs are not mutated); never throws: a failure is status "error" with error {code, message}.
+   * cache (alpha.3 E3, NFR-05): a plain object the caller owns and the only argument generate writes. Slots
+   *   k1 = {key, o: {w, h}, samples, alpha, ch} (orient + resample) and k2 = {key, L} (tonal luminance after Kuwahara),
+   *   keyed on SBRaster.cacheKey with req.sourceHash, orientation, mode and alpha presence (k2 adds smoothing and the
+   *   alpha policy); a hit reports "resample-cached" / "interpret-cached" through onProgress. Without req.sourceHash
+   *   the cache is bypassed. cache.quality is the quality it serves (an untagged cache takes the first request's);
+   *   a mismatch throws CACHE_QUALITY (the one caller error that throws), so a draft cache never feeds a
+   *   fabrication run. Cached arrays are never written by later stages and never appear in the response.
    * Stages (§11.1), cancelable between stages and inside the engine's own per-layer loops:
    *   1  orient (EXIF only when engine-applied, then rotate, mirror)            SBEngine.orient
    *   2  resample to SBEngine.rasterPlan(config, source, quality, deviceClass)   its FAB_* diagnostics; never upsample
@@ -8113,9 +8123,16 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     if (!req || typeof req !== "object") return fail("ENGINE_ARG", "request must be a GenerateRequest");
     if (req.engineVersion !== E.VERSION) return fail("ENGINE_MISMATCH", "request names engine " + req.engineVersion + ", this engine is " + E.VERSION);
     if (req.debug !== undefined && req.debug !== null && !E.TEST_HOOKS) return fail("ENGINE_DEBUG_DISABLED", "req.debug is a test-only hook");
+    const cache = opts.cache === undefined || opts.cache === null ? null : opts.cache;
+    if (cache !== null) {
+      if (typeof cache !== "object") throw efail("ENGINE_ARG", "opts.cache must be a plain object the caller owns");
+      // alpha.3 E3 (LYR-06): a cache carries its quality; an untagged cache takes the quality of its first request.
+      if (cache.quality === undefined) cache.quality = req.quality;
+      if (cache.quality !== req.quality) throw efail("CACHE_QUALITY", "a " + cache.quality + " stage cache cannot feed a " + req.quality + " request");
+    }
     let res;
     try {
-      res = run(req, head, step, fail);
+      res = run(req, head, step, fail, cache);
     } catch (e) {
       res = e instanceof Canceled ? Object.assign({}, head, { status: "canceled" }) : Object.assign({}, head, { status: "error", error: codedError(e), diagnostics: [] });
     }
@@ -8132,7 +8149,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     return H.hashJSON({ labels: guides.labels || [], omitted: guides.omitted || [], map: guides.map === undefined ? null : guides.map });
   };
 
-  function run(req, head, step, fail) {
+  function run(req, head, step, fail, cache) {
     const R = global.SBRaster, Hh = global.SBHeight, C = global.SBConstruct, M = global.SBMaterial, S = global.SBSupport, D = global.SBDiag, G = global.SBGeom;
     const p = req.config, quality = req.quality, deviceClass = req.deviceClass === undefined ? "desktop" : req.deviceClass;
     if (quality !== "draft" && quality !== "fabrication") return fail("ENGINE_ARG", "quality must be draft|fabrication (got " + quality + ")");
@@ -8151,18 +8168,31 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const interp = p.interpretation, con = p.construction, mat = p.material, N = con.sheets, bonded = con.mode === "bonded-relief";
     const diagnostics = [];
 
-    // 1. orient (one channel in height mode: the gray plane; RGBA kept for tonal luminance)
-    step("orient", 0);
-    let px = ns.pixels, ch = ns.channels;
-    if (interp.mode === "height" && ch === 4) { const g = new Uint8Array(ns.w * ns.h); for (let i = 0; i < g.length; i++) g[i] = px[i * 4]; px = g; ch = 1; }
-    const o = E.orient({ samples: px, alpha: ns.alpha == null ? null : ns.alpha, w: ns.w, h: ns.h }, p.source.orientation);
-
-    // 2. resample to the planned raster (rasterPlan orients the source size itself, so it gets the unoriented size)
-    step("resample", 0.05);
+    // 1–2. orient and resample (alpha.3 E3: slot K1 of the caller-owned cache; rasterPlan reads only sizes, so it runs
+    // first). rasterPlan orients the source size itself, so it gets the unoriented size. Without req.sourceHash the
+    // cache is bypassed (never keyed on pixel identity alone).
     const plan = E.rasterPlan(p, { w: ns.w, h: ns.h }, quality, deviceClass), geo = plan.geometry, W = geo.rasterW, H = geo.rasterH;
+    const useCache = !!cache && typeof req.sourceHash === "string" && req.sourceHash.length > 0;
+    let ch = interp.mode === "height" ? 1 : ns.channels;
+    const k1 = useCache ? R.cacheKey({ w: ns.w, h: ns.h, channels: ch, W, H, method: geo.resample, sampleHash: req.sourceHash }) + "|" +
+      JSON.stringify(p.source.orientation) + "|" + interp.mode + "|" + (ns.alpha ? "a" : "-") : null;
+    let o, samples, alpha;
+    if (useCache && cache.k1 && cache.k1.key === k1) {
+      ({ o, samples, alpha, ch } = cache.k1);
+      step("resample-cached", 0.1);
+    } else {
+      step("orient", 0);
+      let px = ns.pixels;
+      ch = ns.channels;
+      if (interp.mode === "height" && ch === 4) { const g = new Uint8Array(ns.w * ns.h); for (let i = 0; i < g.length; i++) g[i] = px[i * 4]; px = g; ch = 1; }
+      const oo = E.orient({ samples: px, alpha: ns.alpha == null ? null : ns.alpha, w: ns.w, h: ns.h }, p.source.orientation);
+      step("resample", 0.05);
+      o = { w: oo.w, h: oo.h };
+      samples = R.resample(oo.samples, ch, oo.w, oo.h, W, H, geo.resample);   // always a fresh array (never the source)
+      alpha = oo.alpha ? R.resample(oo.alpha, 1, oo.w, oo.h, W, H, geo.resample) : null;
+      if (useCache) { cache.k1 = { key: k1, o, samples, alpha, ch }; cache.k2 = null; }
+    }
     diagnostics.push(...plan.diagnostics);
-    const samples = R.resample(o.samples, ch, o.w, o.h, W, H, geo.resample);
-    const alpha = o.alpha ? R.resample(o.alpha, 1, o.w, o.h, W, H, geo.resample) : null;
     if (geo.resample !== "none") diagnostics.push(D.make("RESAMPLED", Object.assign({}, dOpts, {
       detail: o.w + " × " + o.h + " px → " + W + " × " + H + " px (" + geo.resample + ")" })));
 
@@ -8178,9 +8208,17 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       const r = E.interpretHeight(samples, W, H, interp, N, domain, dOpts);
       added = r.added; diagnostics.push(...r.diagnostics);
     } else {
+      // alpha.3 E3: slot K2 (tonal luminance after Kuwahara); thresholds and bands only read L.
+      const k2 = useCache ? k1 + "|" + JSON.stringify(interp.smoothing) + "|" + JSON.stringify(p.source.alpha) : null;
       let L;
-      if (ch === 4) L = R.luminance(samples, W, H); else { L = new Float32Array(W * H); for (let i = 0; i < L.length; i++) L[i] = samples[i]; }
-      L = R.kuwahara(L, W, H, interp.smoothing.radius, interp.smoothing.passes, domain);
+      if (useCache && cache.k2 && cache.k2.key === k2) {
+        L = cache.k2.L;
+        step("interpret-cached", 0.15);
+      } else {
+        if (ch === 4) L = R.luminance(samples, W, H); else { L = new Float32Array(W * H); for (let i = 0; i < L.length; i++) L[i] = samples[i]; }
+        L = R.kuwahara(L, W, H, interp.smoothing.radius, interp.smoothing.passes, domain);
+        if (useCache) cache.k2 = { key: k2, L };
+      }
       const th = R.thresholds(L, N, interp.thresholdRule, { manual: interp.manual, domain });
       for (const b of th.emptyBands) diagnostics.push(D.make("EMPTY_BAND", Object.assign({}, dOpts, { detail: "band " + b + " of " + N + " has no pixels" })));
       added = Hh.tonalAdded(R.bands(L, th), N, interp.polarity === "dark-front");

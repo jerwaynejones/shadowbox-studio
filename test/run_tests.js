@@ -5356,6 +5356,37 @@ suite("engine.js/proof.js — alpha.3 E2 snapshot payload (UI-05, G2.13d)", () =
     qs.repairsApplied.every((i) => Number.isInteger(i)));
 });
 
+// ------------------------------------------------ alpha.3 E3 (caller-owned stage cache)
+suite("engine.js — alpha.3 E3 stage cache (NFR-05)", () => {
+  const F = require("./fixtures.js"), E = SBEngine, S = SBSchema;
+  const w = 300, h = 200, rgba = new Uint8Array(w * h * 4); const g = F.heightMap(3, w, h);
+  for (let i = 0; i < w * h; i++) { rgba[4 * i] = g[i]; rgba[4 * i + 1] = (g[i] * 3) & 255; rgba[4 * i + 2] = 255 - g[i]; rgba[4 * i + 3] = 255; }
+  const px = { pixels: rgba, channels: 4, w, h, alpha: null };
+  const p = S.withSource(S.defaults("plywood"), Object.assign(E.sourceRecord(px, { format: "png", decode: "canvas-tonal" }), { sampleHash: "a".repeat(64) }));
+  const q = S.applyModeChange(p, { interpretation: { mode: "tonal" } }, true); q.geometry.targetMM = 40;
+  const req = E.request(q, px, { quality: "draft" });
+  const plain = E.generate(req), cache = {}, c1 = E.generate(req, { cache }), marks = [];
+  const c2 = E.generate(req, { cache, onProgress: (st) => marks.push(st) });
+  check("NFR-05 generate with a cold and a warm cache equals generate without (geometryHash)",
+    plain.status === "done" && c1.geometryHash === plain.geometryHash && c2.geometryHash === plain.geometryHash);
+  check("cache: a warm run reports the cached stages (resample-cached, interpret-cached)", marks.includes("resample-cached") && marks.includes("interpret-cached"));
+  const q2 = JSON.parse(JSON.stringify(q)); q2.construction.sheets = 6; q2.revision++;
+  const m2 = []; E.generate(E.request(q2, px, { quality: "draft" }), { cache, onProgress: (st) => m2.push(st) });
+  check("cache: changing sheets reuses K1 and K2", m2.includes("resample-cached") && m2.includes("interpret-cached"));
+  const q3 = JSON.parse(JSON.stringify(q)); q3.interpretation.smoothing = { radius: 2, passes: 1 }; q3.revision++;
+  const m3 = []; E.generate(E.request(q3, px, { quality: "draft" }), { cache, onProgress: (st) => m3.push(st) });
+  check("cache: changing smoothing reuses K1 only", m3.includes("resample-cached") && !m3.includes("interpret-cached"));
+  check("NFR-05 a cached run never mutates the cached arrays (third run equal)", E.generate(req, { cache }).geometryHash === plain.geometryHash);
+  check("LYR-06 a cache tagged draft is refused by a fabrication request (CACHE_QUALITY)",
+    (() => { try { E.generate(E.request(q, px, { quality: "fabrication" }), { cache: { quality: "draft" } }); return false; } catch (e) { return /CACHE_QUALITY/.test(e.message); } })());
+  const fq = E.request(q, px, { quality: "fabrication" }), fc = { quality: "fabrication" }, fcold = E.generate(fq, { cache: fc });
+  const fq2 = E.request(q2, px, { quality: "fabrication" });
+  check("LYR-06 a warm fabrication cache after a sheets edit equals an uncached fabrication run (geometryHash)",
+    fcold.status === "done" && E.generate(fq2, { cache: fc }).geometryHash === E.generate(fq2).geometryHash);
+  const id = { exif: 1, exifAppliedBy: "none", rotate: 0, mirror: false }, sm = new Uint8Array([1, 2, 3, 4, 5, 6]);
+  check("NFR-05 E.orient at identity returns the input samples without copying", E.orient({ samples: sm, alpha: null, w: 3, h: 2 }, id).samples === sm);
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {
