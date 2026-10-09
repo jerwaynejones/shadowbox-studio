@@ -70,101 +70,124 @@
     return null;
   }
 
-  function build(layers, cfg, ctx) {
-    const G = global.SBGeom, D = global.SBDiag, F = global.SBFont, P = params(cfg);
-    ctx = ctx || {};
-    const dOpts = { revision: ctx.revision === undefined ? 0 : ctx.revision, quality: ctx.quality || "draft" };
-    const N = layers.length, scorePaths = layers.map(() => []), labels = [], omitted = [], diagnostics = [];
+  /**
+   * Speed round F9 (S1): build = buildFold over buildPair(k, layers[k], layers[k + 1], params(cfg), dOpts) for k = 0..N−2
+   * (the pool's guide item: {paths, labels, omitted, diagnostics} of one adjacent pair; an empty pair gives empty lists);
+   * validate = the concatenation of validatePair(k, layers[k], layers[k + 1], scorePaths[k], P, dOpts) for k = 0..N−1.
+   * Code moved unchanged; the folds append in pair order.
+   */
+  function buildPair(k, lower, upper, P, dOpts) {
+    const G = global.SBGeom, D = global.SBDiag, F = global.SBFont;
     const interior = P.mode === "interior-mark";
+    const paths = [], labels = [], omitted = [], diagnostics = [];
+    if (!nonEmpty(upper) || !nonEmpty(lower)) return { paths, labels, omitted, diagnostics };
+    const Rc = regionC(lower, upper, P), parts = upper.parts || [];
+    // attribution: each Rc polygon lies inside exactly one part of k+1
+    const byPart = new Map();
+    for (const poly of Rc) {
+      const p = attribute(poly, parts); if (!p) continue;
+      if (!byPart.has(p.id)) byPart.set(p.id, []);
+      byPart.get(p.id).push(poly);
+    }
+    const keepOut = [];
+    const omit = (id, reason) => {
+      omitted.push({ layer: k + 1, part: id, reason });
+      diagnostics.push(D.make("GUIDE_OMITTED", Object.assign({ layer: k + 1, parts: [id], detail: { kind: "part", text: reason } }, dOpts)));
+    };
+    if (!interior) {
+      for (const p of parts) if (!byPart.has(p.id)) omit(p.id, "no concealed area ≥ footprint");
+      for (const poly of Rc) for (const r of [poly.outer].concat(poly.holes || [])) paths.push(closedRing(r));
+    } else {
+      for (const p of parts) {
+        const polys = byPart.get(p.id);
+        if (!polys) { omit(p.id, "no concealed area ≥ footprint"); continue; }
+        let placed = 0;
+        for (const poly of polys) {
+          for (const r of ARMS) {
+            const q = G.placeBox([poly], r, r);
+            if (!q) continue;
+            paths.push([q[0] - r, q[1], q[0] + r, q[1]], [q[0], q[1] - r, q[0], q[1] + r]);
+            keepOut.push(box(q[0], q[1], r + P.fp));
+            placed++;
+            break;
+          }
+        }
+        if (!placed) omit(p.id, "no concealed area for the smallest mark");
+      }
+    }
+    // sheet label: the sheet file number, scored in a concealed area clear of the guide burns
+    const text = String(k + 1);
+    let at = null, s = null;
+    if (Rc.length) {
+      // alpha.3 E11 (E-R4): one Rc polygon at a time, largest area first (ties: bbox top, then left), so placeBox
+      // translates and intersects one small polygon instead of the whole layer region (≈ 0.7 s → tens of ms per draft).
+      s = F.strokes(text, P.lh);
+      const hx = Math.ceil(s.wUm / 2) + P.fh, hy = Math.ceil(s.hUm / 2) + P.fh;
+      const order = Rc.map((poly) => ({ poly, a: G.area([poly]), b: G.bbox(poly) }))
+        .filter((e) => e.b[2] - e.b[0] >= 2 * (hx + P.fp + P.fh) && e.b[3] - e.b[1] >= 2 * (hy + P.fp + P.fh))
+        .sort((x, y) => (y.a - x.a) || (x.b[1] - y.b[1]) || (x.b[0] - y.b[0]));
+      for (const e of order) {
+        let region = off([e.poly], -(P.fp + P.fh));
+        if (region.length && keepOut.length) region = G.normalize(G.difference(region, keepOut));
+        if (!region.length || G.isEmpty(region)) continue;
+        at = G.placeBox(region, hx, hy);
+        if (at) break;
+      }
+    }
+    if (at) {
+      const ox = at[0] - Math.ceil(s.wUm / 2), oy = at[1] - Math.ceil(s.hUm / 2);
+      for (const sp of s.paths) paths.push(sp.map((v, i) => v + (i % 2 ? oy : ox)));
+      labels.push({ layer: k, text, atUm: [at[0], at[1]], heightUm: P.lh });
+    } else {
+      diagnostics.push(D.make("GUIDE_OMITTED", Object.assign({ layer: k, parts: [],
+        detail: { kind: "label", sheet: k + 1, text: "sheet " + (k + 1) + " label did not fit; see the placement map" } }, dOpts)));
+    }
+    return { paths, labels, omitted, diagnostics };
+  }
+
+  /** buildFold(N, P, dOpts, pairs) → {scorePaths, guides, diagnostics}: pairs[k] = buildPair(k, …), k = 0..N−2. */
+  function buildFold(N, P, dOpts, pairs) {
+    const D = global.SBDiag;
+    const scorePaths = [], labels = [], omitted = [], diagnostics = [];
+    for (let k = 0; k < N; k++) scorePaths.push([]);
     if (P.a === 0 && N > 1) diagnostics.push(D.make("ALIGN_CLEARANCE_ZERO", Object.assign({ detail: "allowance 0 mm: guide burns reach the edge of the concealed area" }, dOpts)));
     for (let k = 0; k + 1 < N; k++) {
-      const lower = layers[k], upper = layers[k + 1];
-      if (!nonEmpty(upper) || !nonEmpty(lower)) continue;
-      const Rc = regionC(lower, upper, P), parts = upper.parts || [];
-      // attribution: each Rc polygon lies inside exactly one part of k+1
-      const byPart = new Map();
-      for (const poly of Rc) {
-        const p = attribute(poly, parts); if (!p) continue;
-        if (!byPart.has(p.id)) byPart.set(p.id, []);
-        byPart.get(p.id).push(poly);
-      }
-      const paths = scorePaths[k], keepOut = [];
-      const omit = (id, reason) => {
-        omitted.push({ layer: k + 1, part: id, reason });
-        diagnostics.push(D.make("GUIDE_OMITTED", Object.assign({ layer: k + 1, parts: [id], detail: { kind: "part", text: reason } }, dOpts)));
-      };
-      if (!interior) {
-        for (const p of parts) if (!byPart.has(p.id)) omit(p.id, "no concealed area ≥ footprint");
-        for (const poly of Rc) for (const r of [poly.outer].concat(poly.holes || [])) paths.push(closedRing(r));
-      } else {
-        for (const p of parts) {
-          const polys = byPart.get(p.id);
-          if (!polys) { omit(p.id, "no concealed area ≥ footprint"); continue; }
-          let placed = 0;
-          for (const poly of polys) {
-            for (const r of ARMS) {
-              const q = G.placeBox([poly], r, r);
-              if (!q) continue;
-              paths.push([q[0] - r, q[1], q[0] + r, q[1]], [q[0], q[1] - r, q[0], q[1] + r]);
-              keepOut.push(box(q[0], q[1], r + P.fp));
-              placed++;
-              break;
-            }
-          }
-          if (!placed) omit(p.id, "no concealed area for the smallest mark");
-        }
-      }
-      // sheet label: the sheet file number, scored in a concealed area clear of the guide burns
-      const text = String(k + 1);
-      let at = null, s = null;
-      if (Rc.length) {
-        // alpha.3 E11 (E-R4): one Rc polygon at a time, largest area first (ties: bbox top, then left), so placeBox
-        // translates and intersects one small polygon instead of the whole layer region (≈ 0.7 s → tens of ms per draft).
-        s = F.strokes(text, P.lh);
-        const hx = Math.ceil(s.wUm / 2) + P.fh, hy = Math.ceil(s.hUm / 2) + P.fh;
-        const order = Rc.map((poly) => ({ poly, a: G.area([poly]), b: G.bbox(poly) }))
-          .filter((e) => e.b[2] - e.b[0] >= 2 * (hx + P.fp + P.fh) && e.b[3] - e.b[1] >= 2 * (hy + P.fp + P.fh))
-          .sort((x, y) => (y.a - x.a) || (x.b[1] - y.b[1]) || (x.b[0] - y.b[0]));
-        for (const e of order) {
-          let region = off([e.poly], -(P.fp + P.fh));
-          if (region.length && keepOut.length) region = G.normalize(G.difference(region, keepOut));
-          if (!region.length || G.isEmpty(region)) continue;
-          at = G.placeBox(region, hx, hy);
-          if (at) break;
-        }
-      }
-      if (at) {
-        const ox = at[0] - Math.ceil(s.wUm / 2), oy = at[1] - Math.ceil(s.hUm / 2);
-        for (const sp of s.paths) paths.push(sp.map((v, i) => v + (i % 2 ? oy : ox)));
-        labels.push({ layer: k, text, atUm: [at[0], at[1]], heightUm: P.lh });
-      } else {
-        diagnostics.push(D.make("GUIDE_OMITTED", Object.assign({ layer: k, parts: [],
-          detail: { kind: "label", sheet: k + 1, text: "sheet " + (k + 1) + " label did not fit; see the placement map" } }, dOpts)));
-      }
+      const r = pairs[k];
+      scorePaths[k] = r.paths;
+      labels.push(...r.labels); omitted.push(...r.omitted); diagnostics.push(...r.diagnostics);
     }
     return { scorePaths, guides: { mode: P.mode, labels, omitted, map: null }, diagnostics };
   }
 
-  function validate(layers, built, cfg, ctx) {
-    const G = global.SBGeom, D = global.SBDiag, P = params(cfg);
-    ctx = ctx || {};
-    const dOpts = { revision: ctx.revision === undefined ? 0 : ctx.revision, quality: ctx.quality || "draft" };
-    const out = [], half = Math.max(1, P.fh), sp = (built && built.scorePaths) || [];
-    for (let k = 0; k < sp.length; k++) {
-      const paths = (sp[k] || []).filter((p) => Array.isArray(p) && p.length >= 4);
-      if (!paths.length) continue;
-      const lower = layers[k], upper = layers[k + 1];
-      const Rb = nonEmpty(lower) && nonEmpty(upper) ? regionB(lower, upper, P) : [];
-      const burn = G.bufferPolylines(paths, half);
-      const rest = Rb.length ? G.normalize(G.difference(burn, Rb)) : burn;
-      if (rest.length && !G.isEmpty(rest) && G.survivesInset(rest, SLIVER_UM)) {
-        const b = rest.map((p) => G.bbox(p)).reduce((m, r) => [Math.min(m[0], r[0]), Math.min(m[1], r[1]), Math.max(m[2], r[2]), Math.max(m[3], r[3])]);
-        out.push(D.make("GUIDE_UNCONTAINED", Object.assign({ layer: k, region: b.map((v) => v / 1000),
-          detail: "a score line on sheet " + (k + 1) + " lies outside the area the next sheet conceals" }, dOpts)));
-      }
+  const ctxOpts = (ctx) => { ctx = ctx || {}; return { revision: ctx.revision === undefined ? 0 : ctx.revision, quality: ctx.quality || "draft" }; };
+
+  function build(layers, cfg, ctx) {
+    const P = params(cfg), dOpts = ctxOpts(ctx), N = layers.length, pairs = [];
+    for (let k = 0; k + 1 < N; k++) pairs.push(buildPair(k, layers[k], layers[k + 1], P, dOpts));
+    return buildFold(N, P, dOpts, pairs);
+  }
+
+  function validatePair(k, lower, upper, sp, P, dOpts) {
+    const G = global.SBGeom, D = global.SBDiag;
+    const out = [], half = Math.max(1, P.fh);
+    const paths = (sp || []).filter((p) => Array.isArray(p) && p.length >= 4);
+    if (!paths.length) return out;
+    const Rb = nonEmpty(lower) && nonEmpty(upper) ? regionB(lower, upper, P) : [];
+    const burn = G.bufferPolylines(paths, half);
+    const rest = Rb.length ? G.normalize(G.difference(burn, Rb)) : burn;
+    if (rest.length && !G.isEmpty(rest) && G.survivesInset(rest, SLIVER_UM)) {
+      const b = rest.map((p) => G.bbox(p)).reduce((m, r) => [Math.min(m[0], r[0]), Math.min(m[1], r[1]), Math.max(m[2], r[2]), Math.max(m[3], r[3])]);
+      out.push(D.make("GUIDE_UNCONTAINED", Object.assign({ layer: k, region: b.map((v) => v / 1000),
+        detail: "a score line on sheet " + (k + 1) + " lies outside the area the next sheet conceals" }, dOpts)));
     }
     return out;
   }
 
-  global.SBGuides = Object.freeze({ build, validate });
+  function validate(layers, built, cfg, ctx) {
+    const P = params(cfg), dOpts = ctxOpts(ctx), out = [], sp = (built && built.scorePaths) || [];
+    for (let k = 0; k < sp.length; k++) out.push(...validatePair(k, layers[k], layers[k + 1], sp[k], P, dOpts));
+    return out;
+  }
+
+  global.SBGuides = Object.freeze({ build, validate, params, buildPair, buildFold, validatePair });
 })(typeof window !== "undefined" ? window : globalThis);

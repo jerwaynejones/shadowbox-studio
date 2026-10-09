@@ -231,12 +231,22 @@
     return out;
   }
 
-  M.fromMasks = function (final, w, h, page, opts) {
+  /**
+   * Speed round F9 (S1): fromMasks split into per-layer kernels (the pool's trace/convert items), code moved unchanged.
+   *   layerContext(w, h, page, opts) → ctx: plain data shared by every layer (scale, frame ring, sorted holes,
+   *     holeLayers, smooth, dOpts); throws the fromMasks argument errors (page, holes, holeLayers, smooth.mode).
+   *   traceLayer(mask, k, w, h) → {any, base, loops}: classify (empty / exact full base rectangle) and trace one layer.
+   *   smoothTraced(traced, ctx) → traced': step 3, the connected smoothStack barrier (serial, across all layers); layer k's
+   *     smoothing fallbacks travel in traced'[k].fallbacks (convertLayer makes its SMOOTH_FALLBACK); the identity
+   *     without connected smoothing.
+   *   convertLayer(t, k, ctx) → MaterialLayer: µm polygons, frame union, hole subtraction, normalize, buildLayer (parts
+   *     not yet numbered: fromMasks ends with assignParts over the whole stack).
+   * Pure: no argument is written and no result aliases an argument.
+   */
+  M.layerContext = function (w, h, page, opts) {
     opts = opts || {};
-    const G = global.SBGeom, T = global.SBTrace;
     const P = pageUm(page, "fromMasks");
     const { sxUm, syUm } = M.scale({ w, h, artWMM: P.page.artWMM, artHMM: P.page.artHMM });
-    const fUm = P.fUm, aw = P.aw, ah = P.ah;
     const holes = holeList(opts.holes || [], "fromMasks"), holeLayers = opts.holeLayers === undefined ? "all" : opts.holeLayers;
     if (holeLayers !== "all" && !(Array.isArray(holeLayers) && holeLayers.every((k) => Number.isInteger(k) && k >= 0)))
       throw new Error("SBMaterial.fromMasks: holeLayers must be \"all\" or an array of layer indices");
@@ -244,37 +254,53 @@
     if (smooth && smooth.mode !== "bonded" && smooth.mode !== "connected")
       throw new Error("SBMaterial.fromMasks: smooth.mode must be connected|bonded (got " + smooth.mode + ")");
     const dOpts = { revision: opts.revision === undefined ? 0 : opts.revision, quality: opts.quality || "draft" };
+    return { w, h, sxUm, syUm, fUm: P.fUm, aw: P.aw, ah: P.ah, frameOn: !!opts.frame, frame: opts.frame && P.fUm > 0 ? frameRing(P) : null,
+      holes, holeLayers, smooth, dOpts };
+  };
 
-    // 1–2: classify and trace every layer (null loops = empty layer or the exact full base rectangle)
-    const traced = final.map((mask, k) => {
-      if (!mask || mask.length !== w * h) throw new Error("SBMaterial.fromMasks: layer " + k + " mask length is not w·h");
-      let full = true, any = false;
-      for (let i = 0; i < mask.length; i++) { if (mask[i]) any = true; else full = false; if (any && !full) break; }
-      return { any, base: any && k === 0 && full, loops: any && !(k === 0 && full) ? T.trace(mask, w, h) : null };
-    });
+  M.traceLayer = function (mask, k, w, h) {
+    if (!mask || mask.length !== w * h) throw new Error("SBMaterial.fromMasks: layer " + k + " mask length is not w·h");
+    let full = true, any = false;
+    for (let i = 0; i < mask.length; i++) { if (mask[i]) any = true; else full = false; if (any && !full) break; }
+    return { any, base: any && k === 0 && full, loops: any && !(k === 0 && full) ? global.SBTrace.trace(mask, w, h) : null };
+  };
+
+  M.smoothTraced = function (traced, ctx) {
+    const smooth = ctx.smooth;
     // 3: smoothing on the pixel loops, never after conversion. D1: bonded is the identity (raw contours).
-    let smoothDiags = new Map();
     if (smooth && smooth.mode === "connected") {
-      const S = M.smoothStack(traced.map((t) => t.loops || []), { tolUm: smooth.tolUm, sxUm, syUm, mode: "connected", w, h, frameUm: opts.frame ? fUm : 0 });
-      traced.forEach((t, k) => { if (t.loops) t.loops = S.loopsByLayer[k]; });
-      smoothDiags = smoothDiagnostics(S.fallbacks, smooth.tolUm, dOpts);
+      const S = M.smoothStack(traced.map((t) => t.loops || []), { tolUm: smooth.tolUm, sxUm: ctx.sxUm, syUm: ctx.syUm, mode: "connected", w: ctx.w, h: ctx.h, frameUm: ctx.frameOn ? ctx.fUm : 0 });
+      return traced.map((t, k) => {
+        const o = Object.assign({}, t), fb = S.fallbacks.filter((f) => f.layer === k);
+        if (t.loops) o.loops = S.loopsByLayer[k];
+        if (fb.length) o.fallbacks = fb;   // convertLayer builds layer k's SMOOTH_FALLBACK from them
+        return o;
+      });
     } else if (smooth && !(Number.isFinite(smooth.tolUm) && smooth.tolUm >= 0)) {
       throw new Error("SBMaterial.fromMasks: NONFINITE — smooth.tolUm must be finite and ≥ 0");
     }
+    return traced;
+  };
 
+  M.convertLayer = function (t, k, ctx) {
+    const G = global.SBGeom, fUm = ctx.fUm, aw = ctx.aw, ah = ctx.ah, holes = ctx.holes, holeLayers = ctx.holeLayers;
     // 4–6: µm polygons; then (GEO-02 order) frame union → hole subtraction → normalize → validate → parts
-    const frame = opts.frame && fUm > 0 ? frameRing(P) : null;
-    const layers = traced.map((t, k) => {
-      let material;
-      if (!t.any) material = [];
-      else if (t.base) material = [{ outer: [fUm, fUm, fUm + aw, fUm, fUm + aw, fUm + ah, fUm, fUm + ah], holes: [] }];
-      else material = G.normalize(G.union(G.fromPixelLoops(t.loops, sxUm, syUm, fUm, fUm), []));
-      if (frame) material = G.normalize(G.union(material, [frame]));
-      const lh = holeLayers === "all" || holeLayers.includes(k) ? holes : [];
-      if (lh.length) material = G.normalize(G.difference(material, lh.map(circleOf)));
-      return buildLayer(k, material, lh, dOpts, smoothDiags.has(k) ? [smoothDiags.get(k)] : []);
-    });
-    return M.assignParts(layers);
+    let material;
+    if (!t.any) material = [];
+    else if (t.base) material = [{ outer: [fUm, fUm, fUm + aw, fUm, fUm + aw, fUm + ah, fUm, fUm + ah], holes: [] }];
+    else material = G.normalize(G.union(G.fromPixelLoops(t.loops, ctx.sxUm, ctx.syUm, fUm, fUm), []));
+    if (ctx.frame) material = G.normalize(G.union(material, [ctx.frame]));
+    const lh = holeLayers === "all" || holeLayers.includes(k) ? holes : [];
+    if (lh.length) material = G.normalize(G.difference(material, lh.map(circleOf)));
+    const extra = t.fallbacks && t.fallbacks.length ? [smoothDiagnostics(t.fallbacks, ctx.smooth.tolUm, ctx.dOpts).get(k)] : [];
+    return buildLayer(k, material, lh, ctx.dOpts, extra);
+  };
+
+  M.fromMasks = function (final, w, h, page, opts) {
+    const ctx = M.layerContext(w, h, page, opts);
+    // 1–2: classify and trace every layer (null loops = empty layer or the exact full base rectangle)
+    const traced = M.smoothTraced(final.map((mask, k) => M.traceLayer(mask, k, w, h)), ctx);
+    return M.assignParts(traced.map((t, k) => M.convertLayer(t, k, ctx)));
   };
 
   // ------------------------------------------- the page model, frame and holes (G1.3, GEO-02, LYR-04)

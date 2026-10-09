@@ -14,6 +14,9 @@
  * ack-scoping snapshot hash until the app adopts generate. legacyView (G2.13d) replays the project's reviewed
  * clip repairs on that geometry (review views and diagnostics). fabricationRequest/fabricationFiles (checkpoint
  * v2.0.0-alpha.2) build the export's fabrication GenerateRequest and write its snapshot in the legacy flat layout.
+ * Speed round F9 (S1): the pipeline is the runSteps generator; it yields per-layer / per-pair batches of E.TASKS
+ * kernels and folds their results in item order. generate (sync driver) and generateAsync (exec.map driver, the worker
+ * pool) resume the same generator, so their folds are identical; the request carries draftCapPx (F-D5).
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -152,26 +155,8 @@
    * removed = pre ∧ ¬final) and the connected bridges use it.
    */
   E.changePolygons = function (a, b, w, h, sxUm, syUm, fUm) {
-    const full = new Uint8Array(w * h);
-    let x0 = w, x1 = -1, y0 = -1, y1 = -1;
-    for (let y = 0, r = 0; y < h; y++, r += w) {
-      let any = 0;
-      if (b) for (let i = r, e = r + w; i < e; i++) any |= full[i] = !!a[i] & !b[i];
-      else for (let i = r, e = r + w; i < e; i++) any |= full[i] = +!!a[i];
-      if (!any) continue;
-      if (y0 < 0) y0 = y;
-      y1 = y;
-      let lo = 0; while (!full[r + lo]) lo++;
-      let hi = w - 1; while (!full[r + hi]) hi--;
-      if (lo < x0) x0 = lo;
-      if (hi > x1) x1 = hi;
-    }
-    if (y0 < 0) return null;
-    x1++; y1++;
-    if (x0 === 0 && y0 === 0 && x1 === w && y1 === h) return E.maskPolygonsCrop(full, 0, 0, w, h, sxUm, syUm, fUm);
-    const cw = x1 - x0, m = new Uint8Array(cw * (y1 - y0));
-    for (let y = y0, o = 0; y < y1; y++, o += cw) m.set(full.subarray(y * w + x0, y * w + x1), o);
-    return E.maskPolygonsCrop(m, x0, y0, x1, y1, sxUm, syUm, fUm);
+    const c = global.SBConstruct.changeMask(a, b, w, h);   // speed round F9: the crop moved into SBConstruct (constructLayer emits it)
+    return c ? E.maskPolygonsCrop(c.mask, c.x0, c.y0, c.x1, c.y1, sxUm, syUm, fUm) : null;
   };
 
   /**
@@ -413,23 +398,26 @@
   };
 
   /**
-   * rasterPlan(project, {w, h}, "draft"|"fabrication", deviceClass) → {quality, geometry: GeometryConfig, diagnostics}
+   * rasterPlan(project, {w, h}, "draft"|"fabrication", deviceClass, draftCapPx?) → {quality, geometry: GeometryConfig, diagnostics}
    * deep-frozen (LYR-06, GEO-06, NFR-04, PO-LASER-4/5). Reads only source.w and source.h, so it runs before any
    * decode. Sizes come from SBSchema.resolveSize on the oriented source.
    *   draft:        SBRaster.rasterSize at min(geometry.draftPx, limits(deviceClass).draftPxCap) on the long side
    *                 (alpha.3 E4, PO-PREVIEW-1: the measured device cap of docs/perf/draft-budget.json; the cap is not a
    *                 project field, so the project key is the same on every device); no pitch, no budget, no pitch diagnostics.
+   *                 Speed round F9 (F-D5): an explicit draftCapPx (positive integer; the request field) replaces the device
+   *                 cap, so the runtime (pooled or fallback) reaches rasterPlan only as an argument, never as hidden state.
    *   fabrication:  SBRaster.fabRaster at round(fabPitchMM·1000) µm under limits(deviceClass).fabPxBudget, with
    *                 FAB_PITCH_CAPPED / FAB_EXCEEDS_SOURCE (quality "fabrication", the project revision).
    * resample follows the G2.0 policy for interpretation.mode (height "area" only when geometry.resample.height
    * selects it explicitly). generate (G2.10a) takes its raster only from here; export recomputes the fabrication
    * plan for the current revision and device class (a draft plan never stands in for it).
    */
-  E.rasterPlan = function (project, source, quality, deviceClass) {
+  E.rasterPlan = function (project, source, quality, deviceClass, draftCapPx) {
     if (quality !== "draft" && quality !== "fabrication") throw efail("ENGINE_ARG", "quality must be draft|fabrication (got " + quality + ")");
     if (!source || typeof source !== "object") throw efail("ENGINE_ARG", "source must be {w, h}");
     const w0 = source.w, h0 = source.h;
     if (!isPosInt(w0) || !isPosInt(h0)) throw efail("ENGINE_ARG", "source size must be positive integers (got " + w0 + " × " + h0 + ")");
+    if (draftCapPx !== undefined && draftCapPx !== null && !isPosInt(draftCapPx)) throw efail("ENGINE_ARG", "draftCapPx must be a positive integer (got " + draftCapPx + ")");
     const R = global.SBRaster, Sch = global.SBSchema;
     const lim = Sch.limits(deviceClass);
     const [srcW, srcH] = orientedSize(project, w0, h0);
@@ -437,7 +425,7 @@
     const g = project.geometry, diagnostics = [];
     let W, H, targetPitchUm = null, pitchUm = null, pxBudget = null, capped = "none", shortPx = null;
     if (quality === "draft") {
-      const r = R.rasterSize(srcW, srcH, Math.min(g.draftPx, lim.draftPxCap));
+      const r = R.rasterSize(srcW, srcH, Math.min(g.draftPx, draftCapPx === undefined || draftCapPx === null ? lim.draftPxCap : draftCapPx));
       W = r.W; H = r.H;
     } else {
       targetPitchUm = Math.round(g.fabPitchMM * 1000);
@@ -510,6 +498,81 @@
   class Canceled extends Error {}
   const codedError = (e) => ({ code: (e && e.code) || "ENGINE_INTERNAL", message: (e && e.message) || String(e) });
 
+  // ------------------------------------------------ speed round F9 (S1): kernels, batches and the drivers
+  /**
+   * BatchError(errors: [{index, error, phase?}]) — what an exec.map rejects with when items failed (after EVERY item has
+   * settled). The driver raises the error of the lowest (phase, item index) as codedError(error) verbatim (F.3); phase
+   * orders the serial sub-steps of a fused item (traceConvert: trace 0 before convert 1, as fromMasks traces every layer
+   * before it converts any), default 0. Any other rejection is raised as is.
+   */
+  class BatchError extends Error {
+    constructor(errors) { super("SBEngine batch: " + (errors ? errors.length : 0) + " item(s) failed"); this.errors = errors || []; }
+  }
+  E.BatchError = BatchError;
+  /** A kernel error tagged with the phase of a fused item; unwrapped by pickError. */
+  class PhaseError {
+    constructor(phase, error) { this.phase = phase; this.error = error; }
+  }
+  E.PhaseError = PhaseError;
+  function pickError(errors) {
+    let found = false, best, bp = 0, bi = 0;
+    for (const x of errors) {
+      const ph = x.phase !== undefined ? x.phase : x.error instanceof PhaseError ? x.error.phase : 0;
+      if (!found || ph < bp || (ph === bp && x.index < bi)) { found = true; best = x.error; bp = ph; bi = x.index; }
+    }
+    return best instanceof PhaseError ? best.error : best;
+  }
+  const phased = (phase, fn) => { try { return fn(); } catch (e) { throw new PhaseError(phase, e); } };
+
+  /**
+   * overlayLayer({added, removed, bridges, W, H, sxUm, syUm, fUm}) → {added?, removed?, bridges?}: the change-overlay and
+   * bridge polygons of one layer (G2.13b, F8): added/removed are SBConstruct.changeMask crops (null: not wanted),
+   * bridges the connected bridge mask (null: none); a key is present only for a non-null input (bridges only when its
+   * polygons are non-null). Pure.
+   */
+  E.overlayLayer = function (a) {
+    const out = {};
+    if (a.bridges) { const poly = E.changePolygons(a.bridges, null, a.W, a.H, a.sxUm, a.syUm, a.fUm); if (poly) out.bridges = poly; }
+    if (a.added) out.added = E.maskPolygonsCrop(a.added.mask, a.added.x0, a.added.y0, a.added.x1, a.added.y1, a.sxUm, a.syUm, a.fUm);
+    if (a.removed) out.removed = E.maskPolygonsCrop(a.removed.mask, a.removed.x0, a.removed.y0, a.removed.x1, a.removed.y1, a.sxUm, a.syUm, a.fUm);
+    return out;
+  };
+
+  /**
+   * TASKS (frozen): kernel name → pure function. Every parallel point of runSteps yields {kind, items, transfer} where
+   * items[i] is the argument list of TASKS[kind] and transfer[i] the typed arrays of item i that nothing else reads
+   * afterwards (whole buffers only). Kernels never write their arguments and never return aliases of them; they are
+   * looked up on their modules at call time.
+   */
+  E.TASKS = Object.freeze({
+    construct: (k, a) => global.SBConstruct.constructLayer(k, a),
+    overlays: (a) => E.overlayLayer(a),
+    trace: (mask, k, w, h) => global.SBMaterial.traceLayer(mask, k, w, h),
+    convert: (t, k, ctx) => global.SBMaterial.convertLayer(t, k, ctx),
+    traceConvert: (mask, k, w, h, ctx) => {
+      const t = phased(0, () => global.SBMaterial.traceLayer(mask, k, w, h));
+      return phased(1, () => global.SBMaterial.convertLayer(t, k, ctx));
+    },
+    supportPair: (lo, up, k, cfg) => global.SBSupport.supportPair(lo, up, k, cfg),
+    featureLayer: (L, k, cfg) => global.SBSupport.featureLayer(L, k, cfg),
+    buildPair: (k, lower, upper, P, dOpts) => global.SBGuides.buildPair(k, lower, upper, P, dOpts),
+    validatePair: (k, lower, upper, paths, P, dOpts) => global.SBGuides.validatePair(k, lower, upper, paths, P, dOpts),
+    layerHash: (L) => global.SBGeom.layerHashes(L).layerHash,
+  });
+
+  /** The sync driver's batch: every item inline in index order, all settled, then the lowest (phase, index) error. */
+  function runBatch(b, hook) {
+    const fn = E.TASKS[b.kind];
+    if (typeof fn !== "function") throw efail("ENGINE_INTERNAL", "no kernel " + b.kind);
+    const out = new Array(b.items.length), errors = [];
+    for (let i = 0; i < b.items.length; i++) {
+      const args = b.items[i];
+      try { out[i] = hook ? hook(b.kind, i, args, () => fn.apply(null, args)) : fn.apply(null, args); } catch (e) { errors.push({ index: i, error: e }); }
+    }
+    if (errors.length) throw pickError(errors);
+    return out;
+  }
+
   /**
    * generate(req: GenerateRequest, {isCanceled?, onProgress?, cache?, overlays?}) → GenerateResponse (§3, §9.3; plan G2.10a).
    *
@@ -562,17 +625,24 @@
    *   freeze    every response is deep-frozen (Object.freeze; typed arrays skipped)
    * Draft/fabrication (LYR-06): the hash carries quality and the raster size, so draft diagnostics and acks never
    * apply to a fabrication snapshot; every export regenerates at fabrication (alpha.2 checkpoint; two-phase in G3.10).
+   * Speed round F9: req.draftCapPx (SBEngine.request, F-D5) is the draft raster cap passed to rasterPlan. The stages
+   * run in runSteps (below); E.generate is its sync driver and E.generateAsync the async one.
    */
-  E.generate = function (req, opts) {
+  function begin(req, opts) {
     opts = opts || {};
     const head = { requestId: req && req.requestId !== undefined ? req.requestId : null, revision: req && req.revision !== undefined ? req.revision : null, engineVersion: E.VERSION };
     const isCanceled = typeof opts.isCanceled === "function" ? opts.isCanceled : () => false;
     const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : () => {};
     const step = (stage, frac) => { if (isCanceled()) throw new Canceled(); onProgress(stage, frac); };
     const fail = (code, message, diagnostics) => deepFreeze(Object.assign({}, head, { status: "error", error: { code, message }, diagnostics: diagnostics || [] }));
-    if (!req || typeof req !== "object") return fail("ENGINE_ARG", "request must be a GenerateRequest");
-    if (req.engineVersion !== E.VERSION) return fail("ENGINE_MISMATCH", "request names engine " + req.engineVersion + ", this engine is " + E.VERSION);
-    if (req.debug !== undefined && req.debug !== null && !E.TEST_HOOKS) return fail("ENGINE_DEBUG_DISABLED", "req.debug is a test-only hook");
+    if (!req || typeof req !== "object") return { res: fail("ENGINE_ARG", "request must be a GenerateRequest") };
+    if (req.engineVersion !== E.VERSION) return { res: fail("ENGINE_MISMATCH", "request names engine " + req.engineVersion + ", this engine is " + E.VERSION) };
+    if (req.debug !== undefined && req.debug !== null && !E.TEST_HOOKS) return { res: fail("ENGINE_DEBUG_DISABLED", "req.debug is a test-only hook") };
+    let hook = null;
+    if (opts.kernelHook !== undefined && opts.kernelHook !== null) {
+      if (!E.TEST_HOOKS || typeof opts.kernelHook !== "function") return { res: fail("ENGINE_DEBUG_DISABLED", "opts.kernelHook is a test-only hook") };
+      hook = opts.kernelHook;
+    }
     const cache = opts.cache === undefined || opts.cache === null ? null : opts.cache;
     if (cache !== null) {
       if (typeof cache !== "object") throw efail("ENGINE_ARG", "opts.cache must be a plain object the caller owns");
@@ -580,11 +650,68 @@
       if (cache.quality === undefined) cache.quality = req.quality;
       if (cache.quality !== req.quality) throw efail("CACHE_QUALITY", "a " + cache.quality + " stage cache cannot feed a " + req.quality + " request");
     }
+    return { head, step, fail, cache, overlays: opts.overlays !== false, hook };
+  }
+  const settled = (head, e) => (e instanceof Canceled ? Object.assign({}, head, { status: "canceled" }) : Object.assign({}, head, { status: "error", error: codedError(e), diagnostics: [] }));
+
+  /**
+   * The sync driver (speed round F9): resumes runSteps and runs every yielded batch inline in item order (runBatch).
+   * Used by Node tests, the bench and the no-worker fallback. Signature and result unchanged. opts.kernelHook(kind, i,
+   * args, run) → result is a test-only wrapper around every kernel call (refused with ENGINE_DEBUG_DISABLED unless
+   * SBEngine.TEST_HOOKS): the immutability mode and fault injection of the F9/F12 tests.
+   */
+  E.generate = function (req, opts) {
+    const b = begin(req, opts);
+    if (b.res) return b.res;
     let res;
     try {
-      res = run(req, head, step, fail, cache, opts.overlays !== false);
+      const it = runSteps(req, b.head, b.step, b.fail, b.cache, b.overlays);
+      let r = it.next();
+      while (!r.done) {
+        let out, err, bad = false;
+        try { out = runBatch(r.value, b.hook); } catch (e) { bad = true; err = e; }
+        r = bad ? it.throw(err) : it.next(out);
+      }
+      res = r.value;
     } catch (e) {
-      res = e instanceof Canceled ? Object.assign({}, head, { status: "canceled" }) : Object.assign({}, head, { status: "error", error: codedError(e), diagnostics: [] });
+      res = settled(b.head, e);
+    }
+    return deepFreeze(res);
+  };
+
+  /**
+   * generateAsync(req, {exec?, isCanceled?, onProgress?, cache?, overlays?}) → Promise<GenerateResponse> (speed round F9,
+   * S1): the async driver. It resumes the same runSteps generator; each batch goes to exec.map(kind, items, {transfer})
+   * → Promise<results[]> in item order, whatever order the items completed in, settling ALL items before it resolves or
+   * rejects (BatchError). The driver raises the lowest (phase, item index) error; a result list of the wrong length is
+   * ENGINE_INTERNAL. Without exec every batch runs inline (as the sync driver). The folds are the generator's, so the
+   * response equals E.generate's for every exec that returns the kernels' results.
+   */
+  E.generateAsync = async function (req, opts) {
+    opts = opts || {};
+    const b = begin(req, opts);
+    if (b.res) return b.res;
+    const exec = opts.exec && typeof opts.exec.map === "function" ? opts.exec : null;
+    let res;
+    try {
+      const it = runSteps(req, b.head, b.step, b.fail, b.cache, b.overlays);
+      let r = it.next();
+      while (!r.done) {
+        const bt = r.value;
+        let out, err, bad = false;
+        try {
+          out = exec ? await exec.map(bt.kind, bt.items, { transfer: bt.transfer }) : runBatch(bt, b.hook);
+          if (!Array.isArray(out) || out.length !== bt.items.length)
+            throw efail("ENGINE_INTERNAL", "exec.map(" + bt.kind + ") returned " + (Array.isArray(out) ? out.length : typeof out) + " results for " + bt.items.length + " items");
+        } catch (e) {
+          bad = true;
+          err = e instanceof BatchError ? pickError(e.errors) : e instanceof PhaseError ? e.error : e;
+        }
+        r = bad ? it.throw(err) : it.next(out);
+      }
+      res = r.value;
+    } catch (e) {
+      res = settled(b.head, e);
     }
     return deepFreeze(res);
   };
@@ -599,7 +726,17 @@
     return H.hashJSON({ labels: guides.labels || [], omitted: guides.omitted || [], map: guides.map === undefined ? null : guides.map });
   };
 
-  function run(req, head, step, fail, cache, overlays) {
+  /**
+   * runSteps(req, head, step, fail, cache, overlays) — speed round F9 (S1): the §11.1 pipeline as a generator. At every
+   * parallel point it yields a batch {kind, items, transfer} (E.TASKS[kind] applied to each items[i]) and is resumed
+   * with the results in item order (or thrown into with the batch's error); the folds stay here, in item order (layer
+   * index, then pair index), so scheduling and completion order never reach them. Returns the response (or a fail()).
+   * Batches: construct (per layer, incl. the draft change masks) → overlays (per layer with polygons) → traceConvert
+   * (bonded; connected smoothing: trace → smoothTraced → convert) → supportPair (bonded, per adjacent pair) →
+   * featureLayer (per layer) → buildPair, validatePair (guides) → layerHash (per layer). Serial: everything else.
+   */
+  function* runSteps(req, head, step, fail, cache, overlays) {
+    const batch = (kind, items, transfer) => ({ kind, items, transfer: transfer || null });
     const R = global.SBRaster, Hh = global.SBHeight, C = global.SBConstruct, M = global.SBMaterial, S = global.SBSupport, D = global.SBDiag, G = global.SBGeom;
     const p = req.config, quality = req.quality, deviceClass = req.deviceClass === undefined ? "desktop" : req.deviceClass;
     if (quality !== "draft" && quality !== "fabrication") return fail("ENGINE_ARG", "quality must be draft|fabrication (got " + quality + ")");
@@ -621,7 +758,9 @@
     // 1–2. orient and resample (alpha.3 E3: slot K1 of the caller-owned cache; rasterPlan reads only sizes, so it runs
     // first). rasterPlan orients the source size itself, so it gets the unoriented size. Without req.sourceHash the
     // cache is bypassed (never keyed on pixel identity alone).
-    const plan = E.rasterPlan(p, { w: ns.w, h: ns.h }, quality, deviceClass), geo = plan.geometry, W = geo.rasterW, H = geo.rasterH;
+    const capPx = req.draftCapPx === undefined || req.draftCapPx === null ? undefined : req.draftCapPx;   // F-D5 (explicit runtime input)
+    if (capPx !== undefined && !isPosInt(capPx)) return fail("ENGINE_ARG", "draftCapPx must be a positive integer (got " + capPx + ")");
+    const plan = E.rasterPlan(p, { w: ns.w, h: ns.h }, quality, deviceClass, capPx), geo = plan.geometry, W = geo.rasterW, H = geo.rasterH;
     const useCache = !!cache && typeof req.sourceHash === "string" && req.sourceHash.length > 0;
     let ch = interp.mode === "height" ? 1 : ns.channels;
     const k1 = useCache ? R.cacheKey({ w: ns.w, h: ns.h, channels: ch, W, H, method: geo.resample, sampleHash: req.sourceHash }) + "|" +
@@ -683,22 +822,35 @@
     // 6. construct
     step("construct", 0.25);
     const cpx = constructPx(con, bonded, geo.sxUm, geo.syUm);
-    const built = bonded ? C.bonded(masks, W, H, cpx) : C.connected(masks, W, H, cpx);
+    // G2.13b (GEO-08, UI-05): change overlays at draft quality only, so the fabrication budget is unchanged; alpha.3 E4:
+    // opts.overlays:false skips them (display data only). F9: constructLayer emits the change masks (SBConstruct.changeMask
+    // crops), so masks[k] is read by its construct item only (transferable).
+    const wantChange = quality === "draft" && overlays;
+    const cres = yield batch("construct", masks.map((mask, k) => [k, { mask, W, H, px: cpx, bonded, wantChange }]), masks.map((m) => [m]));
+    const built = { final: cres.map((r) => r.final), bridges: cres.map((r) => r.bridges), report: cres.map((r) => r.report) };
     const pxMM2 = (geo.sxUm * geo.syUm) / 1e6;
     const page = M.page({ artWMM: geo.artWMM, artHMM: geo.artHMM, frame: con.frame });
     const fUm = Math.round(page.frameMM * 1000);
+    for (let k = 0; k < built.report.length; k++) step("construct", 0.25 + (0.05 * k) / N);
+    // speed round F8: bridges and change overlays trace only the bounding box of their pixels (one overlays item per layer with any)
+    const ovItems = [], ovTransfer = [], ovAt = built.report.map(() => -1);
+    built.report.forEach((r, k) => {
+      const b = built.bridges[k], ch = wantChange ? cres[k].change : null;
+      const added = ch && r.addedPx ? ch.added : null, removed = ch && r.removedPx ? ch.removed : null;
+      if (!b && !added && !removed) return;
+      ovAt[k] = ovItems.length;
+      ovItems.push([{ added, removed, bridges: b, W, H, sxUm: geo.sxUm, syUm: geo.syUm, fUm }]);
+      ovTransfer.push([added && added.mask, removed && removed.mask, b].filter(Boolean));
+    });
+    const ov = ovItems.length ? yield batch("overlays", ovItems, ovTransfer) : [];
     const cleanupReport = built.report.map((r, k) => {
-      step("construct", 0.25 + (0.05 * k) / N);
       const e = { layer: k, addedMM2: r.addedPx * pxMM2, removedMM2: r.removedPx * pxMM2, holesFilled: r.filledHoles, partsRemoved: r.removedParts,
         bridged: r.bridged || 0, culled: r.culled || 0 };   // alpha.3 E2 (UI-05): SBConstruct report counts (bonded: 0)
-      const b = built.bridges[k];
-      // speed round F8: bridges and change overlays trace only the bounding box of their pixels (E.changePolygons)
-      if (b) { const poly = E.changePolygons(b, null, W, H, geo.sxUm, geo.syUm, fUm); if (poly) e.bridges = poly; }
-      // G2.13b (GEO-08, UI-05): change overlays at draft quality only, so the fabrication budget is unchanged.
-      if (quality === "draft" && overlays) {   // alpha.3 E4: opts.overlays:false skips them (display data only)
-        const pre = masks[k], fin = built.final[k];
-        if (r.addedPx) e.added = E.changePolygons(fin, pre, W, H, geo.sxUm, geo.syUm, fUm);
-        if (r.removedPx) e.removed = E.changePolygons(pre, fin, W, H, geo.sxUm, geo.syUm, fUm);
+      const o = ovAt[k] >= 0 ? ov[ovAt[k]] : {};
+      if (built.bridges[k] && o.bridges) e.bridges = o.bridges;
+      if (wantChange) {
+        if (r.addedPx) e.added = o.added === undefined ? null : o.added;
+        if (r.removedPx) e.removed = o.removed === undefined ? null : o.removed;
       }
       return e;
     });
@@ -715,7 +867,16 @@
     const fOpts = { revision, quality, frame: fUm > 0 };
     if (con.cleanup.cornerStyle === "smooth" && (!bonded || smoothBonded))
       fOpts.smooth = { mode: "connected", tolUm: Math.round(con.cleanup.toleranceMM * 1000) };
-    let layers = M.fromMasks(gate.masks, W, H, page, fOpts);
+    // F9: SBMaterial.fromMasks as batches: bonded (no smoothing) one fused traceConvert item per layer; connected smoothing
+    // traces every layer, runs the smoothStack barrier serially, then converts every layer.
+    const lctx = M.layerContext(W, H, page, fOpts), tm = gate.masks;
+    let conv;
+    if (!lctx.smooth) conv = yield batch("traceConvert", tm.map((m, k) => [m, k, W, H, lctx]), tm.map((m) => [m]));
+    else {
+      const traced = yield batch("trace", tm.map((m, k) => [m, k, W, H]), tm.map((m) => [m]));
+      conv = yield batch("convert", M.smoothTraced(traced, lctx).map((t, k) => [t, k, lctx]));
+    }
+    let layers = M.assignParts(conv);
 
     // 11b. vertex caps after fromMasks, before validation
     step("complexity", 0.6);
@@ -742,14 +903,23 @@
     // 12. validation: SBGeom.validate (layer diagnostics), support, features, envelope
     step("validate", 0.7);
     for (const L of layers) diagnostics.push(...L.diagnostics);
-    const sv = S.validate(layers, con.mode, { minFeatureMM: mat.minFeatureMM, advisoryFeatureMM: mat.advisoryFeatureMM, revision, quality });
+    const vcfg = { minFeatureMM: mat.minFeatureMM, advisoryFeatureMM: mat.advisoryFeatureMM, revision, quality };
+    let sv;
+    if (bonded) {   // F9: one supportPair item per adjacent pair, folded serially (reach, edges, one aggregate)
+      S.validateArgs(layers, con.mode, vcfg);
+      const pairs = [];
+      for (let k = 1; k < layers.length; k++) pairs.push([layers[k - 1], layers[k], k, vcfg]);
+      sv = S.supportFold(layers, vcfg, yield batch("supportPair", pairs));
+    } else sv = S.validate(layers, con.mode, vcfg);
     diagnostics.push(...sv.diagnostics);
     step("features", 0.85);
     // speed round F1 (S4, PO-PERF-4, F-D1): SAMPLING_LOW is judged on the fabrication raster plan at both qualities
     // (rasterPlan reads only sizes; its FAB_* diagnostics are not repeated here). Diagnostics are not hash input.
     const fabGeo = quality === "fabrication" ? geo : E.rasterPlan(p, { w: ns.w, h: ns.h }, "fabrication", deviceClass).geometry;
-    diagnostics.push(...S.featureChecks(layers, { minFeatureMM: mat.minFeatureMM, advisoryFeatureMM: mat.advisoryFeatureMM, minPartMM2: mat.minPartMM2,
-      mmPerPxMax: geo.mmPerPxMax, samplingMmPerPx: fabGeo.mmPerPxMax, calibrated: mat.calibrated, revision, quality }));
+    const fcfg = { minFeatureMM: mat.minFeatureMM, advisoryFeatureMM: mat.advisoryFeatureMM, minPartMM2: mat.minPartMM2,
+      mmPerPxMax: geo.mmPerPxMax, samplingMmPerPx: fabGeo.mmPerPxMax, calibrated: mat.calibrated, revision, quality };
+    const fhead = S.featureHead(layers, fcfg);   // F9: featureChecks = head + one featureLayer item per layer + one aggregate
+    diagnostics.push(...D.aggregate(fhead.concat(...(yield batch("featureLayer", layers.map((L, k) => [L, k, fcfg]))))));
     step("envelope", 0.95);
     diagnostics.push(...S.checkEnvelope({ wMM: page.wMM, hMM: page.hMM }, p.machine, mat, dOpts));
 
@@ -762,9 +932,13 @@
     let guides = null;
     if (bonded && con.guides && con.guides.mode !== "none") {
       step("guides", 0.982);
-      const gb = global.SBGuides.build(layers, con.guides, dOpts);
+      // F9: SBGuides.build/validate as one buildPair item per adjacent pair and one validatePair item per layer (ordered folds)
+      const Gd = global.SBGuides, P = Gd.params(con.guides), gp = [];
+      for (let k = 0; k + 1 < layers.length; k++) gp.push([k, layers[k], layers[k + 1], P, dOpts]);
+      const gb = Gd.buildFold(layers.length, P, dOpts, yield batch("buildPair", gp));
       layers = layers.map((L, k) => Object.assign({}, L, { scorePaths: gb.scorePaths[k] }));
-      diagnostics.push(...gb.diagnostics, ...global.SBGuides.validate(layers, gb, con.guides, dOpts));
+      const gv = yield batch("validatePair", layers.map((L, k) => [k, L, layers[k + 1], gb.scorePaths[k], P, dOpts]));
+      diagnostics.push(...gb.diagnostics, ...[].concat(...gv));
       guides = gb.guides;
     }
 
@@ -788,7 +962,8 @@
     };
 
     // G2.10b: D4 hashes — one layerHash per index 0..N−1 (omitted layers included), then geometryHash (§3)
-    const layerHashes = layers.map((L) => { step("hashes", 0.99); return G.layerHashes(L).layerHash; });
+    for (let k = 0; k < layers.length; k++) step("hashes", 0.99);
+    const layerHashes = yield batch("layerHash", layers.map((L) => [L]));
     const geometryHash = global.SBHash.hashJSON({ key: global.SBSchema.geometryKey(p), engine: E.VERSION, quality,
       raster: [W, H], layers: layerHashes, guides: E.guideHash(guides) });
     const snapshot = {
@@ -834,21 +1009,28 @@
   };
 
   /**
-   * request(project, px: {pixels, channels: 1|4, w, h, alpha}, {quality, requestId?, deviceClass?}) → GenerateRequest
+   * request(project, px: {pixels, channels: 1|4, w, h, alpha}, {quality, requestId?, deviceClass?, draftCapPx?}) → GenerateRequest
    * (alpha.3 E1, LYR-06). The one request builder: the draft and the fabrication request of one project revision have
    * the same config (the project itself, never rewritten) and the same normalizedSource; only quality differs.
    * project.source is used as installed at intake (SBSchema.withSource); when it is set and its w, h or channels differ
    * from the pixels, throws SOURCE_MISMATCH (the pixels and the record they run under always belong together).
    * sourceHash is source.sampleHash (byteHash when no sample hash exists).
+   * Speed round F9 (F-D5): draftCapPx (integer 64–2000; default SBSchema.limits(deviceClass).draftPxCap) is copied onto
+   * the request and is the draft raster cap generate passes to rasterPlan; the pool sets the pooled cap, the no-worker
+   * fallback limits.draftPxFallback. An out-of-range value throws ENGINE_ARG.
    */
   E.request = function (project, px, o) {
     o = o || {};
     const s = project.source;
     if (s && (s.w !== px.w || s.h !== px.h || s.channels !== px.channels))
       throw efail("SOURCE_MISMATCH", "project.source is " + s.w + " × " + s.h + " × " + s.channels + " but the pixels are " + px.w + " × " + px.h + " × " + px.channels);
+    const deviceClass = o.deviceClass === undefined ? "desktop" : o.deviceClass;
+    let draftCapPx = o.draftCapPx;
+    if (draftCapPx === undefined) draftCapPx = deviceClass === "desktop" || deviceClass === "mobile" ? global.SBSchema.limits(deviceClass).draftPxCap : undefined;
+    else if (!(Number.isInteger(draftCapPx) && draftCapPx >= 64 && draftCapPx <= 2000)) throw efail("ENGINE_ARG", "draftCapPx must be an integer 64–2000 (got " + draftCapPx + ")");
     return { requestId: o.requestId === undefined ? o.quality : o.requestId, revision: project.revision, engineVersion: E.VERSION, quality: o.quality,
       normalizedSource: { pixels: px.pixels, channels: px.channels, w: px.w, h: px.h, alpha: px.alpha == null ? null : px.alpha },
-      sourceHash: s ? (s.sampleHash || s.byteHash) : null, config: project, deviceClass: o.deviceClass === undefined ? "desktop" : o.deviceClass };
+      sourceHash: s ? (s.sampleHash || s.byteHash) : null, config: project, deviceClass, draftCapPx };
   };
 
   /**

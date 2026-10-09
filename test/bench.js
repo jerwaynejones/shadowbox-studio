@@ -812,11 +812,16 @@ function stageP50(list) {
   return out;
 }
 
-/** Wraps globalThis.SBGuides so build/validate time lands in probe.guidesBuild/guidesValidate; returns the restore. */
+/**
+ * Wraps globalThis.SBGuides so build/validate time lands in probe.guidesBuild/guidesValidate; returns the restore.
+ * Speed round F9: the engine runs guides as buildPair items + buildFold (build) and validatePair items (validate), so
+ * those are timed; build/validate stay wrapped for direct callers.
+ */
 function installGuideProbe(probe) {
   const real = globalThis.SBGuides, timed = (fn, key) => function () {
     const t0 = performance.now(); try { return fn.apply(this, arguments); } finally { probe[key] += performance.now() - t0; } };
-  globalThis.SBGuides = Object.freeze(Object.assign({}, real, { build: timed(real.build, "guidesBuild"), validate: timed(real.validate, "guidesValidate") }));
+  globalThis.SBGuides = Object.freeze(Object.assign({}, real, { build: timed(real.build, "guidesBuild"), validate: timed(real.validate, "guidesValidate"),
+    buildPair: timed(real.buildPair, "guidesBuild"), buildFold: timed(real.buildFold, "guidesBuild"), validatePair: timed(real.validatePair, "guidesValidate") }));
   return () => { globalThis.SBGuides = real; };
 }
 

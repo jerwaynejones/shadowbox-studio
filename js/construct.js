@@ -16,6 +16,8 @@
  * all-zero report. The report counts pixels against the input mask; the engine converts it to mm² with
  * sxUm·syUm (GEO-08). Connected report entries also carry the islands counts {bridged, culled}
  * (removedParts = specks + culled). Inputs are never mutated.
+ * Speed round F9 (S1): both are maps over constructLayer(k, {mask, W, H, px, bonded, wantChange}), the per-layer
+ * kernel the worker pool runs; changeMask(a, b, w, h) is the bounding-box crop of a ∧ ¬b (draft change overlays).
  *
  * px = {featR, bridgeR, cullPx, maxBridgePx, speckPx, holePx, frameAnchored, cullEnabled}:
  *   featR        opening radius (px); the closing radius is max(1, featR − 1) as in v1.1.0, and featR 0
@@ -62,6 +64,10 @@
     if (!Number.isSafeInteger(w) || !Number.isSafeInteger(h) || w < 1 || h < 1) throw cfail("size must be positive integers (got " + w + " × " + h + ")");
     if (!Array.isArray(masks) || masks.length === 0) throw cfail("masks must be a non-empty array");
     masks.forEach((m, k) => { if (!(m instanceof Uint8Array) || m.length !== w * h) throw cfail("mask " + k + " must be a Uint8Array of length w·h"); });
+    checkPx(px);
+  }
+
+  function checkPx(px) {
     if (!px || typeof px !== "object") throw cfail("px must be {featR, bridgeR, cullPx, maxBridgePx, speckPx, holePx, frameAnchored, cullEnabled}");
     if (!Number.isInteger(px.featR) || px.featR < 0) throw cfail("featR must be a non-negative integer (got " + px.featR + ")");
     for (const f of ["bridgeR", "cullPx", "maxBridgePx", "speckPx", "holePx"]) if (!isNum(px[f])) throw cfail(f + " must be a non-negative number (got " + px[f] + ")");
@@ -87,35 +93,84 @@
 
   const baseEntry = () => ({ layer: 0, addedPx: 0, removedPx: 0, filledHoles: 0, removedParts: 0 });
 
-  /** Connected-sheet strategy (SUP-06): the v1.1.0 chain, byte-identical, including SBIslands.resolve. */
-  C.connected = function (masks, w, h, px) {
-    checkArgs(masks, w, h, px);
-    const final = [], bridges = [], report = [];
-    masks.forEach((mask, k) => {
-      if (k === 0) { final.push(mask.slice()); bridges.push(null); report.push({ ...baseEntry(), bridged: 0, culled: 0 }); return; }
+  /**
+   * Speed round F8/F9: changeMask(a, b, w, h) → {mask, x0, y0, x1, y1} | null, the pixels where a[i] ∧ ¬b[i] (b null:
+   * where a[i]) as the crop of their bounding box ([x0, x1) × [y0, y1), mask the crop's own row-major 0/1 bytes; the whole
+   * raster when the box is the raster), or null when there is none. Neither input is written. SBEngine.changePolygons
+   * traces it (SBEngine.maskPolygonsCrop).
+   */
+  C.changeMask = function (a, b, w, h) {
+    const full = new Uint8Array(w * h);
+    let x0 = w, x1 = -1, y0 = -1, y1 = -1;
+    for (let y = 0, r = 0; y < h; y++, r += w) {
+      let any = 0;
+      if (b) for (let i = r, e = r + w; i < e; i++) any |= full[i] = !!a[i] & !b[i];
+      else for (let i = r, e = r + w; i < e; i++) any |= full[i] = +!!a[i];
+      if (!any) continue;
+      if (y0 < 0) y0 = y;
+      y1 = y;
+      let lo = 0; while (!full[r + lo]) lo++;
+      let hi = w - 1; while (!full[r + hi]) hi--;
+      if (lo < x0) x0 = lo;
+      if (hi > x1) x1 = hi;
+    }
+    if (y0 < 0) return null;
+    x1++; y1++;
+    if (x0 === 0 && y0 === 0 && x1 === w && y1 === h) return { mask: full, x0, y0, x1, y1 };
+    const cw = x1 - x0, m = new Uint8Array(cw * (y1 - y0));
+    for (let y = y0, o = 0; y < y1; y++, o += cw) m.set(full.subarray(y * w + x0, y * w + x1), o);
+    return { mask: m, x0, y0, x1, y1 };
+  };
+
+  /**
+   * Speed round F9 (S1): constructLayer(k, {mask, W, H, px, bonded, wantChange}) → {final, report, bridges, change?}, the
+   * per-layer kernel of both strategies (the pool's construct item). Layer 0 is the solid base (a copy); bonded k ≥ 1 is
+   * morph (culling only when px.cullEnabled), connected k ≥ 1 is morph plus SBIslands.resolve. bridges is the islands'
+   * bridge mask (connected) or null. wantChange (draft overlays, GEO-08) adds change = {added, removed}: the
+   * SBConstruct.changeMask crops of final ∧ ¬mask and mask ∧ ¬final, each null when its report count is 0. Pure: mask is
+   * not written and nothing returned aliases it.
+   */
+  C.constructLayer = function (k, a) {
+    if (!a || typeof a !== "object") throw cfail("constructLayer needs {mask, W, H, px, bonded}");
+    const mask = a.mask, w = a.W, h = a.H, px = a.px;
+    if (!Number.isSafeInteger(w) || !Number.isSafeInteger(h) || w < 1 || h < 1) throw cfail("size must be positive integers (got " + w + " × " + h + ")");
+    if (!(mask instanceof Uint8Array) || mask.length !== w * h) throw cfail("mask " + k + " must be a Uint8Array of length w·h");
+    checkPx(px);
+    let out;
+    if (k === 0) {
+      out = { final: mask.slice(), bridges: null, report: a.bonded ? baseEntry() : { ...baseEntry(), bridged: 0, culled: 0 } };
+    } else if (a.bonded) {
+      const { m, specks, holes } = morph(mask, w, h, px, !!px.cullEnabled);
+      out = { final: m, bridges: null, report: { layer: k, ...diff(mask, m), filledHoles: holes, removedParts: specks } };
+    } else {
       const { m, specks, holes } = morph(mask, w, h, px, true);
       const isl = global.SBIslands.resolve(m, w, h, {
         frameAnchored: !!px.frameAnchored, bridgeRadius: px.bridgeR, cullBelowPx: px.cullPx, maxBridgePx: px.maxBridgePx,
       });
-      final.push(m); bridges.push(isl.bridges);
-      report.push({ layer: k, ...diff(mask, m), filledHoles: holes, removedParts: specks + isl.culled, bridged: isl.bridged, culled: isl.culled });
-    });
-    return { final, bridges, report };
+      out = { final: m, bridges: isl.bridges, report: { layer: k, ...diff(mask, m), filledHoles: holes, removedParts: specks + isl.culled, bridged: isl.bridged, culled: isl.culled } };
+    }
+    if (a.wantChange) out.change = {
+      added: out.report.addedPx ? C.changeMask(out.final, mask, w, h) : null,
+      removed: out.report.removedPx ? C.changeMask(mask, out.final, w, h) : null,
+    };
+    return out;
   };
 
-  /** Bonded-relief strategy (SUP-01, D-4.5/4.6): no islands, no bridges, no clip; culling only when cullEnabled. */
-  C.bonded = function (masks, w, h, px) {
+  function strategy(masks, w, h, px, bonded) {
     checkArgs(masks, w, h, px);
     const final = [], bridges = [], report = [];
     masks.forEach((mask, k) => {
-      bridges.push(null);
-      if (k === 0) { final.push(mask.slice()); report.push(baseEntry()); return; }
-      const { m, specks, holes } = morph(mask, w, h, px, !!px.cullEnabled);
-      final.push(m);
-      report.push({ layer: k, ...diff(mask, m), filledHoles: holes, removedParts: specks });
+      const r = C.constructLayer(k, { mask, W: w, H: h, px, bonded });
+      final.push(r.final); bridges.push(r.bridges); report.push(r.report);
     });
     return { final, bridges, report };
-  };
+  }
+
+  /** Connected-sheet strategy (SUP-06): the v1.1.0 chain, byte-identical, including SBIslands.resolve (a map over constructLayer). */
+  C.connected = function (masks, w, h, px) { return strategy(masks, w, h, px, false); };
+
+  /** Bonded-relief strategy (SUP-01, D-4.5/4.6): no islands, no bridges, no clip; culling only when cullEnabled (a map over constructLayer). */
+  C.bonded = function (masks, w, h, px) { return strategy(masks, w, h, px, true); };
 
   // ------------------------------------------------------------------ G2.7b complexity caps and simplification
 

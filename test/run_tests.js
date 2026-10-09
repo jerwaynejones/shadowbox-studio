@@ -5873,10 +5873,12 @@ suite("engine.js/svgout.js/app.js — alpha.3 E11 guides in generate (G3.1 stage
   const fi = E.generate(E.request(im, px, { quality: "fabrication" })).snapshot;
   check("ASM-03 interior-mark in generate validates clean and differs in layerHash from inset-outline",
     fi.guides.mode === "interior-mark" && !fi.diagnostics.some((x) => x.code === "GUIDE_UNCONTAINED") && fi.geometryHash !== f.geometryHash);
-  const eng = fs.readFileSync(path.join(__dirname, "..", "js", "engine.js"), "utf8"), gen = eng.slice(eng.indexOf("E.generate = function"));
+  // speed round F9: the pipeline is the runSteps generator; SBGuides.build/validate run as buildPair/validatePair batches + buildFold
+  const eng = fs.readFileSync(path.join(__dirname, "..", "js", "engine.js"), "utf8"), gen = eng.slice(eng.indexOf("function* runSteps("));
+  const gbuild = gen.indexOf('batch("buildPair"');
   check("SUP-04/SUP-05 guides are built after the repair replay and part assignment, before accounting (rebuilt every generate)",
-    gen.indexOf("replayRepairs(") > 0 && gen.indexOf("SBGuides.build(") > gen.indexOf("replayRepairs(") && gen.indexOf("SBGuides.build(") > gen.indexOf("assignParts(") &&
-    gen.indexOf("SBGuides.build(") < gen.indexOf("trailing-empty accounting") && /SBGuides\.validate\(/.test(gen));
+    eng.indexOf("function* runSteps(") > 0 && gen.indexOf("replayRepairs(") > 0 && gbuild > gen.indexOf("replayRepairs(") && gbuild > gen.indexOf("assignParts(") &&
+    gbuild < gen.indexOf("trailing-empty accounting") && /Gd\.buildFold\(/.test(gen) && gen.indexOf('batch("validatePair"') > gbuild);
 
   // ---- E-R4: the sheet label goes in the largest concealed polygon that fits it (one polygon per placeBox attempt)
   { const sq = (x, y, w, h) => [{ outer: [x, y, x + w, y, x + w, y + h, x, y + h], holes: [] }];
@@ -6515,9 +6517,182 @@ suite("engine — speed round F8 cropped change overlays (NFR-05, GEO-08)", () =
   check(`F8 draft cleanupReport (added/removed/bridges) equals the alpha.3 golden on the F0 draft fixtures (${drafts.length - bad.length}/${drafts.length}, ${withPolys} with polygons)` +
     (bad.length ? " — differ: " + bad.join(", ") : ""), bad.length === 0 && withPolys >= 3);
   // run() uses the cropped path for the change overlays and the bridges (the uncropped maskPolygons stays for legacyCleanupReport)
-  const src = fs.readFileSync(path.join(__dirname, "..", "js", "engine.js"), "utf8"), body = src.slice(src.indexOf("function run(req, head, step, fail, cache, overlays)"));
-  check("F8 run() builds overlays and bridges with E.changePolygons, not the full-raster E.maskPolygons",
-    /E\.changePolygons\(/.test(body) && !/E\.maskPolygons\(/.test(body));
+  // speed round F9: run() is the runSteps generator; its overlays batch runs E.overlayLayer (constructLayer emits the crops)
+  const src = fs.readFileSync(path.join(__dirname, "..", "js", "engine.js"), "utf8"), at = src.indexOf("function* runSteps(req, head, step, fail, cache, overlays)");
+  const body = at > 0 ? src.slice(at) : "", ol = src.slice(src.indexOf("E.overlayLayer = function"), src.indexOf("E.TASKS = Object.freeze"));
+  check("F8 run() builds overlays and bridges with E.changePolygons / the cropped path, not the full-raster E.maskPolygons",
+    at > 0 && /batch\("overlays"/.test(body) && /E\.changePolygons\(/.test(ol) && /E\.maskPolygonsCrop\(/.test(ol) && !/E\.maskPolygons\(/.test(body) && !/E\.maskPolygons\(/.test(ol));
+});
+
+suite("engine — speed round F9 generator pipeline and sync driver (NFR-05)", async () => {
+  const E = SBEngine, C = require("./pool_corpus.js"), D = C.deepEqualStrict;
+  const gold = JSON.parse(fs.readFileSync(path.join(__dirname, "golden", "pool-equality.json"), "utf8"));
+  const fields = ["status", "code", "geometryHash", "layerHashes", "diagSha", "cleanupSha", "supportSha", "guidesSha", "statsSha", "wholeSha"];
+  const sameGold = (fx, r) => { const d = C.digest(r), g = gold.fixtures[fx.id]; return !!g && fields.every((k) => JSON.stringify(d[k]) === JSON.stringify(g[k])); };
+  const NAMES = ["construct", "overlays", "trace", "convert", "traceConvert", "supportPair", "featureLayer", "buildPair", "validatePair", "layerHash"];
+  check("F9 SBEngine.TASKS is a frozen name → kernel table (" + NAMES.join(", ") + ")",
+    !!E.TASKS && Object.isFrozen(E.TASKS) && JSON.stringify(Object.keys(E.TASKS).sort()) === JSON.stringify(NAMES.slice().sort()) && NAMES.every((n) => typeof E.TASKS[n] === "function"));
+  check("F9 split kernels are exported (constructLayer, traceLayer, convertLayer, supportPair, featureLayer, buildPair, validatePair) and generateAsync, BatchError",
+    typeof SBConstruct.constructLayer === "function" && typeof SBMaterial.traceLayer === "function" && typeof SBMaterial.convertLayer === "function" &&
+    typeof SBSupport.supportPair === "function" && typeof SBSupport.featureLayer === "function" && typeof SBGuides.buildPair === "function" &&
+    typeof SBGuides.validatePair === "function" && typeof E.generateAsync === "function" && typeof E.BatchError === "function");
+  if (!E.TASKS || typeof E.generateAsync !== "function" || typeof E.BatchError !== "function") return;
+  const hooks0 = E.TEST_HOOKS;
+  E.TEST_HOOKS = true;
+  try {
+    const all = C.corpus().filter((fx) => !fx.slow), byId = new Map(all.map((fx) => [fx.id, fx]));
+    const reqOf = (fx) => E.request(fx.project, fx.source, { quality: fx.quality, deviceClass: fx.deviceClass, requestId: fx.id, draftCapPx: fx.draftCapPx });
+
+    // F-D5: explicit draftCapPx request field (default = today's device cap, so nothing changes here)
+    const p0 = all[0].project, s0 = all[0].source;
+    check("F-D5 SBEngine.request copies draftCapPx (default limits(deviceClass).draftPxCap) and refuses a value outside 64–2000",
+      E.request(p0, s0, { quality: "draft" }).draftCapPx === SBSchema.limits("desktop").draftPxCap && E.request(p0, s0, { quality: "draft", draftCapPx: 300 }).draftCapPx === 300 &&
+      [63, 2001, 1.5, "720"].every((v) => { try { E.request(p0, s0, { quality: "draft", draftCapPx: v }); return false; } catch (e) { return e.code === "ENGINE_ARG"; } }));
+    const big = { w: 4000, h: 3000 };
+    check("F-D5 rasterPlan(…, draftCapPx) uses min(geometry.draftPx, draftCapPx); omitted = the device cap",
+      Math.max(E.rasterPlan(p0, big, "draft", "desktop", 200).geometry.rasterW, E.rasterPlan(p0, big, "draft", "desktop", 200).geometry.rasterH) === Math.min(200, p0.geometry.draftPx) &&
+      JSON.stringify(E.rasterPlan(p0, big, "draft", "desktop")) === JSON.stringify(E.rasterPlan(p0, big, "draft", "desktop", SBSchema.limits("desktop").draftPxCap)));
+    const capFx = byId.get("t-light-draft"), capReq = Object.assign(reqOf(capFx), { draftCapPx: 100 }), capRes = E.generate(capReq);
+    check("F-D5 generate honours req.draftCapPx (a smaller cap gives a smaller draft raster and another geometryHash)",
+      capRes.status === "done" && Math.max(capRes.snapshot.geometry.rasterW, capRes.snapshot.geometry.rasterH) === 100 && capRes.geometryHash !== gold.fixtures[capFx.id].geometryHash);
+
+    // 1. split kernels equal their sync wrappers on the F0 fixtures (engine batches recorded through the test-only kernelHook)
+    const WRAP = ["h-bonded-draft", "h-connected-fabrication", "g-interior-draft", "t-connected-frame-draft", "n12-draft", "repair-clip-fabrication", "t-bonded-frame-draft", "trailing-draft"];
+    const wrapBad = [];
+    const contains = (big, small) => !small.length || JSON.stringify(big).includes(JSON.stringify(small).slice(1, -1));
+    for (const id of WRAP) {
+      const fx = byId.get(id), rec = {};
+      const r = E.generate(reqOf(fx), { overlays: fx.overlays, kernelHook: (kind, i, args, run) => { const out = run(); (rec[kind] = rec[kind] || [])[i] = { args, out }; return out; } });
+      const p = fx.project, con = p.construction, bonded = con.mode === "bonded-relief", dOpts = { revision: p.revision, quality: fx.quality };
+      const bad = (what) => wrapBad.push(id + ":" + what);
+      if (r.status !== "done") { bad("status"); continue; }
+      // construct
+      const ca = rec.construct[0].args[1], masks = rec.construct.map((x) => x.args[1].mask);
+      const cw = (bonded ? SBConstruct.bonded : SBConstruct.connected)(masks, ca.W, ca.H, ca.px);
+      if (!rec.construct.every((x, k) => D(x.out.final, cw.final[k]) && D(x.out.report, cw.report[k]) && D(x.out.bridges, cw.bridges[k]))) bad("construct");
+      // trace + convert (bonded: one fused item; connected smooth: trace, smoothStack, convert)
+      const tm = rec.traceConvert ? rec.traceConvert.map((x) => x.args[0]) : rec.trace.map((x) => x.args[0]);
+      const conv = rec.traceConvert ? rec.traceConvert.map((x) => x.out) : rec.convert.map((x) => x.out);
+      const fOpts = { revision: p.revision, quality: fx.quality, frame: r.snapshot.page.frameMM > 0 };
+      if (con.cleanup.cornerStyle === "smooth" && !bonded) fOpts.smooth = { mode: "connected", tolUm: Math.round(con.cleanup.toleranceMM * 1000) };
+      const page = SBMaterial.page({ artWMM: r.snapshot.page.artWMM, artHMM: r.snapshot.page.artHMM, frameMM: r.snapshot.page.frameMM });
+      if (!D(SBMaterial.fromMasks(tm, ca.W, ca.H, page, fOpts), SBMaterial.assignParts(conv))) bad("fromMasks");
+      if (!!rec.traceConvert !== !fOpts.smooth) bad("fused-iff-unsmoothed");
+      // support (bonded pairs)
+      if (bonded) {
+        const sl = [rec.supportPair[0].args[0]].concat(rec.supportPair.map((x) => x.args[1])), sv = SBSupport.validate(sl, con.mode, rec.supportPair[0].args[3]);
+        if (!D(sv.supportGraph, r.snapshot.supportGraph) || !contains(r.diagnostics, sv.diagnostics)) bad("support");
+      } else if (rec.supportPair) bad("support-connected");
+      // features
+      const fl = rec.featureLayer.map((x) => x.args[0]), fc = SBSupport.featureChecks(fl, rec.featureLayer[0].args[2]);
+      if (!contains(r.diagnostics, fc) || fc.length === 0) bad("features");
+      // guides
+      if (rec.buildPair) {
+        const gl = [rec.buildPair[0].args[1]].concat(rec.buildPair.map((x) => x.args[2])), gb = SBGuides.build(gl, con.guides, dOpts);
+        if (!D(gb.guides, r.snapshot.guides) || !gb.scorePaths.every((sp, k) => D(sp, r.validatedLayers[k].scorePaths)) || !contains(r.diagnostics, gb.diagnostics)) bad("guides.build");
+        const vl = rec.validatePair.map((x) => x.args[1]), gv = SBGuides.validate(vl, gb, con.guides, dOpts);
+        if (!contains(r.diagnostics, gv)) bad("guides.validate");
+      } else if (bonded && con.guides.mode !== "none") bad("guides-missing");
+      if (!rec.layerHash.every((x, k) => x.out === r.snapshot.layers.map((L) => SBGeom.layerHashes(L).layerHash)[k])) bad("layerHash");
+    }
+    check("F9 each split kernel deep-equals its pre-split sync wrapper on F0 fixtures (C.bonded/connected, fromMasks, S.validate, featureChecks, SBGuides.build/validate)" +
+      (wrapBad.length ? " — differ: " + wrapBad.join(", ") : ""), wrapBad.length === 0);
+
+    // 2. adversarial in-process exec: items in reverse order, args structuredClone'd with their declared transfers (detached
+    // on the generator's side), results cloned; whole-corpus digests equal the golden
+    const inlineExec = (order, fault) => ({
+      map: async (kind, items, o) => {
+        const fn = E.TASKS[kind], out = new Array(items.length), errs = [], idx = items.map((x, i) => i);
+        if (order === "reverse") idx.reverse();
+        for (const i of idx) {
+          const tr = (o && o.transfer && o.transfer[i]) || [];
+          for (const v of tr) if (!ArrayBuffer.isView(v) || v.byteOffset !== 0 || v.byteLength !== v.buffer.byteLength) throw new Error("F9 exec: transfer of a non-whole buffer");
+          const args = structuredClone(items[i], { transfer: tr.map((v) => v.buffer) });
+          await new Promise((res) => setImmediate(res));
+          try { if (fault) fault(kind, i, args); out[i] = structuredClone(fn(...args)); } catch (e) { errs.push({ index: i, error: e }); }
+        }
+        if (errs.length) throw new E.BatchError(errs);
+        return out;
+      },
+    });
+    const revBad = [], cmpSync = [];
+    let detached = 0;
+    for (const fx of all) {
+      const req = reqOf(fx);
+      const r = await E.generateAsync(req, { overlays: fx.overlays, exec: inlineExec("reverse") });
+      if (!sameGold(fx, r)) revBad.push(fx.id);
+      if (fx.source.w * fx.source.h <= 60000 && cmpSync.length < 6) cmpSync.push([fx, r]);
+    }
+    check(`F9 reverse-order exec with transferred (detached) args gives the golden digests on the whole non-slow corpus (${all.length - revBad.length}/${all.length})` +
+      (revBad.length ? " — differ: " + revBad.join(", ") : ""), revBad.length === 0);
+    check("F9 reverse-order async responses deepEqualStrict the sync responses", cmpSync.length >= 3 && cmpSync.every(([fx, r]) => D(r, C.run(fx))));
+    { // the declared transfers really detach the generator's copies
+      const fx = byId.get("h-bonded-draft"), seen = [];
+      await E.generateAsync(reqOf(fx), { exec: { map: (kind, items, o) => { (o.transfer || []).forEach((t) => t && seen.push(...t)); return inlineExec("reverse").map(kind, items, o); } } });
+      detached = seen.filter((v) => v.byteLength === 0).length;
+      check(`F9 construct/trace batches declare transferable buffers and the exec detaches them (${detached}/${seen.length})`, seen.length >= 8 && detached === seen.length);
+    }
+
+    // 3. error precedence: lowest (phase, item index), codedError verbatim
+    const coded = (code) => Object.assign(new Error("injected " + code), { code });
+    const efx = byId.get("n12-draft");
+    const asyncFault = await E.generateAsync(reqOf(efx), { exec: inlineExec("reverse", (kind, i) => { if (kind === "construct" && (i === 5 || i === 2)) throw coded("F9_FAULT_" + i); }) });
+    const syncFault = E.generate(reqOf(efx), { kernelHook: (kind, i, args, run) => { if (kind === "construct" && (i === 5 || i === 2)) throw coded("F9_FAULT_" + i); return run(); } });
+    check("F9 faults in items 5 and 2 raise item 2's code in both drivers (reverse completion order included), message verbatim",
+      asyncFault.status === "error" && asyncFault.error.code === "F9_FAULT_2" && asyncFault.error.message === "injected F9_FAULT_2" &&
+      syncFault.status === "error" && syncFault.error.code === "F9_FAULT_2" && syncFault.error.message === "injected F9_FAULT_2");
+    const M = SBMaterial, tl = M.traceLayer, cl = M.convertLayer;
+    let ph = null;
+    try {
+      M.traceLayer = function (mask, k) { if (k === 5) throw coded("F9_TRACE_5"); return tl.apply(this, arguments); };
+      M.convertLayer = function (t, k) { if (k === 2) throw coded("F9_CONVERT_2"); return cl.apply(this, arguments); };
+      ph = [E.generate(reqOf(efx)), await E.generateAsync(reqOf(efx), { exec: inlineExec("reverse") }), await E.generateAsync(reqOf(efx), { exec: inlineExec("forward") })];
+    } finally { M.traceLayer = tl; M.convertLayer = cl; }
+    check("F9 a trace fault in layer 5 beats a convert fault in layer 2 (fused bonded item: phase before index), every driver and order",
+      ph.every((r) => r.status === "error" && r.error.code === "F9_TRACE_5"));
+    const plain = await E.generateAsync(reqOf(efx), { exec: { map: async () => { throw coded("POOL_DOWN"); } } });
+    check("F9 an exec rejection that is not a BatchError is raised as is (codedError)", plain.status === "error" && plain.error.code === "POOL_DOWN");
+    const short = await E.generateAsync(reqOf(efx), { exec: { map: async () => [] } });
+    check("F9 an exec that returns the wrong number of results is an ENGINE_INTERNAL error", short.status === "error" && short.error.code === "ENGINE_INTERNAL");
+    check("F9 kernelHook is refused unless SBEngine.TEST_HOOKS is set", (() => { E.TEST_HOOKS = false; try { const r = E.generate(reqOf(efx), { kernelHook: (k, i, a, run) => run() });
+      return r.status === "error" && r.error.code === "ENGINE_DEBUG_DISABLED"; } finally { E.TEST_HOOKS = true; } })());
+
+    // 4. sync-driver immutability mode over the whole non-slow corpus: plain inputs deep-frozen, typed-array inputs
+    // checksummed before/after every item, and no result aliases an input object or buffer
+    const walk = (v, objs, typed, freeze) => {
+      if (v === null || typeof v !== "object" || objs.has(v)) return;
+      objs.add(v);
+      if (ArrayBuffer.isView(v)) { typed.push(v); return; }
+      if (v instanceof Map) { for (const [a, b] of v) { walk(a, objs, typed, freeze); walk(b, objs, typed, freeze); } return; }
+      for (const k of Reflect.ownKeys(v)) walk(v[k], objs, typed, freeze);
+      if (freeze) Object.freeze(v);
+    };
+    const immBad = [];
+    let items = 0;
+    for (const fx of all) {
+      let why = null;
+      const r = E.generate(reqOf(fx), { overlays: fx.overlays, kernelHook: (kind, i, args, run) => {
+        const objs = new Set(), typed = [];
+        walk(args, objs, typed, true);
+        const bufs = new Set(typed.map((t) => t.buffer)), before = typed.map((t) => Buffer.from(t.buffer, t.byteOffset, t.byteLength).slice());
+        const out = run();
+        items++;
+        if (typed.some((t, j) => Buffer.compare(Buffer.from(t.buffer, t.byteOffset, t.byteLength), before[j]) !== 0)) why = why || kind + "#" + i + " wrote a typed-array input";
+        const oo = new Set(), ot = [];
+        walk(out, oo, ot, false);
+        if ([...oo].some((o) => objs.has(o)) || ot.some((t) => bufs.has(t.buffer))) why = why || kind + "#" + i + " returned an alias of an input";
+        return out;
+      } });
+      if (why || !sameGold(fx, r)) immBad.push(fx.id + (why ? " (" + why + ")" : r.status === "error" ? " (" + r.error.code + ": " + r.error.message + ")" : ""));
+    }
+    check(`F9 sync-driver immutability mode passes on the whole non-slow corpus (${all.length - immBad.length}/${all.length}, ${items} kernel items)` +
+      (immBad.length ? " — " + immBad.join("; ") : ""), immBad.length === 0 && items > 500);
+  } finally { E.TEST_HOOKS = hooks0; }
+  // run() is a generator folded by drivers; kernels come only from the TASKS table
+  const src = fs.readFileSync(path.join(__dirname, "..", "js", "engine.js"), "utf8");
+  check("F9 engine.js: function* runSteps, both drivers resume it, and the old run() body is gone",
+    /function\* runSteps\(req, head, step, fail, cache, overlays\)/.test(src) && !/function run\(req, head, step, fail, cache, overlays\)/.test(src) &&
+    /E\.generate = function/.test(src) && /E\.generateAsync = async function/.test(src));
 });
 
 // ------------------------------------------------------------------ report

@@ -45,6 +45,8 @@
  *       (index 0 unused; reuse of the B1 differences), graphOnly?: skip containment and
  *       empty-layer checks (support graph and contact diagnostics only)}.
  *     Diagnostics are in layer order and pass through SBDiag.aggregate.
+ *     Speed round F9 (S1): bonded validate = supportPair(layers[k − 1], layers[k], k, cfg) per adjacent pair (the pool's
+ *     item) folded by supportFold (BOND_EMPTY_UNDER, reach, edges, one aggregate); validateArgs is its argument check.
  *   annotate(layers, supportGraph) → layers' with Part.supports[] rewritten to part IDs (§3).
  *   featureChecks(layers, cfg) → Diagnostic[] (plan G2.8; GEO-05/06, MAT-03, AT-10, PO-LASER-6), aggregated per
  *     (code, layer[, kind]) through SBDiag.aggregate:
@@ -68,6 +70,8 @@
  *     residual vertex, halfUm inside its part). The GEO-05 messages carry SBDiag's conservative-warning note.
  *     cfg = {minFeatureMM > 0, advisoryFeatureMM? (≥ minFeatureMM; absent = no advisory tier), minPartMM2 ≥ 0 (absent
  *       = 0), mmPerPxMax > 0 (the coarser real axis pitch), calibrated: boolean, revision = 0, quality = "draft"}.
+ *     Speed round F9 (S1): featureChecks = featureHead (checks, MAT_UNCALIBRATED, SAMPLING_LOW/DRAFT_COARSER) +
+ *     featureLayer(L, k, cfg) per layer (the pool's item; raw diagnostics) + one SBDiag.aggregate.
  *
  *   checkEnvelope(page, machine, material, {revision, quality}) → Diagnostic[] (plan G2.10a, moved forward from G3.10;
  *     GEO-10, PO-LASER-1/2). page = {wMM, hMM}: the shared extent of every layer sheet, frame included. With machine set
@@ -194,15 +198,87 @@
     return a.every((p, i) => eq(p.outer, b[i].outer) && (p.holes || []).length === (b[i].holes || []).length && (p.holes || []).every((h, j) => eq(h, b[i].holes[j])));
   }
 
-  function validateBonded(layers, cfg, dOpts) {
+  /**
+   * Speed round F9 (S1): supportPair(lo, up, k, cfg) → {pairs, identical, unsupported, diagnostics}, the per-adjacent-pair
+   * kernel of bonded validation (the pool's support item; code moved unchanged from the pair loop). cfg is the
+   * S.validate cfg. pairs = [[i, q, areaUm2]…] for every upper part i resting on lower part q (i ascending, then q
+   * ascending; areas summed in piece order); diagnostics = the pair's raw, un-aggregated list in today's order
+   * (BOND_UNSUPPORTED containment, then per upper part SUPPORT_NARROW / FEATURE_MARGINAL / BOND_UNSUPPORTED, then
+   * IDENTICAL_LAYERS). supportFold(layers, cfg, results) is the serial fold (BOND_EMPTY_UNDER, reach, edges, one
+   * aggregate). Pure.
+   */
+  S.supportPair = function (lo, up, k, cfg) {
     const G = global.SBGeom, D = global.SBDiag;
+    const dOpts = { revision: cfg.revision === undefined ? 0 : cfg.revision, quality: cfg.quality || "draft" };
     const make = (code, f) => D.make(code, Object.assign({}, dOpts, f));
-    const n = layers.length, nonEmpty = layers.map((L) => L.material.length > 0);
     const mfUm = Math.round(cfg.minFeatureMM * 1000);
     const advUm = cfg.advisoryFeatureMM === undefined || cfg.advisoryFeatureMM === null ? mfUm : Math.round(cfg.advisoryFeatureMM * 1000);
     const checks = !cfg.graphOnly;
+    const upNon = up.material.length > 0, loNon = lo.material.length > 0;
+    const diagnostics = [], out = [];
+    let unsupported = false;
+    // SUP-02: exact containment on polygons (GEO-07)
+    const U = cfg.unsupported ? cfg.unsupported[k] || [] : !checks ? null : upNon ? G.difference(up.material, lo.material) : [];
+    if (checks) {
+      if (!G.isEmpty(U)) {
+        const areaMM2 = G.area(U) / 1e6;
+        unsupported = true;
+        diagnostics.push(make("BOND_UNSUPPORTED", { layer: k, areaMM2, region: regionMM(bboxOf(U)),
+          measured: { value: areaMM2, unit: "mm2" }, limit: { value: 0, unit: "mm2" } }));
+      }
+    }
+    if (!upNon) return { pairs: out, identical: false, unsupported, diagnostics };
+    // SUP-03: one layer-level boolean; classify, then attribute the non-blocking pieces. With the containment
+    // difference U at hand (computed above or reused from the caller), Final[k] ∩ Final[k−1] = Final[k] − U, which is
+    // Final[k] itself when U is empty (the normal bonded case: no boolean at all).
+    const pieces = !loNon ? [] : U === null ? G.intersection(up.material, lo.material) : G.isEmpty(U) ? up.material : G.difference(up.material, U);
+    const items = [];
+    for (const piece of pieces) {
+      const c = classify(piece, mfUm, advUm);
+      if (c.level !== "block") items.push({ piece, b: G.bbox(piece), witness: c.witness, level: c.level });
+    }
+    const ua = attribute(items, up.parts), la = attribute(items, lo.parts);
+    const pairs = new Map(); // upper index → Map(lower index → {area, level, boxes})
+    items.forEach((it, j) => {
+      if (ua[j] === null || la[j] === null) return;
+      let m = pairs.get(ua[j]); if (!m) pairs.set(ua[j], (m = new Map()));
+      let e = m.get(la[j]); if (!e) m.set(la[j], (e = { area: 0, level: "block", pieces: [] }));
+      e.area += G.area([it.piece]); e.pieces.push(it.piece);
+      if (LEVEL[it.level] > LEVEL[e.level]) e.level = it.level;
+    });
+    up.parts.forEach((p, i) => {
+      const m = pairs.get(i), lows = m ? [...m.keys()].sort((a, b) => a - b) : [];
+      for (const q of lows) out.push([i, q, m.get(q).area]);
+      for (const q of lows) {
+        const e = m.get(q);
+        if (e.level !== "warn" && e.level !== "marginal") continue;
+        const areaMM2 = e.area / 1e6, region = regionMM(bboxOf(e.pieces));
+        if (e.level === "warn") diagnostics.push(make("SUPPORT_NARROW", { layer: k, part: p.id, areaMM2, region,
+          limit: { value: mfUm / 1000, unit: "mm" }, detail: "rests on " + lo.parts[q].id + " along a contact narrower than " + mfUm / 1000 + " mm" }));
+        else diagnostics.push(make("FEATURE_MARGINAL", { layer: k, part: p.id, areaMM2, region,
+          limit: { value: advUm / 1000, unit: "mm" }, detail: { kind: "contact", text: "rests on " + lo.parts[q].id + " along a contact narrower than " + advUm / 1000 + " mm" } }));
+      }
+      // a part with no support although containment held (sub-µm contact only)
+      if (checks && !lows.length && !unsupported) {
+        const areaMM2 = G.area([p.polygon]) / 1e6;
+        diagnostics.push(make("BOND_UNSUPPORTED", { layer: k, part: p.id, areaMM2, region: regionMM(G.bbox(p.polygon)),
+          measured: { value: areaMM2, unit: "mm2" }, limit: { value: 0, unit: "mm2" }, detail: "no support path to the layer below" }));
+      }
+    });
+    // LYR-05: identical consecutive layers are kept and reported
+    const identical = loNon && sameMaterial(up.material, lo.material);
+    if (identical) diagnostics.push(make("IDENTICAL_LAYERS", { layer: k, detail: "layer " + k + " is identical to layer " + (k - 1) }));
+    return { pairs: out, identical, unsupported, diagnostics };
+  };
+
+  /** supportFold(layers, cfg, results) → {diagnostics, supportGraph}: results[k − 1] = supportPair(layers[k − 1], layers[k], k, cfg). */
+  S.supportFold = function (layers, cfg, results) {
+    const D = global.SBDiag;
+    const dOpts = { revision: cfg.revision === undefined ? 0 : cfg.revision, quality: cfg.quality || "draft" };
+    const make = (code, f) => D.make(code, Object.assign({}, dOpts, f));
+    const n = layers.length, nonEmpty = layers.map((L) => L.material.length > 0);
+    const checks = !cfg.graphOnly;
     const perLayer = layers.map(() => []), edges = [], reach = layers.map((L, k) => (k === 0 ? L.parts.map(() => true) : []));
-    const unsupportedLayer = new Array(n).fill(false);
 
     // D-4.7: an empty layer under a non-empty one
     if (checks) {
@@ -213,64 +289,27 @@
       }
     }
     for (let k = 1; k < n; k++) {
-      const up = layers[k], lo = layers[k - 1];
-      // SUP-02: exact containment on polygons (GEO-07)
-      const U = cfg.unsupported ? cfg.unsupported[k] || [] : !checks ? null : nonEmpty[k] ? G.difference(up.material, lo.material) : [];
-      if (checks) {
-        if (!G.isEmpty(U)) {
-          const areaMM2 = G.area(U) / 1e6;
-          unsupportedLayer[k] = true;
-          perLayer[k].push(make("BOND_UNSUPPORTED", { layer: k, areaMM2, region: regionMM(bboxOf(U)),
-            measured: { value: areaMM2, unit: "mm2" }, limit: { value: 0, unit: "mm2" } }));
-        }
-      }
+      const up = layers[k], lo = layers[k - 1], r = results[k - 1];
+      perLayer[k].push(...r.diagnostics);
       if (!nonEmpty[k]) continue;
-      // SUP-03: one layer-level boolean; classify, then attribute the non-blocking pieces. With the containment
-      // difference U at hand (computed above or reused from the caller), Final[k] ∩ Final[k−1] = Final[k] − U, which is
-      // Final[k] itself when U is empty (the normal bonded case: no boolean at all).
-      const pieces = !nonEmpty[k - 1] ? [] : U === null ? G.intersection(up.material, lo.material) : G.isEmpty(U) ? up.material : G.difference(up.material, U);
-      const items = [];
-      for (const piece of pieces) {
-        const c = classify(piece, mfUm, advUm);
-        if (c.level !== "block") items.push({ piece, b: G.bbox(piece), witness: c.witness, level: c.level });
-      }
-      const ua = attribute(items, up.parts), la = attribute(items, lo.parts);
-      const pairs = new Map(); // upper index → Map(lower index → {area, level, boxes})
-      items.forEach((it, j) => {
-        if (ua[j] === null || la[j] === null) return;
-        let m = pairs.get(ua[j]); if (!m) pairs.set(ua[j], (m = new Map()));
-        let e = m.get(la[j]); if (!e) m.set(la[j], (e = { area: 0, level: "block", pieces: [] }));
-        e.area += G.area([it.piece]); e.pieces.push(it.piece);
-        if (LEVEL[it.level] > LEVEL[e.level]) e.level = it.level;
-      });
+      const lowsOf = new Map();
+      for (const [i, q, area] of r.pairs) { let a = lowsOf.get(i); if (!a) lowsOf.set(i, (a = [])); a.push([q, area]); }
       reach[k] = up.parts.map(() => false);
       up.parts.forEach((p, i) => {
-        const m = pairs.get(i), lows = m ? [...m.keys()].sort((a, b) => a - b) : [];
-        edges.push({ layer: k, part: p.id, supports: lows.map((q) => ({ layer: k - 1, part: lo.parts[q].id, areaUm2: m.get(q).area })) });
-        reach[k][i] = lows.some((q) => reach[k - 1][q]);
-        for (const q of lows) {
-          const e = m.get(q);
-          if (e.level !== "warn" && e.level !== "marginal") continue;
-          const areaMM2 = e.area / 1e6, region = regionMM(bboxOf(e.pieces));
-          if (e.level === "warn") perLayer[k].push(make("SUPPORT_NARROW", { layer: k, part: p.id, areaMM2, region,
-            limit: { value: mfUm / 1000, unit: "mm" }, detail: "rests on " + lo.parts[q].id + " along a contact narrower than " + mfUm / 1000 + " mm" }));
-          else perLayer[k].push(make("FEATURE_MARGINAL", { layer: k, part: p.id, areaMM2, region,
-            limit: { value: advUm / 1000, unit: "mm" }, detail: { kind: "contact", text: "rests on " + lo.parts[q].id + " along a contact narrower than " + advUm / 1000 + " mm" } }));
-        }
-        // a part with no support although containment held (sub-µm contact only)
-        if (checks && !lows.length && !unsupportedLayer[k]) {
-          const areaMM2 = G.area([p.polygon]) / 1e6;
-          perLayer[k].push(make("BOND_UNSUPPORTED", { layer: k, part: p.id, areaMM2, region: regionMM(G.bbox(p.polygon)),
-            measured: { value: areaMM2, unit: "mm2" }, limit: { value: 0, unit: "mm2" }, detail: "no support path to the layer below" }));
-        }
+        const lows = lowsOf.get(i) || [];
+        edges.push({ layer: k, part: p.id, supports: lows.map(([q, area]) => ({ layer: k - 1, part: lo.parts[q].id, areaUm2: area })) });
+        reach[k][i] = lows.some(([q]) => reach[k - 1][q]);
       });
-      // LYR-05: identical consecutive layers are kept and reported
-      if (nonEmpty[k - 1] && sameMaterial(up.material, lo.material))
-        perLayer[k].push(make("IDENTICAL_LAYERS", { layer: k, detail: "layer " + k + " is identical to layer " + (k - 1) }));
     }
     const reachesBase = reach.every((r, k) => k === 0 || layers[k].parts.length === 0 || r.every(Boolean)) &&
       (layers[0].parts.length > 0 || layers.every((L) => L.parts.length === 0));
     return { diagnostics: D.aggregate([].concat(...perLayer)), supportGraph: { edges, reachesBase } };
+  };
+
+  function validateBonded(layers, cfg) {
+    const results = [];
+    for (let k = 1; k < layers.length; k++) results.push(S.supportPair(layers[k - 1], layers[k], k, cfg));
+    return S.supportFold(layers, cfg, results);
   }
 
   function validateConnected(layers, dOpts) {
@@ -286,8 +325,11 @@
   S.validate = function (layers, mode, cfg) {
     checkArgs(layers, mode, cfg);
     const dOpts = { revision: cfg.revision === undefined ? 0 : cfg.revision, quality: cfg.quality || "draft" };
-    return mode === "bonded-relief" ? validateBonded(layers, cfg, dOpts) : validateConnected(layers, dOpts);
+    return mode === "bonded-relief" ? validateBonded(layers, cfg) : validateConnected(layers, dOpts);
   };
+
+  /** Speed round F9: the S.validate argument check alone (the pooled bonded path runs supportPair items, then supportFold). */
+  S.validateArgs = function (layers, mode, cfg) { checkArgs(layers, mode, cfg); };
 
   /**
    * Miter erosion by halfUm (integer µm) of src(i) for each part i in idx: {count: Map(i → residual components),
@@ -320,7 +362,11 @@
     return parts.every((p) => ringOk(p.polygon.outer) && (p.polygon.holes || []).every(ringOk));
   }
 
-  S.featureChecks = function (layers, cfg) {
+  /**
+   * Speed round F9 (S1): featureChecks = featureHead (argument checks, MAT_UNCALIBRATED, SAMPLING_LOW / DRAFT_COARSER)
+   * + featureLayer per layer (the pool's feature item; raw, un-aggregated) + one SBDiag.aggregate. Code moved unchanged.
+   */
+  S.featureHead = function (layers, cfg) {
     if (!Array.isArray(layers)) throw sfail("layers must be a MaterialLayer array");
     layers.forEach((L, k) => { if (!L || !Array.isArray(L.parts)) throw sfail("layer " + k + " must carry parts[]"); });
     if (!cfg || typeof cfg !== "object") throw sfail("cfg must be an object");
@@ -334,7 +380,7 @@
     const hasSampling = cfg.samplingMmPerPx !== undefined && cfg.samplingMmPerPx !== null;
     if (hasSampling && !posNum(cfg.samplingMmPerPx)) throw sfail("samplingMmPerPx must be a finite number > 0 (got " + cfg.samplingMmPerPx + ")");
     if (typeof cfg.calibrated !== "boolean") throw sfail("calibrated must be a boolean");
-    const G = global.SBGeom, D = global.SBDiag;
+    const D = global.SBDiag;
     const dOpts = { revision: cfg.revision === undefined ? 0 : cfg.revision, quality: cfg.quality || "draft" };
     const make = (code, f) => D.make(code, Object.assign({}, dOpts, f));
     const diags = [];
@@ -351,31 +397,44 @@
       if (draftSamples < 3) diags.push(make("DRAFT_COARSER", { measured: { value: draftSamples, unit: "samples" }, limit: { value: 3, unit: "samples" },
         detail: "draft is coarser than fabrication; detail is checked at the fabrication pitch (" + sPitch + " mm/px, " + r2(samples) + " samples)" }));
     }
+    return diags;
+  };
+
+  S.featureLayer = function (L, k, cfg) {
+    const G = global.SBGeom, D = global.SBDiag;
+    const dOpts = { revision: cfg.revision === undefined ? 0 : cfg.revision, quality: cfg.quality || "draft" };
+    const make = (code, f) => D.make(code, Object.assign({}, dOpts, f));
+    const hasAdv = cfg.advisoryFeatureMM !== undefined && cfg.advisoryFeatureMM !== null;
+    const minPart = cfg.minPartMM2 === undefined || cfg.minPartMM2 === null ? 0 : cfg.minPartMM2;
+    const diags = [];
     const mfUm = Math.round(cfg.minFeatureMM * 1000), halfMin = Math.floor(mfUm / 2);
     const advUm = hasAdv ? Math.round(cfg.advisoryFeatureMM * 1000) : mfUm, halfAdv = Math.floor(advUm / 2);
-    layers.forEach((L, k) => {
-      const parts = L.parts, all = parts.map((p, i) => i);
-      const e1 = erode(parts, all, halfMin, (i) => [parts[i].polygon]), c1 = e1.count;
-      const pass = all.filter((i) => c1.get(i) === 1);
-      // Square (miter) erosions compose exactly on orthogonal lattice geometry: erode the first residual by the
-      // difference (smaller input, Appendix C). Any other geometry is eroded directly.
-      const c2 = halfAdv <= halfMin ? null : orthogonal(parts) ? erode(parts, pass, halfAdv - halfMin, (i) => e1.residual.get(i)).count
-        : erode(parts, pass, halfAdv, (i) => [parts[i].polygon]).count;
-      parts.forEach((p, i) => {
-        const region = regionMM(p.bbox || G.bbox(p.polygon)), areaMM2 = G.area([p.polygon]) / 1e6, base = { layer: k, part: p.id, areaMM2, region };
-        if (areaMM2 < minPart) diags.push(make("PART_SMALL", Object.assign({}, base, { measured: { value: areaMM2, unit: "mm2" }, limit: { value: minPart, unit: "mm2" },
-          detail: "area " + Math.round(areaMM2 * 100) / 100 + " mm² is below " + minPart + " mm²" })));
-        const lim = { value: mfUm / 1000, unit: "mm" }, n1 = c1.get(i);
-        if (n1 === 0) diags.push(make("PART_THIN", Object.assign({}, base, { limit: lim, detail: "the part disappears when eroded by half of " + mfUm / 1000 + " mm" })));
-        else if (n1 > 1) diags.push(make("NECK_NARROW", Object.assign({}, base, { limit: lim, detail: "the part splits into " + n1 + " pieces when eroded by half of " + mfUm / 1000 + " mm" })));
-        else if (c2) {
-          const n2 = c2.get(i), alim = { value: advUm / 1000, unit: "mm" };
-          if (n2 === 0) diags.push(make("FEATURE_MARGINAL", Object.assign({}, base, { limit: alim, detail: { kind: "part", text: "the part is narrower than the advisory " + advUm / 1000 + " mm" } })));
-          else if (n2 > 1) diags.push(make("FEATURE_MARGINAL", Object.assign({}, base, { limit: alim, detail: { kind: "neck", text: "a neck is narrower than the advisory " + advUm / 1000 + " mm" } })));
-        }
-      });
+    const parts = L.parts, all = parts.map((p, i) => i);
+    const e1 = erode(parts, all, halfMin, (i) => [parts[i].polygon]), c1 = e1.count;
+    const pass = all.filter((i) => c1.get(i) === 1);
+    // Square (miter) erosions compose exactly on orthogonal lattice geometry: erode the first residual by the
+    // difference (smaller input, Appendix C). Any other geometry is eroded directly.
+    const c2 = halfAdv <= halfMin ? null : orthogonal(parts) ? erode(parts, pass, halfAdv - halfMin, (i) => e1.residual.get(i)).count
+      : erode(parts, pass, halfAdv, (i) => [parts[i].polygon]).count;
+    parts.forEach((p, i) => {
+      const region = regionMM(p.bbox || G.bbox(p.polygon)), areaMM2 = G.area([p.polygon]) / 1e6, base = { layer: k, part: p.id, areaMM2, region };
+      if (areaMM2 < minPart) diags.push(make("PART_SMALL", Object.assign({}, base, { measured: { value: areaMM2, unit: "mm2" }, limit: { value: minPart, unit: "mm2" },
+        detail: "area " + Math.round(areaMM2 * 100) / 100 + " mm² is below " + minPart + " mm²" })));
+      const lim = { value: mfUm / 1000, unit: "mm" }, n1 = c1.get(i);
+      if (n1 === 0) diags.push(make("PART_THIN", Object.assign({}, base, { limit: lim, detail: "the part disappears when eroded by half of " + mfUm / 1000 + " mm" })));
+      else if (n1 > 1) diags.push(make("NECK_NARROW", Object.assign({}, base, { limit: lim, detail: "the part splits into " + n1 + " pieces when eroded by half of " + mfUm / 1000 + " mm" })));
+      else if (c2) {
+        const n2 = c2.get(i), alim = { value: advUm / 1000, unit: "mm" };
+        if (n2 === 0) diags.push(make("FEATURE_MARGINAL", Object.assign({}, base, { limit: alim, detail: { kind: "part", text: "the part is narrower than the advisory " + advUm / 1000 + " mm" } })));
+        else if (n2 > 1) diags.push(make("FEATURE_MARGINAL", Object.assign({}, base, { limit: alim, detail: { kind: "neck", text: "a neck is narrower than the advisory " + advUm / 1000 + " mm" } })));
+      }
     });
-    return D.aggregate(diags);
+    return diags;
+  };
+
+  S.featureChecks = function (layers, cfg) {
+    const head = S.featureHead(layers, cfg);
+    return global.SBDiag.aggregate(head.concat(...layers.map((L, k) => S.featureLayer(L, k, cfg))));
   };
 
   S.annotate = function (layers, graph) {
