@@ -8,6 +8,8 @@
  *   SBHash.digest(bytes)   async, crypto.subtle — for source bytes, samples
  *                          and package files.
  *   SBHash.hashJSON(obj)   sha256(utf8(SBUtil.stableStringify(obj))).
+ *   SBHash.modulesHash(entries)  hashJSON([[name, sha256(text)], …]): the
+ *                          worker handshake's module-content hash (F11).
  *
  * The round constants are the FIPS 180-4 values, hard-coded on purpose: they
  * are NOT derived at load time because the cube-root builtin is not guaranteed to be
@@ -63,6 +65,13 @@
 
   /** SHA-256 of the canonical (stable, strict) JSON of obj. */
   H.hashJSON = (obj) => H.sha256(new TextEncoder().encode(global.SBUtil.stableStringify(obj)));
+  /**
+   * modulesHash(entries: [[name, text], …]) → hex (speed round F11, F.3 version-checked helpers): hashJSON of the
+   * [name, sha256(utf8(text))] pairs in list order. The page, the coordinator and every helper compute it over the module
+   * texts they run; a worker is admitted only when its hash equals the expected one (E.VERSION cannot tell kernel
+   * revisions apart while the engine version is frozen).
+   */
+  H.modulesHash = (entries) => H.hashJSON(entries.map(([n, t]) => [n, H.sha256(new TextEncoder().encode(t))]));
 
   global.SBHash = H;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -459,5 +459,35 @@
    ]
   },
   "gate": "Phase A gate (plan F.6, after F3-F8): serial fab4096 p50 11996 ms (baseline 25306 ms; plan expectation 11-13 s), draft720 p50 1210 ms (baseline 3287 ms). F8 note: cropping the draft change overlays to the change bounding box is output-identical (oracle tests) but did not measurably speed them up on the bench art or the alpha.3 scene: the bounding boxes cover ~85 % of the raster (scattered changes) and the overlay time is dominated by fromPixelLoops/union/normalize of the many small change regions (per warm 720 run on the realistic family: ~190-200 ms both before and after; trace ~40 ms of it). The diff pass is fused (one pass, row memcpy crop). Further overlay gains need the KI-B1 normalize work (F18/G4.4)."
+ },
+ "phaseB": {
+  "task": "F11 (S1) coordinator worker, SBPool, handshake, progress, acceptResult",
+  "machine": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (16 threads), node v26.7.0, 1-min load 5.9-6.7",
+  "method": "one pooled fab4096 run (user12 project, 4096 x 3084 source, 3985 x 3000 raster) through SBPool + test/node_worker_shim.js: coordinator + P = SBPool.helperCount(16) = 8 helpers, source posted once, no cache; main-thread event-loop delay with perf_hooks.monitorEventLoopDelay (5 ms resolution) during the run as the Node analogue of the long-task recorder; receipt path = v8.deserialize + deepFreeze of the response on main (structured clone). Single run, not the bench large row (F13/F18 measure p50/p95).",
+  "fab4096": {
+   "status": "done",
+   "geometryHash": "0cb9e9fdeb0be3beda2e53b7c61352034b666bea2270a40af8d0b1f461bf500a",
+   "serialGeometryHashEqual": true,
+   "serialMs": 12879,
+   "pooledWallMs": 8794,
+   "itemsHelper": 54,
+   "itemsInline": 0
+  },
+  "receipt": {
+   "responseBytes": 1223490,
+   "flatRingVertices": 81686,
+   "deserializeMs": 25.3,
+   "deepFreezeMs": 8.9,
+   "receiptMs": 34.2,
+   "serializeMsOnCoordinator": 36.9,
+   "structuredCloneMs": 47.1
+  },
+  "mainThread": {
+   "eventLoopDelayMaxMs": 13.5,
+   "eventLoopDelayP99Ms": 6.4,
+   "submitAckMs": "microtask (< 1 ms, F11 test NFR-02)"
+  },
+  "codecDecision": "No Int32Array polygon codec: the receipt path of the largest fabrication response (deserialize + deepFreeze) is 34 ms in Node, under the 50 ms rule (F.2, F-R7); x1.2 for Chromium gives ~41 ms. setSnapshot and the preview render are DOM work and are measured in the browser by F16a (?bench=fab with SBPool.longTasks()).",
+  "gate": "Phase B gate (plan F.6, after F11): fabrication runs in the coordinator with any pool size (P = 0 and 2 in the F11 tests, P = 8 in this run); in Node the main thread's longest event-loop block during the 12 Mpx pooled run is 13.5 ms. The in-app browser figure (PerformanceObserver longtask) needs the F15 app wiring and is recorded by F16a."
  }
 }

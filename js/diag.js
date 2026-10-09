@@ -28,6 +28,8 @@
  *   SBDiag.summarize(diags)      → [{severity, label, icon, count}] per severity (G2.13c, UI-04)
  *   SBDiag.describe(diag)        → one diagnostics-panel item: text with measured vs limit,
  *                                location and the focus target {layer, parts, regions} (G2.13c)
+ *   SBDiag.acceptResult(active, msg) → whether a worker-pool result belongs to the active run
+ *                                (runId, gen, sampleHash, overlays, deviceClass; speed round F11, AT-15)
  *
  * Besides the plan's list the registry carries every import error code:
  * SBPng.CODES (12), SBJpeg.CODES (4) and the preflight JPEG_UNSUPPORTED
@@ -474,5 +476,18 @@
       fix: c.fix, text, focus, navigable: focus !== null };
   }
 
-  global.SBDiag = { CODES, make, aggregate, ackKey, exportGate, withAckState, STATES, nextState, stateBadge, summarize, describe };
+  /**
+   * acceptResult(active, msg) → boolean (speed round F11, G4.1, AT-15): whether a pool result belongs to the run the UI is
+   * waiting for. active = {runId, gen, sampleHash, overlays, deviceClass} as recorded at submit; msg is the pool's result
+   * (the same fields echoed by the coordinator). Keyed by the unique monotonic runId plus gen, sampleHash, overlays and
+   * deviceClass, never by requestId ("draft-"+rev repeats across overlay toggles and same-revision resubmits). A null
+   * sampleHash (inline pixels) matches only null. Pure.
+   */
+  function acceptResult(active, msg) {
+    if (!active || typeof active !== "object" || !msg || typeof msg !== "object") return false;
+    if (!Number.isSafeInteger(active.runId) || msg.runId !== active.runId) return false;
+    return ["gen", "sampleHash", "overlays", "deviceClass"].every((k) => k in msg && Object.is(msg[k], active[k]));
+  }
+
+  global.SBDiag = { CODES, make, aggregate, ackKey, exportGate, withAckState, STATES, nextState, stateBadge, summarize, describe, acceptResult };
 })(typeof window !== "undefined" ? window : globalThis);

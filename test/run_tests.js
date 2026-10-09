@@ -6718,6 +6718,208 @@ suite("engine — speed round F9 generator pipeline and sync driver (NFR-05)", a
     /E\.generate = function/.test(src) && /E\.generateAsync = async function/.test(src));
 });
 
+// ------------------------------------------------ speed round F11 (S1): coordinator worker, SBPool, handshake
+suite("worker.js/pool.js/diag.js — speed round F11 coordinator, SBPool, handshake, progress, acceptResult (NFR-02, NFR-05, §9.3)", async () => {
+  const E = SBEngine, C = require("./pool_corpus.js"), Dq = C.deepEqualStrict, shim = require("./node_worker_shim.js");
+  const JS = path.join(__dirname, "..", "js"), text = (n) => fs.readFileSync(path.join(JS, n), "utf8");
+  const gold = JSON.parse(fs.readFileSync(path.join(__dirname, "golden", "pool-equality.json"), "utf8"));
+  const fields = ["status", "code", "geometryHash", "layerHashes", "diagSha", "cleanupSha", "supportSha", "guidesSha", "statsSha", "wholeSha"];
+  const sameGold = (fx, r) => { const d = C.digest(r), g = gold.fixtures[fx.id]; return !!g && fields.every((k) => JSON.stringify(d[k]) === JSON.stringify(g[k])); };
+  const APPV = (text("app.js").match(/const APP_VERSION = "([^"]+)"/) || [])[1];
+
+  // ---- SBDiag.acceptResult (pure): a result is shown only for the active run, keyed by runId, gen, sampleHash, overlays, deviceClass
+  const A = SBDiag.acceptResult;
+  check("F11 SBDiag.acceptResult exists", typeof A === "function");
+  if (typeof A === "function") {
+    const act = { runId: 7, gen: 3, sampleHash: "ab", overlays: true, deviceClass: "desktop" };
+    check("F11 acceptResult accepts the active run's result (extra fields ignored)", A(act, Object.assign({ response: {}, requestId: "draft-1" }, act)) === true);
+    check("F11 acceptResult drops a different runId, gen, sampleHash, overlays or deviceClass",
+      [["runId", 6], ["gen", 2], ["sampleHash", "cd"], ["overlays", false], ["deviceClass", "mobile"]].every(([k, v]) => A(act, Object.assign({}, act, { [k]: v })) === false));
+    check("F11 acceptResult drops everything without an active run, a message, or a field (requestId never decides)",
+      A(null, act) === false && A(act, null) === false && A(act, Object.assign({}, act, { runId: undefined })) === false &&
+      A(Object.assign({}, act, { requestId: "draft-1" }), Object.assign({}, act, { runId: 8, requestId: "draft-1" })) === false);
+    check("F11 acceptResult: null sampleHash (inline pixels) matches only null", A(Object.assign({}, act, { sampleHash: null }), Object.assign({}, act, { sampleHash: null })) === true &&
+      A(Object.assign({}, act, { sampleHash: null }), act) === false);
+  }
+
+  // ---- the shipped files
+  const wsrc = text("worker.js"), psrc = text("pool.js");
+  check("F11 worker.js: coord and helper roles, the protocol messages and the hello handshake",
+    ["hello", "ack", "progress", "result", "canceled", "error", "killHelper", "source", "generate", "cancel", "ports", "item", "itemResult"].every((t) => wsrc.includes('"' + t + '"')) &&
+    /modulesHash/.test(wsrc) && /engineVersion/.test(wsrc) && /appVersion/.test(wsrc) && /typeof SB_INLINED/.test(wsrc));
+  check("F11 worker.js WORKER_APP_VERSION equals js/app.js APP_VERSION and sw.js VERSION",
+    (wsrc.match(/WORKER_APP_VERSION = "([^"]+)"/) || [])[1] === APPV && (text("../sw.js").match(/const VERSION = "([^"]+)"/) || [])[1] === APPV);
+  check("F11 workers never set SBEngine.TEST_HOOKS", !/TEST_HOOKS\s*=/.test(wsrc) && !/TEST_HOOKS\s*=/.test(psrc));
+  check("F11 SBHash.modulesHash(entries) hashes [name, sha256(text)] pairs (order matters)", typeof SBHash.modulesHash === "function" &&
+    SBHash.modulesHash([["a.js", "x"], ["b.js", "y"]]) === SBHash.hashJSON([["a.js", SBHash.sha256(new TextEncoder().encode("x"))], ["b.js", SBHash.sha256(new TextEncoder().encode("y"))]]) &&
+    SBHash.modulesHash([["b.js", "y"], ["a.js", "x"]]) !== SBHash.modulesHash([["a.js", "x"], ["b.js", "y"]]));
+
+  // pool.js is a DOM module; it touches no DOM at load, so it runs here as it does on the page
+  vm.runInThisContext(psrc, { filename: "pool.js" });
+  check("F11 SBPool.create, helperCount, longTasks", typeof SBPool.create === "function" && typeof SBPool.helperCount === "function" && typeof SBPool.longTasks === "function");
+  if (typeof SBPool.create !== "function") return;
+  check("PO-PERF-1 helperCount = clamp(hardwareConcurrency − 1, 1, cap) (cap 8 desktop, 4 mobile; unknown → 1)",
+    SBPool.helperCount(16, "desktop") === 8 && SBPool.helperCount(16, "mobile") === 4 && SBPool.helperCount(4, "desktop") === 3 && SBPool.helperCount(1, "desktop") === 1 &&
+    SBPool.helperCount(undefined, "desktop") === 1 && SBPool.helperCount(2, "desktop") === 1);
+  const lt = SBPool.longTasks();
+  check("F11 long-task recorder: start/stop → {supported, max, count} (no PerformanceObserver longtask in Node → unsupported, zeros)",
+    (() => { lt.start(); const r = lt.stop(); return r && typeof r.supported === "boolean" && r.max === 0 && r.count === 0; })());
+
+  const pools = [];
+  const mk = (o) => {
+    o = o || {};
+    const spawned = [];
+    const pool = SBPool.create(Object.assign({
+      appVersion: APPV, helpers: 2, helloTimeoutMs: 20000,
+      loadText: async (n) => text(n),
+      spawn: (name) => { const w = shim.spawn(path.join(JS, "worker.js"), { name, patch: o.patchFor ? o.patchFor(name, spawned.filter((x) => x.name === name).length) : null }); spawned.push(w); return w; },
+    }, o.opts || {}));
+    pool.spawned = spawned;
+    pools.push(pool);
+    return pool;
+  };
+  const reqOf = (fx) => E.request(fx.project, fx.source, { quality: fx.quality, deviceClass: fx.deviceClass, requestId: fx.id, draftCapPx: fx.draftCapPx });
+  const srcOf = (fx) => Object.assign({ sampleHash: fx.project.source.sampleHash }, fx.source);
+  const submitFx = (pool, fx, extra) => {
+    pool.setSource(srcOf(fx));
+    return pool.submit(reqOf(fx), Object.assign({ sampleHash: fx.project.source.sampleHash, gen: 1, overlays: fx.overlays }, extra || {}));
+  };
+  const codeOf = async (p) => { try { await p; return null; } catch (e) { return e instanceof Error ? e.code : "not-an-Error"; } };
+  try {
+    const all = C.corpus().filter((fx) => !fx.slow), byId = new Map(all.map((fx) => [fx.id, fx]));
+
+    // 1. round trip through the coordinator and two helpers equals the serial golden on the whole non-slow corpus
+    const pool = mk();
+    const up = await pool.ready;
+    check("F11 the coordinator says hello with the page's engineVersion, appVersion and modulesHash; the pool is up", up === true && pool.mode === "pool");
+    if (!up) return;
+    const bad = [], live = [];
+    for (const fx of all) {
+      const r = await submitFx(pool, fx).done;
+      if (r.status !== r.response.status || !sameGold(fx, r.response)) bad.push(fx.id);
+      if (live.length < 4 && fx.source.w * fx.source.h <= 60000) live.push([fx, r.response]);
+    }
+    check(`NFR-05 F11 pooled round trip (coordinator + 2 helpers) equals the golden digests on the whole non-slow corpus (${all.length - bad.length}/${all.length})` +
+      (bad.length ? " — differ: " + bad.join(", ") : ""), bad.length === 0);
+    check("NFR-05 F11 pooled responses deepEqualStrict the sync responses", live.length >= 3 && live.every(([fx, r]) => Dq(r, C.run(fx))));
+    const st1 = await pool.stats();
+    check("F11 helpers were admitted and ran items", st1.helpersAdmitted.length === 2 && st1.itemsHelper > 0);
+    const fr = live[0][1];
+    check("F11 the response is deep-frozen again after receipt", Object.isFrozen(fr) && Object.isFrozen(fr.snapshot) && Object.isFrozen(fr.snapshot.layers) &&
+      Object.isFrozen(fr.snapshot.layers[0]) && Object.isFrozen(fr.diagnostics));
+
+    // 2. P = 0: the coordinator runs every item inline
+    const p0 = mk({ opts: { helpers: 0 } });
+    const sub0 = ["h-bonded-draft", "h-connected-fabrication", "t-connected-frame-draft", "n12-draft", "g-interior-draft", "complexity-error-fabrication", "repair-clip-draft"].map((id) => byId.get(id));
+    const bad0 = [];
+    if (await p0.ready) for (const fx of sub0) { const r = await submitFx(p0, fx).done; if (!sameGold(fx, r.response)) bad0.push(fx.id); }
+    const st0 = await p0.stats();
+    check("NFR-05 F11 P = 0 (coordinator inline) equals the golden digests" + (bad0.length ? " — differ: " + bad0.join(", ") : ""), p0.mode === "pool" && bad0.length === 0 && st0.itemsInline > 0 && st0.itemsHelper === 0);
+
+    // 3. ack, progress and result order (NFR-02, §9.3)
+    {
+      const fx = byId.get("t-light-fabrication"), ev = [];
+      let resolved = false;
+      const t0 = Date.now();
+      const s = submitFx(pool, fx, { onAck: () => ev.push(["ack-main", Date.now() - t0, resolved]), onStart: () => ev.push(["ack", Date.now() - t0, resolved]),
+        onProgress: (p) => ev.push(["progress", p, resolved]) });
+      const r = await s.done; resolved = true;
+      const ms = Date.now() - t0, prog = ev.filter((e) => e[0] === "progress").map((e) => e[1]);
+      check("NFR-02 F11 SBPool acknowledges the submit on main within 100 ms, before the coordinator's ack", ev[0] && ev[0][0] === "ack-main" && ev[0][1] <= 100);
+      check("NFR-02 F11 the coordinator's ack {runId} precedes any progress", ev.findIndex((e) => e[0] === "ack") === 1 && typeof s.runId === "number");
+      check("§9.3 F11 progress messages precede the result, carry {runId, stage, frac, sub} and are monotone",
+        r.status === "done" && prog.length >= 1 && ev.every((e) => e[2] === false) && prog.every((p) => p.runId === s.runId && typeof p.stage === "string" && "sub" in p) &&
+        prog.every((p, i) => i === 0 || p.frac >= prog[i - 1].frac));
+      check("§9.3 F11 progress is throttled to ≤ 10 Hz", prog.length <= Math.ceil(ms / 100) + 1);
+    }
+
+    // 4. version handshake, both directions
+    const bump = (n, t) => (n === "schema.js" ? t.replace('version: "1.0.0-dev"', 'version: "0.9.9-skew"') : t);
+    const skewAll = mk({ patchFor: (name) => (name.startsWith("sb-coord") ? bump : null) });
+    const skewUp = await skewAll.ready;
+    check("§9.3 F11 a coordinator naming another engineVersion is refused: terminated, one respawn, then the fallback with a reload notice",
+      skewUp === false && skewAll.mode === "fallback" && skewAll.spawned.filter((w) => w.name.startsWith("sb-coord")).length === 2 &&
+      skewAll.spawned.every((w) => w.terminated) && /reload/i.test(skewAll.notice || ""));
+    check("F11 submit on a fallback pool rejects with POOL_UNAVAILABLE (the caller runs the sync driver)",
+      (await codeOf(skewAll.submit(reqOf(all[0]), { sampleHash: null, gen: 1 }).done)) === "POOL_UNAVAILABLE");
+    const skewOnce = mk({ patchFor: (name, n) => (name.startsWith("sb-coord") && n === 0 ? bump : null) });
+    check("F11 a skewed coordinator is respawned once (same URL) and the second, current one is admitted", (await skewOnce.ready) === true &&
+      skewOnce.spawned.filter((w) => w.name.startsWith("sb-coord")).length === 2);
+    const appSkew = mk({ opts: { appVersion: "0.0.0-other" } });
+    check("F11 a coordinator naming another appVersion is refused", (await appSkew.ready) === false && appSkew.mode === "fallback");
+    {
+      const fx = byId.get("h-bonded-draft"), req = Object.assign({}, reqOf(fx), { engineVersion: "0.9.9-skew" });
+      pool.setSource(srcOf(fx));
+      const r = await pool.submit(req, { sampleHash: fx.project.source.sampleHash, gen: 1 }).done;
+      check("§9.3 F11 a request naming another engineVersion is refused by the coordinator (ENGINE_MISMATCH)", r.status === "error" && r.response.error.code === "ENGINE_MISMATCH");
+    }
+
+    // 5. a helper with a different modulesHash is refused; its items run inline (and elsewhere)
+    {
+      const skewH = (n, t) => (n === "guides.js" ? t + "\n// skewed helper\n" : t);
+      const ph = mk({ patchFor: (name) => (name === "sb-helper-1" ? skewH : null) });
+      const fx = byId.get("n12-draft");
+      const okUp = await ph.ready, r = okUp ? await submitFx(ph, fx).done : null, st = await ph.stats();
+      const h1 = ph.spawned.find((w) => w.name === "sb-helper-1");
+      check("§9.3 F11 a helper whose modulesHash differs is refused (killHelper → terminated) and the run equals the golden",
+        okUp && r && sameGold(fx, r.response) && st.helpersRefused.includes(1) && !st.helpersAdmitted.includes(1) && h1 && h1.terminated);
+      const pa = mk({ patchFor: (name) => (name.startsWith("sb-helper") ? skewH : null) });
+      const ra = (await pa.ready) ? await submitFx(pa, fx).done : null, sa = await pa.stats();
+      check("F11 with every helper refused the items run inline in the coordinator (golden)", ra && sameGold(fx, ra.response) && sa.helpersAdmitted.length === 0 && sa.itemsInline > 0 && sa.itemsHelper === 0);
+    }
+
+    // 6. source identity (F.3): SOURCE_MISMATCH, the setSource race, inline pixels
+    {
+      const fa = byId.get("t-light-draft"), fb = byId.get("h-bonded-draft");
+      pool.setSource(srcOf(fa));
+      const otherHash = await codeOf(pool.submit(reqOf(fa), { sampleHash: "f".repeat(64), gen: 1 }).done);
+      const otherSize = await codeOf(pool.submit(Object.assign({}, reqOf(fa), { normalizedSource: Object.assign({}, reqOf(fa).normalizedSource, { w: fa.source.w + 1 }) }),
+        { sampleHash: fa.project.source.sampleHash, gen: 1 }).done);
+      check("F11 SOURCE_MISMATCH when a generate names another sampleHash or size than the stored source (an Error with .code)", otherHash === "SOURCE_MISMATCH" && otherSize === "SOURCE_MISMATCH");
+      // race: a long run X is in flight, A (naming source a) is queued behind it, then setSource(b) — A never runs on b's pixels
+      const big = byId.get("fine-pitch-fabrication");
+      pool.setSource(srcOf(big));
+      const x = pool.submit(reqOf(big), { sampleHash: big.project.source.sampleHash, gen: 1 });
+      pool.setSource(srcOf(fa));
+      const a = pool.submit(reqOf(fa), { sampleHash: fa.project.source.sampleHash, gen: 2 });
+      pool.setSource(srcOf(fb));
+      const xr = await x.done, ac = await codeOf(a.done);
+      check("F11 a setSource racing a queued generate never pairs it with the new pixels (SOURCE_MISMATCH); the superseded run is canceled",
+        xr.status === "canceled" && ac === "SOURCE_MISMATCH");
+      const inl = await pool.submit(reqOf(fb), { sampleHash: null, gen: 3, overlays: fb.overlays }).done;
+      check("F11 a null sampleHash carries its pixels inline (never matched against the stored source)", sameGold(fb, inl.response));
+      check("F11 the result echoes {runId, gen, sampleHash, overlays, deviceClass} and SBDiag.acceptResult accepts it for its own run only",
+        inl.gen === 3 && inl.sampleHash === null && inl.overlays === fb.overlays && inl.deviceClass === fb.deviceClass &&
+        SBDiag.acceptResult({ runId: inl.runId, gen: 3, sampleHash: null, overlays: fb.overlays, deviceClass: fb.deviceClass }, inl) &&
+        !SBDiag.acceptResult({ runId: a.runId, gen: 2, sampleHash: fa.project.source.sampleHash, overlays: fa.overlays, deviceClass: fa.deviceClass }, inl));
+    }
+
+    // 7. kernel errors keep .code and message across helper → coordinator → main (lowest item index wins)
+    {
+      const fault = (n, t) => (n === "construct.js" ? t.replace("C.constructLayer = function (k, a) {",
+        'C.constructLayer = function (k, a) { if (k === 2 || k === 5) { const e = new Error("injected F11_FAULT_" + k); e.code = "F11_FAULT_" + k; throw e; }') : t);
+      const pf = mk({ patchFor: () => fault, opts: { loadText: async (n) => fault(n, text(n)) } });   // a consistent deploy: the page reads the same texts
+      const admitted = async (p, n) => { await p.helpersReady; for (let i = 0; i < 200; i++) { const s = await p.stats(); if (s && s.helpersAdmitted.length >= n) return true; await new Promise((r) => setTimeout(r, 10)); } return false; };
+      const fx = byId.get("n12-draft"), r = (await pf.ready) && (await admitted(pf, 2)) ? await submitFx(pf, fx).done : null, st = await pf.stats();
+      check("F11 a kernel error crosses helper → coordinator → main with its code and message (items 5 and 2 fail: item 2's)",
+        r && r.status === "error" && r.response.error.code === "F11_FAULT_2" && r.response.error.message === "injected F11_FAULT_2" && st.helpersAdmitted.length === 2);
+    }
+
+    // 8. the coordinator owns the draft cache: source, K1 and K2 survive a pooled run and the next run hits them
+    {
+      const fx = byId.get("t-light-draft");
+      const r1 = await submitFx(pool, fx).done, st = await pool.stats();
+      const seen = [];
+      const r2 = await submitFx(pool, fx, { onProgress: (p) => seen.push(p.stage) }).done;
+      check("F11 after a pooled run the stored source, cache.k1 and cache.k2 have non-zero byteLength",
+        r1.status === "done" && st.sourceBytes > 0 && st.k1Bytes > 0 && st.k2Bytes > 0);
+      check("F11 the next run hits the coordinator's cache (resample-cached) and equals the golden", seen[0] === "resample-cached" && sameGold(fx, r2.response));
+    }
+  } finally {
+    for (const p of pools) p.terminate();
+  }
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {
