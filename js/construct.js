@@ -47,6 +47,8 @@
  *                               → {status, layers ([] on error), vertices: {perLayer[], total}, diagnostics}: the vertex
  *                               caps (maxVerticesPerLayer, maxVerticesTotal) on MaterialLayer.stats.vertices, checked
  *                               after fromMasks and before validation. G2.10a stage 11 consumes both gates unchanged.
+ *                               On mobile the message adds that mobile is limited to simpler art (PO 2026-10-08: the
+ *                               SRS 20,000-vertex mobile cap is kept).
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -243,6 +245,9 @@
     if (!DEVICES.includes(deviceClass)) throw cfail("deviceClass must be desktop|mobile (got " + deviceClass + ")");
     return global.SBSchema.limits(deviceClass);
   }
+  // Product-owner decision 2026-10-08: the SRS §12.3 mobile caps are kept, so mobile is limited to simpler art (realistic
+  // art at the 1 Mpx mobile budget has about 31,944 vertices after bonded construction, over the 20,000 cap).
+  const capNote = (lim) => (lim.deviceClass === "mobile" ? "; mobile is limited to simpler art, so simplify it or open the project on a desktop" : "");
   const diagBase = (o) => ({ quality: o.quality === undefined ? "draft" : o.quality, revision: o.revision === undefined ? null : o.revision });
 
   C.complexityGate = function (masks, w, h, opts) {
@@ -263,7 +268,7 @@
     estimate.partsPerLayer.forEach((n, k) => {
       if (n > lim.maxPartsPerLayer) diagnostics.push(global.SBDiag.make("COMPLEXITY_LIMIT", Object.assign({}, base, { layer: k, deviceClass: lim.deviceClass,
         measured: { value: n, unit: "parts" }, limit: { value: lim.maxPartsPerLayer, unit: "parts" },
-        detail: "layer " + k + " has " + n + " parts (limit " + lim.maxPartsPerLayer + " on " + lim.deviceClass + ")" })));
+        detail: "layer " + k + " has " + n + " parts (limit " + lim.maxPartsPerLayer + " on " + lim.deviceClass + ")" + capNote(lim) })));
     });
     const error = diagnostics.some((d) => d.code === "COMPLEXITY_LIMIT");
     return { status: error ? "error" : "ok", masks: error ? null : (cur === masks ? masks.slice() : cur), estimate, simplified, diagnostics };
@@ -276,7 +281,7 @@
       if (!Number.isSafeInteger(v) || v < 0) throw cfail("layer " + k + " has no integer stats.vertices"); return v; });
     const total = perLayer.reduce((a, v) => a + v, 0);
     const mk = (layer, value, limit, what) => global.SBDiag.make("COMPLEXITY_LIMIT", Object.assign({}, base, { layer, deviceClass: lim.deviceClass,
-      measured: { value, unit: "vertices" }, limit: { value: limit, unit: "vertices" }, detail: what + " has " + value + " vertices (limit " + limit + " on " + lim.deviceClass + ")" }));
+      measured: { value, unit: "vertices" }, limit: { value: limit, unit: "vertices" }, detail: what + " has " + value + " vertices (limit " + limit + " on " + lim.deviceClass + ")" + capNote(lim) }));
     perLayer.forEach((v, k) => { if (v > lim.maxVerticesPerLayer) diagnostics.push(mk(k, v, lim.maxVerticesPerLayer, "layer " + k)); });
     if (total > lim.maxVerticesTotal) diagnostics.push(mk(null, total, lim.maxVerticesTotal, "the stack"));
     const error = diagnostics.length > 0;

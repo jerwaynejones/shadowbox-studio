@@ -162,7 +162,7 @@ Every opaque-layer requirement in the SRS maps to the task IDs defined in §5–
 | IMG-04 | Alpha domain A (threshold 0.5) or full image; out-of-domain samples never influence thresholds/filters; base stays | G2.4, G2.5 | AT-05 |
 | IMG-05 | EXIF applied exactly once; aspect locked; explicit rotate/mirror applied consistently | S4, S4b, G2.5 | AT-05, AT-12 |
 | IMG-06 | Flat input: no divide-by-zero; duplicate thresholds and empty bands surfaced | G2.4 | AT-04 |
-| IMG-07 | Header pre-inspection (PNG and JPEG) before decode; desktop 25 MiB / 16 MP, mobile 10 MiB / 8 MP; no silent downscale | S4, S4b, G2.14, G4.3 | AT-22, AT-24 |
+| IMG-07 | Header pre-inspection (PNG and JPEG) before decode; desktop 25 MiB / 25 MP (product-owner deviation from the SRS 16 MP, 2026-10-08; Appendix D.6 item 4), mobile 10 MiB / 8 MP; no silent downscale | S4, S4b, G2.14, G4.3 | AT-22, AT-24 |
 | LYR-01 | 1–16 sheets; requested vs exported count, max elevation, base, relief | G2.10b, G2.11c | AT-03, AT-04 |
 | LYR-02 | Nearest-layer rule; thresholds shown normalized and in mm | G2.3, G2.4, G2.11c | AT-03 |
 | LYR-03 | Balanced, linear and manual thresholds; reject bad order; legacy tonal kept | G2.4, G2.4b | AT-04, AT-21 |
@@ -326,7 +326,7 @@ These come from the SRS and repo conventions. Every task implicitly includes the
 - **Machine envelope (GEO-10, PO-LASER-1/2):** the project carries an editable machine profile, default **xTool S1 + feeder** (processing height 470 mm, length 3000 mm, material width 545 mm, thickness 14 mm, kerf 0.15 mm). Every layer sheet, frame included, must fit its processing area (either orientation) and the stock must not exceed its thickness, otherwise a blocking diagnostic. Nothing is ever rescaled to fit. Kerf stays external (MAT-05).
 - **Fabrication pitch (PO-LASER-4/5):** fabrication resolution is derived from physical size at a target of **0.1 mm/px**, capped by a per-device total pixel budget; a cap is reported (info, actual mm/px), never silent. The engine never upsamples; a source with fewer pixels than the target warns with the shortfall. Draft stays 720 px on the long side.
 - Limits:
-  - image input: desktop **25 MiB / 16 MP**, mobile **10 MiB / 8 MP**;
+  - image input: desktop **25 MiB / 25 MP** (25 MP = the desktop `fabPxBudget`; product-owner deviation from SRS IMG-07's 16 MP, D6 item 14), mobile **10 MiB / 8 MP**;
   - `.sbrproj`: **≤1024 entries**, **≤256 MiB** expanded on desktop, **≤64 MiB** on mobile;
   - working set: **≤512 MiB** desktop, **≤192 MiB** mobile;
   - complexity caps (parts per layer, total vertices; per device class) fail with blocking `COMPLEXITY_LIMIT`, never with truncated geometry. (SRS:L564)
@@ -1701,7 +1701,7 @@ Holes and labels are unchanged.
   - `FAB_EXCEEDS_SOURCE` (warning, PO-LASER-5) is raised when the source has fewer pixels than the target fabrication raster on either axis. `measured` and `limit` are the source and target px on the **most-short axis** (largest target/source ratio, ties → width), so `measured < limit` whenever it warns (review fix 2026-10-08; `shortPx` carries both axes); the message names that axis and states the shortfall (for example "3800 × 2850 px short of the 0.1 mm/px target") and that source detail cannot be recovered (GEO-06). mm/px always comes from the real raster.
   - `FAB_PITCH_CAPPED` (info, PO-LASER-4; registered in `SBDiag.CODES` with this task) is raised when the budget coarsened the pitch. `measured` is the mm/px of the budget-limited raster (before the source clamp; equal to the real mm/px when only the budget capped), `limit` the target mm/px, and the message names the device class and budget. When the source then limits the raster further (`budget+source`), the message attributes that extra coarsening to the source and gives the real mm/px, never blaming the budget for it (review fix 2026-10-08). It is never silent: the dimbar (G2.11c) shows it before generation.
 
-- [ ] **Tests:**
+- [x] **Tests:**
   - `IMG-03 height nearest: output values ⊆ input values` (on a ramp)
   - `IMG-02 none is the identity`
   - `NFR-05 area on gray is integer-exact and repeatable`
@@ -1713,6 +1713,8 @@ Holes and labels are unchanged.
   - `NFR-05 fabRaster is integer-only and repeatable` (same inputs ×3, every output an integer)
   - `RESAMPLE_UPSAMPLE thrown for W > w`
 - **Commit.**
+
+**Result (2026-10-08):** `SBRaster.resample`, `rasterSize`, `fabRaster`, plus `scaleUm`, `resamplePolicy`, `cacheKey` (Appendix C, S4) and `fabDiagnostics`; `FAB_PITCH_CAPPED` registered (commit `ebf11ca`). The G2.0/G2.1 review (`2dbb03d`) moved `FAB_EXCEEDS_SOURCE` `measured`/`limit` to the most-short axis and attributes the `budget+source` coarsening to the source (the rules above). The suite has 37 checks.
 
 ### Task G2.1: `SBSchema`, project v1, presets, machine profile, strict keys and lossless units (extended, PO-LASER-1/3/4/6/7/8)
 
@@ -1740,7 +1742,7 @@ Holes and labels are unchanged.
   - `SBSchema.toMM(v, unit)` / `fromMM(mm, unit)` for `unit ∈ {"mm","in"}`. Both quantize: `toMM(v,"in") = Math.round(v*25400)/1000`.
   - `SBSchema.modeChangeDiff(p, patch) → [{path, from, to, reason}]`. It lists the settings that a change of `interpretation.mode` or `construction.mode` affects or makes inapplicable. G2.11e uses it.
 
-- [ ] **Step 1: Tests**
+- [x] **Step 1: Tests**
 
 ```js
 suite("schema.js — project v1 (PRJ-01/02, MAT-02/03, §9.1)", () => {
@@ -1777,7 +1779,9 @@ suite("schema.js — project v1 (PRJ-01/02, MAT-02/03, §9.1)", () => {
 });
 ```
 
-- [ ] **Step 2–5:** fail, implement, pass, commit.
+- [x] **Step 2–5:** fail, implement, pass, commit.
+
+**Result (2026-10-08):** as specified (commit `70de9e7`): strict `validate` with `{path, code}` errors that never throws, `MACHINES`, `resolveSize`, `limits`, lossless `toMM`/`fromMM`, `importLoose`, `geometryKey` (D4 scope) and `modeChangeDiff`. The G2.0/G2.1 review (`2dbb03d`) range-checks both art axes, entered or derived, in `resolveSize` (MAT-02, `SCHEMA_SIZE`). The test `PO-LASER-4 provisional pixel budgets` above was retargeted when G2.2b measured the budgets (`PO-LASER-4 measured pixel budgets (G2.2b): desktop 25 Mpx, mobile 1 Mpx`). 23 plan checks plus a 72-check extended suite.
 
 ### Task G2.1b: Draft/fabrication raster snapshot (`SBEngine.rasterPlan`) (LYR-06, GEO-06, NFR-04, PO-LASER-4/5)
 
@@ -1797,10 +1801,10 @@ Runs third in G2 (Appendix D.4). It pulls the quality-dependent raster part of t
   - `SBEngine.qualityPair(project, source, deviceClass) → {draft, fabrication}`: both plans, for display before generation.
 - Rule (LYR-06): `generate` (G2.10a) takes its raster only from `rasterPlan` for the requested quality. Export always recomputes the fabrication plan for the current revision and device class; a draft plan or its diagnostics never stand in for it.
 
-- [ ] **Tests:**
+- [x] **Tests:**
   - `LYR-06 6000×4000 source, sizeBy height 300 mm, no frame → draft 720×480, fabrication 4500×3000 at 100 µm`
   - `LYR-06 draft and fabrication plans differ in quality and raster; both deep-frozen`
-  - `PO-LASER-4 same project on mobile (budget 4e6) → 2446×1631 at 184 µm, FAB_PITCH_CAPPED info with measured 0.184 / limit 0.1 mm/px`
+  - `PO-LASER-4 same project on mobile (budget 1e6, G2.2b) → 1223×816 at 368 µm, FAB_PITCH_CAPPED info with measured 0.368 / limit 0.1 mm/px` (written against the provisional 4e6 budget as 2446×1631 at 184 µm; retargeted when G2.2b measured 1e6)
   - `PO-LASER-5 800×600 source, 300 mm high → raster 800×600, FAB_EXCEEDS_SOURCE shortPx [3200, 2400]; the draft plan carries no pitch diagnostics`
   - `IMG-05 rotate 90 swaps the sizing axes`
   - `NFR-04 rasterPlan needs only {w, h}` (no pixel buffer is passed or read)
@@ -1835,13 +1839,13 @@ Runs: 5 warm-ups and 30 runs at the candidate budget points (16 Mpx desktop; the
 **Result (2026-10-08):** desktop budget **25 Mpx** at the **10 s** target, not relaxed (`r16` 7.20 s; `r25` 9.75 s, 404 MiB). Mobile budget **1 Mpx**, fabrication enabled (`r1` 1.82 s × k 4 = 7.28 s, 62.6 MiB; k provisional). The SRS desktop reference measures 2.73 s. No escalation, the gate passes, and `FAB_DEVICE_DRAFT_ONLY` is not needed. The busy rows are evidence that cost follows part count, not pixels: 2k–8k parts/layer give 35–163 s bonded at 4–16 Mpx, while realistic art stays near 120 parts/layer. That moves the complexity caps and busy-art simplification forward to **G2.7b**.
 
 **Decision rule** (recorded in `docs/perf/LARGE_IMAGE.md` and D6):
-- **Desktop budget** = the largest candidate in {16, 20, 25} Mpx whose estimated working set is ≤ 512 MiB (NFR-04) and whose final-plus-validation p95 (stages 3–4, realistic family) is ≤ the laser-detail target. The target is **10 s** (the NFR-03 final budget) when 16 Mpx meets it. If 16 Mpx does not, the budget stays at 16 Mpx and a **relaxed laser-detail target** is recorded: the measured p95 rounded up to the next 5 s, applying only to fabrication generation of workloads larger than the SRS §12.3 reference (draft stays 1.5 s and the SRS workload keeps 10 s). The busy family is reported, not gated: it is bounded by `COMPLEXITY_LIMIT` (G4.3).
+- **Desktop budget** = the largest candidate in {16, 20, 25} Mpx whose estimated working set is ≤ 512 MiB (NFR-04) and whose final-plus-validation p95 (stages 3–4, realistic family) is ≤ the laser-detail target. The target is **10 s** (the NFR-03 final budget) when 16 Mpx meets it. If 16 Mpx does not, the budget stays at 16 Mpx and a **relaxed laser-detail target** is recorded: the measured p95 rounded up to the next 5 s, applying only to fabrication generation of workloads larger than the SRS §12.3 reference (draft stays 1.5 s and the SRS workload keeps 10 s). The busy family is reported, not gated: it is bounded by `COMPLEXITY_LIMIT` (G2.7b, moved from G4.3).
 - **Gating mode (product owner, 2026-10-08, option (a)):** every p95 in this rule is the **bonded**-mode final plus validation (the plywood/laser default, D1 unsmoothed). Connected mode is measured and reported per row (`stages.finalConnected`) but never gates: its cost (≈18 s p95 on the SRS desktop reference, dominated by `maxDeviationUm` `segDist`/`distToGrid` and the T-junction split) is the tracked known item **KI-CONN-PERF** (Appendix D.8), resolved in G4 by the G4.1 worker pool and/or smoothing optimisation.
 - **Mobile budget** = the largest candidate in {1, 1.25, 1.5, 2, 4, 6, 8} Mpx (rows `r1`, `r1.25`, `r1.5` are 1155×866, 1291×968, 1414×1061) with working set ≤ 192 MiB and p95 ≤ 8 s after scaling by the desktop-to-mobile factor k measured on the SRS mobile workload. Until the recorded ≥ 4 GB device is available (G4.4, AT-24), k = 4 is used and marked provisional. **If no candidate qualifies, mobile fabrication is draft-only** (decided 2026-10-08): the decision records `mobile.fabrication: "draft-only"` and fabrication export is disabled on mobile with a clear diagnostic (`FAB_DEVICE_DRAFT_ONLY`, Appendix D.8); this is recorded, not a stop.
 - **Stop and ask the product owner** if 16 Mpx exceeds 512 MiB or if the relaxed desktop target would exceed 60 s. (The former stop on "no mobile candidate ≥ 2 Mpx qualifies" is replaced by the draft-only outcome above.)
 - **Machines:** benchmarks run on the Linux development machine (i7-11800H, 16 threads); budgets measured there are conservative for the owner's MacBook Air M5. Safari / JavaScriptCore coverage stays in G4.8.
-- The measured part and vertex counts at each budget are recorded as the starting point for the G4.3 complexity caps.
-- Note (D6): IMG-07 limits sources to 16 MP (desktop) and 8 MP (mobile), and the engine never upsamples, so a desktop budget above 16 Mpx takes effect only if IMG-07 is raised.
+- The measured part and vertex counts at each budget are recorded as the starting point for the G2.7b complexity caps (moved from G4.3).
+- Note (D6): the engine never upsamples, so the IMG-07 source cap bounds the fabrication raster. **Resolved (product owner, 2026-10-08):** the desktop source cap is raised from 16 MP to the measured 25 Mpx desktop budget (`SBSchema.limits("desktop").maxSourcePx === fabPxBudget`); mobile stays 8 MP (Appendix D.6 item 4).
 
 - [x] **Tests (fast, in `node test/run_tests.js`):**
   - `PO-LASER-4 SBSchema.limits budgets equal docs/perf/large-image.json`
@@ -1870,6 +1874,8 @@ Runs: 5 warm-ups and 30 runs at the candidate budget points (16 Mpx desktop; the
   - `LYR-06 draft snapshot rejected by fabrication gate`
   - `§9.5 one ack covers an aggregated PART_SMALL diagnostic`
 - [x] **Step 2–5:** fail, implement, pass, commit.
+
+**Result (2026-10-08):** as specified (commit `1eabaaf`). Aggregated diagnostics (`parts[]`) use `*` in the key, so one ack covers them. `exportGate` reasons are `NO_SNAPSHOT`, `QUALITY_MISMATCH` (the snapshot or any diagnostic off quality), `BLOCKING` and `UNACKED`; severity always comes from the registry, and a stored `ackState` is ignored. 26 checks (the six plan checks plus edge cases).
 
 ### Task G2.3: `SBHeight`, nearest-layer quantization and cumulative masks
 
@@ -1946,6 +1952,8 @@ The integer rule was verified against the float definition for every N in 1..16 
 
 - [x] **Step 4: Run** and confirm the tests pass. **Commit.**
 
+**Result (2026-10-08):** as specified (commit `35316a1`); `js/height.js` sits after `jpeg.js`, before `raster.js` in all four module lists. `tonalAdded` + `cumulativeMasks` reproduce `SBRaster.sheetMasks` byte for byte (N 1..16, both fronts), and `test/bench.js large` takes its height masks from `SBHeight` (identical masks). 10 plan checks plus 12 extended.
+
 ### Task G2.4: Tonal path behind the same interface; manual thresholds; domain-aware statistics
 
 **Files:**
@@ -1966,6 +1974,8 @@ The integer rule was verified against the float definition for every N in 1..16 
   - `IMG-04 tonal thresholds unchanged when out-of-domain pixels are altered`
   - `IMG-04 kuwahara: in-domain output unchanged when out-of-domain pixels are altered`
 - [x] **Step 2–5:** fail, implement, pass, commit.
+
+**Result (2026-10-08):** as specified (commit `b7f8c64`). Manual thresholds take N−1 non-decreasing values in [0, 1] (`THRESHOLD_ORDER`, `THRESHOLD_ARG`); an unrecognised mode keeps the v1.1.0 balanced fallback. With `domain` null, thresholds and `sheetMasks` match the persisted v1.1.0 golden (24 configs) and the `legacyRun` golden. 20 checks.
 
 ### Task G2.4b: Legacy settings adapter (pure) (DEP-04, AT-21; pulled forward from G3.8)
 
@@ -2006,6 +2016,8 @@ The integer rule was verified against the float definition for every N in 1..16 
   - `DEP-04 legacy JSON preserved in extras`
 - [x] **Commit.**
 
+**Result (2026-10-08):** as specified (commit `8fffc44`). The whole legacy JSON is kept in `extras.legacy`; missing keys take the v1.1.0 defaults; the default machine profile is applied and nothing is rescaled; a non-object input throws `SCHEMA_LEGACY`. `LEGACY_NEEDS_SOURCE` comes from `SBSchema.legacyDiagnostics`. `resolveLegacy` sets `toleranceMM = max(0.05, detailEps × width / real working width)`. 21 checks.
+
 ### Task G2.5: Domain mask and orientation (IMG-04/05)
 
 **Files:**
@@ -2025,6 +2037,8 @@ The integer rule was verified against the float definition for every N in 1..16 
   - Browser harness (G4.8): an EXIF=6 JPEG decodes with swapped dimensions and is not rotated again. *(Open; lands with G4.8.)*
 - [x] **Commit.**
 
+**Result (2026-10-08):** as specified (commit `19bf426`). `orient` composes EXIF (engine route only), clockwise rotate and left-right mirror into one integer pixel map, moves alpha with the samples, and marks the result oriented; a second `orient` is refused (`ORIENT_TWICE`). `rasterPlan`'s oriented size uses the same transform. 25 checks; the browser-harness case stays open for G4.8.
+
 ### Task G2.5b: Explicit height filter/remap (IMG-03, AT-02)
 
 **Files:**
@@ -2043,6 +2057,8 @@ The integer rule was verified against the float definition for every N in 1..16 
   - `IMG-03 remap LUT applied exactly`
   - plus oracle checks for median/box (r = 1..4 and clamped r = 50), the domain rule, determinism and `FILTER_ARG`.
 - [x] **Commit.**
+
+**Result (2026-10-08):** as specified, see the implementation notes above (commit `0609d4e`). 22 checks.
 
 ### Task G2.6: Construction strategies (`SBConstruct`)
 
@@ -2087,6 +2103,8 @@ suite("construct.js — strategies (SUP-01/06, GEO-07, GEO-08)", () => {
 Delete the T0.4 `KNOWN-DEFECT SUP-01` and `KNOWN-DEFECT GEO-07 (bridge)` checks; they are replaced by the FIXED variants above.
 
 - [x] **Step 2–5:** fail, implement, pass, commit. Plus an extended suite: shape and purity, explicit bonded culling, hole-fill report, connected == the v1.1.0 chain (40 seeds × featR 1, 3) and `CONSTRUCT_ARG`.
+
+**Result (2026-10-08):** as specified (commit `28c403e`). `connected` is the v1.1.0 per-sheet chain, byte-identical, and `legacyRun` delegates to it (oldrun golden unchanged). `bonded` runs open → close → fillHoles, `removeSpecks` only with `cullEnabled`, and never calls `SBIslands.resolve` or clips (SUP-01, GEO-07). Both return `{final, bridges, report}` with a per-layer pixel cleanup report for GEO-08. The T0.4 `KNOWN-DEFECT` checks are replaced by FIXED checks. 6 plan checks plus 14 extended.
 
 ### Task G2.7: `SBSupport.validate`: containment, support graph and empty-layer rules on final polygons
 
@@ -2172,6 +2190,8 @@ Add `test/bench.js support`, which runs on `randomNestedStack(lcg(1), 1536, 1024
 **B3b budget (required for G2.7 exit; D2, Appendix C):** `test/bench.js geom` B3b, the support pass on the dense B1 stack (3,407 pairs), must reach **p95 < 3 s** (the B3 budget; provisional < 6 s until now). The pass computes **one layer-level `intersection` per adjacent layer pair**, attributes the pieces to parts by bbox sweep, and classifies each piece with `SBGeom.survivesInset` / `classifyContact` (never per part pair: 39 s; never `SBGeom.offset`). It skips the containment `difference` when only the graph is needed and reuses the B1 differences. When B3b passes, remove its provisional entry. The support stage is also run on the G2.2b large workloads and its p95 is recorded next to the PO-LASER-9 targets.
 - [x] **Step 4–5:** run (fail), implement, run (pass), commit. Plus an extended suite: support graph and the per-part-pair oracle, the advisory tier and rounding, reuse and graphOnly, determinism, annotate, `SUPPORT_ARG`, and the `bench support` smoke test.
 
+**Result (2026-10-08):** as specified, see the implementation notes above (commit `8172d1a`): B3b p95 **1.32 s** (3,407 pairs, under the 3 s budget), B3 2.9 ms; `SBGeom.insetStatus` amended (ARCHITECTURE D3). 12 plan checks plus 22 extended and the bench smoke check.
+
 ### Task G2.7b: Complexity caps and busy-art simplification (§12.3, NFR-03/04, PO-LASER-9; moved from G4.3, 2026-10-08)
 
 Runs right after G2.7 (Appendix D.4, D.9). **Why:** G2.2b showed that the pixel budget bounds realistic art but not busy art. At the same pixel count, busy art costs 10.7× (4 Mpx) to 22.7× (16 Mpx) the realistic row: 2k–8k parts/layer give 35–163 s bonded, and `b9` reaches 706 MiB. Realistic art stays near 120 parts/layer and under 10 s up to 25 Mpx. Part count, not pixels, has to be bounded, and it has to be bounded before G2.10a builds the pipeline that enforces it.
@@ -2200,7 +2220,7 @@ Runs right after G2.7 (Appendix D.4, D.9). **Why:** G2.2b showed that the pixel 
 - **API.** `SBConstruct.estimateComplexity` (run-length union-find: 0.15 s on realistic and 0.6 s on busy masks at 25 Mpx × 8), `SBConstruct.simplifyBusy`, `SBConstruct.complexityGate` (simplify, then the parts cap) and `SBConstruct.vertexGate` (after `fromMasks`). Both gates return `status: "error"` with no masks or layers. `SBDiag.make` accepts `deviceClass` and `counts`. `BUSY_SIMPLIFIED` (info, process) is new, and the `COMPLEXITY_LIMIT` fix text offers "Simplify busy art".
 - **Bench.** With `--caps desktop`, `b4` and `b9` fail with `COMPLEXITY_LIMIT` in 113 ms and 321 ms, and `r25` passes in 7.61 s. With `--simplify busy`, `b4` goes from 1,991 to 85 parts/layer and runs in 3.70 s, `b9` goes from 4,603 to 211 and runs in 8.08 s, and `r25` goes from 120 to 64 and runs in 14.18 s. Simplification costs about 5.5 s at 25 Mpx (reported, not gated; G4.1). Support p95 on the large rows is 87–107 ms (`r25`) and 0.4–0.95 s (busy at 176–340 parts).
 - **Deviations.** (1) The setting lives in `construction.cleanup.simplify`; the plan text said `material.cleanup`, which does not exist (`cleanup` is under `construction`). Plan §3 and ARCHITECTURE §3 are updated. (2) The 512 MiB rule for the caps is applied to a **live-set** pass (`gc()` before each stage-boundary sample). The G2.2b peak with uncollected garbage is recorded beside it, but it varies by up to 250 MiB between rows, independent of part count. (3) The desktop caps come from 1 + 5 runs per row on a loaded machine (load 6–9), not 5 + 30. (4) `large` variant rows (`--caps`, `--simplify`, `--bonded-only`) are written to `complexity.json` `variantRows` and never to `large-image.json`, so the G2.2b decision stays reproducible. (5) The closing in `simplifyBusy` is a separable O(w·h) square closing on a padded copy, tested equal to `SBMorph.close`; iterating SBMorph's 3×3 passes would take about 100 s at 25 Mpx.
-- **Open for the product owner (not blocking):** the SRS mobile vertex cap (20,000) does not admit the realistic art at the 1 Mpx mobile budget. It has 31,944 vertices after bonded construction (the SRS 768² size has 25,588), because bonded contours are unsmoothed staircases (D1). Once G2.10a enforces the caps, mobile fabrication of typical art would stop at `COMPLEXITY_LIMIT`. See ARCHITECTURE D6 item 13.
+- **Mobile vertex cap — decided (product owner, 2026-10-08):** the SRS mobile vertex cap (20,000) is **kept**, and mobile is limited to simpler art. Realistic art at the 1 Mpx mobile budget has 31,944 vertices after bonded construction (the SRS 768² size has 25,588), because bonded contours are unsmoothed staircases (D1), so once G2.10a enforces the caps a mobile user with typical art sees `COMPLEXITY_LIMIT`. On mobile its message adds "mobile is limited to simpler art, so simplify it or open the project on a desktop" (`SBConstruct.complexityGate` / `vertexGate`; test `§12.3 mobile COMPLEXITY_LIMIT message says mobile is limited to simpler art and points to desktop`). No new feature; G4.3/G4.4 re-check the caps on the reference device. See ARCHITECTURE D6 item 13.
 
 ### Task G2.8: Feature and sampling checks (GEO-05/06, MAT-03, AT-10)
 
@@ -2602,8 +2622,8 @@ Runs right after G2.7 (Appendix D.4, D.9). **Why:** G2.2b showed that the pixel 
 
 - [x] **Tests:**
   - `IMG-07 desktop 26MiB rejected`
-  - `IMG-07 desktop 17MP rejected with downsample suggestion` (dimensions from the PNG header)
-  - `IMG-07 JPEG 6000×4000 (24 MP) rejected from SOF before decode`
+  - `IMG-07 desktop 26.5MP rejected with downsample suggestion` (dimensions from the PNG header; was 17 MP before the desktop cap was raised to 25 MP, 2026-10-08)
+  - `IMG-07 JPEG 7000×4000 (28 MP) rejected from SOF before decode` (was 6000×4000 / 24 MP, now accepted on desktop)
   - `IMG-07 mobile 9MP rejected`
   - `IMG-01 tonal APNG and tonal 16-bit PNG rejected at intake`
   - `GEO-06/PO-LASER-5 target raster above source → FAB_EXCEEDS_SOURCE with px shortfall, mm/px from source`
@@ -2612,7 +2632,7 @@ Runs right after G2.7 (Appendix D.4, D.9). **Why:** G2.2b showed that the pixel 
 - **Commit.**
 
 **Result (2026-10-08):**
-- **Schema.** `SBSchema.limits(deviceClass)` gains the IMG-07 envelope `maxSourceBytes` / `maxSourcePx` (desktop 25 MiB / 16,000,000 px, mobile 10 MiB / 8,000,000 px; inclusive). `SBSchema.sniff(bytes)` (PNG/JPEG signature). `SBSchema.preflight({bytes, info, deviceClass, project}) → {ok, code?, reason?, suggestDownsamplePx?: {w, h}, rasterPlan, warnings, intake}` runs before any decode: bytes over the envelope → `SOURCE_TOO_LARGE`; IMG-01 through `SBPng.check` in both modes, a JPEG in height mode → `HEIGHT_NEEDS_PNG`, `SBJpeg.unsupported` → `JPEG_UNSUPPORTED`, `SBJpeg.scanEnd(…).eoi === null` → `JPEG_TRUNCATED` (trailing bytes after EOI stay accepted); `w·h` over the envelope → `SOURCE_TOO_MANY_PIXELS` with the largest same-aspect size inside it. `rasterPlan` is `SBEngine.rasterPlan(…, "fabrication", deviceClass)` on the decoded size with the orientation the decode route implies (browser-applied EXIF 5–8 swaps the size), and `warnings` are its `FAB_PITCH_CAPPED` / `FAB_EXCEEDS_SOURCE`. `intake.decode` is `"raw"` (height PNG, `exifAppliedBy: "engine"`) or `"canvas-tonal"` (`exifAppliedBy: "browser"`). `SBSchema.intake(bytes, {project, deviceClass})` = steps 1–3 (sniff, inspect + check, preflight; an oversized file is refused before inspection; inspect faults return their `PNG_*` / `JPEG_*` code). `SBSchema.applyDownsample(p, {fromW, fromH, toW, toH})` is the explicit downsample: `fabPitchMM` becomes the coarser of the project pitch and `ceil(art/px)` µm of the downsampled source (never finer), `extras.history` gains `{op: "downsample", from, to, fabPitchMM: {from, to}, revision}`, revision + 1 iff the pitch changed.
+- **Schema.** `SBSchema.limits(deviceClass)` gains the IMG-07 envelope `maxSourceBytes` / `maxSourcePx` (desktop 25 MiB / 16,000,000 px, mobile 10 MiB / 8,000,000 px; inclusive). **Amended 2026-10-08 (product owner, laser target):** desktop `maxSourcePx` = the measured desktop `fabPxBudget`, **25,000,000 px**, a documented deviation from SRS IMG-07 (Appendix D.6 item 4); mobile unchanged. Tests retargeted: `IMG-07 desktop 26.5MP rejected …`, `IMG-07 JPEG 7000×4000 (28 MP) rejected …`, `exactly 25 MP … accepted (limit inclusive)`, the EXIF downsample-target sources (6000 × 4400); new: `IMG-07/PO-LASER-4 desktop source cap equals the measured desktop fabPxBudget …` and `IMG-07 JPEG 6000×4000 (24 MP) accepted on desktop …, still rejected on mobile`. Decode of a 25 MP RGBA source is estimated at ≈ 167 MiB by scaling the S4 16 MP figure (107 MiB), inside the 512 MiB desktop budget. `SBSchema.sniff(bytes)` (PNG/JPEG signature). `SBSchema.preflight({bytes, info, deviceClass, project}) → {ok, code?, reason?, suggestDownsamplePx?: {w, h}, rasterPlan, warnings, intake}` runs before any decode: bytes over the envelope → `SOURCE_TOO_LARGE`; IMG-01 through `SBPng.check` in both modes, a JPEG in height mode → `HEIGHT_NEEDS_PNG`, `SBJpeg.unsupported` → `JPEG_UNSUPPORTED`, `SBJpeg.scanEnd(…).eoi === null` → `JPEG_TRUNCATED` (trailing bytes after EOI stay accepted); `w·h` over the envelope → `SOURCE_TOO_MANY_PIXELS` with the largest same-aspect size inside it. `rasterPlan` is `SBEngine.rasterPlan(…, "fabrication", deviceClass)` on the decoded size with the orientation the decode route implies (browser-applied EXIF 5–8 swaps the size), and `warnings` are its `FAB_PITCH_CAPPED` / `FAB_EXCEEDS_SOURCE`. `intake.decode` is `"raw"` (height PNG, `exifAppliedBy: "engine"`) or `"canvas-tonal"` (`exifAppliedBy: "browser"`). `SBSchema.intake(bytes, {project, deviceClass})` = steps 1–3 (sniff, inspect + check, preflight; an oversized file is refused before inspection; inspect faults return their `PNG_*` / `JPEG_*` code). `SBSchema.applyDownsample(p, {fromW, fromH, toW, toH})` is the explicit downsample: `fabPitchMM` becomes the coarser of the project pitch and `ceil(art/px)` µm of the downsampled source (never finer), `extras.history` gains `{op: "downsample", from, to, fabPitchMM: {from, to}, revision}`, revision + 1 iff the pitch changed.
 - **Diagnostics.** `SOURCE_TOO_LARGE`, `SOURCE_TOO_MANY_PIXELS`, `SOURCE_FORMAT`, `HEIGHT_NEEDS_PNG` registered (blocking, process). `EXIF_AMBIGUOUS` (warning, process; Appendix C, S4b) is registered, and preflight adds it to `warnings` when `info.exifAmbiguous` is set on a browser-decoded source. It never rejects the file.
 - **App.** `loadFile` refuses a file over `maxSourceBytes` from `File.size` before reading it, then `SBSchema.intake`, then decodes: height PNG via `SBPng.decode` + `SBEngine.orient` (engine EXIF) into a canvas; tonal PNG/JPEG via `createImageBitmap(file)`, never `<img>` (Appendix C, S4b). `downscaleIfHuge` is deleted; the source is kept at its own size. A refusal shows in `#why-source` (persistent) and the status line, and keeps the previous source (NFR-09); `SOURCE_TOO_MANY_PIXELS` shows `#btn-downsample` ("Downsample to W × H px"). The refusal text also shows the plan from preflight, before decoding: the pitch and raster the downsample would give, and `EXIF_AMBIGUOUS` when it is set. An accepted ambiguous file shows the warning in `#why-source`. The button re-runs intake against the current project, because the mode, and with it the decode route, may have changed since the refusal. It then decodes, resamples once and calls `applyDownsample`. Height maps resample with `SBRaster.resample` (nearest, or area when `geometry.resample.height` is `"area"`). On the tonal route, when the browser did not orient the bitmap the way the parsed EXIF says (an ambiguous file), the target follows the decoded orientation instead of refusing. Loads, downsamples and the demo take a generation token (`sourceGen`), so a slower earlier decode never replaces a newer source. `#filein` is reset after each choice, so choosing the same file again fires `change`. A replaced `ImageBitmap` is closed.
 - **Tests.** 27 checks in the G2.14 suite (all plan tests plus 11 MiB mobile, inclusive 16 MP, non-image, corrupt PNG, JPEG height map, AT-22 truncated-in-scan and Motion Photo trailing bytes, registry, decode route, EXIF-6 plan size, plan on a rejected source, no mutation, downsample never finer, wiring). After the review fixes the suite has 43 checks: EXIF_AMBIGUOUS registry and preflight, `createImageBitmap` route, `SBRaster.resample` height downsample, generation token, intake re-run, refusal plan text and `#filein` reset. The app.js checks are source checks, not DOM tests; G4.8's browser suite covers the behaviour. Full suite 1406 passed.
@@ -2904,10 +2924,13 @@ These are product-owner amendments; the SRS text should be updated to match when
 1. **LYR-06** names "normally 1536 pixels on the long side and configurable up to 4096". Replaced by the physical pitch with a pixel budget (PO-LASER-4). A 470 mm-high page at 0.1 mm/px is 4700 px on the long side.
 2. **MAT-03** gives 3 mm as the plywood starting feature width. The default becomes 1.5 mm with a 2.0 mm advisory tier (PO-LASER-6); still provisional, editable and labelled as a design filter, not a cutting guarantee.
 3. **NFR-03 / §12.3** workloads are unchanged and remain the acceptance workloads. Laser-detail workloads get their own recorded targets (PO-LASER-9), possibly relaxed.
-4. **IMG-07** caps sources at 16 MP (desktop) and 8 MP (mobile). Because the engine never upsamples, fabrication rasters cannot exceed those sizes, so a desktop budget above 16 Mpx has no effect unless IMG-07 is raised. Open for the product owner; not blocking.
+4. **IMG-07** caps sources at 16 MP (desktop) and 8 MP (mobile). Because the engine never upsamples, fabrication rasters cannot exceed those sizes, so the measured 25 Mpx desktop budget had no effect while IMG-07 stood. **Resolved (product owner, 2026-10-08, laser target):** the desktop source cap is raised to **25 MP**, equal to the measured desktop `fabPxBudget` (`docs/perf/large-image.json`; `SBSchema.limits("desktop").maxSourcePx`); the 25 MiB desktop byte cap and the mobile envelope (10 MiB / 8 MP) are unchanged. This is a documented deviation from SRS IMG-07 until the SRS is revised.
+5. **§12.3 mobile vertex cap** (20,000) is **kept** (product owner, 2026-10-08): mobile is limited to simpler art. Realistic art at the 1 Mpx mobile budget (≈ 31,944 vertices) exceeds it, so mobile users see `COMPLEXITY_LIMIT`, whose mobile message says so (G2.7b). Not a deviation; recorded so the SRS revision can state the consequence.
 
 ### D.7 Resolved
 
+- **IMG-07 desktop source cap** (D.6 item 4) is **resolved 2026-10-08**: raised to 25 MP to match the desktop pixel budget (product-owner decision, laser target).
+- **Mobile vertex cap** (G2.7b open question) is **resolved 2026-10-08**: the SRS 20,000-vertex cap is kept and mobile is limited to simpler art (D.6 item 5).
 - **G2.2b stop condition** (no mobile candidate ≥ 2 Mpx qualified in the exploratory run) is **resolved 2026-10-08 by option (a)**; see D.8.
 - **S2 F3** (faceted corners at the default pitch: no corner rounds at 417 µm/px with the 50 µm tolerance) is **resolved by finer resolution, not tolerance**: the fabrication pitch target is 0.1 mm/px and the 0.05 mm tolerance is unchanged (S2 §6 F3: 0 % of corners round at 417 µm/px in every variant, 62–99 % across the variants at 100 µm/px; for the shipped connected-mode rule the D1 table gives 14.4 % on real images to 80.2 % on random input at 100 µm/px — the remaining gap is the R2 whole-loop fallback granularity, tracked separately as deferred option (c), not F3). Bonded mode stays unsmoothed (D1). Recorded in D6, Appendix C and the CHANGELOG (Unreleased).
 
@@ -2928,5 +2951,5 @@ Recorded as D6 item 12 in `docs/ARCHITECTURE.md`; results in `docs/perf/LARGE_IM
 - **Shortened run.** The full G2.2b run (5 + 30 runs at the gated points) was stopped after about 6.5 h as overly thorough. Its completed rows count as measured data (provenance `log`, from the preserved summary lines). Only `r25` and `laser470` were run live (1 warm-up + 5 runs). The busy rows `b20`, `b25` and `laser470-busy` were skipped. The JSON records `method: "shortened"`, per-row provenance and run counts, and the load baseline (≈ 3–4 from desktop processes).
 - **Budgets** come from the realistic-family bonded rows by the G2.2b rule: desktop **25 Mpx** at **10 s** (not relaxed), mobile **1 Mpx** (fabrication enabled, k = 4 provisional). `SBSchema.limits` carries them, and the test `PO-LASER-4 SBSchema.limits budgets equal docs/perf/large-image.json` keeps them in step. The desktop margin is thin (`r25` 9.75 s under load ≈ 5); G4.4 re-measures, and the fallback is 20 Mpx.
 - **Busy rows are evidence, not gates:** 2k–8k parts/layer → 35–163 s bonded at 4–16 Mpx, so cost is driven by part count, not pixels.
-- **G2.7b done (2026-10-08):** the caps are desktop 258 parts/layer, 132,000 vertices/layer and 356,000 vertices (measured), and mobile 100 / 20,000 / 20,000 (SRS). Simplification is explicit (`construction.cleanup.simplify`), and busy rows now fail explicitly or run simplified within the target. See the G2.7b result and the open mobile-vertex question.
+- **G2.7b done (2026-10-08):** the caps are desktop 258 parts/layer, 132,000 vertices/layer and 356,000 vertices (measured), and mobile 100 / 20,000 / 20,000 (SRS). Simplification is explicit (`construction.cleanup.simplify`), and busy rows now fail explicitly or run simplified within the target. See the G2.7b result; the mobile vertex cap is kept (decided 2026-10-08, mobile limited to simpler art).
 - **Plan change:** the complexity caps and busy-art simplification (formerly G4.3: per-device part/vertex caps, merging or dropping tiny parts, clear diagnostics) move into G2 as **G2.7b**, scheduled right after the support task G2.7 (D.4). The **G4.1 worker pool** is the other mitigation and may still be pulled earlier if performance blocks progress.

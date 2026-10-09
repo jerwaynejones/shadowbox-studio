@@ -129,6 +129,9 @@ desktop reference. 5+30 and 1+5 are warm-up + timed runs.
   raised (D6 SRS deviation 4), a 25 Mpx budget only stops the budget from capping the pitch. Example: the
   470 mm page (3525 × 4700, 16.6 Mpx) now plans uncapped at 0.1 mm/px, where the provisional 16 Mpx budget
   coarsened it to 102 µm. A 16 MP source still limits it (`FAB_EXCEEDS_SOURCE`).
+  **Resolved 2026-10-08 (product owner, laser target):** the desktop source cap is raised to 25 MP, equal to
+  this budget (`SBSchema.limits("desktop").maxSourcePx === fabPxBudget`), so a source of up to 25 MP feeds the
+  full fabrication raster; mobile stays 8 MP. A documented deviation from SRS IMG-07 (ARCHITECTURE D6 item 14).
 - **Mobile at 1 Mpx is coarse.** A 300 mm-high 4:3 page plans at 0.347 mm/px. The 470 mm page plans at
   0.408 mm/px, which is about 3.7 samples across the 1.5 mm minimum feature: within GEO-06 (≥ 3) and under the
   0.5 mm/px `SAMPLING_LOW` limit, but close to both. Larger pages on mobile will reach `SAMPLING_LOW`. k = 4 is

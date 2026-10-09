@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Desktop source images up to 25 megapixels (IMG-07, product-owner decision 2026-10-08).** The desktop
+  source cap is raised from 16 MP to 25 MP, the measured desktop fabrication pixel budget, so a large photo or
+  height map can be used at full 0.1 mm/px detail instead of being refused or downsampled. A 24 MP camera
+  image (6000 × 4000) now loads on desktop. The desktop file-size cap (25 MiB) and the mobile limits (10 MiB,
+  8 MP) are unchanged; larger sources are still refused before decoding with the explicit Downsample offer.
+  This is a documented deviation from SRS IMG-07 (16 MP) for the laser target (ARCHITECTURE D6 item 14).
+- **Mobile is limited to simpler art (§12.3, product-owner decision 2026-10-08).** The SRS mobile cap of
+  20,000 vertices is kept. Typical detailed art at the 1 Mpx mobile budget has about 32,000 vertices, so on
+  mobile it stops with "Geometry is too complex to process", and the message now says that mobile is limited
+  to simpler art and suggests simplifying it or opening the project on a desktop.
+- **Plan bookkeeping:** G2.0, G2.1 and G2.1b checkboxes ticked; Result notes for G2.0–G2.7; G2.2b
+  cross-references point at G2.7b; the stale G2.1b mobile test name is corrected (1 Mpx: 1223 × 816 at 368 µm).
+
 ## v2.0.0-alpha.2 — 2026-10-08, experimental bonded relief
 
 An **experimental** checkpoint at the end of the G2 core (plan "Checkpoint v2.0.0-alpha.2", MVP graft). It is not

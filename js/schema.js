@@ -31,8 +31,10 @@
  *                                    (docs/perf/complexity.json). G2.14
  *                                    adds the IMG-07 source envelope
  *                                    maxSourceBytes / maxSourcePx (desktop
- *                                    25 MiB / 16 MP, mobile 10 MiB / 8 MP,
- *                                    inclusive); G4.3 adds the rest.
+ *                                    25 MiB / 25 MP = fabPxBudget, mobile
+ *                                    10 MiB / 8 MP, inclusive; desktop MP is
+ *                                    a PO deviation from SRS IMG-07's 16 MP,
+ *                                    2026-10-08); G4.3 adds the rest.
  *   SBSchema.sniff(bytes)            → "png" | "jpeg" | null (G2.14 intake step 1).
  *   SBSchema.preflight({bytes, info, deviceClass, project}) → {ok, code?,
  *                                    reason?, suggestDownsamplePx?: {w, h},
@@ -136,7 +138,8 @@
   // Measured by G2.2b (docs/perf/large-image.json, decision.desktop/mobile.fabPxBudget; the test
   // "PO-LASER-4 SBSchema.limits budgets equal docs/perf/large-image.json" keeps them in step). Desktop: r25 bonded
   // p95 9.75 s ≤ 10 s, 404 MiB ≤ 512 MiB. Mobile: r1 bonded p95 1.82 s × k 4 = 7.3 s ≤ 8 s (k provisional, G4.4).
-  // IMG-07 still caps sources at 16 MP (desktop) / 8 MP (mobile), and the engine never upsamples.
+  // The engine never upsamples, so the IMG-07 source cap bounds the fabrication raster: desktop sources are capped at the
+  // desktop budget (25 MP, PO decision 2026-10-08, deviation from SRS IMG-07's 16 MP), mobile sources at 8 MP.
   // G2.7b complexity caps (SRS §12.3; SRS:L564: fail explicitly, never truncate). Mobile: the SRS §12.3 mobile workload
   // (100 parts/layer, 20,000 vertices total; per layer bounded by the total). Desktop: measured by `node test/bench.js caps`
   // (docs/perf/complexity.json, decision.desktop): the largest caps at which the capped busy workload at the desktop budget
@@ -150,7 +153,10 @@
   };
   // G2.14 (IMG-07, SRS §12.3): the source envelope. Over-limit input is rejected before decode, or downsampled only
   // through the explicit button (applyDownsample); never silently reduced (NFR-04). Limits are inclusive.
-  const SOURCE_LIMITS = { desktop: { maxSourceBytes: 25 * 1024 * 1024, maxSourcePx: 16000000 },
+  // Desktop maxSourcePx = the measured desktop fabPxBudget (25 MP): product-owner decision 2026-10-08 for the laser
+  // target, a documented deviation from SRS IMG-07 (16 MP; plan Appendix D.6 item 4, ARCHITECTURE D6). The test
+  // "IMG-07/PO-LASER-4 desktop source cap equals the measured desktop fabPxBudget" keeps them in step. Mobile keeps 8 MP.
+  const SOURCE_LIMITS = { desktop: { maxSourceBytes: 25 * 1024 * 1024, maxSourcePx: LIMITS.desktop.fabPxBudget },
     mobile: { maxSourceBytes: 10 * 1024 * 1024, maxSourcePx: 8000000 } };
   for (const dc of Object.keys(SOURCE_LIMITS)) Object.assign(LIMITS[dc], SOURCE_LIMITS[dc]);
   deepFreeze(LIMITS);

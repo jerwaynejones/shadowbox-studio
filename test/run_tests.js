@@ -3657,6 +3657,12 @@ suite("construct.js/schema.js — G2.7b complexity caps and busy-art simplificat
     const d = r.diagnostics.find((x) => x.code === "COMPLEXITY_LIMIT");
     check("§12.3 total vertices over the cap → COMPLEXITY_LIMIT (layer null, total), no layers",
       r.status === "error" && r.layers.length === 0 && !!d && d.layer === null && d.measured.value === 21004 && d.limit.value === 20000 && r.vertices.total === 21004); }
+  // Product-owner decision 2026-10-08: the SRS 20,000-vertex mobile cap is kept, so mobile is limited to simpler art
+  // (realistic art at the 1 Mpx mobile budget has ≈ 31,944 vertices). The mobile message says so; desktop's does not.
+  { const m = C.vertexGate(fake([4, 15000, 6000]), "mobile", {}).diagnostics[0], dk = C.vertexGate(fake([4, desk.maxVerticesPerLayer + 1, 10]), "desktop", {}).diagnostics[0];
+    check("§12.3 mobile COMPLEXITY_LIMIT message says mobile is limited to simpler art and points to desktop",
+      /21004 vertices \(limit 20000 on mobile\)/.test(m.message) && /simpler art/i.test(m.message) && /desktop/i.test(m.message) &&
+      !/simpler art/i.test(dk.message)); }
   { const L = fake([4, 100, 10]), r = C.vertexGate(L, "mobile", {});
     check("§12.3 vertex gate under the caps → status ok, the same layers", r.status === "ok" && r.layers === L && r.diagnostics.length === 0 && r.vertices.perLayer.join() === "4,100,10"); }
 
@@ -5052,9 +5058,15 @@ suite("schema.js/diag.js/app.js — G2.14 source intake and explicit preflight (
   const MiB = 1024 * 1024;
 
   // ---- limits (IMG-07)
-  check("IMG-07 limits carry the source envelope: desktop 25 MiB / 16 MP, mobile 10 MiB / 8 MP",
-    S.limits("desktop").maxSourceBytes === 25 * MiB && S.limits("desktop").maxSourcePx === 16e6 &&
+  check("IMG-07 limits carry the source envelope: desktop 25 MiB / 25 MP, mobile 10 MiB / 8 MP",
+    S.limits("desktop").maxSourceBytes === 25 * MiB && S.limits("desktop").maxSourcePx === 25e6 &&
     S.limits("mobile").maxSourceBytes === 10 * MiB && S.limits("mobile").maxSourcePx === 8e6);
+  // Product-owner decision 2026-10-08 (laser target; documented deviation from SRS IMG-07's 16 MP): the desktop source
+  // cap equals the measured desktop pixel budget, so a source can feed the full fabrication raster (the engine never upsamples).
+  check("IMG-07/PO-LASER-4 desktop source cap equals the measured desktop fabPxBudget (docs/perf/large-image.json); mobile stays 8 MP",
+    (() => { const dec = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "docs", "perf", "large-image.json"), "utf8")).decision;
+      return S.limits("desktop").maxSourcePx === S.limits("desktop").fabPxBudget && S.limits("desktop").maxSourcePx === dec.desktop.fabPxBudget &&
+        S.limits("mobile").maxSourcePx === 8e6; })());
   check("G2.14 sniff: PNG, JPEG and anything else", S.sniff(pngHeader(4, 4)) === "png" && S.sniff(F.jpegHeader({ w: 4, h: 4 })) === "jpeg" &&
     S.sniff(new Uint8Array([0x47, 0x49, 0x46, 0x38])) === null && S.sniff(new Uint8Array(0)) === null);
   check("IMG-01 a non-PNG/JPEG file is rejected at intake with SOURCE_FORMAT", (() => { const r = run(new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]), tonal); return r.ok === false && r.code === "SOURCE_FORMAT"; })());
@@ -5062,18 +5074,22 @@ suite("schema.js/diag.js/app.js — G2.14 source intake and explicit preflight (
   // ---- byte and pixel envelope
   { const r = run(pngHeader(1000, 800, { pad: 26 * MiB }), height);
     check("IMG-07 desktop 26MiB rejected", r.ok === false && r.code === "SOURCE_TOO_LARGE" && /26(\.0)? MiB/.test(r.reason) && /25 MiB/.test(r.reason)); }
-  { const r = run(pngHeader(4200, 4100), height);
-    check("IMG-07 desktop 17MP rejected with downsample suggestion", r.ok === false && r.code === "SOURCE_TOO_MANY_PIXELS" &&
-      r.info.w === 4200 && r.info.h === 4100 && !!r.suggestDownsamplePx && r.suggestDownsamplePx.w * r.suggestDownsamplePx.h <= 16e6 &&
-      r.suggestDownsamplePx.w <= 4200 && r.suggestDownsamplePx.h <= 4100 && Math.abs(r.suggestDownsamplePx.w / r.suggestDownsamplePx.h - 4200 / 4100) < 0.002 &&
-      (r.suggestDownsamplePx.w + 1) * (r.suggestDownsamplePx.h + 1) > 16e6); }
-  { const r = run(F.jpegHeader({ w: 6000, h: 4000 }), tonal);
-    check("IMG-07 JPEG 6000×4000 (24 MP) rejected from SOF before decode", r.ok === false && r.code === "SOURCE_TOO_MANY_PIXELS" && r.format === "jpeg" && r.info.w === 6000 && /24(\.0)? MP/.test(r.reason)); }
+  { const r = run(pngHeader(5200, 5100), height);
+    check("IMG-07 desktop 26.5MP rejected with downsample suggestion", r.ok === false && r.code === "SOURCE_TOO_MANY_PIXELS" &&
+      r.info.w === 5200 && r.info.h === 5100 && /26\.5 MP/.test(r.reason) && /25 MP/.test(r.reason) && !!r.suggestDownsamplePx && r.suggestDownsamplePx.w * r.suggestDownsamplePx.h <= 25e6 &&
+      r.suggestDownsamplePx.w <= 5200 && r.suggestDownsamplePx.h <= 5100 && Math.abs(r.suggestDownsamplePx.w / r.suggestDownsamplePx.h - 5200 / 5100) < 0.002 &&
+      (r.suggestDownsamplePx.w + 1) * (r.suggestDownsamplePx.h + 1) > 25e6); }
+  { const r = run(F.jpegHeader({ w: 7000, h: 4000 }), tonal);
+    check("IMG-07 JPEG 7000×4000 (28 MP) rejected from SOF before decode", r.ok === false && r.code === "SOURCE_TOO_MANY_PIXELS" && r.format === "jpeg" && r.info.w === 7000 && /28(\.0)? MP/.test(r.reason)); }
+  { const r = run(F.jpegHeader({ w: 6000, h: 4000 }), tonal), m = run(F.jpegHeader({ w: 6000, h: 4000 }), tonal, "mobile");
+    check("IMG-07 JPEG 6000×4000 (24 MP) accepted on desktop (PO 2026-10-08), still rejected on mobile",
+      r.ok === true && m.ok === false && m.code === "SOURCE_TOO_MANY_PIXELS" && /8(\.0)? MP/.test(m.reason)); }
   { const r = run(pngHeader(3000, 3000), height, "mobile"), d = run(pngHeader(3000, 3000), height, "desktop");
     check("IMG-07 mobile 9MP rejected", r.ok === false && r.code === "SOURCE_TOO_MANY_PIXELS" && /8(\.0)? MP/.test(r.reason) && d.ok === true); }
   { const r = run(pngHeader(1000, 800, { pad: 11 * MiB }), height, "mobile");
     check("IMG-07 mobile 11 MiB rejected (10 MiB envelope)", r.ok === false && r.code === "SOURCE_TOO_LARGE"); }
-  check("IMG-07 exactly 16 MP on desktop is accepted (limit inclusive)", run(pngHeader(4000, 4000), height).ok === true);
+  check("IMG-07 exactly 25 MP on desktop is accepted (limit inclusive); one row more is rejected",
+    run(pngHeader(5000, 5000), height).ok === true && run(pngHeader(5000, 5001), height).code === "SOURCE_TOO_MANY_PIXELS");
 
   // ---- IMG-01 in both modes
   check("IMG-01 tonal APNG and tonal 16-bit PNG rejected at intake",
@@ -5108,8 +5124,8 @@ suite("schema.js/diag.js/app.js — G2.14 source intake and explicit preflight (
       g.rasterW * g.rasterH <= 1e6 && r.warnings.some((d) => d.code === "FAB_PITCH_CAPPED")); }
   { const r = run(F.jpegHeader({ w: 640, h: 480, exif: 6 }), tonal), g = r.rasterPlan.geometry;
     check("IMG-05 browser-applied EXIF 6: the plan uses the decoded (rotated) size", g.srcW === 480 && g.srcH === 640); }
-  { const r = run(pngHeader(4200, 4100), height);
-    check("NFR-04 a rejected over-pixel source still shows its plan before decode", !!r.rasterPlan && r.rasterPlan.geometry.srcW === 4200); }
+  { const r = run(pngHeader(5200, 5100), height);
+    check("NFR-04 a rejected over-pixel source still shows its plan before decode", r.code === "SOURCE_TOO_MANY_PIXELS" && !!r.rasterPlan && r.rasterPlan.geometry.srcW === 5200); }
   check("G2.14 preflight never mutates the project", (() => { const p = S.defaults("plywood"), before = JSON.stringify(p); run(pngHeader(800, 600), p); return JSON.stringify(p) === before; })());
 
   // ---- explicit downsample (no silent downscale)
@@ -5125,19 +5141,19 @@ suite("schema.js/diag.js/app.js — G2.14 source intake and explicit preflight (
     const q = S.applyDownsample(p, { fromW: 5000, fromH: 4000, toW: 4472, toH: 3577 }); return q.geometry.fabPitchMM === 1.5 && q.extras.history.length === 1; })());
 
   // ---- the downsample target in the decoded orientation (both routes rotate for EXIF 5..8)
-  { const rot = (exif) => { const r = run(pngHeader(5000, 3400, { exif }), height); return r; };
+  { const rot = (exif) => { const r = run(pngHeader(6000, 4400, { exif }), height); return r; };
     const r6 = rot(6), r1 = rot(1), t = S.downsampleTarget(r6), u = S.downsampleTarget(r1);
     check("IMG-05 downsampleTarget: height PNG EXIF 6 (raw route) targets the rotated canvas, aspect kept",
       r6.code === "SOURCE_TOO_MANY_PIXELS" && r6.intake.decode === "raw" && r6.intake.exif === 6 &&
-      t.w === r6.suggestDownsamplePx.h && t.h === r6.suggestDownsamplePx.w && t.w <= 3400 && t.h <= 5000 &&
-      (() => { try { S.applyDownsample(S.defaults("plywood"), { fromW: 3400, fromH: 5000, toW: t.w, toH: t.h }); return true; } catch (e) { return false; } })());
+      t.w === r6.suggestDownsamplePx.h && t.h === r6.suggestDownsamplePx.w && t.w <= 4400 && t.h <= 6000 &&
+      (() => { try { S.applyDownsample(S.defaults("plywood"), { fromW: 4400, fromH: 6000, toW: t.w, toH: t.h }); return true; } catch (e) { return false; } })());
     check("IMG-05 downsampleTarget: EXIF 1 unchanged", u.w === r1.suggestDownsamplePx.w && u.h === r1.suggestDownsamplePx.h);
-    const j = run(F.jpegHeader({ w: 5000, h: 3400, exif: 8 }), tonal), tj = j.suggestDownsamplePx && S.downsampleTarget(j);
+    const j = run(F.jpegHeader({ w: 6000, h: 4400, exif: 8 }), tonal), tj = j.suggestDownsamplePx && S.downsampleTarget(j);
     check("IMG-05 downsampleTarget: tonal JPEG EXIF 8 (browser route) swapped too", j.code === "SOURCE_TOO_MANY_PIXELS" && tj.w === j.suggestDownsamplePx.h && tj.h === j.suggestDownsamplePx.w); }
   // ---- EXIF_AMBIGUOUS (plan Appendix C, S4b → G2.14): a warning on the browser route, never a rejection
   { const { seg, app1 } = S4B, xmp = seg(0xe1, Buffer.from("http://ns.adobe.com/xap/1.0/\0<x/>", "latin1"));
     const amb = run(jpegFile({ pre: [xmp, app1(6)], sofOpts: { w: 640, h: 480 } }), tonal), short = run(jpegFile({ pre: [app1(6, 26)], sofOpts: { w: 640, h: 480 } }), tonal);
-    const clear = run(jpegFile({ pre: [app1(6)], sofOpts: { w: 640, h: 480 } }), tonal), big = run(jpegFile({ pre: [xmp, app1(6)], sofOpts: { w: 6000, h: 4000 } }), tonal);
+    const clear = run(jpegFile({ pre: [app1(6)], sofOpts: { w: 640, h: 480 } }), tonal), big = run(jpegFile({ pre: [xmp, app1(6)], sofOpts: { w: 7000, h: 4000 } }), tonal);
     const ea = (r) => r.warnings.filter((d) => d.code === "EXIF_AMBIGUOUS");
     check("IMG-05 EXIF_AMBIGUOUS is a registered warning (process)", !!SBDiag.CODES.EXIF_AMBIGUOUS && SBDiag.CODES.EXIF_AMBIGUOUS.severity === "warning" &&
       SBDiag.CODES.EXIF_AMBIGUOUS.kind === "process" && /browsers disagree/i.test(SBDiag.CODES.EXIF_AMBIGUOUS.title));
