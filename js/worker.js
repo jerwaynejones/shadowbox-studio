@@ -17,14 +17,14 @@
  *   main → coord   source {sampleHash, pixels, alpha, w, h, channels} (a transferred copy, once per sampleHash)
  *                  generate {runId, gen, sampleHash, w, h, channels, overlays, deviceClass, draftCapPx, budgetBytes, mainBytes, req}
  *                    (req without pixels; pixels inline in req.normalizedSource when sampleHash is null)
- *                  cancel {runId}; ports {helperId, port}; helperDown {helperId}; stats {}
+ *                  cancel {runId}; ports {helperId, port}; helperDown {helperId}; stats {}; cancelFlag {flag} (F14)
  *   coord → main   hello {role, engineVersion, appVersion, modulesHash, modules}; ack {runId} (start of work);
  *                  progress {runId, stage, frac, sub} (≤ 10 Hz, frac monotone); result {runId, gen, sampleHash,
  *                  overlays, deviceClass, response}; canceled {runId}; error {runId, code, message};
  *                  killHelper {helperId, reason}; stats {…}
  *   main → helper  port {helperId, port}
- *   helper → coord hello {modulesHash, …} before any item; itemResult {batchId, index, ok, value | error, infra?}
- *   coord → helper item {batchId, index, kind, args}
+ *   helper → coord hello {modulesHash, …} before any item; itemResult {runId, batchId, index, ok, value | error, infra?}
+ *   coord → helper item {runId, batchId, index, kind, args}
  * Rules (F.3): one run at a time (a new generate cancels the current run and every queued one); source identity
  * (SOURCE_MISMATCH unless sampleHash, w, h and channels equal the stored source; normalizedSource is rebuilt from the
  * stored source only after that check); a canceled or failed run never writes K1/K2 (the run works on a scratch copy of
@@ -36,6 +36,14 @@
  * yield + mainBytes + in-flight items ≤ budgetBytes, at least one item always admitted); raster kernels run as one row
  * band per admitted helper; helper results transfer their buffers back (the helper keeps nothing). Stats add
  * helperKinds (helper-run items per kind), maxInFlight, peakLedger, budgetBytes, bands and lastOrder (per kind).
+ * Cancellation (F14, F-D2): a run is canceled by cancel {runId}, a superseding generate or the shared cancel flag
+ * (cancelFlag: Int32Array slot 0 = runs below it superseded, slot 1 = a canceled runId; read with Atomics.load, so the
+ * serial kernels' poll sees it where no message can arrive). The flag is checked at every step(), before every dispatch
+ * and every few rows of masks, the Kuwahara SAT scan and the complexity gate; a cancel aborts the batch at once
+ * (SBEngine.Canceled): pending inline items are skipped, helper items in flight are abandoned — their late itemResult
+ * (old runId) is dropped (staleDropped) and a helper still busy after stuckMs (generate.stuckMs, 300 ms) is reported
+ * with killHelper {reason: "stuck"} (stuckKilled). Stats add stage (the current step), sampleHash, k1Key, k2Key,
+ * staleDropped, stuckKilled and sharedCancel.
  *
  * Not a page script (not in index.html); precached in sw.js SHELL so page and
  * worker always come from the same cache version (R7, F-D3).
@@ -109,17 +117,19 @@ const WORKER_APP_VERSION = "2.0.0-alpha.3";
       try {
         const fn = E.TASKS[m.kind];
         if (typeof fn !== "function") throw Object.assign(new Error("no kernel " + m.kind), { code: "ENGINE_INTERNAL" });
-        out = { type: "itemResult", batchId: m.batchId, index: m.index, ok: true, value: fn.apply(null, m.args) };
+        out = { type: "itemResult", runId: m.runId, batchId: m.batchId, index: m.index, ok: true, value: fn.apply(null, m.args) };
         tr = resultBuffers(out.value);
       } catch (e) {
-        out = { type: "itemResult", batchId: m.batchId, index: m.index, ok: false, error: errOut(e) };
+        out = { type: "itemResult", runId: m.runId, batchId: m.batchId, index: m.index, ok: false, error: errOut(e) };
       }
       try { box.port.postMessage(out, tr); } catch (e) {   // DataCloneError: infrastructure, the coordinator re-runs it inline
-        box.port.postMessage({ type: "itemResult", batchId: m.batchId, index: m.index, ok: false, infra: true, error: errOut(e) });
+        box.port.postMessage({ type: "itemResult", runId: m.runId, batchId: m.batchId, index: m.index, ok: false, infra: true, error: errOut(e) });
       }
     }
     return (d) => {
       if (!d || d.type !== "port" || !d.port) return;
+      // F14: a respawned coordinator re-brokers a port to the same helper; the old coordinator's port is closed
+      if (box.port && box.port !== d.port) { try { box.port.close(); } catch (_) { /* already closed */ } }
       box.port = d.port;
       box.port.onmessage = (ev) => { const m = ev.data; if (m && m.type === "item") onItem(m); };
       const hello = { type: "hello", role: "helper", helperId: d.helperId, engineVersion: E.VERSION, appVersion: WORKER_APP_VERSION, modulesHash };
@@ -132,7 +142,13 @@ const WORKER_APP_VERSION = "2.0.0-alpha.3";
   function coordinator(modulesHash) {
     const E = self.SBEngine;
     const st = { source: null, cache: { quality: "draft" }, queue: [], cur: null, helpers: new Map(), refused: [], itemsInline: 0, itemsHelper: 0,
-      batchSeq: 0, batch: null, kinds: {}, maxInFlight: 0, peakLedger: 0, budgetBytes: null, lastOrder: {}, bands: 1 };
+      batchSeq: 0, batch: null, kinds: {}, maxInFlight: 0, peakLedger: 0, budgetBytes: null, lastOrder: {}, bands: 1,
+      flag: null, stuckMs: 300, staleDropped: 0, stuckKilled: 0 };
+    // F14: the shared cancel flag (an Int32Array on a SharedArrayBuffer, when the page can share one): slot 0 = every runId
+    // below it is superseded, slot 1 = an explicitly canceled runId. Read with Atomics.load inside the serial kernels'
+    // poll, where no message can be received.
+    const flagged = (runId) => { const f = st.flag; return !!f && (runId < Atomics.load(f, 0) || runId === Atomics.load(f, 1)); };
+    const canceled = (job) => job.canceled || flagged(job.runId);
     post({ type: "hello", role: "coord", engineVersion: E.VERSION, appVersion: WORKER_APP_VERSION, modulesHash, modules: WORKER_MODULES.slice() });
 
     // ---- helpers (ports brokered by main; admitted on a matching hello)
@@ -152,9 +168,16 @@ const WORKER_APP_VERSION = "2.0.0-alpha.3";
         try { h.port.close(); } catch (_) { /* already closed */ }
         post({ type: "killHelper", helperId: h.id, reason: "modulesHash" });
       } else if (m.type === "itemResult") {
+        // F14: a result is taken only for the item this helper holds (same runId, batch and index); the late result of an
+        // item abandoned by a cancel (or of an older run) is dropped and frees the helper.
         const it = h.item;
-        h.item = null;
-        if (it && it.batchId === m.batchId && it.index === m.index) it.done(m);
+        if (!it || it.stale || it.runId !== m.runId || it.batchId !== m.batchId || it.index !== m.index) {
+          st.staleDropped++;
+          if (it && it.stale) { clearTimeout(it.timer); h.item = null; }
+        } else {
+          h.item = null;
+          it.done(m);
+        }
         if (st.batch) st.batch.pump();
       }
     }
@@ -172,6 +195,19 @@ const WORKER_APP_VERSION = "2.0.0-alpha.3";
     // ---- exec.map for generateAsync (F13): items dispatched largest cost first (LPT; dispatch order only), each admitted
     // by the batch's estBytes ledger (resident set + result on main + in-flight items ≤ budget; one item always runs),
     // to an admitted helper, else inline; results land by item index, the batch settles after every item.
+    // F14: the batch checks the cancel flag before every dispatch; a cancel aborts it at once (rejects with SBEngine.Canceled):
+    // inline items not yet run are skipped, helper items in flight are abandoned (stale: their late result is dropped)
+    // and a helper still busy with one after stuckMs is reported with killHelper {reason: "stuck"} and replaced by main.
+    function abandon(h) {
+      const it = h.item;
+      it.stale = true;
+      it.timer = setTimeout(() => {
+        if (st.helpers.get(h.id) !== h || h.item !== it) return;
+        st.stuckKilled++;
+        post({ type: "killHelper", helperId: h.id, reason: "stuck" });
+        helperDown(h.id);
+      }, st.stuckMs);
+    }
     const makeExec = (job, budget, mainBytes) => ({
       map: (kind, items, o) => new Promise((resolve, reject) => {
         const fn = E.TASKS[kind];
@@ -186,13 +222,22 @@ const WORKER_APP_VERSION = "2.0.0-alpha.3";
           E.checkTransfers(kind, o && o.transfer, owned.filter((x) => x && ArrayBuffer.isView(x)));
         } catch (e) { reject(e); return; }
         const n = items.length, out = new Array(n), errs = [], batchId = ++st.batchSeq;
+        if (canceled(job)) { reject(new E.Canceled()); return; }
         if (n === 0) { resolve(out); return; }
         const todo = E.lptOrder(o && o.cost, n), est = (i) => (o && o.estBytes && Number.isFinite(o.estBytes[i]) ? o.estBytes[i] : 0);
         st.lastOrder[kind] = todo.slice();
         const ledger = E.memoryLedger(budget, mainBytes + ((o && o.resident) || 0));
         let left = n;
-        const b = {};
+        const b = { closed: false };
+        b.abort = () => {
+          if (b.closed) return;
+          b.closed = true;
+          if (st.batch === b) st.batch = null;
+          for (const h of st.helpers.values()) if (h.item && !h.item.stale && h.item.batchId === batchId) abandon(h);
+          reject(new E.Canceled());
+        };
         const settle = (i, ok, v, phase) => {
+          if (b.closed) return;
           ledger.give(est(i));
           if (ok) out[i] = v; else errs.push(phase === undefined ? { index: i, error: v } : { index: i, error: v, phase });
           if (--left === 0) {
@@ -204,6 +249,8 @@ const WORKER_APP_VERSION = "2.0.0-alpha.3";
         const inline = (i) => {
           st.itemsInline++;
           yieldTask().then(() => {
+            if (b.closed) return;
+            if (canceled(job)) { b.abort(); return; }
             let v;
             try { v = fn.apply(null, items[i]); } catch (e) { settle(i, false, e); return; }
             settle(i, true, v);
@@ -214,19 +261,20 @@ const WORKER_APP_VERSION = "2.0.0-alpha.3";
           if (ledger.inFlight > st.maxInFlight) st.maxInFlight = ledger.inFlight;
         };
         b.pump = () => {
-          while (todo.length && ledger.admits(est(todo[0]))) {
-            const ready = [...st.helpers.values()].filter((h) => h.ok);
+          while (!b.closed && todo.length && ledger.admits(est(todo[0]))) {
+            if (canceled(job)) { b.abort(); return; }
+            const ready = [...st.helpers.values()].filter((h) => h.ok && !(h.item && h.item.stale));
             if (!ready.length) { const i = todo.shift(); take(i); inline(i); continue; }
             const h = ready.find((x) => !x.item);
             if (!h) return;   // every admitted helper is busy: resumed by the next itemResult
             const i = todo.shift();
             take(i);
-            h.item = { batchId, index: i,
+            h.item = { runId: job.runId, batchId, index: i,
               done: (m) => { if (m.ok) { st.itemsHelper++; st.kinds[kind] = (st.kinds[kind] || 0) + 1; settle(i, true, m.value); } else if (m.infra) inline(i); else settle(i, false, errIn(m.error), m.error.phase); },
               lost: () => inline(i) };
             // Arguments are cloned, not transferred: a lost helper's item re-runs inline on the coordinator's copy (F.3,
             // pool-infrastructure failures are never surfaced); the clone is counted in the item's estBytes.
-            try { h.port.postMessage({ type: "item", batchId, index: i, kind, args: items[i] }); } catch (e) { h.item = null; inline(i); }
+            try { h.port.postMessage({ type: "item", runId: job.runId, batchId, index: i, kind, args: items[i] }); } catch (e) { h.item = null; inline(i); }
           }
         };
         st.batch = b;
@@ -257,6 +305,7 @@ const WORKER_APP_VERSION = "2.0.0-alpha.3";
       const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
       let lastT = -Infinity, lastF = 0;
       const onProgress = (stage, frac) => {
+        job.stage = stage;   // F14: unthrottled, for stats
         const t = now();
         if (t - lastT < 100) return;   // ≤ 10 Hz
         lastT = t;
@@ -269,12 +318,13 @@ const WORKER_APP_VERSION = "2.0.0-alpha.3";
       const budget = Number.isFinite(m.budgetBytes) && m.budgetBytes > 0 ? m.budgetBytes : E.memoryBudget(nav.deviceMemory, m.deviceClass);
       const mainBytes = Number.isFinite(m.mainBytes) && m.mainBytes > 0 ? m.mainBytes : 0;
       st.budgetBytes = budget;
+      st.stuckMs = Number.isFinite(m.stuckMs) && m.stuckMs > 0 ? m.stuckMs : 300;
       job.cache = scratch;
       const bands = Math.max(1, [...st.helpers.values()].filter((h) => h.ok).length);
       st.bands = bands;
       let res;
       try {
-        res = await E.generateAsync(req, { exec: makeExec(job, budget, mainBytes), isCanceled: () => job.canceled, onProgress, cache: scratch, overlays: m.overlays !== false, bands });
+        res = await E.generateAsync(req, { exec: makeExec(job, budget, mainBytes), isCanceled: () => canceled(job), onProgress, cache: scratch, overlays: m.overlays !== false, bands });
       } catch (e) {   // a caller error (CACHE_QUALITY); generateAsync itself never rejects
         return fail((e && e.code) || "ENGINE_INTERNAL", (e && e.message) || String(e));
       }
@@ -287,7 +337,7 @@ const WORKER_APP_VERSION = "2.0.0-alpha.3";
     }
     function pump() {
       if (st.cur || !st.queue.length) return;
-      const m = st.queue.shift(), job = { runId: m.runId, canceled: false };
+      const m = st.queue.shift(), job = { runId: m.runId, canceled: false, stage: null };
       st.cur = job;
       runJob(m, job)
         .catch((e) => post({ type: "error", runId: m.runId, gen: m.gen, sampleHash: m.sampleHash, overlays: m.overlays, deviceClass: m.deviceClass,
@@ -303,13 +353,13 @@ const WORKER_APP_VERSION = "2.0.0-alpha.3";
           st.source = { sampleHash: d.sampleHash, pixels: d.pixels, alpha: d.alpha == null ? null : d.alpha, w: d.w, h: d.h, channels: d.channels };
           break;
         case "generate":
-          if (st.cur) st.cur.canceled = true;   // a new generate supersedes the current run and every queued one
+          if (st.cur) { st.cur.canceled = true; if (st.batch) st.batch.abort(); }   // a new generate supersedes the current run and every queued one
           for (const q of st.queue.splice(0)) post({ type: "canceled", runId: q.runId });
           st.queue.push(d);
           pump();
           break;
         case "cancel":
-          if (st.cur && st.cur.runId === d.runId) st.cur.canceled = true;
+          if (st.cur && st.cur.runId === d.runId) { st.cur.canceled = true; if (st.batch) st.batch.abort(); }
           else {
             const i = st.queue.findIndex((q) => q.runId === d.runId);
             if (i >= 0) { st.queue.splice(i, 1); post({ type: "canceled", runId: d.runId }); }
@@ -317,6 +367,9 @@ const WORKER_APP_VERSION = "2.0.0-alpha.3";
           break;
         case "ports":
           if (d.port) addHelper(d.helperId, d.port);
+          break;
+        case "cancelFlag":
+          st.flag = d.flag instanceof Int32Array && d.flag.length >= 2 ? d.flag : null;
           break;
         case "helperDown":
           helperDown(d.helperId);
@@ -327,7 +380,10 @@ const WORKER_APP_VERSION = "2.0.0-alpha.3";
             helpersAdmitted: [...st.helpers.values()].filter((h) => h.ok).map((h) => h.id), helpersRefused: st.refused.slice(),
             itemsInline: st.itemsInline, itemsHelper: st.itemsHelper, running: st.cur ? st.cur.runId : null, queued: st.queue.map((q) => q.runId),
             helperKinds: Object.assign({}, st.kinds), maxInFlight: st.maxInFlight, peakLedger: st.peakLedger, budgetBytes: st.budgetBytes, bands: st.bands,
-            lastOrder: Object.assign({}, st.lastOrder) });
+            lastOrder: Object.assign({}, st.lastOrder),
+            // F14
+            stage: st.cur ? st.cur.stage : null, sampleHash: s ? s.sampleHash : null, k1Key: c.k1 ? c.k1.key : null, k2Key: c.k2 ? c.k2.key : null,
+            staleDropped: st.staleDropped, stuckKilled: st.stuckKilled, sharedCancel: !!st.flag });
           break;
         }
         default:

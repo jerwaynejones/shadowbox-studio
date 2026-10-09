@@ -6884,9 +6884,13 @@ suite("worker.js/pool.js/diag.js — speed round F11 coordinator, SBPool, handsh
       pool.setSource(srcOf(fa));
       const a = pool.submit(reqOf(fa), { sampleHash: fa.project.source.sampleHash, gen: 2 });
       pool.setSource(srcOf(fb));
-      const xr = await x.done, ac = await codeOf(a.done);
-      check("F11 a setSource racing a queued generate never pairs it with the new pixels (SOURCE_MISMATCH); the superseded run is canceled",
-        xr.status === "canceled" && ac === "SOURCE_MISMATCH");
+      const xr = await x.done;
+      let ar = null, ac = null;
+      try { ar = await a.done; } catch (e) { ac = e instanceof Error ? e.code : "not-an-Error"; }
+      // F14: the cancel of x is immediate, so A may start before setSource(b) arrives — then it runs on its own source a
+      // (equal to a's golden); if it starts after, it is refused. Never on b's pixels.
+      check("F11 a setSource racing a queued generate never pairs it with the new pixels (SOURCE_MISMATCH, or a's own source); the superseded run is canceled",
+        xr.status === "canceled" && (ac === "SOURCE_MISMATCH" || (ac === null && ar.status === "done" && sameGold(fa, ar.response))));
       const inl = await pool.submit(reqOf(fb), { sampleHash: null, gen: 3, overlays: fb.overlays }).done;
       check("F11 a null sampleHash carries its pixels inline (never matched against the stored source)", sameGold(fb, inl.response));
       check("F11 the result echoes {runId, gen, sampleHash, overlays, deviceClass} and SBDiag.acceptResult accepts it for its own run only",
@@ -7326,6 +7330,271 @@ suite("engine/worker.js/pool.js — speed round F13 scheduling, memory gate and 
     const wsrc = text("worker.js");
     check("F13 worker.js: LPT dispatch, the estBytes ledger, transfer checks and result buffers transferred back",
       /E\.lptOrder\(/.test(wsrc) && /E\.memoryLedger\(/.test(wsrc) && /E\.checkTransfers\(/.test(wsrc) && /postMessage\(out, tr\)/.test(wsrc) && /budgetBytes/.test(text("pool.js")));
+  } finally {
+    for (const p of pools) p.terminate();
+  }
+});
+
+// ------------------------------------------------ speed round F14 (S1): cancellation (AT-15) and watchdog
+suite("engine/worker.js/pool.js — speed round F14 cancellation (AT-15) and watchdog (NFR-02, UI-06, F-D2)", async () => {
+  const E = SBEngine, R = SBRaster, Hh = SBHeight, Cn = SBConstruct, C = require("./pool_corpus.js"), Dq = C.deepEqualStrict, shim = require("./node_worker_shim.js");
+  const JS = path.join(__dirname, "..", "js"), text = (n) => fs.readFileSync(path.join(JS, n), "utf8");
+  const gold = JSON.parse(fs.readFileSync(path.join(__dirname, "golden", "pool-equality.json"), "utf8"));
+  const fields = ["status", "code", "geometryHash", "layerHashes", "diagSha", "cleanupSha", "supportSha", "guidesSha", "statsSha", "wholeSha"];
+  const sameGold = (fx, r) => { const d = C.digest(r), g = gold.fixtures[fx.id]; return !!g && fields.every((k) => JSON.stringify(d[k]) === JSON.stringify(g[k])); };
+  const APPV = (text("app.js").match(/const APP_VERSION = "([^"]+)"/) || [])[1];
+  const all = C.corpus().filter((fx) => !fx.slow), by = new Map(all.map((fx) => [fx.id, fx]));
+  const reqOf = (fx, project) => E.request(project || fx.project, fx.source, { quality: fx.quality, deviceClass: fx.deviceClass, requestId: fx.id, draftCapPx: fx.draftCapPx });
+  const bytesEq = (a, b) => !!a && !!b && a.length === b.length && Buffer.from(a.buffer, a.byteOffset, a.byteLength).equals(Buffer.from(b.buffer, b.byteOffset, b.byteLength));
+  const counter = () => { const f = () => { f.n++; }; f.n = 0; return f; };
+  const throwsCanceled = (fn) => { try { fn(); return false; } catch (e) { return typeof E.Canceled === "function" && e instanceof E.Canceled; } };
+  const cancelAfter = (n) => { let c = 0; return () => { if (++c > n) throw new E.Canceled(); }; };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const now = () => performance.now();
+
+  check("F14 SBEngine.Canceled is exported (what a canceled run throws; the coordinator rejects an aborted batch with it)", typeof E.Canceled === "function");
+  if (typeof E.Canceled !== "function") return;
+
+  // ---- 1. the long serial coordinator kernels poll the cancel flag every few rows; outputs unchanged
+  {
+    const w = 97, h = 300, L = new Float32Array(w * h).map((_, i) => (i * 7919) % 256), dom = new Uint8Array(w * h).map((_, i) => (i % 5 === 0 ? 0 : 1));
+    const c1 = counter(), c2 = counter();
+    const ok1 = bytesEq(R.kuwahara(L, w, h, 3, 2, null), R.kuwahara(L, w, h, 3, 2, null, c1)), ok2 = bytesEq(R.kuwahara(L, w, h, 3, 2, dom), R.kuwahara(L, w, h, 3, 2, dom, c2));
+    check(`F14 R.kuwahara(…, poll) polls every few rows (${c1.n}, ${c2.n} polls for 2 passes of ${h} rows) and its output is byte-identical`,
+      ok1 && ok2 && c1.n >= 2 * Math.floor(h / 64) && c2.n >= 2 * Math.floor(h / 64));
+    check("F14 R.kuwahara: a poll that throws Canceled stops the pass", throwsCanceled(() => R.kuwahara(L, w, h, 3, 2, dom, cancelAfter(2))));
+    const bands = E.bandRanges(h, 3, null), c3 = counter(), s0 = R.kuwaharaSeeds(L, w, h, bands, 3, dom), s1 = R.kuwaharaSeeds(L, w, h, bands, 3, dom, c3);
+    check(`F14 R.kuwaharaSeeds(…, poll) polls during the rolling SAT scan (${c3.n} polls) and its seed rows are byte-identical`,
+      c3.n >= Math.floor(bands[bands.length - 1][0] / 64) && c3.n >= 2 && s0.every((s, b) => s.s === s1[b].s && bytesEq(s.sat, s1[b].sat) && bytesEq(s.sat2, s1[b].sat2) && bytesEq(s.cnt, s1[b].cnt)));
+    check("F14 R.kuwaharaSeeds: a poll that throws Canceled stops the scan", throwsCanceled(() => R.kuwaharaSeeds(L, w, h, bands, 3, dom, cancelAfter(1))));
+    const N = 6, added = new Uint8Array(w * h).map((_, i) => (i * 31) % (N + 1)), c4 = counter();
+    const m0 = Hh.cumulativeMasks(added, dom, N, w, h), m1 = Hh.cumulativeMasks(added, dom, N, w, h, c4);
+    check(`F14 SBHeight.cumulativeMasks(…, poll) polls every few rows (${c4.n} polls) and its masks are byte-identical`,
+      m0.length === N && m1.length === N && m0.every((m, k) => bytesEq(m, m1[k])) && c4.n >= (N - 1) * Math.floor(h / 64));
+    check("F14 SBHeight.cumulativeMasks: a poll that throws Canceled stops it", throwsCanceled(() => Hh.cumulativeMasks(added, dom, N, w, h, cancelAfter(3))));
+    const gopts = { deviceClass: "desktop", simplify: "busy", minFeatureMM: 0.5, minPartMM2: 1, sxUm: 100, syUm: 100, quality: "draft", revision: 1 };
+    const c5 = counter(), g0 = Cn.complexityGate(m0, w, h, gopts), g1 = Cn.complexityGate(m0, w, h, Object.assign({ poll: c5 }, gopts));
+    check(`F14 SBConstruct.complexityGate(opts.poll) polls per layer in the simplification and the estimate (${c5.n} polls); result identical`,
+      c5.n >= 2 * N && JSON.stringify(g0.estimate) === JSON.stringify(g1.estimate) && JSON.stringify(g0.simplified) === JSON.stringify(g1.simplified) &&
+      g0.masks.every((m, k) => bytesEq(m, g1.masks[k])) && JSON.stringify(g0.diagnostics) === JSON.stringify(g1.diagnostics));
+    check("F14 SBConstruct.complexityGate: a poll that throws Canceled stops it", throwsCanceled(() => Cn.complexityGate(m0, w, h, Object.assign({}, gopts, { poll: cancelAfter(2) }))));
+  }
+
+  // ---- 2. the engine checks the flag at every step(), inside those kernels, and before every dispatch
+  {
+    const stageCalls = async (fx) => {
+      const per = {};
+      let stage = "begin";
+      const r = E.generate(reqOf(fx), { isCanceled: () => { per[stage] = (per[stage] || 0) + 1; return false; }, onProgress: (s) => { stage = s; } });
+      return { r, per };
+    };
+    const t = await stageCalls(by.get("n3-draft")), hb = await stageCalls(by.get("h-bonded-draft"));
+    check(`F14 the sync driver polls inside interpret (Kuwahara), masks and the complexity gate (calls per stage ${JSON.stringify(t.per)}) and the response equals the golden`,
+      sameGold(by.get("n3-draft"), t.r) && sameGold(by.get("h-bonded-draft"), hb.r) && t.per.interpret > 2 && t.per.masks > 2 && t.per.complexity > 2 && hb.per.masks > 2);
+    const fx = by.get("h-bonded-draft"), req = reqOf(fx), inl = (kind, items) => items.map((a) => E.TASKS[kind].apply(null, a));
+    const kinds = [];
+    await E.generateAsync(req, { exec: { map: async (kind, items) => { kinds.push(kind); return inl(kind, items); } } });
+    const wrong = [];
+    for (let j = 1; j <= kinds.length; j++) {
+      let maps = 0;
+      const r = await E.generateAsync(req, { exec: { map: async (kind, items) => { maps++; return inl(kind, items); } }, isCanceled: () => maps >= j });
+      if (r.status !== "canceled" || maps !== j) wrong.push(j + ": " + r.status + " after " + maps + " dispatches");
+    }
+    check(`F14 generateAsync checks the cancel flag before every dispatch (${kinds.length} yields; canceled after the j-th batch, never dispatching the next)` +
+      (wrong.length ? " — " + wrong.join("; ") : ""), kinds.length >= 6 && wrong.length === 0);
+    const rej = await E.generateAsync(req, { exec: { map: async () => { throw new E.Canceled(); } } });
+    check("F14 an exec.map that rejects with SBEngine.Canceled (an aborted batch) settles the run as canceled", rej.status === "canceled");
+  }
+
+  // ---- 3. the pool: cooperative cancel, stale results, watchdog, respawn, resubmission
+  vm.runInThisContext(text("pool.js"), { filename: "pool.js" });
+  const wsrc = text("worker.js"), psrc = text("pool.js");
+  check("F14 pool.js: a main-thread watchdog (300 ms default) terminates a coordinator that does not answer a cancel; warm spares; health()",
+    /watchdogMs/.test(psrc) && /\b300\b/.test(psrc) && /spare/i.test(psrc) && /pool\.health = /.test(psrc));
+  check("F14 worker.js: items and itemResults carry the runId; stale helper results are dropped; stuck helpers are reported with killHelper",
+    /type: "item", runId/.test(wsrc) && /staleDropped/.test(wsrc) && /reason: "stuck"/.test(wsrc) && /Atomics\.load/.test(wsrc));
+  const pools = [];
+  const mk = (o) => {
+    o = o || {};
+    const spawned = [];
+    const pool = SBPool.create(Object.assign({
+      appVersion: APPV, helpers: 2, helloTimeoutMs: 20000,
+      loadText: async (n) => (o.patch ? o.patch(n, text(n)) : text(n)),   // a consistent deploy: the page reads the texts the workers run
+      spawn: (name) => {
+        const p = o.patchFor ? o.patchFor(name, spawned.filter((x) => x.name === name).length) : o.patch || null;
+        const w = shim.spawn(path.join(JS, "worker.js"), { name, patch: p });
+        spawned.push(w);
+        return w;
+      },
+    }, o.opts || {}));
+    pool.spawned = spawned;
+    pools.push(pool);
+    return pool;
+  };
+  const srcOf = (fx) => Object.assign({ sampleHash: fx.project.source.sampleHash }, fx.source);
+  const submitFx = (pool, fx, extra, project) => {
+    pool.setSource(srcOf(fx));
+    return pool.submit(reqOf(fx, project), Object.assign({ sampleHash: fx.project.source.sampleHash, gen: 1, overlays: fx.overlays }, extra || {}));
+  };
+  const admitted = async (p, n) => { await p.helpersReady; for (let i = 0; i < 300; i++) { const s = await p.stats(); if (s && s.helpersAdmitted.length >= n) return true; await sleep(10); } return false; };
+  const until = async (fn, ms) => { const t0 = now(); while (now() - t0 < ms) { if (await fn()) return true; await sleep(5); } return false; };
+  const inStage = (pool, runId, stage) => until(async () => { const s = await pool.stats(); return !!s && s.running === runId && s.stage === stage; }, 5000);
+  const started = (extra) => { let go; const p = new Promise((r) => { go = r; }); return [p, Object.assign({ onStart: () => go() }, extra || {})]; };
+  const activeOf = (h, gen, fx, overlays) => ({ runId: h.runId, gen, sampleHash: fx.project.source.sampleHash, overlays: overlays === undefined ? fx.overlays : overlays, deviceClass: fx.deviceClass });
+  // helpers (only) sleep in construct layer 1 when the raster is cond (test-only patch, applied to every spawn and the page texts)
+  const slowHelper = (ms, cond) => new Function("n", "t", "return n === \"construct.js\" ? t.replace(\"C.constructLayer = function (k, a) {\", " +
+    JSON.stringify("C.constructLayer = function (k, a) { if (k === 1 && (" + cond + ") && typeof self !== \"undefined\" && /^sb-helper/.test(String(self.name))) " +
+      "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, " + ms + ");") + ") : t;");
+  const sync = new Map();
+  const syncOf = (fx, project) => { const k = fx.id + (project ? "*" : ""); if (!sync.has(k)) sync.set(k, E.generate(reqOf(fx, project))); return sync.get(k); };
+  try {
+    // 3a. cooperative cancel, K1/K2 untouched, stale helper results dropped, supersede, overlay toggle / double submit, cancel during export
+    {
+      const pool = mk({ patch: slowHelper(250, "true") }), fx = by.get("n3-draft"), fab = by.get("n3-fabrication");
+      const up = (await pool.ready) && (await admitted(pool, 2));
+      check("F14 the slow-helper pool is up with 2 helpers", up);
+      if (up) {
+        const d0 = await submitFx(pool, fx).done, st0 = await pool.stats();
+        check("F14 a completed draft commits K1/K2 in the coordinator (stats name both keys)", d0.status === "done" && sameGold(fx, d0.response) && !!st0.k1Key && !!st0.k2Key);
+        const pA = JSON.parse(JSON.stringify(fx.project));
+        pA.interpretation.smoothing.radiusMM = 2.4;   // a K2 edit: K1 hits, K2 is recomputed in the run's scratch slots
+        const a = submitFx(pool, fx, { gen: 2 }, pA);
+        const reached = await inStage(pool, a.runId, "construct");
+        const t0 = now();
+        pool.cancel(a.runId);
+        const ra = await a.done, dt = now() - t0, st1 = await pool.stats();
+        check(`AT-15 F14 a cooperative cancel answers canceled in ${dt.toFixed(0)} ms (< 300 ms, no watchdog) without waiting for the busy helper`,
+          reached && ra.status === "canceled" && ra.response === null && dt < 300 && pool.health().watchdogKills === 0);
+        check("AT-15 F14 a canceled run leaves K1/K2 unchanged (its scratch K2 is never committed)", st1.k1Key === st0.k1Key && st1.k2Key === st0.k2Key && st1.k2Bytes === st0.k2Bytes);
+        await sleep(400);
+        const st2 = await pool.stats();
+        check(`F14 the abandoned helper item's late result (old runId) is dropped (${st2.staleDropped} dropped) and the helper is free again`,
+          st2.staleDropped >= 1 && st2.helpersAdmitted.length === 2 && st2.stuckKilled === 0);
+        // supersede: a draft in flight, the next draft submitted — the coordinator waits for canceled, then runs it on the cache
+        const a2 = submitFx(pool, fx, { gen: 3 }, pA);
+        const reached2 = await inStage(pool, a2.runId, "construct");
+        const seen = [], b = submitFx(pool, fx, { gen: 4, onProgress: (p) => seen.push(p.stage) });
+        const ra2 = await a2.done, rb = await b.done;
+        check("AT-15 F14 a superseded draft returns canceled and the next draft reports resample-cached and equals the sync response",
+          reached2 && ra2.status === "canceled" && rb.status === "done" && seen[0] === "resample-cached" && Dq(rb.response, syncOf(fx)));
+        check("AT-15 stale response discarded: SBDiag.acceptResult drops the superseded run for the active one",
+          SBDiag.acceptResult(activeOf(b, 4, fx), rb) && !SBDiag.acceptResult(activeOf(b, 4, fx), Object.assign({}, ra2, { gen: 4 })));
+        // overlay toggle and a same-revision double submit: only the last run is ever shown
+        const x = submitFx(pool, fx, { gen: 5, overlays: true }), y = submitFx(pool, fx, { gen: 5, overlays: false }), z = submitFx(pool, fx, { gen: 5, overlays: true });
+        const [rx, ry, rz] = [await x.done, await y.done, await z.done], act = activeOf(z, 5, fx, true);
+        check("AT-15 F14 overlay toggle and a same-revision double submit never show the older run (both canceled, acceptResult false; the last equals sync)",
+          rx.status === "canceled" && ry.status === "canceled" && !SBDiag.acceptResult(act, rx) && !SBDiag.acceptResult(act, ry) &&
+          SBDiag.acceptResult(act, rz) && rz.status === "done" && Dq(rz.response, syncOf(fx)));
+        // cancel during export: the fabrication run is canceled; source, K1/K2 and the last draft revision are kept
+        const st3 = await pool.stats(), f = submitFx(pool, fab, { gen: 6 });
+        const reachedF = await inStage(pool, f.runId, "construct");
+        pool.cancel(f.runId);
+        const rf = await f.done, st4 = await pool.stats();
+        const seen2 = [], d1 = await submitFx(pool, fx, { gen: 7, onProgress: (p) => seen2.push(p.stage) }).done;
+        check("AT-15 cancel during export keeps last revision and source (fabrication canceled; stored source and K1/K2 unchanged; the draft is served from the cache)",
+          reachedF && rf.status === "canceled" && st4.sampleHash === st3.sampleHash && st4.sourceBytes === st3.sourceBytes && st4.k1Key === st3.k1Key && st4.k2Key === st3.k2Key &&
+          d1.status === "done" && seen2[0] === "resample-cached" && Dq(d1.response, d0.response));
+      }
+      pool.terminate();
+    }
+
+    // 3b. a stuck helper: reported with killHelper after the stuck timeout, replaced from the warm spare (new hello + modulesHash)
+    {
+      const fx = by.get("n3-draft"), next = by.get("t-light-draft");
+      const W = E.rasterPlan(fx.project, { w: fx.source.w, h: fx.source.h }, fx.quality, fx.deviceClass, fx.draftCapPx).geometry.rasterW;
+      const Wn = E.rasterPlan(next.project, { w: next.source.w, h: next.source.h }, next.quality, next.deviceClass, next.draftCapPx).geometry.rasterW;
+      const pool = mk({ patch: slowHelper(4000, "a.W === " + W) });
+      const up = (await pool.ready) && (await admitted(pool, 2)) && (await until(async () => pool.health().spareHelperReady, 5000));
+      const a = submitFx(pool, fx), reached = up && (await inStage(pool, a.runId, "construct"));
+      const t0 = now();
+      pool.cancel(a.runId);
+      const ra = await a.done, dt = now() - t0;
+      const replaced = await until(async () => { const s = await pool.stats(); return s.stuckKilled >= 1 && s.helpersAdmitted.length === 2; }, 3000);
+      const st = await pool.stats(), hl = pool.health();
+      const r2 = await submitFx(pool, next, { gen: 2 }).done;
+      check(`F14 a helper stuck in an item is reported with killHelper (stuck) and replaced from the warm spare; cancel answered in ${dt.toFixed(0)} ms`,
+        W !== Wn && reached && ra.status === "canceled" && dt < 300 && replaced && st.stuckKilled === 1 && hl.spareHelperUsed >= 1 && hl.watchdogKills === 0 &&
+        pool.spawned.some((w) => /^sb-helper/.test(w.name) && w.terminated));
+      check("F14 after the replacement the next draft equals the sync response (the spare said hello with the same modulesHash and is admitted)",
+        r2.status === "done" && sameGold(next, r2.response) && Dq(r2.response, syncOf(next)) && st.helpersRefused.length === 0);
+      pool.terminate();
+    }
+
+    // 3c. a stuck coordinator: the watchdog terminates it 300 ms after the cancel and the pool respawns in < 500 ms (cold)
+    {
+      const stuck = (n, t) => (n === "worker.js" ? t.replace('post({ type: "ack", runId: m.runId });', 'post({ type: "ack", runId: m.runId }); if (m.gen === "stuck") for (;;) {}') : t);
+      const pool = mk({ patch: stuck }), fx = by.get("t-light-draft");
+      const up = (await pool.ready) && (await admitted(pool, 2)) && (await until(async () => pool.health().spareCoordReady, 5000));
+      const d0 = up ? await submitFx(pool, fx).done : null;
+      const helpers0 = pool.spawned.filter((w) => /^sb-helper/.test(w.name) && !w.terminated).length;
+      const [go, so] = started({ gen: "stuck" });
+      const s = submitFx(pool, fx, so);
+      await go;
+      const t0 = now();
+      pool.cancel(s.runId);
+      const rs = await s.done, dt = now() - t0;
+      await pool.ready;
+      const hl = pool.health(), seen = [];
+      const r2 = await submitFx(pool, fx, { gen: 2, onProgress: (p) => seen.push(p.stage) }).done, st = await pool.stats();
+      check(`NFR-02 F14 a stuck coordinator is terminated by the watchdog ${dt.toFixed(0)} ms after the cancel (300 ms) and the run settles canceled (≤ 500 ms)`,
+        !!d0 && d0.status === "done" && rs.status === "canceled" && rs.watchdog === true && dt >= 295 && dt < 500 && hl.watchdogKills === 1 &&
+        pool.spawned.filter((w) => w.name === "sb-coord" && w.terminated).length === 1);
+      check(`NFR-02 F14 the coordinator is respawned in ${hl.lastRespawnMs && hl.lastRespawnMs.toFixed(0)} ms (< 500 ms: warm spare, source re-posted, ports re-brokered to the same helpers)`,
+        Number.isFinite(hl.lastRespawnMs) && hl.lastRespawnMs < 500 && hl.spareCoordUsed === 1 && st.helpersAdmitted.length === 2 &&
+        pool.spawned.filter((w) => /^sb-helper/.test(w.name) && !w.terminated).length === helpers0);
+      check("F14 the next draft after a terminate is correct and cold (orient, not resample-cached)", r2.status === "done" && seen[0] === "orient" && Dq(r2.response, syncOf(fx)));
+      // superseding a stuck run: the next run is resubmitted to the respawned coordinator and never shown as an error
+      const s2 = submitFx(pool, fx, { gen: "stuck" });
+      await sleep(30);
+      const t1 = now(), nx = submitFx(pool, fx, { gen: 3 });
+      const rs2 = await s2.done, rn = await nx.done, dt2 = now() - t1;
+      check(`F14 a stuck run superseded by the next draft: canceled by the watchdog, the next draft resubmitted and correct (${dt2.toFixed(0)} ms)`,
+        rs2.status === "canceled" && rn.status === "done" && Dq(rn.response, syncOf(fx)) && pool.health().watchdogKills === 2 && pool.health().resubmits >= 1);
+      pool.terminate();
+    }
+
+    // 3d. the shared cancel flag stops a coordinator inside a long serial kernel (it cannot read messages there)
+    {
+      const spin = (n, t) => (n === "height.js" ? t.replace("Hh.cumulativeMasks = function (added, domain, N, w, h, poll) {",
+        "Hh.cumulativeMasks = function (added, domain, N, w, h, poll) { if (N === 12 && poll && typeof self !== \"undefined\" && self.name === \"sb-coord\" && !globalThis.__spun) { globalThis.__spun = 1; for (;;) poll(); }") : t);
+      const pool = mk({ patch: spin, opts: { spares: false } }), fx = by.get("n12-draft");
+      const up = (await pool.ready) && (await admitted(pool, 2));
+      const [go, so] = started();
+      const s = up ? submitFx(pool, fx, so) : null;
+      if (s) {
+        await go;
+        await sleep(150);
+        const t0 = now();
+        pool.cancel(s.runId);
+        const rs = await s.done, dt = now() - t0, r2 = await submitFx(pool, fx, { gen: 2 }).done;
+        check(`F14 a coordinator inside cumulativeMasks sees the shared cancel flag (poll every few rows) and answers canceled in ${dt.toFixed(0)} ms without the watchdog`,
+          pool.health().sharedCancel === true && rs.status === "canceled" && !rs.watchdog && dt < 300 && pool.health().watchdogKills === 0 &&
+          pool.spawned.filter((w) => w.name === "sb-coord").length === 1 && r2.status === "done" && sameGold(fx, r2.response));
+      } else check("F14 the spin pool is up", false);
+      pool.terminate();
+    }
+
+    // 3e. the coordinator killed at each yield index: the run is resubmitted (never an error) and equals the sync response
+    {
+      const fx = by.get("h-bonded-draft"), req = reqOf(fx), kinds = [];
+      await E.generateAsync(req, { exec: { map: async (kind, items) => { kinds.push(kind); return items.map((a) => E.TASKS[kind].apply(null, a)); } } });
+      const kill = (i) => "function (n, t) { return n === \"worker.js\" ? t.replace(\"const fn = E.TASKS[kind];\", " +
+        JSON.stringify("if ((globalThis.__y = (globalThis.__y || 0) + 1) === " + i + ") process.exit(3); const fn = E.TASKS[kind];") + ") : t; }";
+      const bad = [];
+      const one = async (i) => {
+        const pool = mk({ patchFor: (name, n) => (name === "sb-coord" && n === 0 ? kill(i) : null), opts: { helpers: 1 } });
+        try {
+          if (!(await pool.ready)) { bad.push(i + ": not up"); return; }
+          let r;
+          try { r = await submitFx(pool, fx).done; } catch (e) { bad.push(i + ": rejected " + e.code); return; }
+          const hl = pool.health();
+          if (r.status !== "done" || !sameGold(fx, r.response) || !Dq(r.response, syncOf(fx)) || hl.resubmits !== 1 || hl.crashes !== 1) bad.push(i + ": " + r.status + " " + JSON.stringify(hl));
+        } finally { pool.terminate(); }
+      };
+      for (let i = 1; i <= kinds.length; i += 4) await Promise.all([i, i + 1, i + 2, i + 3].filter((j) => j <= kinds.length).map(one));
+      check(`F14 the coordinator killed at each of the ${kinds.length} yield indices: the run is resubmitted (never shown as an error) and equals the sync digest` +
+        (bad.length ? " — " + bad.join("; ") : ""), kinds.length >= 6 && bad.length === 0);
+    }
   } finally {
     for (const p of pools) p.terminate();
   }

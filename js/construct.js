@@ -27,7 +27,7 @@
  *   cullEnabled  bonded only: run removeSpecks (connected always runs it, as v1.1.0 did).
  *
  * G2.7b — complexity caps and busy-art simplification (SRS §12.3, NFR-03/04/05, PO-LASER-9):
- *   estimateComplexity(masks, w, h)  → {partsPerLayer[], maxPartsPerLayer}: 4-connected components per layer
+ *   estimateComplexity(masks, w, h, poll?)  → {partsPerLayer[], maxPartsPerLayer}: 4-connected components per layer
  *                               (nonzero = material), equal to the SBMaterial.fromMasks part count (frame and holes
  *                               aside). Run-length union-find, O(w·h) time and O(runs) memory; runs before trace.
  *   simplifyBusy(masks, w, h, {minFeatureMM, minPartMM2, sxUm, syUm})
@@ -39,8 +39,10 @@
  *                               nested stack stays nested (D-4.5). Layer 0 (the base) is copied unchanged. Draft and
  *                               fabrication apply the same rule at their own pitch (LYR-06). Input not mutated.
  *   complexityGate(masks, w, h, {deviceClass, simplify: "off"|"busy", minFeatureMM, minPartMM2, sxUm, syUm,
- *                  quality, revision})
+ *                  quality, revision, poll?})
  *                               → {status: "ok"|"error", masks|null, estimate, simplified|null, diagnostics}.
+ *                               poll (speed round F14): called per layer in simplifyBusy and the estimate; it throws to
+ *                               cancel the run (the coordinator's cancel flag) and never changes a result.
  *                               simplify "busy" runs simplifyBusy first and reports BUSY_SIMPLIFIED (info) with the
  *                               before/after part counts per layer; then the parts cap of SBSchema.limits(deviceClass)
  *                               is checked: any layer over maxPartsPerLayer gives COMPLEXITY_LIMIT (blocking; measured,
@@ -187,9 +189,9 @@
    */
   const runComponents = (mask, w, h) => global.SBMorph.runComponents(mask, w, h, 1);
 
-  C.estimateComplexity = function (masks, w, h) {
+  C.estimateComplexity = function (masks, w, h, poll) {
     checkMasks(masks, w, h);
-    const partsPerLayer = masks.map((m) => runComponents(m, w, h).count);
+    const partsPerLayer = masks.map((m) => { if (poll) poll(); return runComponents(m, w, h).count; });
     return { partsPerLayer, maxPartsPerLayer: Math.max(...partsPerLayer) };
   };
 
@@ -256,7 +258,9 @@
     checkMasks(masks, w, h);
     const { closeR, minPartUm2, pxUm2 } = simplifyParams(opts);
     const before = [], after = [];
+    const poll = typeof opts.poll === "function" ? opts.poll : null;   // speed round F14: cancel check per layer
     const out = masks.map((mask, k) => {
+      if (poll) poll();
       const n0 = runComponents(mask, w, h).count;
       before.push(n0);
       if (k === 0) { after.push(n0); return mask.slice(); }
@@ -291,7 +295,7 @@
       diagnostics.push(global.SBDiag.make("BUSY_SIMPLIFIED", Object.assign({}, base, { counts: { before: s.before, after: s.after },
         detail: changed + " layer(s) changed; parts per layer " + s.before.join("/") + " → " + s.after.join("/") })));
     }
-    const estimate = C.estimateComplexity(cur, w, h);
+    const estimate = C.estimateComplexity(cur, w, h, typeof opts.poll === "function" ? opts.poll : null);
     estimate.partsPerLayer.forEach((n, k) => {
       if (n > lim.maxPartsPerLayer) diagnostics.push(global.SBDiag.make("COMPLEXITY_LIMIT", Object.assign({}, base, { layer: k, deviceClass: lim.deviceClass,
         measured: { value: n, unit: "parts" }, limit: { value: lim.maxPartsPerLayer, unit: "parts" },

@@ -496,6 +496,7 @@
   }
 
   class Canceled extends Error {}
+  E.Canceled = Canceled;   // speed round F14: what a canceled run throws (the coordinator rejects an aborted batch with it)
   const codedError = (e) => ({ code: (e && e.code) || "ENGINE_INTERNAL", message: (e && e.message) || String(e) });
 
   // ------------------------------------------------ speed round F9 (S1): kernels, batches and the drivers
@@ -731,7 +732,9 @@
     }
     // speed round F13: row bands of the raster kernels (output-neutral). bands is the driver's choice (default 1: the
     // serial whole-image kernels); bandRows is a test-only override (forces many bands, also in the sync driver).
-    const par = { bands: isPosInt(opts.bands) ? opts.bands : 1, bandRows: null };
+    // F14: poll() is the cancel check of the long serial kernels (masks, Kuwahara / SAT scan, complexity gate): called
+    // every few rows, it throws Canceled; outputs never depend on it.
+    const par = { bands: isPosInt(opts.bands) ? opts.bands : 1, bandRows: null, poll: () => { if (isCanceled()) throw new Canceled(); } };
     if (opts.bandRows !== undefined && opts.bandRows !== null) {
       if (!E.TEST_HOOKS || !isPosInt(opts.bandRows)) return { res: fail("ENGINE_DEBUG_DISABLED", "opts.bandRows is a test-only hook (a positive integer)") };
       par.bandRows = opts.bandRows;
@@ -743,7 +746,7 @@
       if (cache.quality === undefined) cache.quality = req.quality;
       if (cache.quality !== req.quality) throw efail("CACHE_QUALITY", "a " + cache.quality + " stage cache cannot feed a " + req.quality + " request");
     }
-    return { head, step, fail, cache, overlays: opts.overlays !== false, hook, par };
+    return { head, step, fail, cache, overlays: opts.overlays !== false, hook, par, isCanceled };
   }
   const settled = (head, e) => (e instanceof Canceled ? Object.assign({}, head, { status: "canceled" }) : Object.assign({}, head, { status: "error", error: codedError(e), diagnostics: [] }));
 
@@ -785,6 +788,9 @@
    * the raster kernels (fabrication resample, Kuwahara per pass) into that many row bands (resampleRows /
    * kuwaharaRows batches); opts.bandRows (test-only, SBEngine.TEST_HOOKS; also accepted by E.generate) forces bands of
    * that many rows. Bands are output-neutral: concatenated bands are byte-equal to the whole-image kernels.
+   * Speed round F14: opts.isCanceled is checked at every step(), before every dispatch, and every few rows inside the long
+   * serial kernels (cumulativeMasks, the Kuwahara pass / seed scan, complexityGate; their poll argument) — in both drivers;
+   * an exec.map that rejects with SBEngine.Canceled (an aborted batch) settles the run as canceled.
    */
   E.generateAsync = async function (req, opts) {
     opts = opts || {};
@@ -799,6 +805,7 @@
         const bt = r.value;
         let out, err, bad = false;
         try {
+          if (b.isCanceled()) throw new Canceled();   // F14: the cancel flag is checked before every dispatch
           if (exec) {
             E.checkTransfers(bt.kind, bt.transfer, ownedArrays(req, b.cache));
             out = await exec.map(bt.kind, bt.items, { transfer: bt.transfer, cost: bt.cost, estBytes: bt.estBytes, resident: bt.resident });
@@ -840,7 +847,8 @@
    * before the domain) and kuwaharaRows (tonal, per band, once per pass).
    */
   function* runSteps(req, head, step, fail, cache, overlays, par) {
-    par = par || { bands: 1, bandRows: null };
+    par = par || { bands: 1, bandRows: null, poll: null };
+    const poll = par.poll || null;
     // F13: a batch also carries per-item LPT costs, per-item estBytes and the coordinator's resident bytes at this
     // point (the estBytes ledger, F.3); none of them reaches a fold.
     const batch = (kind, items, transfer, cost, estBytes, resident) => ({ kind, items, transfer: transfer || null, cost: cost || null,
@@ -937,7 +945,7 @@
           // seed s = max(0, y0 − r); the item gets that seed plus .slice() copies of source (and domain) rows [s, e),
           // e = min(H, y1 + r), and rebuilds SAT rows s+1 … e exactly as the whole-image pass (SAT rows [s, e + 1)).
           for (let pass = 0; pass < passes; pass++) {
-            const seeds = R.kuwaharaSeeds(L, W, H, kb, rPx, domain), items = [], tr = [], cost = [], est = [];
+            const seeds = R.kuwaharaSeeds(L, W, H, kb, rPx, domain, poll), items = [], tr = [], cost = [], est = [];
             kb.forEach(([y0, y1], b) => {
               const sd = seeds[b], s0 = Math.max(0, y0 - rPx), e = Math.min(H, y1 + rPx);
               if (sd.s !== s0 || sd.sat.length !== W + 1) throw efail("ENGINE_INTERNAL", "Kuwahara band " + b + " seed row " + sd.s + " != " + s0);
@@ -952,7 +960,7 @@
             kb.forEach(([y0], b) => out.set(res[b], y0 * W));
             L = out;
           }
-        } else L = R.kuwahara(L, W, H, rPx, passes, domain);
+        } else L = R.kuwahara(L, W, H, rPx, passes, domain, poll);
         if (useCache) cache.k2 = { key: k2, L };
       }
       const th = R.thresholds(L, N, interp.thresholdRule, { manual: interp.manual, domain });
@@ -962,7 +970,7 @@
 
     // 5. cumulative masks
     step("masks", 0.2);
-    const masks = Hh.cumulativeMasks(added, domain, N, W, H);
+    const masks = Hh.cumulativeMasks(added, domain, N, W, H, poll);
     // F13 LPT cost per layer: its mask's pixel count (one histogram pass over added; layer 0, the base, is a copy)
     const hist = new Float64Array(Math.max(N, 1) + 1);
     for (let i = 0; i < added.length; i++) if (!domain || domain[i]) hist[Math.min(added[i], N)]++;
@@ -1010,7 +1018,7 @@
     // 11a. complexity: parts cap (with explicit busy simplification) before trace
     step("complexity", 0.3);
     const gate = C.complexityGate(built.final, W, H, { deviceClass, simplify: con.cleanup.simplify, minFeatureMM: mat.minFeatureMM, minPartMM2: mat.minPartMM2,
-      sxUm: geo.sxUm, syUm: geo.syUm, quality, revision });
+      sxUm: geo.sxUm, syUm: geo.syUm, quality, revision, poll });
     diagnostics.push(...gate.diagnostics);
     if (gate.status !== "ok") return fail("COMPLEXITY_LIMIT", "parts per layer exceed the " + deviceClass + " cap; no layers are returned", diagnostics);
 

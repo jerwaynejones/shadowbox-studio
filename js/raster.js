@@ -46,12 +46,15 @@
    * @param {number} r          window radius in px (>=1)
    * @param {number} passes     number of applications (2 = stronger cartoon)
    */
-  R.kuwahara = function (src, w, h, r, passes = 1, domain = null) {
+  R.kuwahara = function (src, w, h, r, passes = 1, domain = null, poll = null) {
     if (r < 1 || passes < 1) return src.slice();
     let cur = src;
-    for (let p = 0; p < passes; p++) cur = domain ? kuwaharaDomainOnce(cur, w, h, r, domain) : kuwaharaOnce(cur, w, h, r);
+    for (let p = 0; p < passes; p++) cur = domain ? kuwaharaDomainOnce(cur, w, h, r, domain, poll) : kuwaharaOnce(cur, w, h, r, poll);
     return cur;
   };
+  // Speed round F14 (S1): the optional poll() of the coordinator's serial passes (R.kuwahara, R.kuwaharaSeeds) runs every
+  // POLL_ROWS rows and throws to cancel the run; it never changes an output.
+  const POLL_ROWS = 64;
 
   // G2.4 (IMG-04): the domain-aware variant. Window statistics use only
   // in-domain samples (count table instead of the window area); out-of-domain
@@ -62,12 +65,12 @@
   // Speed round F6 (plan Appendix F, S5/S2): both passes are one band [0, h)
   // of the band kernel with the all-zero seed (SAT row 0). Outputs are
   // byte-identical to alpha.3 (test/oracle_kernels.js oracleKuwahara).
-  function kuwaharaDomainOnce(src, w, h, r, domain) {
-    return kuwaharaBand(src, w, h, r, zeroSeed(w, true), 0, h, domain);
+  function kuwaharaDomainOnce(src, w, h, r, domain, poll) {
+    return kuwaharaBand(src, w, h, r, zeroSeed(w, true), 0, h, domain, poll);
   }
 
-  function kuwaharaOnce(src, w, h, r) {
-    return kuwaharaBand(src, w, h, r, zeroSeed(w, false), 0, h, null);
+  function kuwaharaOnce(src, w, h, r, poll) {
+    return kuwaharaBand(src, w, h, r, zeroSeed(w, false), 0, h, null, poll);
   }
 
   function zeroSeed(w, withCnt) {
@@ -94,7 +97,7 @@
    * @returns {Array<{s, sat: Float64Array, sat2: Float64Array, cnt?: Float64Array}>} one per band, in band order;
    *   every row owns its buffer (transferable).
    */
-  R.kuwaharaSeeds = function (src, w, h, bands, r, domain) {
+  R.kuwaharaSeeds = function (src, w, h, bands, r, domain, poll) {
     if (!isNonNegInt(w) || !isNonNegInt(h) || !src || src.length < w * h) throw kfail("kuwaharaSeeds needs w·h source values");
     if (!(r >= 1)) throw kfail("kuwaharaSeeds needs r ≥ 1");
     if (!Array.isArray(bands)) throw kfail("kuwaharaSeeds needs an array of [y0, y1) bands");
@@ -121,6 +124,7 @@
     take(0);
     const last = ss.length ? Math.max(...ss) : 0;
     for (let y = 0; y < last; y++) {
+      if (poll && y % POLL_ROWS === 0) poll();
       let row = 0, row2 = 0, rowN = 0;
       const o = y * w;
       if (dom) {
@@ -176,13 +180,14 @@
   // unchanged. The interior block (r ≤ x < w − r, r ≤ y < h − r, integer r)
   // needs no clamps and, without a domain, has the constant area n = (r+1)²,
   // the same integer value the clamped path computes there.
-  function kuwaharaBand(src, w, h, r, seed, y0, y1, domain) {
+  function kuwaharaBand(src, w, h, r, seed, y0, y1, domain, poll) {
     const W = w + 1, s = Math.max(0, y0 - r), e = Math.min(h, y1 + r), rows = e - s;
     const sat = new Float64Array(W * (rows + 1)), sat2 = new Float64Array(W * (rows + 1));
     const cnt = domain ? new Float64Array(W * (rows + 1)) : null;
     sat.set(seed.sat); sat2.set(seed.sat2);
     if (domain) cnt.set(seed.cnt);
     for (let y = 0; y < rows; y++) {
+      if (poll && y % POLL_ROWS === 0) poll();
       let row = 0, row2 = 0, rowN = 0;
       const o = y * w;
       if (domain) {
@@ -234,6 +239,7 @@
     };
 
     for (let y = y0; y < y1; y++) {
+      if (poll && (y - y0) % POLL_ROWS === 0) poll();
       const oo = (y - y0) * w;
       if (y < ya || y >= yb) { for (let x = 0; x < w; x++) out[oo + x] = clamped(x, y); continue; }
       for (let x = 0; x < xa; x++) out[oo + x] = clamped(x, y);

@@ -4488,7 +4488,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *   SBHeight.addedFromSamples(samples, N, polarity) -> Uint8Array
  *                             polarity "white-high" | "black-high"; the exact
  *                             integer form of addedFromNorm(s/255, N)
- *   SBHeight.cumulativeMasks(added, domain, N, w, h) -> Uint8Array[N]
+ *   SBHeight.cumulativeMasks(added, domain, N, w, h, poll?) -> Uint8Array[N]  (poll: F14 cancel check every 64 rows)
  *                             [0] all ones (base B); [k] = domain ∧ added ≥ k
  *                             (domain null = whole image). Masks nest by
  *                             construction; identical masks are kept (D-4.7).
@@ -4534,15 +4534,20 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     return out;
   };
 
-  Hh.cumulativeMasks = function (added, domain, N, w, h) {
+  // Speed round F14 (S1): poll (optional) is called every POLL_ROWS rows (it throws to cancel); output unchanged.
+  Hh.cumulativeMasks = function (added, domain, N, w, h, poll) {
     const ms = [new Uint8Array(w * h).fill(1)];
     for (let k = 1; k < N; k++) {
       const m = new Uint8Array(w * h);
-      for (let i = 0; i < m.length; i++) m[i] = (!domain || domain[i]) && added[i] >= k ? 1 : 0;
+      for (let y = 0; y < h; y++) {
+        if (poll && y % POLL_ROWS === 0) poll();
+        for (let i = y * w, e = i + w; i < e; i++) m[i] = (!domain || domain[i]) && added[i] >= k ? 1 : 0;
+      }
       ms.push(m);
     }
     return ms;
   };
+  const POLL_ROWS = 64;
 
   Hh.domainMask = function (alpha, mode, t = 0.5) {
     const fail = (msg) => { const e = new Error("DOMAIN_ARG: " + msg); e.code = "DOMAIN_ARG"; return e; };
@@ -4668,12 +4673,15 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    * @param {number} r          window radius in px (>=1)
    * @param {number} passes     number of applications (2 = stronger cartoon)
    */
-  R.kuwahara = function (src, w, h, r, passes = 1, domain = null) {
+  R.kuwahara = function (src, w, h, r, passes = 1, domain = null, poll = null) {
     if (r < 1 || passes < 1) return src.slice();
     let cur = src;
-    for (let p = 0; p < passes; p++) cur = domain ? kuwaharaDomainOnce(cur, w, h, r, domain) : kuwaharaOnce(cur, w, h, r);
+    for (let p = 0; p < passes; p++) cur = domain ? kuwaharaDomainOnce(cur, w, h, r, domain, poll) : kuwaharaOnce(cur, w, h, r, poll);
     return cur;
   };
+  // Speed round F14 (S1): the optional poll() of the coordinator's serial passes (R.kuwahara, R.kuwaharaSeeds) runs every
+  // POLL_ROWS rows and throws to cancel the run; it never changes an output.
+  const POLL_ROWS = 64;
 
   // G2.4 (IMG-04): the domain-aware variant. Window statistics use only
   // in-domain samples (count table instead of the window area); out-of-domain
@@ -4684,12 +4692,12 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   // Speed round F6 (plan Appendix F, S5/S2): both passes are one band [0, h)
   // of the band kernel with the all-zero seed (SAT row 0). Outputs are
   // byte-identical to alpha.3 (test/oracle_kernels.js oracleKuwahara).
-  function kuwaharaDomainOnce(src, w, h, r, domain) {
-    return kuwaharaBand(src, w, h, r, zeroSeed(w, true), 0, h, domain);
+  function kuwaharaDomainOnce(src, w, h, r, domain, poll) {
+    return kuwaharaBand(src, w, h, r, zeroSeed(w, true), 0, h, domain, poll);
   }
 
-  function kuwaharaOnce(src, w, h, r) {
-    return kuwaharaBand(src, w, h, r, zeroSeed(w, false), 0, h, null);
+  function kuwaharaOnce(src, w, h, r, poll) {
+    return kuwaharaBand(src, w, h, r, zeroSeed(w, false), 0, h, null, poll);
   }
 
   function zeroSeed(w, withCnt) {
@@ -4716,7 +4724,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    * @returns {Array<{s, sat: Float64Array, sat2: Float64Array, cnt?: Float64Array}>} one per band, in band order;
    *   every row owns its buffer (transferable).
    */
-  R.kuwaharaSeeds = function (src, w, h, bands, r, domain) {
+  R.kuwaharaSeeds = function (src, w, h, bands, r, domain, poll) {
     if (!isNonNegInt(w) || !isNonNegInt(h) || !src || src.length < w * h) throw kfail("kuwaharaSeeds needs w·h source values");
     if (!(r >= 1)) throw kfail("kuwaharaSeeds needs r ≥ 1");
     if (!Array.isArray(bands)) throw kfail("kuwaharaSeeds needs an array of [y0, y1) bands");
@@ -4743,6 +4751,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     take(0);
     const last = ss.length ? Math.max(...ss) : 0;
     for (let y = 0; y < last; y++) {
+      if (poll && y % POLL_ROWS === 0) poll();
       let row = 0, row2 = 0, rowN = 0;
       const o = y * w;
       if (dom) {
@@ -4798,13 +4807,14 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   // unchanged. The interior block (r ≤ x < w − r, r ≤ y < h − r, integer r)
   // needs no clamps and, without a domain, has the constant area n = (r+1)²,
   // the same integer value the clamped path computes there.
-  function kuwaharaBand(src, w, h, r, seed, y0, y1, domain) {
+  function kuwaharaBand(src, w, h, r, seed, y0, y1, domain, poll) {
     const W = w + 1, s = Math.max(0, y0 - r), e = Math.min(h, y1 + r), rows = e - s;
     const sat = new Float64Array(W * (rows + 1)), sat2 = new Float64Array(W * (rows + 1));
     const cnt = domain ? new Float64Array(W * (rows + 1)) : null;
     sat.set(seed.sat); sat2.set(seed.sat2);
     if (domain) cnt.set(seed.cnt);
     for (let y = 0; y < rows; y++) {
+      if (poll && y % POLL_ROWS === 0) poll();
       let row = 0, row2 = 0, rowN = 0;
       const o = y * w;
       if (domain) {
@@ -4856,6 +4866,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     };
 
     for (let y = y0; y < y1; y++) {
+      if (poll && (y - y0) % POLL_ROWS === 0) poll();
       const oo = (y - y0) * w;
       if (y < ya || y >= yb) { for (let x = 0; x < w; x++) out[oo + x] = clamped(x, y); continue; }
       for (let x = 0; x < xa; x++) out[oo + x] = clamped(x, y);
@@ -6170,7 +6181,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *   cullEnabled  bonded only: run removeSpecks (connected always runs it, as v1.1.0 did).
  *
  * G2.7b — complexity caps and busy-art simplification (SRS §12.3, NFR-03/04/05, PO-LASER-9):
- *   estimateComplexity(masks, w, h)  → {partsPerLayer[], maxPartsPerLayer}: 4-connected components per layer
+ *   estimateComplexity(masks, w, h, poll?)  → {partsPerLayer[], maxPartsPerLayer}: 4-connected components per layer
  *                               (nonzero = material), equal to the SBMaterial.fromMasks part count (frame and holes
  *                               aside). Run-length union-find, O(w·h) time and O(runs) memory; runs before trace.
  *   simplifyBusy(masks, w, h, {minFeatureMM, minPartMM2, sxUm, syUm})
@@ -6182,8 +6193,10 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *                               nested stack stays nested (D-4.5). Layer 0 (the base) is copied unchanged. Draft and
  *                               fabrication apply the same rule at their own pitch (LYR-06). Input not mutated.
  *   complexityGate(masks, w, h, {deviceClass, simplify: "off"|"busy", minFeatureMM, minPartMM2, sxUm, syUm,
- *                  quality, revision})
+ *                  quality, revision, poll?})
  *                               → {status: "ok"|"error", masks|null, estimate, simplified|null, diagnostics}.
+ *                               poll (speed round F14): called per layer in simplifyBusy and the estimate; it throws to
+ *                               cancel the run (the coordinator's cancel flag) and never changes a result.
  *                               simplify "busy" runs simplifyBusy first and reports BUSY_SIMPLIFIED (info) with the
  *                               before/after part counts per layer; then the parts cap of SBSchema.limits(deviceClass)
  *                               is checked: any layer over maxPartsPerLayer gives COMPLEXITY_LIMIT (blocking; measured,
@@ -6330,9 +6343,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    */
   const runComponents = (mask, w, h) => global.SBMorph.runComponents(mask, w, h, 1);
 
-  C.estimateComplexity = function (masks, w, h) {
+  C.estimateComplexity = function (masks, w, h, poll) {
     checkMasks(masks, w, h);
-    const partsPerLayer = masks.map((m) => runComponents(m, w, h).count);
+    const partsPerLayer = masks.map((m) => { if (poll) poll(); return runComponents(m, w, h).count; });
     return { partsPerLayer, maxPartsPerLayer: Math.max(...partsPerLayer) };
   };
 
@@ -6399,7 +6412,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     checkMasks(masks, w, h);
     const { closeR, minPartUm2, pxUm2 } = simplifyParams(opts);
     const before = [], after = [];
+    const poll = typeof opts.poll === "function" ? opts.poll : null;   // speed round F14: cancel check per layer
     const out = masks.map((mask, k) => {
+      if (poll) poll();
       const n0 = runComponents(mask, w, h).count;
       before.push(n0);
       if (k === 0) { after.push(n0); return mask.slice(); }
@@ -6434,7 +6449,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       diagnostics.push(global.SBDiag.make("BUSY_SIMPLIFIED", Object.assign({}, base, { counts: { before: s.before, after: s.after },
         detail: changed + " layer(s) changed; parts per layer " + s.before.join("/") + " → " + s.after.join("/") })));
     }
-    const estimate = C.estimateComplexity(cur, w, h);
+    const estimate = C.estimateComplexity(cur, w, h, typeof opts.poll === "function" ? opts.poll : null);
     estimate.partsPerLayer.forEach((n, k) => {
       if (n > lim.maxPartsPerLayer) diagnostics.push(global.SBDiag.make("COMPLEXITY_LIMIT", Object.assign({}, base, { layer: k, deviceClass: lim.deviceClass,
         measured: { value: n, unit: "parts" }, limit: { value: lim.maxPartsPerLayer, unit: "parts" },
@@ -9424,6 +9439,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   }
 
   class Canceled extends Error {}
+  E.Canceled = Canceled;   // speed round F14: what a canceled run throws (the coordinator rejects an aborted batch with it)
   const codedError = (e) => ({ code: (e && e.code) || "ENGINE_INTERNAL", message: (e && e.message) || String(e) });
 
   // ------------------------------------------------ speed round F9 (S1): kernels, batches and the drivers
@@ -9659,7 +9675,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     }
     // speed round F13: row bands of the raster kernels (output-neutral). bands is the driver's choice (default 1: the
     // serial whole-image kernels); bandRows is a test-only override (forces many bands, also in the sync driver).
-    const par = { bands: isPosInt(opts.bands) ? opts.bands : 1, bandRows: null };
+    // F14: poll() is the cancel check of the long serial kernels (masks, Kuwahara / SAT scan, complexity gate): called
+    // every few rows, it throws Canceled; outputs never depend on it.
+    const par = { bands: isPosInt(opts.bands) ? opts.bands : 1, bandRows: null, poll: () => { if (isCanceled()) throw new Canceled(); } };
     if (opts.bandRows !== undefined && opts.bandRows !== null) {
       if (!E.TEST_HOOKS || !isPosInt(opts.bandRows)) return { res: fail("ENGINE_DEBUG_DISABLED", "opts.bandRows is a test-only hook (a positive integer)") };
       par.bandRows = opts.bandRows;
@@ -9671,7 +9689,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       if (cache.quality === undefined) cache.quality = req.quality;
       if (cache.quality !== req.quality) throw efail("CACHE_QUALITY", "a " + cache.quality + " stage cache cannot feed a " + req.quality + " request");
     }
-    return { head, step, fail, cache, overlays: opts.overlays !== false, hook, par };
+    return { head, step, fail, cache, overlays: opts.overlays !== false, hook, par, isCanceled };
   }
   const settled = (head, e) => (e instanceof Canceled ? Object.assign({}, head, { status: "canceled" }) : Object.assign({}, head, { status: "error", error: codedError(e), diagnostics: [] }));
 
@@ -9713,6 +9731,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    * the raster kernels (fabrication resample, Kuwahara per pass) into that many row bands (resampleRows /
    * kuwaharaRows batches); opts.bandRows (test-only, SBEngine.TEST_HOOKS; also accepted by E.generate) forces bands of
    * that many rows. Bands are output-neutral: concatenated bands are byte-equal to the whole-image kernels.
+   * Speed round F14: opts.isCanceled is checked at every step(), before every dispatch, and every few rows inside the long
+   * serial kernels (cumulativeMasks, the Kuwahara pass / seed scan, complexityGate; their poll argument) — in both drivers;
+   * an exec.map that rejects with SBEngine.Canceled (an aborted batch) settles the run as canceled.
    */
   E.generateAsync = async function (req, opts) {
     opts = opts || {};
@@ -9727,6 +9748,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
         const bt = r.value;
         let out, err, bad = false;
         try {
+          if (b.isCanceled()) throw new Canceled();   // F14: the cancel flag is checked before every dispatch
           if (exec) {
             E.checkTransfers(bt.kind, bt.transfer, ownedArrays(req, b.cache));
             out = await exec.map(bt.kind, bt.items, { transfer: bt.transfer, cost: bt.cost, estBytes: bt.estBytes, resident: bt.resident });
@@ -9768,7 +9790,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    * before the domain) and kuwaharaRows (tonal, per band, once per pass).
    */
   function* runSteps(req, head, step, fail, cache, overlays, par) {
-    par = par || { bands: 1, bandRows: null };
+    par = par || { bands: 1, bandRows: null, poll: null };
+    const poll = par.poll || null;
     // F13: a batch also carries per-item LPT costs, per-item estBytes and the coordinator's resident bytes at this
     // point (the estBytes ledger, F.3); none of them reaches a fold.
     const batch = (kind, items, transfer, cost, estBytes, resident) => ({ kind, items, transfer: transfer || null, cost: cost || null,
@@ -9865,7 +9888,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
           // seed s = max(0, y0 − r); the item gets that seed plus .slice() copies of source (and domain) rows [s, e),
           // e = min(H, y1 + r), and rebuilds SAT rows s+1 … e exactly as the whole-image pass (SAT rows [s, e + 1)).
           for (let pass = 0; pass < passes; pass++) {
-            const seeds = R.kuwaharaSeeds(L, W, H, kb, rPx, domain), items = [], tr = [], cost = [], est = [];
+            const seeds = R.kuwaharaSeeds(L, W, H, kb, rPx, domain, poll), items = [], tr = [], cost = [], est = [];
             kb.forEach(([y0, y1], b) => {
               const sd = seeds[b], s0 = Math.max(0, y0 - rPx), e = Math.min(H, y1 + rPx);
               if (sd.s !== s0 || sd.sat.length !== W + 1) throw efail("ENGINE_INTERNAL", "Kuwahara band " + b + " seed row " + sd.s + " != " + s0);
@@ -9880,7 +9903,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
             kb.forEach(([y0], b) => out.set(res[b], y0 * W));
             L = out;
           }
-        } else L = R.kuwahara(L, W, H, rPx, passes, domain);
+        } else L = R.kuwahara(L, W, H, rPx, passes, domain, poll);
         if (useCache) cache.k2 = { key: k2, L };
       }
       const th = R.thresholds(L, N, interp.thresholdRule, { manual: interp.manual, domain });
@@ -9890,7 +9913,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
 
     // 5. cumulative masks
     step("masks", 0.2);
-    const masks = Hh.cumulativeMasks(added, domain, N, W, H);
+    const masks = Hh.cumulativeMasks(added, domain, N, W, H, poll);
     // F13 LPT cost per layer: its mask's pixel count (one histogram pass over added; layer 0, the base, is a copy)
     const hist = new Float64Array(Math.max(N, 1) + 1);
     for (let i = 0; i < added.length; i++) if (!domain || domain[i]) hist[Math.min(added[i], N)]++;
@@ -9938,7 +9961,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     // 11a. complexity: parts cap (with explicit busy simplification) before trace
     step("complexity", 0.3);
     const gate = C.complexityGate(built.final, W, H, { deviceClass, simplify: con.cleanup.simplify, minFeatureMM: mat.minFeatureMM, minPartMM2: mat.minPartMM2,
-      sxUm: geo.sxUm, syUm: geo.syUm, quality, revision });
+      sxUm: geo.sxUm, syUm: geo.syUm, quality, revision, poll });
     diagnostics.push(...gate.diagnostics);
     if (gate.status !== "ok") return fail("COMPLEXITY_LIMIT", "parts per layer exceed the " + deviceClass + " cap; no layers are returned", diagnostics);
 
@@ -10175,7 +10198,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *   SBPool.memoryBudget(deviceMemory, deviceClass) → bytes (F13): min(1 GiB, deviceMemory·128 MiB) desktop when
  *     deviceMemory is finite, else 512 MiB; mobile 192 MiB.
  *   SBPool.create({spawn?, workerUrl?, helpers?, deviceClass?, appVersion, engineVersion?, loadText?, moduleBase?,
- *                  modulesHash?, helloTimeoutMs?, onState?, memoryBudget?}) → pool
+ *                  modulesHash?, helloTimeoutMs?, onState?, memoryBudget?, watchdogMs?, helperStuckMs?, spares?}) → pool
  *     pool.ready      Promise<boolean>: true once a coordinator's hello matched; false when the pool fell back
  *     pool.helpersReady  Promise: settles once every first-spawn helper said hello or failed (until then, and for a
  *                     refused helper, the coordinator runs items inline — same results)
@@ -10190,10 +10213,23 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *        counter. onAck({runId}) fires on main in a microtask (NFR-02 ≤ 100 ms; the coordinator cannot answer while
  *        inside a serial segment); onStart({runId}) on the coordinator's ack; onProgress({runId, stage, frac, sub}).
  *        done → {runId, gen, sampleHash, overlays, deviceClass, status, response} (response deep-frozen again on
- *        receipt; status "canceled" without a response); rejects with an Error carrying .code for a coordinator
- *        error (SOURCE_MISMATCH, …), POOL_UNAVAILABLE (fallback / closed) or POOL_DOWN (the coordinator died).
- *        Whether to show a result is SBDiag.acceptResult(active, result).
- *     pool.cancel(runId); pool.stats() → Promise<coordinator stats>; pool.terminate()
+ *        receipt; status "canceled" without a response, plus watchdog: true when the watchdog settled it); rejects
+ *        with an Error carrying .code for a coordinator error (SOURCE_MISMATCH, …), POOL_UNAVAILABLE (fallback /
+ *        closed) or POOL_DOWN (the coordinator died three times running this request).
+ *        Whether to show a result is SBDiag.acceptResult(active, result). A submit supersedes every earlier run.
+ *     pool.cancel(runId); pool.stats() → Promise<coordinator stats>; pool.health() → {coordSpawns, watchdogKills,
+ *        crashes, resubmits, lastRespawnMs, spareCoordUsed, spareHelperUsed, sharedCancel, spareCoordReady,
+ *        spareHelperReady} (synchronous); pool.terminate()
+ * Cancellation (F14, F-D2; AT-15, NFR-02): cooperative first. A cancel (or a superseding submit) sets the shared cancel
+ * flag (an Int32Array on a SharedArrayBuffer where the page can share memory: the coordinator's long serial kernels poll
+ * it every few rows) and posts cancel; the coordinator aborts the batch at once (helper items in flight are abandoned,
+ * their late results dropped by runId) and answers canceled, waiting for nothing. If no answer comes within watchdogMs
+ * (300 ms), the main-thread watchdog terminates the coordinator: the run settles canceled, the warm spare coordinator
+ * (else a cold spawn) is promoted, the source is re-posted, the ports are re-brokered to the same helpers and the other
+ * runs are resubmitted; the next draft is cold (the cache went with the coordinator). A coordinator that crashes is
+ * handled the same way (its runs resubmitted, never shown as an error; a third crash is the fallback). A helper stuck in an
+ * abandoned item for helperStuckMs (300 ms) is reported by the coordinator with killHelper {reason: "stuck"} and replaced
+ * from the warm spare helper (new hello, modulesHash checked by the coordinator). spares: false skips both spares.
  * Handshake (§9.3, F.3, R7): the coordinator's hello must carry this page's engineVersion and appVersion and the
  * modulesHash of the module texts the page loads (loadText; skipped only when they cannot be read). A mismatch, a boot
  * error or no hello within helloTimeoutMs terminates it and respawns once (same URL, no ?v=); a second failure is the
@@ -10245,6 +10281,16 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     };
   };
 
+  /**
+   * F14: the shared cancel flag, an Int32Array(2) on a SharedArrayBuffer (slot 0: every runId below it is superseded,
+   * slot 1: an explicitly canceled runId), or null where the page cannot share memory (no cross-origin isolation): then
+   * a coordinator inside a long serial kernel only stops at the watchdog.
+   */
+  function makeFlag() {
+    if (typeof global.SharedArrayBuffer !== "function" || typeof global.Atomics !== "object" || global.crossOriginIsolated === false) return null;
+    try { return new Int32Array(new global.SharedArrayBuffer(8)); } catch (_) { return null; }
+  }
+
   P.create = function (o) {
     o = o || {};
     const E = global.SBEngine, H = global.SBHash;
@@ -10258,9 +10304,16 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     });
     const timeoutMs = o.helloTimeoutMs > 0 ? o.helloTimeoutMs : 10000;
     const onState = typeof o.onState === "function" ? o.onState : () => {};
+    // F14 (F-D2): cooperative cancel first; a coordinator that has not answered a cancel after watchdogMs is terminated
+    const watchdogMs = o.watchdogMs > 0 ? o.watchdogMs : 300;
+    const stuckMs = o.helperStuckMs > 0 ? o.helperStuckMs : 300;
+    const spares = o.spares !== false;
+    const now = () => (global.performance && typeof global.performance.now === "function" ? global.performance.now() : Date.now());
 
-    const st = { coord: null, spawns: 0, crashes: 0, runSeq: 0, outbox: [], runs: new Map(), helpers: new Map(), helperRespawns: new Map(),
-      statsWaiters: [], lastSource: null, postedHash: undefined, hashMemo: null };
+    const st = { coord: null, spawns: 0, crashes: 0, runSeq: 0, outbox: [], runs: new Map(), helpers: new Map(), helperCrashes: new Map(),
+      statsWaiters: [], lastSource: null, postedHash: undefined, hashMemo: null,
+      spareCoord: null, spareCoordBooting: null, spareHelper: null, respawnAt: null, flag: makeFlag(),
+      health: { coordSpawns: 0, watchdogKills: 0, crashes: 0, resubmits: 0, lastRespawnMs: null, spareCoordUsed: 0, spareHelperUsed: 0 } };
     const pool = { mode: "starting", notice: null, ready: null, helpersReady: null };
     let readyResolve, helpersResolve;
     pool.ready = new Promise((r) => { readyResolve = r; });
@@ -10268,8 +10321,10 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const greeted = new Set(), settledHelper = (id) => { greeted.add(id); if (greeted.size >= nHelpers) helpersResolve(nHelpers); };
 
     const setMode = (mode, notice) => { pool.mode = mode; pool.notice = notice || null; onState({ mode, notice: pool.notice }); };
+    const finish = (runId, r, value) => { st.runs.delete(runId); clearTimeout(r.timer); r.resolve(value); };
+    const canceledResult = (r, watchdog) => Object.assign({}, r.echo, { status: "canceled", response: null }, watchdog ? { watchdog: true } : {});
     const rejectAll = (code, message) => {
-      for (const r of st.runs.values()) r.reject(coded(code, message));
+      for (const r of st.runs.values()) { clearTimeout(r.timer); r.reject(coded(code, message)); }
       st.runs.clear();
       for (const w of st.statsWaiters.splice(0)) w(null);
     };
@@ -10290,11 +10345,15 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       return st.hashMemo.p;
     };
     const killHelpers = () => { for (const w of st.helpers.values()) w.terminate(); st.helpers.clear(); };
+    const killSpares = () => {
+      for (const k of ["spareCoord", "spareCoordBooting", "spareHelper"]) { const w = st[k]; st[k] = null; if (w) w.terminate(); }
+    };
 
     function fallback(reason) {
       if (st.coord) st.coord.terminate();
       st.coord = null;
       killHelpers();
+      killSpares();
       st.outbox.length = 0;
       setMode("fallback", reason === "version" ? "A newer version of Shadowbox Studio is installed. Reload to update."
         : "Background processing is unavailable; the preview runs on the page (reduced responsiveness).");
@@ -10308,60 +10367,126 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       st.coord = null;
       if (st.spawns < 2) startCoord(); else fallback(reason);
     }
+    /** The coordinator (or a spare) is admitted: the cancel flag, ports re-brokered to the live helpers, the outbox. */
     function up() {
       setMode("pool");
-      for (let id = 1; id <= nHelpers; id++) spawnHelper(id);
+      if (st.flag) { try { st.coord.postMessage({ type: "cancelFlag", flag: st.flag }); } catch (_) { st.flag = null; } }
+      for (let id = 1; id <= nHelpers; id++) { const w = st.helpers.get(id); if (w) broker(id, w); else spawnHelper(id); }
       for (const [m, t] of st.outbox.splice(0)) st.coord.postMessage(m, t);
+      if (st.respawnAt !== null) { st.health.lastRespawnMs = now() - st.respawnAt; st.respawnAt = null; }
       if (nHelpers === 0) helpersResolve(0);
       readyResolve(true);
+      pool.helpersReady.then(() => { spawnSpareCoord(); spawnSpareHelper(); });
     }
-    function crashed(w) {   // the coordinator died after hello: its runs fail (F14 resubmits), a fresh one is started
+    /**
+     * F14: the coordinator died (crash) or did not answer a cancel (watchdog). It is terminated; runs being canceled settle
+     * as canceled, the others are resubmitted (never shown as an error; at most twice each). The warm spare coordinator is
+     * promoted when there is one (else a cold spawn); the source is re-posted and the ports re-brokered to the same
+     * helpers. Its draft cache is gone, so the next draft is cold, by design.
+     */
+    function respawn(reason) {
+      const old = st.coord;
+      st.coord = null;
+      if (old) old.terminate();
+      st.respawnAt = now();
+      st.outbox.length = 0;
+      setMode("starting");
+      for (const w of st.statsWaiters.splice(0)) w(null);
+      if (st.lastSource) postSource(st.lastSource);
+      for (const [id, r] of [...st.runs.entries()].sort((a, b) => a[0] - b[0])) {
+        if (r.canceling) { finish(id, r, canceledResult(r, reason === "watchdog")); continue; }
+        if (++r.resubmits > 2) { st.runs.delete(id); clearTimeout(r.timer); r.reject(coded("POOL_DOWN", "the coordinator worker stopped while running this request")); continue; }
+        st.health.resubmits++;
+        st.outbox.push([r.msg, []]);
+      }
+      const spare = st.spareCoord;
+      if (spare) {
+        st.spareCoord = null;
+        st.health.spareCoordUsed++;
+        st.coord = spare;
+        st.spawns = 1;
+        up();
+      } else {
+        st.spawns = 0;
+        startCoord();
+      }
+    }
+    function crashed(w) {
       w.terminate();
       if (st.coord !== w) return;
-      st.coord = null;
-      killHelpers();
-      rejectAll("POOL_DOWN", "the coordinator worker stopped");
-      if (++st.crashes > 2) { fallback("crash"); return; }
-      st.spawns = 0;
-      setMode("starting");
-      if (st.lastSource) postSource(st.lastSource);
-      startCoord();
+      st.health.crashes++;
+      if (++st.crashes > 2) { st.coord = null; fallback("crash"); return; }
+      respawn("crash");
+    }
+
+    /** Hello within the timeout, versions and modulesHash checked; cb(ok, reason) once. After that, messages go to onCoord. */
+    function watchBoot(w, cb) {
+      const seen = { hello: false, ok: false, done: false };
+      const once = (ok, reason) => { if (seen.done) return; seen.done = true; seen.ok = ok; cb(ok, reason); };
+      const timer = setTimeout(() => { if (!seen.hello) once(false, "timeout"); }, timeoutMs);
+      w.onmessage = (ev) => {
+        const m = ev.data;
+        if (!m || typeof m !== "object") return;
+        if (!seen.hello) {
+          if (m.type !== "hello") { if (m.type === "error") { clearTimeout(timer); once(false, "boot"); } return; }
+          seen.hello = true;
+          clearTimeout(timer);
+          const versionsOk = m.engineVersion === expect.engineVersion && m.appVersion === expect.appVersion;
+          (versionsOk ? expectedHash(m.modules) : Promise.resolve(false)).then((h) => once(versionsOk && (h === null || h === m.modulesHash), "version"));
+          return;
+        }
+        if (st.coord === w) onCoord(m);
+      };
+      const bad = () => {
+        clearTimeout(timer);
+        if (!seen.done) { once(false, "error"); return; }
+        if (st.coord === w) crashed(w);
+        else if (st.spareCoord === w) { st.spareCoord = null; w.terminate(); }
+      };
+      w.onerror = bad;
+      w.onmessageerror = bad;
     }
 
     function startCoord() {
       st.spawns++;
       let w;
       try { w = spawn("sb-coord"); } catch (e) { fallback("spawn"); return; }
+      st.health.coordSpawns++;
       st.coord = w;
-      const seen = { hello: false };
-      const timer = setTimeout(() => { if (!seen.hello && st.coord === w) refuse(w, "timeout"); }, timeoutMs);
-      w.onmessage = (ev) => {
-        if (st.coord !== w) return;
-        const m = ev.data;
-        if (!m || typeof m !== "object") return;
-        if (!seen.hello) {
-          if (m.type !== "hello") { if (m.type === "error") { clearTimeout(timer); refuse(w, "boot"); } return; }
-          seen.hello = true;
-          clearTimeout(timer);
-          const versionsOk = m.engineVersion === expect.engineVersion && m.appVersion === expect.appVersion;
-          (versionsOk ? expectedHash(m.modules) : Promise.resolve(false)).then((h) => {
-            if (st.coord !== w) return;
-            if (versionsOk && (h === null || h === m.modulesHash)) up(); else refuse(w, "version");
-          });
-          return;
-        }
-        onCoord(m);
-      };
-      const bad = () => { if (st.coord !== w) return; clearTimeout(timer); if (!seen.hello) refuse(w, "error"); else crashed(w); };
-      w.onerror = bad;
-      w.onmessageerror = bad;
+      watchBoot(w, (ok, reason) => {
+        if (st.coord !== w) { if (!ok) w.terminate(); return; }
+        if (ok) up(); else refuse(w, reason);
+      });
+    }
+    /** F14: a warm spare coordinator (booted, hello checked), promoted by respawn. */
+    function spawnSpareCoord() {
+      if (!spares || st.spareCoord || st.spareCoordBooting || pool.mode !== "pool") return;
+      let w;
+      try { w = spawn("sb-coord"); } catch (e) { return; }
+      st.health.coordSpawns++;
+      st.spareCoordBooting = w;
+      watchBoot(w, (ok) => {
+        if (st.spareCoordBooting !== w) { w.terminate(); return; }
+        st.spareCoordBooting = null;
+        if (ok && (pool.mode === "pool" || pool.mode === "starting")) st.spareCoord = w; else w.terminate();
+      });
+    }
+    /** F14: a warm spare helper (spawned, modules loading); it says hello only once it gets its port. */
+    function spawnSpareHelper() {
+      if (!spares || nHelpers === 0 || st.spareHelper || pool.mode !== "pool") return;
+      let w;
+      try { w = spawn("sb-helper-spare"); } catch (e) { return; }
+      st.spareHelper = w;
+      w.onerror = () => { if (st.spareHelper === w) { st.spareHelper = null; w.terminate(); } };
     }
 
-    function spawnHelper(id) {
-      let w;
-      try { w = spawn("sb-helper-" + id); } catch (e) { return; }   // the coordinator runs the items inline
-      st.helpers.set(id, w);
+    function broker(id, w) {
       const ch = new MessageChannel();
+      w.postMessage({ type: "port", helperId: id, port: ch.port1 }, [ch.port1]);
+      st.coord.postMessage({ type: "ports", helperId: id, port: ch.port2 }, [ch.port2]);
+    }
+    function attachHelper(id, w) {
+      st.helpers.set(id, w);
       w.onmessage = (ev) => { if (ev.data && ev.data.type === "hello") settledHelper(id); };   // alive; items travel on the brokered port
       w.onerror = () => {
         if (st.helpers.get(id) !== w) return;
@@ -10369,11 +10494,42 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
         w.terminate();
         st.helpers.delete(id);
         postCoord({ type: "helperDown", helperId: id });
-        const n = st.helperRespawns.get(id) || 0;
-        if (n < 2 && pool.mode === "pool") { st.helperRespawns.set(id, n + 1); spawnHelper(id); }
+        const n = st.helperCrashes.get(id) || 0;
+        if (n < 2 && pool.mode === "pool") { st.helperCrashes.set(id, n + 1); replaceHelper(id); }
       };
-      w.postMessage({ type: "port", helperId: id, port: ch.port1 }, [ch.port1]);
-      st.coord.postMessage({ type: "ports", helperId: id, port: ch.port2 }, [ch.port2]);
+    }
+    function spawnHelper(id) {
+      let w;
+      try { w = spawn("sb-helper-" + id); } catch (e) { settledHelper(id); return; }   // the coordinator runs the items inline
+      attachHelper(id, w);
+      broker(id, w);
+    }
+    /** F14: a helper replaced from the warm spare when there is one; the coordinator admits it on its own hello (modulesHash). */
+    function replaceHelper(id) {
+      const w = st.spareHelper;
+      if (!w) { spawnHelper(id); return; }
+      st.spareHelper = null;
+      st.health.spareHelperUsed++;
+      attachHelper(id, w);
+      broker(id, w);
+      spawnSpareHelper();
+    }
+
+    /** F14: a run being canceled (explicitly or superseded) — the watchdog terminates the coordinator if it does not answer. */
+    function cancelRun(runId, r) {
+      if (r.canceling) return;
+      r.canceling = true;
+      if (pool.mode !== "pool") {   // no coordinator has it yet: drop its generate from the outbox
+        const i = st.outbox.findIndex(([m]) => m.type === "generate" && m.runId === runId);
+        if (i >= 0) st.outbox.splice(i, 1);
+        finish(runId, r, canceledResult(r, false));
+        return;
+      }
+      r.timer = setTimeout(() => {
+        if (st.runs.get(runId) !== r || pool.mode !== "pool") return;
+        st.health.watchdogKills++;
+        respawn("watchdog");
+      }, watchdogMs);
     }
 
     function onCoord(m) {
@@ -10383,27 +10539,29 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
         case "progress": if (r && r.onProgress) r.onProgress({ runId: m.runId, stage: m.stage, frac: m.frac, sub: m.sub }); break;
         case "result":
           if (!r) break;
-          st.runs.delete(m.runId);
           deepFreeze(m.response);
-          r.resolve({ runId: m.runId, gen: m.gen, sampleHash: m.sampleHash, overlays: m.overlays, deviceClass: m.deviceClass, status: m.response.status, response: m.response });
+          finish(m.runId, r, { runId: m.runId, gen: m.gen, sampleHash: m.sampleHash, overlays: m.overlays, deviceClass: m.deviceClass, status: m.response.status, response: m.response });
           break;
         case "canceled":
           if (!r) break;
-          st.runs.delete(m.runId);
-          r.resolve(Object.assign({}, r.echo, { status: "canceled", response: null }));
+          finish(m.runId, r, canceledResult(r, false));
           break;
         case "error":
           if (!r) break;
           st.runs.delete(m.runId);
+          clearTimeout(r.timer);
           r.reject(coded(m.code || "ENGINE_INTERNAL", m.message));
           break;
-        case "killHelper": {
-          const w = st.helpers.get(m.helperId);
-          if (w) { w.terminate(); st.helpers.delete(m.helperId); }
-          if (m.reason !== "modulesHash") {
-            const n = st.helperRespawns.get(m.helperId) || 0;
-            if (n < 2) { st.helperRespawns.set(m.helperId, n + 1); spawnHelper(m.helperId); }
+        case "killHelper": {   // refused (modulesHash: not replaced), stuck in an abandoned item (F14) or broken
+          const id = m.helperId, w = st.helpers.get(id);
+          if (w) { w.terminate(); st.helpers.delete(id); }
+          if (m.reason === "modulesHash") break;
+          if (m.reason !== "stuck") {
+            const n = st.helperCrashes.get(id) || 0;
+            if (n >= 2) break;
+            st.helperCrashes.set(id, n + 1);
           }
+          replaceHelper(id);
           break;
         }
         case "stats": { const w = st.statsWaiters.shift(); if (w) w(m); break; }
@@ -10423,30 +10581,47 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       const sampleHash = so.sampleHash === undefined ? null : so.sampleHash;
       const echo = { runId, gen: so.gen === undefined ? null : so.gen, sampleHash, overlays: so.overlays !== false,
         deviceClass: req && req.deviceClass !== undefined ? req.deviceClass : "desktop" };
+      const msg = Object.assign({ type: "generate", w: ns.w, h: ns.h, channels: ns.channels, draftCapPx: req.draftCapPx,
+        budgetBytes: o.memoryBudget > 0 ? o.memoryBudget : P.memoryBudget(global.navigator && global.navigator.deviceMemory, echo.deviceClass),
+        mainBytes: so.mainBytes > 0 ? so.mainBytes : 0, stuckMs,
+        req: sampleHash === null ? req : Object.assign({}, req, { normalizedSource: null }) }, echo);
       const done = new Promise((resolve, reject) => {
         if (pool.mode === "fallback" || pool.mode === "closed") { reject(coded("POOL_UNAVAILABLE", "the worker pool is unavailable")); return; }
-        st.runs.set(runId, { resolve, reject, echo, onStart: so.onStart, onProgress: so.onProgress });
+        st.runs.set(runId, { resolve, reject, echo, onStart: so.onStart, onProgress: so.onProgress, msg, canceling: false, timer: null, resubmits: 0 });
       });
       if (typeof so.onAck === "function") queueMicrotask(() => so.onAck({ runId }));
-      if (st.runs.has(runId))
-        postCoord(Object.assign({ type: "generate", w: ns.w, h: ns.h, channels: ns.channels, draftCapPx: req.draftCapPx,
-          budgetBytes: o.memoryBudget > 0 ? o.memoryBudget : P.memoryBudget(global.navigator && global.navigator.deviceMemory, echo.deviceClass),
-          mainBytes: so.mainBytes > 0 ? so.mainBytes : 0,
-          req: sampleHash === null ? req : Object.assign({}, req, { normalizedSource: null }) }, echo));
+      if (st.runs.has(runId)) {
+        // one run at a time (F.3): this run supersedes every earlier one (shared flag first, then the watchdog per run)
+        if (st.flag) Atomics.store(st.flag, 0, runId);
+        for (const [id, r] of [...st.runs.entries()]) if (id !== runId) cancelRun(id, r);
+        postCoord(msg);
+      }
       return { runId, done };
     };
 
-    pool.cancel = function (runId) { postCoord({ type: "cancel", runId }); };
+    pool.cancel = function (runId) {
+      const r = st.runs.get(runId);
+      if (!r) return;
+      if (st.flag) Atomics.store(st.flag, 1, runId);
+      if (pool.mode === "pool") postCoord({ type: "cancel", runId });
+      cancelRun(runId, r);
+    };
 
     pool.stats = function () {
       if (pool.mode !== "pool" && pool.mode !== "starting") return Promise.resolve(null);
       return new Promise((resolve) => { st.statsWaiters.push(resolve); postCoord({ type: "stats" }); });
     };
 
+    /** F14: main-side pool health (synchronous): spawns, watchdog kills, crashes, resubmits, last respawn time, spares. */
+    pool.health = function () {
+      return Object.assign({}, st.health, { sharedCancel: !!st.flag, spareCoordReady: !!st.spareCoord, spareHelperReady: !!st.spareHelper });
+    };
+
     pool.terminate = function () {
       if (st.coord) st.coord.terminate();
       st.coord = null;
       killHelpers();
+      killSpares();
       st.outbox.length = 0;
       rejectAll("POOL_UNAVAILABLE", "the worker pool was closed");
       setMode("closed");

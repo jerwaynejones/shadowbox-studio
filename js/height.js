@@ -11,7 +11,7 @@
  *   SBHeight.addedFromSamples(samples, N, polarity) -> Uint8Array
  *                             polarity "white-high" | "black-high"; the exact
  *                             integer form of addedFromNorm(s/255, N)
- *   SBHeight.cumulativeMasks(added, domain, N, w, h) -> Uint8Array[N]
+ *   SBHeight.cumulativeMasks(added, domain, N, w, h, poll?) -> Uint8Array[N]  (poll: F14 cancel check every 64 rows)
  *                             [0] all ones (base B); [k] = domain ∧ added ≥ k
  *                             (domain null = whole image). Masks nest by
  *                             construction; identical masks are kept (D-4.7).
@@ -57,15 +57,20 @@
     return out;
   };
 
-  Hh.cumulativeMasks = function (added, domain, N, w, h) {
+  // Speed round F14 (S1): poll (optional) is called every POLL_ROWS rows (it throws to cancel); output unchanged.
+  Hh.cumulativeMasks = function (added, domain, N, w, h, poll) {
     const ms = [new Uint8Array(w * h).fill(1)];
     for (let k = 1; k < N; k++) {
       const m = new Uint8Array(w * h);
-      for (let i = 0; i < m.length; i++) m[i] = (!domain || domain[i]) && added[i] >= k ? 1 : 0;
+      for (let y = 0; y < h; y++) {
+        if (poll && y % POLL_ROWS === 0) poll();
+        for (let i = y * w, e = i + w; i < e; i++) m[i] = (!domain || domain[i]) && added[i] >= k ? 1 : 0;
+      }
       ms.push(m);
     }
     return ms;
   };
+  const POLL_ROWS = 64;
 
   Hh.domainMask = function (alpha, mode, t = 0.5) {
     const fail = (msg) => { const e = new Error("DOMAIN_ARG: " + msg); e.code = "DOMAIN_ARG"; return e; };
