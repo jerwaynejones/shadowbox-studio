@@ -1036,7 +1036,7 @@
   // Every G2.11c control writes through SBSchema.applyControl (lengths in project.units; invalid → unchanged). A geometry
   // change (revision + 1) regenerates; an appearance, units or view change calls renderAll() only (PRJ-02).
   // The two mode selects are not in CONTROLS: a mode change is reviewed in #dlg-mode before it applies (G2.11e).
-  const CONTROLS = ["polarity", "thmode", "manual-th", "thickness", "thickstate", "gap", "units",
+  const CONTROLS = ["polarity", "thmode", "manual-th", "smooth", "thickness", "thickstate", "gap", "units",
     "sizeby", "target", "machine", "m-height", "m-length", "m-matwidth", "m-thick", "m-kerf", "appearance", "color", "explode"];
   const MODE_CONTROLS = { "interp": "interpretation", "construction": "construction" };
   const EXPLODE_MAX_MM = 60;   // the #in-explode range; the preview takes a 0–1 fraction
@@ -1071,6 +1071,8 @@
       if (el && document.activeElement !== el) el.value = vals["in-" + id];
     }
     syncPitch();
+    // E3b: the smoothing radius is physical (mm), so draft and fabrication smooth the same size
+    $("out-smooth").textContent = SBUtil.fmt(project.interpretation.smoothing.radiusMM, 2) + " mm";
     const co = $("in-cullon");
     if (co) co.checked = project.construction.bridge.cullEnabled;
     syncLegacy();
@@ -1488,8 +1490,8 @@
       acceptSource("demo scene", { bitmap: demoScene(), raw: null }, null, gen, null);
     });
     // PO-LASER-4 (G2.11b): #in-res is the fabrication pitch in mm/px. The draft raster (720 px) is not a control.
+    // E3b: #in-smooth (mm) is a G2.11c control (CONTROLS, SBSchema.applyControl "smooth").
     bindPitch();
-    bindRange("in-smooth", "smoothRadius", "out-smooth", (v) => v + " px");
     bindRange("in-passes", "smoothPasses", "out-passes");
 
     // layers

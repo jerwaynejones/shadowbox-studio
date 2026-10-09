@@ -318,11 +318,28 @@
   };
 
   /**
-   * interpretHeight(samples, w, h, interpretation, N, domain, {quality?, revision?}) → {added: Uint8Array, diagnostics}
+   * radiusPx(radiusMM, geometry, minPx = 0) → integer (alpha.3 E3b, IMG-04): a physical filter radius on a raster,
+   * max(minPx, round(radiusMM·1000 / pMaxUm)) with pMaxUm the coarser axis pitch (max(sxUm, syUm), else mmPerPxMax·1000;
+   * the constructPx convention). 0 for radiusMM 0 whatever minPx. Draft and fabrication thus smooth the same mm.
+   */
+  E.radiusPx = function (radiusMM, geometry, minPx) {
+    const rUm = Math.round((radiusMM || 0) * 1000);
+    if (!(rUm > 0)) return 0;
+    const g = geometry || {};
+    const pMaxUm = Number.isFinite(g.sxUm) && Number.isFinite(g.syUm) ? Math.max(g.sxUm, g.syUm) : g.mmPerPxMax * 1000;
+    if (!(pMaxUm > 0)) throw efail("ENGINE_ARG", "radiusPx needs the raster pitch (sxUm/syUm or mmPerPxMax)");
+    return Math.max(minPx || 0, Math.round(rUm / pMaxUm));
+  };
+  const HEIGHT_FILTER_MAX_PX = 50;   // SBHeight FILTER_MAX_R
+
+  /**
+   * interpretHeight(samples, w, h, interpretation, N, domain, {geometry?, quality?, revision?}) → {added: Uint8Array, diagnostics}
    * The height-mode interpretation stage (G2.10a stage 4; IMG-03, AT-02). samples are the oriented, resampled
    * 8-bit height plane (one channel). With interpretation.heightFilter null the samples are sliced raw: no
    * Kuwahara, no thresholds, no filter. A set heightFilter runs SBHeight.applyFilter (domain-aware) once and
-   * emits HEIGHT_FILTERED (info) naming the filter. Then SBHeight.addedFromSamples with the polarity. Pure.
+   * emits HEIGHT_FILTERED (info) naming the filter. A median/box radiusMM is converted with radiusPx (at least 1 px,
+   * at most 50) on ctx.geometry, the run's raster pitch, required for those ops (E3b); HEIGHT_FILTERED states mm and px.
+   * Then SBHeight.addedFromSamples with the polarity. Pure.
    */
   E.interpretHeight = function (samples, w, h, interp, N, domain, ctx) {
     if (!interp || interp.mode !== "height") throw efail("ENGINE_ARG", "interpretHeight needs interpretation.mode height (got " + (interp && interp.mode) + ")");
@@ -330,10 +347,17 @@
     const H = global.SBHeight, f = interp.heightFilter == null ? null : interp.heightFilter, diagnostics = [];
     let s = samples;
     if (f) {
-      s = H.applyFilter(samples, w, h, f, domain || null);
+      let rPx = null, filter = f;
+      if (f.op !== "remap") {
+        // E3b: radiusMM converted on this raster (coarser axis pitch), at least 1 px, at most the filter's 50 px.
+        if (!ctx.geometry) throw efail("ENGINE_ARG", "interpretHeight needs ctx.geometry (the raster pitch) for a " + f.op + " filter");
+        rPx = Math.min(HEIGHT_FILTER_MAX_PX, E.radiusPx(f.radiusMM, ctx.geometry, 1));
+        filter = { op: f.op, radius: rPx };
+      }
+      s = H.applyFilter(samples, w, h, filter, domain || null);
       diagnostics.push(global.SBDiag.make("HEIGHT_FILTERED", {
         quality: ctx.quality, revision: ctx.revision,
-        detail: f.op === "remap" ? "remap LUT applied to the height samples" : f.op + " filter, radius " + f.radius + " px, applied to the height samples",
+        detail: f.op === "remap" ? "remap LUT applied to the height samples" : f.op + " filter, radius " + f.radiusMM + " mm (" + rPx + " px on this raster), applied to the height samples",
       }));
     }
     return { added: H.addedFromSamples(s, N, interp.polarity), diagnostics };
@@ -577,18 +601,20 @@
     step("interpret", 0.15);
     let added;
     if (interp.mode === "height") {
-      const r = E.interpretHeight(samples, W, H, interp, N, domain, dOpts);
+      const r = E.interpretHeight(samples, W, H, interp, N, domain, Object.assign({ geometry: geo }, dOpts));
       added = r.added; diagnostics.push(...r.diagnostics);
     } else {
       // alpha.3 E3: slot K2 (tonal luminance after Kuwahara); thresholds and bands only read L.
-      const k2 = useCache ? k1 + "|" + JSON.stringify(interp.smoothing) + "|" + JSON.stringify(p.source.alpha) : null;
+      // E3b: the radius is physical; rPx (its conversion on this raster) is in the key, so a raster change re-keys K2.
+      const rPx = E.radiusPx(interp.smoothing.radiusMM, geo);
+      const k2 = useCache ? k1 + "|" + JSON.stringify(interp.smoothing) + "|" + rPx + "|" + JSON.stringify(p.source.alpha) : null;
       let L;
       if (useCache && cache.k2 && cache.k2.key === k2) {
         L = cache.k2.L;
         step("interpret-cached", 0.15);
       } else {
         if (ch === 4) L = R.luminance(samples, W, H); else { L = new Float32Array(W * H); for (let i = 0; i < L.length; i++) L[i] = samples[i]; }
-        L = R.kuwahara(L, W, H, interp.smoothing.radius, interp.smoothing.passes, domain);
+        L = R.kuwahara(L, W, H, rPx, interp.smoothing.passes, domain);
         if (useCache) cache.k2 = { key: k2, L };
       }
       const th = R.thresholds(L, N, interp.thresholdRule, { manual: interp.manual, domain });

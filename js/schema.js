@@ -364,7 +364,7 @@
     plywood() {
       const p = base();
       p.interpretation = { mode: "height", polarity: "white-high", thresholdRule: "balanced", manual: [],
-        smoothing: { radius: 0, passes: 0 }, heightFilter: null };
+        smoothing: { radiusMM: 0, passes: 0 }, heightFilter: null };
       p.construction = { mode: "bonded-relief", sheets: 8, frame: { enabled: false, widthMM: 0 }, gapMM: 0,
         cleanup: { minFeatureMM: 1.5, speckMM2: 4.5, holeMM2: 4.5, cornerStyle: "sharp", toleranceMM: 0.05, simplify: "off" },
         bridge: { bridgeMM: 1.8, cullBelowMM2: 25, maxBridgeMM: 40, cullEnabled: false },
@@ -382,7 +382,7 @@
     acrylic() {
       const p = base();
       p.interpretation = { mode: "tonal", polarity: "dark-front", thresholdRule: "balanced", manual: [],
-        smoothing: { radius: 4, passes: 2 }, heightFilter: null };
+        smoothing: { radiusMM: 1.65, passes: 2 }, heightFilter: null };   // E3b: = r4 at 720 px on the 300 mm art width
       p.construction = { mode: "connected-sheet", sheets: 5, frame: { enabled: true, widthMM: 12 }, gapMM: 3,
         cleanup: { minFeatureMM: 1.2, speckMM2: 4.5, holeMM2: 2.88, cornerStyle: "smooth", toleranceMM: 0.05, simplify: "off" },
         bridge: { bridgeMM: 1.8, cullBelowMM2: 9, maxBridgeMM: 40, cullEnabled: false },
@@ -437,6 +437,7 @@
       if (o.int && !Number.isInteger(v)) return err(path, "INTEGER");
       if (v < lo || v > hi || (o.gt !== undefined && v <= o.gt)) return err(path, "RANGE");
       if (o.grid && !onGrid(v)) return err(path, "GRID");
+      if (o.step && Math.abs(Math.round(v / o.step) * o.step - v) > 1e-9) return err(path, "GRID");
     };
   }
   const mm = (lo, hi, o) => num(lo, hi, Object.assign({ grid: true }, o));
@@ -493,12 +494,13 @@
         v.forEach((x, i) => { const n = err.count(); num(0, 1, { gt: 0 })(x, join(path, i), err); if (err.count() === n && x >= 1) err(join(path, i), "RANGE"); if (err.count() !== n) bad = true; });
         if (!bad) for (let i = 1; i < v.length; i++) if (!(v[i] > v[i - 1])) { err(path, "ORDER"); break; }
       },
-      smoothing: obj({ radius: num(0, 10, { int: true }), passes: num(0, 3, { int: true }) }),
+      // alpha.3 E3b: filter radii are physical (mm) and converted per raster (SBEngine.radiusPx); never pixels.
+      smoothing: obj({ radiusMM: mm(0, 5, { step: 0.05 }), passes: num(0, 3, { int: true }) }),
       heightFilter: (v, path, err) => {
         if (v === null) return;
         if (!isObj(v)) return err(path, "TYPE");
         en(E.filterOp)(v.op, join(path, "op"), err);
-        const spec = v.op === "remap" ? { op: any, lut: arr(num(0, 255, { int: true }), { len: 256 }) } : { op: any, radius: num(1, 50, { int: true }) };
+        const spec = v.op === "remap" ? { op: any, lut: arr(num(0, 255, { int: true }), { len: 256 }) } : { op: any, radiusMM: mm(0.05, 25) };
         obj(spec)(v, path, err);
       },
     }),
@@ -618,6 +620,21 @@
   const grid = (v) => Math.round(v * 1000) / 1000;
   const r6 = (v) => Math.round(v * 1e6) / 1e6;
   const isLegacy = (p) => isObj(p) && isObj(p.extras) && isObj(p.extras.legacy);
+  // alpha.3 E3b: the v1.1.0 Kuwahara radius was in pixels of the procRes raster, whose pitch is artLongMM / procRes.
+  // radiusMM = smoothRadius · artLongMM / procRes on the 0.05 mm grid (clamped to the schema's 0–5 mm), and back.
+  const SMOOTH_MAX_MM = 5;
+  const round20 = (v) => Math.round(v * 20) / 20;
+  /** The art long side in mm: from the source size when known (resolveSize), else the art along the sizing axis. */
+  function artLongMM(p, srcW, srcH) {
+    if (Number.isInteger(srcW) && Number.isInteger(srcH)) {
+      try { const sz = S.resolveSize(p, srcW, srcH); return Math.max(sz.artWMM, sz.artHMM); } catch (e) { /* fall through */ }
+    }
+    const g = p.geometry;
+    if (!g.lockAspect && typeof g.widthMM === "number" && typeof g.heightMM === "number") return Math.max(g.widthMM, g.heightMM);
+    return grid(g.targetMM - 2 * frameMMOf(p));
+  }
+  const smoothMMFromPx = (rPx, artMM, procRes) => Math.min(SMOOTH_MAX_MM, Math.max(0, round20((rPx * artMM) / procRes)));
+  const smoothPxFromMM = (rMM, artMM, procRes) => (rMM > 0 && artMM > 0 ? Math.round((rMM * procRes) / artMM) : 0);
 
   /** [LEGACY_NEEDS_SOURCE] while a legacy import has no source-derived height (heightMM null), else []. */
   S.legacyDiagnostics = function (p) {
@@ -641,7 +658,8 @@
     it.mode = "tonal";
     it.polarity = L.darkFront ? "dark-front" : "light-front";
     it.thresholdRule = L.thresholdMode === "linear" ? "linear" : "balanced";   // v1.1.0: anything but linear bands as balanced
-    it.smoothing = { radius: L.smoothRadius, passes: L.smoothPasses };
+    // E3b: the pixel radius at the v1.1.0 procRes pitch on the art width (no source size yet).
+    it.smoothing = { radiusMM: smoothMMFromPx(L.smoothRadius, L.widthMM, L.procRes), passes: L.smoothPasses };
     const c = p.construction;
     c.mode = "connected-sheet";
     c.sheets = L.nSheets;
@@ -704,7 +722,7 @@
       projectName: p.title,
       sourceName: leg.sourceName !== undefined ? leg.sourceName : LEGACY_DEFAULTS.sourceName,
       procRes: g.draftPx,
-      smoothRadius: it.smoothing.radius, smoothPasses: it.smoothing.passes,
+      smoothRadius: smoothPxFromMM(it.smoothing.radiusMM, artLongMM(p, srcW, srcH), g.draftPx), smoothPasses: it.smoothing.passes,
       nSheets: c.sheets,
       thresholdMode: it.thresholdRule === "linear" ? "linear" : "balanced",   // manual has no v1.1.0 equivalent
       darkFront: it.polarity === "dark-front" || it.polarity === "black-high",
@@ -729,7 +747,7 @@
     switch (key) {
       case "projectName": p.title = String(value); break;
       case "procRes": g.draftPx = value; break;
-      case "smoothRadius": it.smoothing.radius = value; break;
+      case "smoothRadius": it.smoothing.radiusMM = smoothMMFromPx(value, artLongMM(p), g.draftPx); break;
       case "smoothPasses": it.smoothing.passes = value; break;
       case "nSheets": c.sheets = value; if (it.thresholdRule === "manual" && it.manual.length !== Math.max(0, value - 1)) it.manual = evenManual(value); break;
       case "thresholdMode": it.thresholdRule = value === "linear" ? "linear" : "balanced"; break;
@@ -819,6 +837,7 @@
    * the "in-" prefix; length values are entered in project.units (SBSchema.toMM, 0.001 mm grid) and clamped to the
    * schema ranges. ctx = {srcW, srcH} (optional) lets a sizeBy switch keep the finished page size (PO-LASER-3).
    *   interp, construction   SBSchema.applyModeChange(project, patch, true) (the app puts the G2.11e review dialog in front)
+   *   smooth (interpretation.smoothing.radiusMM in mm, 0.05 mm grid, clamped 0–5; E3b),
    *   polarity, thmode, cullon (bonded only: construction.bridge.cullEnabled), manual-th ("0.2, 0.5, …": N − 1 increasing values in (0, 1)), thickness, thickstate, gap,
    *   sizeby, target, machine (profile id | "none"), m-height, m-length, m-matwidth, m-thick, m-kerf  — geometry
    *   units, appearance, color (#rrggbb), explode (view.explodeMM)                                     — not geometry
@@ -846,6 +865,11 @@
         if (xs.length !== Math.max(0, c.sheets - 1) || !xs.every((x, i) => Number.isFinite(x) && x > 0 && x < 1 && (i === 0 || x > xs[i - 1]))) return unchanged();
         it.thresholdRule = "manual"; it.manual = xs.map(r6);
         break;
+      }
+      case "smooth": {   // E3b: the Kuwahara radius in mm (0.05 mm grid, 0–5), never pixels; not a project.units length
+        const v = numIn(value);
+        if (!Number.isFinite(v)) return unchanged();
+        it.smoothing.radiusMM = clampTo(round20(v), 0, SMOOTH_MAX_MM); break;
       }
       case "thickness": { const v = length(0.1, 25); if (v === null) return unchanged(); m.thicknessMM = v; break; }
       case "thickstate": if (!E.thicknessState.includes(value)) return unchanged(); m.thicknessState = value; break;
@@ -904,7 +928,7 @@
     const machineId = mach === null ? "none" : (Object.prototype.hasOwnProperty.call(S.MACHINES, mach.id) ? mach.id : "none");
     return {
       "in-interp": p.interpretation.mode, "in-polarity": p.interpretation.polarity, "in-construction": p.construction.mode,
-      "in-thmode": p.interpretation.thresholdRule, "in-manual-th": p.interpretation.manual.join(", "),
+      "in-thmode": p.interpretation.thresholdRule, "in-smooth": String(p.interpretation.smoothing.radiusMM), "in-manual-th": p.interpretation.manual.join(", "),
       "in-thickness": L(p.material.thicknessMM), "in-thickstate": p.material.thicknessState, "in-gap": L(p.construction.gapMM),
       "in-cullon": String(p.construction.bridge.cullEnabled), "in-units": unit, "in-appearance": p.appearance.mode, "in-color": p.appearance.color.toLowerCase(), "in-explode": String(p.view.explodeMM),
       "in-sizeby": p.geometry.sizeBy, "in-target": L(p.geometry.targetMM), "in-machine": machineId,
@@ -940,7 +964,7 @@
     { controls: ["in-cullon"], off: (p) => !BONDED(p), reason: R.connectedCull, path: "construction.bridge.cullEnabled", neutral: false },
     { controls: ["in-thmode"], off: HEIGHT, reason: R.heightThreshold, path: "interpretation.thresholdRule", neutral: "balanced" },
     { controls: ["in-manual-th"], off: HEIGHT, reason: R.heightThreshold, path: "interpretation.manual", neutral: [] },
-    { controls: ["in-smooth", "in-passes"], off: HEIGHT, reason: R.heightSmoothing, path: "interpretation.smoothing", neutral: { radius: 0, passes: 0 } },
+    { controls: ["in-smooth", "in-passes"], off: HEIGHT, reason: R.heightSmoothing, path: "interpretation.smoothing", neutral: { radiusMM: 0, passes: 0 } },
     { controls: [], off: (p) => !HEIGHT(p), reason: R.tonalFilter, path: "interpretation.heightFilter", neutral: null },
     { controls: ["in-manual-th"], off: (p) => !HEIGHT(p) && p.interpretation.thresholdRule !== "manual", reason: "Choose the Manual tone split to enter thresholds." },
     { controls: ["in-holedia"], off: (p) => !p.construction.registration.enabled, reason: "Registration holes are off: turn them on to set the diameter." },

@@ -2954,7 +2954,7 @@ suite("schema.js — G2.1 extended (strict keys, presets, sizing, units, geometr
   check("PRJ-01 acrylic preset is today's connected tonal defaults (5 sheets, dark front, 12 mm frame, holes, gap 3)",
     a.construction.mode === "connected-sheet" && a.interpretation.mode === "tonal" && a.interpretation.polarity === "dark-front" &&
     a.construction.sheets === 5 && a.construction.frame.enabled && a.construction.frame.widthMM === 12 && a.construction.registration.enabled &&
-    a.construction.registration.diaMM === 4 && a.construction.gapMM === 3 && a.interpretation.smoothing.radius === 4 && a.interpretation.smoothing.passes === 2 &&
+    a.construction.registration.diaMM === 4 && a.construction.gapMM === 3 && a.interpretation.smoothing.radiusMM === 1.65 && a.interpretation.smoothing.passes === 2 &&
     a.geometry.sizeBy === "width" && a.geometry.widthMM === 300 && a.geometry.targetMM === 324);
   check("PO-LASER-1 both presets carry the default machine profile", JSON.stringify(a.machine) === JSON.stringify(S.MACHINES["xtool-s1-feeder"]));
   check("PO-LASER-1 MACHINES is deep-frozen and defaults() returns independent copies",
@@ -3014,10 +3014,10 @@ suite("schema.js — G2.1 extended (strict keys, presets, sizing, units, geometr
     has(withAt(p, "construction.registration.layers", [1, 1]), "construction.registration.layers", "ORDER") &&
     has(withAt(p, "construction.registration.layers", [0, 8]), "construction.registration.layers.1", "RANGE") &&
     has(withAt(p, "construction.registration.layers", "some"), "construction.registration.layers", "TYPE"));
-  check("IMG-03 heightFilter null or a strict explicit filter", S.validate(withAt(p, "interpretation.heightFilter", { op: "median", radius: 1 })).ok &&
+  check("IMG-03 heightFilter null or a strict explicit filter", S.validate(withAt(p, "interpretation.heightFilter", { op: "median", radiusMM: 0.1 })).ok &&
     S.validate(withAt(p, "interpretation.heightFilter", { op: "remap", lut: Array.from({ length: 256 }, (_, i) => 255 - i) })).ok &&
     has(withAt(p, "interpretation.heightFilter", { op: "remap", lut: [1, 2] }), "interpretation.heightFilter.lut", "RANGE") &&
-    has(withAt(p, "interpretation.heightFilter", { op: "gauss", radius: 1 }), "interpretation.heightFilter.op", "ENUM"));
+    has(withAt(p, "interpretation.heightFilter", { op: "gauss", radiusMM: 0.1 }), "interpretation.heightFilter.op", "ENUM"));
   check("IMG-03/§3 polarity must suit the interpretation mode", has(withAt(p, "interpretation.polarity", "dark-front"), "interpretation.polarity", "CONSTRAINT") &&
     has(withAt(a, "interpretation.polarity", "white-high"), "interpretation.polarity", "CONSTRAINT"));
   check("MAT-05 kerfMode is external only", has(withAt(p, "material.kerfMode", "internal"), "material.kerfMode", "ENUM"));
@@ -3139,10 +3139,10 @@ suite("schema.js — G2.4b legacy settings adapter: fromLegacySettings, resolveL
     return noExtras(S.resolveLegacy(p, 600, 400)) !== noExtras(baseR);   // procRes, detailEps resolved later
   }));
   const { project: P, diagnostics: D } = imp(V110);
-  check("DEP-04 mapping: title, tonal + connected-sheet, polarity, thresholdRule, smoothing, sheets",
+  check("DEP-04 mapping: title, tonal + connected-sheet, polarity, thresholdRule, smoothing (r4 at 720 px on 300 mm → 1.65 mm, E3b), sheets",
     P.title === "Starry" && P.interpretation.mode === "tonal" && P.construction.mode === "connected-sheet" &&
     P.interpretation.polarity === "dark-front" && imp(Object.assign({}, V110, { darkFront: false })).project.interpretation.polarity === "light-front" &&
-    P.interpretation.thresholdRule === "balanced" && P.interpretation.smoothing.radius === 4 && P.interpretation.smoothing.passes === 2 &&
+    P.interpretation.thresholdRule === "balanced" && P.interpretation.smoothing.radiusMM === 1.65 && P.interpretation.smoothing.passes === 2 &&
     P.construction.sheets === 5);
   check("DEP-04 mapping: palette appearance, frame from margin, cleanup/bridge, registration, faceted → sharp",
     P.appearance.mode === "palette" && P.appearance.palette === "Midnight (Starry Night)" &&
@@ -3521,14 +3521,17 @@ suite("height.js/engine.js — G2.5b explicit height filter/remap (IMG-03, AT-02
     codeOf(() => H.applyFilter(img, W, Hh, { op: "remap", lut: Array(256).fill(256) })) === "FILTER_ARG" &&
     codeOf(() => H.applyFilter(img, W + 1, Hh, { op: "median", radius: 1 })) === "FILTER_ARG" &&
     codeOf(() => H.applyFilter(img, W, Hh, { op: "median", radius: 1 }, new Uint8Array(3))) === "FILTER_ARG");
-  check("IMG-03 every schema-valid heightFilter is accepted by applyFilter", (() => { const p = SBSchema.defaults("plywood");
-    return [{ op: "median", radius: 1 }, { op: "box", radius: 50 }, { op: "remap", lut }].every((f) => {
+  // E3b: schema filters carry radiusMM; interpretHeight converts it per raster (≥ 1 px, ≤ 50 px) before applyFilter.
+  check("IMG-03 every schema-valid heightFilter is accepted by applyFilter on any schema pitch (via interpretHeight)", (() => { const p = SBSchema.defaults("plywood");
+    return [{ op: "median", radiusMM: 0.05 }, { op: "box", radiusMM: 25 }, { op: "remap", lut }].every((f) => {
       const q = { ...p, interpretation: { ...p.interpretation, heightFilter: f } };
-      return SBSchema.validate(q).ok && codeOf(() => H.applyFilter(img, W, Hh, f)) === null; }); })());
+      return SBSchema.validate(q).ok && [0.01, 0.1, 2].every((mmPerPxMax) =>
+        codeOf(() => E.interpretHeight(img, W, Hh, q.interpretation, p.construction.sheets, null, { geometry: { mmPerPxMax } })) === null); }); })());
 
   // ---- interpretHeight: the engine's height interpretation stage (G2.10a stage 4)
   const p = SBSchema.defaults("plywood"), N = p.construction.sheets;
   const withF = (f) => ({ ...p.interpretation, heightFilter: f });
+  const G1 = { mmPerPxMax: 1 };   // E3b: 1 mm/px, so radiusMM n is n px
   const spy = (run) => {
     const calls = { kuwahara: 0, thresholds: 0, applyFilter: 0 };
     const ok = SBRaster.kuwahara, ot = SBRaster.thresholds, oa = H.applyFilter;
@@ -3543,20 +3546,20 @@ suite("height.js/engine.js — G2.5b explicit height filter/remap (IMG-03, AT-02
     raw.r.added.join() === H.addedFromSamples(img, N, "white-high").join() && !raw.r.diagnostics.some((d) => d.code === "HEIGHT_FILTERED"));
   check("IMG-03 polarity is honoured (black-high)", E.interpretHeight(img, W, Hh, { ...p.interpretation, polarity: "black-high" }, N, null, {}).added.join() ===
     H.addedFromSamples(img, N, "black-high").join());
-  const filt = spy(() => E.interpretHeight(img, W, Hh, withF({ op: "median", radius: 2 }), N, dom, { quality: "fabrication", revision: 3 }));
+  const filt = spy(() => E.interpretHeight(img, W, Hh, withF({ op: "median", radiusMM: 2 }), N, dom, { geometry: G1, quality: "fabrication", revision: 3 }));
   check("IMG-03 set heightFilter: applyFilter called once, still no kuwahara or thresholds",
     filt.calls.applyFilter === 1 && filt.calls.kuwahara === 0 && filt.calls.thresholds === 0);
   check("IMG-03 set heightFilter: added == addedFromSamples(applyFilter(samples, domain))",
     filt.r.added.join() === H.addedFromSamples(H.applyFilter(img, W, Hh, { op: "median", radius: 2 }, dom), N, "white-high").join());
   const hf = filt.r.diagnostics.find((d) => d.code === "HEIGHT_FILTERED");
   check("AT-02 HEIGHT_FILTERED (info) carries the filter, quality and revision", !!hf && hf.severity === "info" && hf.quality === "fabrication" && hf.revision === 3 &&
-    /median/.test(hf.message) && /radius 2/.test(hf.message));
+    /median/.test(hf.message) && /radius 2 mm \(2 px/.test(hf.message));
   check("AT-02 smoothing enabled is recorded as an explicit change (geometryKey hash changes, HEIGHT_FILTERED present)", (() => {
-    const q = { ...p, interpretation: withF({ op: "box", radius: 1 }) }, Hk = (o) => SBHash.hashJSON(SBSchema.geometryKey(o));
-    const d = E.interpretHeight(img, W, Hh, q.interpretation, N, null, {}).diagnostics;
-    return Hk(q) !== Hk(p) && Hk({ ...p, interpretation: withF({ op: "box", radius: 2 }) }) !== Hk(q) && d.some((x) => x.code === "HEIGHT_FILTERED"); })());
+    const q = { ...p, interpretation: withF({ op: "box", radiusMM: 1 }) }, Hk = (o) => SBHash.hashJSON(SBSchema.geometryKey(o));
+    const d = E.interpretHeight(img, W, Hh, q.interpretation, N, null, { geometry: G1 }).diagnostics;
+    return Hk(q) !== Hk(p) && Hk({ ...p, interpretation: withF({ op: "box", radiusMM: 2 }) }) !== Hk(q) && d.some((x) => x.code === "HEIGHT_FILTERED"); })());
   check("IMG-03 interpretHeight refuses tonal interpretation (ENGINE_ARG)", codeOf(() => E.interpretHeight(img, W, Hh, { ...p.interpretation, mode: "tonal" }, N, null, {})) === "ENGINE_ARG");
-  check("IMG-03 interpretHeight does not mutate the samples", (() => { const s = Uint8Array.from(img); E.interpretHeight(s, W, Hh, withF({ op: "box", radius: 3 }), N, null, {}); return s.join() === img.join(); })());
+  check("IMG-03 interpretHeight does not mutate the samples", (() => { const s = Uint8Array.from(img); E.interpretHeight(s, W, Hh, withF({ op: "box", radiusMM: 3 }), N, null, { geometry: G1 }); return s.join() === img.join(); })());
 });
 
 // ------------------------------------------------ G2.7b complexity caps and busy-art simplification
@@ -3785,7 +3788,7 @@ suite("engine.js — G2.10a SBEngine.generate through validation, with the envel
 
   // ---- GEO-02 stage order: frame union after smoothing; frame and base rings stay exact rectangles
   { const w = 90, h = 60, s = F.heightMap(2, w, h, 25);
-    const p = proj("acrylic", w, h, (q) => { q.interpretation = { mode: "height", polarity: "white-high", thresholdRule: "balanced", manual: [], smoothing: { radius: 0, passes: 0 }, heightFilter: null };
+    const p = proj("acrylic", w, h, (q) => { q.interpretation = { mode: "height", polarity: "white-high", thresholdRule: "balanced", manual: [], smoothing: { radiusMM: 0, passes: 0 }, heightFilter: null };
       // 2 mm frame, art 2 mm high on 60 px (33 µm/px), so some art loops round within the 50 µm tolerance
       q.construction.registration.enabled = false; q.construction.registration.diaMM = 1; q.construction.frame.widthMM = 2; q.geometry.sizeBy = "height"; q.geometry.targetMM = 6; });
     const r = E.generate(req(p, s, w, h)), S = r.snapshot;
@@ -3841,7 +3844,7 @@ suite("engine.js — G2.10a SBEngine.generate through validation, with the envel
     try {
       const w = 60, h = 40, s = F.heightMap(5, w, h, 12), p = proj("plywood", w, h);
       const a = E.generate(req(p, s, w, h)), n0 = Object.assign({}, n);
-      const pf = proj("plywood", w, h, (q) => { q.interpretation.heightFilter = { op: "median", radius: 1 }; });
+      const pf = proj("plywood", w, h, (q) => { q.interpretation.heightFilter = { op: "median", radiusMM: 0.5 }; });
       const b = E.generate(req(pf, s, w, h));
       const nb = Object.assign({}, n), pt = proj("acrylic", w, h);
       const c = E.generate(req(pt, s, w, h));
@@ -4347,7 +4350,7 @@ suite("schema.js/index.html/app.js — G2.11d applicability and disabled-with-re
     return ds.length === 1 && ds[0].severity === "info" && /construction\.bridge\.bridgeMM/.test(ds[0].message) && /bonded/i.test(ds[0].message); })());
   check("§9.5 the presets import with no ignored settings", ignored(P).length === 0 && ignored(A).length === 0);
   check("§9.5 a connected cull opt-in and height-mode smoothing are reported as ignored", (() => {
-    const c = ignored(withAt(A, "construction.bridge.cullEnabled", true)), s = ignored(withAt(P, "interpretation.smoothing", { radius: 4, passes: 2 }));
+    const c = ignored(withAt(A, "construction.bridge.cullEnabled", true)), s = ignored(withAt(P, "interpretation.smoothing", { radiusMM: 1.65, passes: 2 }));
     return c.length === 1 && /cullEnabled/.test(c[0].message) && s.length === 1 && /smoothing/.test(s[0].message); })());
   check("§9.5 an invalid import gets no applicability diagnostics (validate reports it)",
     S.importLoose(withAt(P, "construction.sheets", 99)).diagnostics.length === 0 && Array.isArray(S.importLoose(null).diagnostics));
@@ -5373,7 +5376,7 @@ suite("engine.js — alpha.3 E3 stage cache (NFR-05)", () => {
   const q2 = JSON.parse(JSON.stringify(q)); q2.construction.sheets = 6; q2.revision++;
   const m2 = []; E.generate(E.request(q2, px, { quality: "draft" }), { cache, onProgress: (st) => m2.push(st) });
   check("cache: changing sheets reuses K1 and K2", m2.includes("resample-cached") && m2.includes("interpret-cached"));
-  const q3 = JSON.parse(JSON.stringify(q)); q3.interpretation.smoothing = { radius: 2, passes: 1 }; q3.revision++;
+  const q3 = JSON.parse(JSON.stringify(q)); q3.interpretation.smoothing = { radiusMM: 0.8, passes: 1 }; q3.revision++;
   const m3 = []; E.generate(E.request(q3, px, { quality: "draft" }), { cache, onProgress: (st) => m3.push(st) });
   check("cache: changing smoothing reuses K1 only", m3.includes("resample-cached") && !m3.includes("interpret-cached"));
   check("NFR-05 a cached run never mutates the cached arrays (third run equal)", E.generate(req, { cache }).geometryHash === plain.geometryHash);
@@ -5385,6 +5388,72 @@ suite("engine.js — alpha.3 E3 stage cache (NFR-05)", () => {
     fcold.status === "done" && E.generate(fq2, { cache: fc }).geometryHash === E.generate(fq2).geometryHash);
   const id = { exif: 1, exifAppliedBy: "none", rotate: 0, mirror: false }, sm = new Uint8Array([1, 2, 3, 4, 5, 6]);
   check("NFR-05 E.orient at identity returns the input samples without copying", E.orient({ samples: sm, alpha: null, w: 3, h: 2 }, id).samples === sm);
+});
+
+suite("schema.js/engine.js — alpha.3 E3b physical filter radii and draft fidelity (LYR-06, IMG-04)", () => {
+  const F = require("./fixtures.js"), E = SBEngine, S = SBSchema;
+  check("E3b API present (SBEngine.radiusPx, smoothing.radiusMM)", typeof E.radiusPx === "function" && "radiusMM" in S.defaults("acrylic").interpretation.smoothing);
+  if (typeof E.radiusPx !== "function") return;
+  check("IMG-04 radiusPx converts mm by the coarser axis pitch", E.radiusPx(1.65, { mmPerPxMax: 0.4125 }) === 4 && E.radiusPx(1.65, { mmPerPxMax: 0.1 }) === 17 && E.radiusPx(0, { mmPerPxMax: 0.1 }) === 0);
+  check("IMG-04 radiusPx uses the coarser of sxUm/syUm and honours a 1 px floor for a positive radius",
+    E.radiusPx(1, { sxUm: 100, syUm: 250, mmPerPxMax: 0.25 }) === 4 && E.radiusPx(0.05, { mmPerPxMax: 0.5 }) === 0 && E.radiusPx(0.05, { mmPerPxMax: 0.5 }, 1) === 1 && E.radiusPx(0, { mmPerPxMax: 0.5 }, 1) === 0);
+  const A = S.defaults("acrylic"), P = S.defaults("plywood");
+  check("PRJ-01 presets: acrylic radiusMM 1.65 p2 (r4 at 720 px on 300 mm), plywood radiusMM 0 (D1)",
+    JSON.stringify(A.interpretation.smoothing) === JSON.stringify({ radiusMM: 1.65, passes: 2 }) &&
+    JSON.stringify(P.interpretation.smoothing) === JSON.stringify({ radiusMM: 0, passes: 0 }) && S.validate(A).ok && S.validate(P).ok);
+  const withAt = (p, path, v) => { const q = JSON.parse(JSON.stringify(p)); const k = path.split("."), last = k.pop(); let o = q; for (const x of k) o = o[x]; o[last] = v; return q; };
+  const errs = (p) => S.validate(p).errors.map((e) => e.path + ":" + e.code);
+  check("IMG-04 smoothing.radiusMM validates 0–5 in 0.05 mm steps; pixel radius is refused",
+    S.validate(withAt(A, "interpretation.smoothing", { radiusMM: 5, passes: 2 })).ok &&
+    errs(withAt(A, "interpretation.smoothing", { radiusMM: 5.05, passes: 2 })).includes("interpretation.smoothing.radiusMM:RANGE") &&
+    errs(withAt(A, "interpretation.smoothing", { radiusMM: 1.62, passes: 2 })).includes("interpretation.smoothing.radiusMM:GRID") &&
+    !S.validate(withAt(A, "interpretation.smoothing", { radius: 4, passes: 2 })).ok);
+  check("IMG-03 heightFilter radiusMM validates 0.05–25 mm; pixel radius is refused",
+    S.validate(withAt(P, "interpretation.heightFilter", { op: "median", radiusMM: 0.05 })).ok &&
+    S.validate(withAt(P, "interpretation.heightFilter", { op: "box", radiusMM: 25 })).ok &&
+    errs(withAt(P, "interpretation.heightFilter", { op: "box", radiusMM: 0.04 })).includes("interpretation.heightFilter.radiusMM:RANGE") &&
+    !S.validate(withAt(P, "interpretation.heightFilter", { op: "median", radius: 1 })).ok);
+  const leg = S.fromLegacySettings({ procRes: 720, smoothRadius: 4, smoothPasses: 2, nSheets: 5, widthMM: 300 }).project;
+  check("DEP-04 legacy smoothRadius 4 at 720 px on 300 mm maps to radiusMM 1.65 and back", leg.interpretation.smoothing.radiusMM === 1.65 && S.legacyState(leg).smoothRadius === 4);
+  check("DEP-04 legacyState uses the art long side from the source when known (portrait 300 × 600 source: art long side 600 mm)",
+    S.legacyState(A, 300, 600).smoothRadius === Math.round(1.65 * 720 / 600) && S.legacyState(A, 600, 300).smoothRadius === 4);
+  check("UI-01 applyControl(\"smooth\") takes mm (0.05 grid, clamped 0–5); invalid entry unchanged; revision + 1",
+    S.applyControl(A, "smooth", "2.5").interpretation.smoothing.radiusMM === 2.5 && S.applyControl(A, "smooth", 2.5).revision === A.revision + 1 &&
+    S.applyControl(A, "smooth", 1.62).interpretation.smoothing.radiusMM === 1.6 && S.applyControl(A, "smooth", 9).interpretation.smoothing.radiusMM === 5 &&
+    S.applyControl(A, "smooth", "x").revision === A.revision && S.controlValues(A)["in-smooth"] === "1.65");
+  // the height filter converts mm per raster, at least 1 px; HEIGHT_FILTERED states mm and px
+  { const w = 40, h = 30, s = F.heightMap(3, w, h, 6), interp = Object.assign({}, P.interpretation, { heightFilter: { op: "median", radiusMM: 0.5 } });
+    const r = E.interpretHeight(s, w, h, interp, 4, null, { geometry: { mmPerPxMax: 0.25 } });
+    const ref = SBHeight.addedFromSamples(SBHeight.applyFilter(s, w, h, { op: "median", radius: 2 }), 4, "white-high");
+    const d = r.diagnostics.find((x) => x.code === "HEIGHT_FILTERED");
+    check("IMG-03 heightFilter radiusMM 0.5 at 0.25 mm/px runs a 2 px median; HEIGHT_FILTERED states mm and px",
+      r.added.join() === ref.join() && !!d && /0\.5 mm/.test(d.message) && /2 px/.test(d.message));
+    const code = (fn) => { try { fn(); return null; } catch (e) { return e.code; } };
+    check("IMG-03 a median/box heightFilter without the raster pitch is refused (ENGINE_ARG); remap needs none",
+      code(() => E.interpretHeight(s, w, h, interp, 4, null, {})) === "ENGINE_ARG" &&
+      code(() => E.interpretHeight(s, w, h, Object.assign({}, interp, { heightFilter: { op: "remap", lut: Array.from({ length: 256 }, (_, i) => i) } }), 4, null, {})) === null); }
+  { const fs = require("fs"), path = require("path"), rd = (f) => fs.readFileSync(path.join(__dirname, "..", f), "utf8");
+    const app = rd("js/app.js"), html = rd("index.html"), ctl = /const CONTROLS = \[([\s\S]*?)\];/.exec(app);
+    check("UI-01 the smoothing control is in mm: #in-smooth is a 0–5 mm range in 0.05 steps written through applyControl(\"smooth\")",
+      /<input id="in-smooth" type="range" min="0" max="5" step="0\.05">/.test(html) && /Cartoon smoothing \(mm\)/.test(html) &&
+      !!ctl && /"smooth"/.test(ctl[1]) && !/bindRange\("in-smooth"/.test(app) && /\$\("out-smooth"\)\.textContent = .*radiusMM.*" mm"/.test(app)); }
+  // fidelity: a smooth colour fixture, tonal bonded, draft at a quarter of the fabrication raster
+  const w = 640, h = 480, g = F.heightMap(7, w, h), rgba = new Uint8Array(w * h * 4);
+  for (let i = 0; i < w * h; i++) { rgba[4 * i] = g[i]; rgba[4 * i + 1] = 255 - g[i]; rgba[4 * i + 2] = (g[i] >> 1) + 64; rgba[4 * i + 3] = 255; }
+  const px = { pixels: rgba, channels: 4, w, h, alpha: null };
+  let p = S.withSource(S.defaults("plywood"), E.sourceRecord(px, { format: "png", decode: "canvas-tonal" }));
+  p = S.applyModeChange(p, { interpretation: { mode: "tonal" } }, true); p.interpretation.smoothing = { radiusMM: 1.65, passes: 2 };
+  p.geometry.targetMM = 120; p.geometry.draftPx = 160; p.geometry.fabPitchMM = 0.25;
+  const d = E.generate(E.request(p, px, { quality: "draft" })).snapshot, f = E.generate(E.request(p, px, { quality: "fabrication" })).snapshot;
+  // Recorded tolerance; never loosened without a plan note. Measured 2026-10-08 (E3b): worst area deviation 2.28 % (layer 7),
+  // worst part-count ratio 1.75 (8 vs 14, layer 3). With the old pixel radius (r4 on both rasters) the same fixture gives
+  // 7.68 % and part ratios up to 11 (3 vs 33), so the part-count check fails on pixel radii.
+  const pageMM2 = f.page.wMM * f.page.hMM, TOL = 0.08, PARTS = 2;
+  const big = f.layers.map((L, k) => k).filter((k) => f.layers[k].stats.areaMM2 > 0.05 * pageMM2);
+  check("LYR-06 draft vs fabrication: per-layer area within 8 % on every layer above 5 % of the page", big.length > 0 &&
+    big.every((k) => Math.abs(d.layers[k].stats.areaMM2 - f.layers[k].stats.areaMM2) <= TOL * f.layers[k].stats.areaMM2));
+  check("LYR-06 draft vs fabrication: part counts within a factor of 2 per layer",
+    f.layers.every((L, k) => { const a = d.layers[k].parts.length, b = L.parts.length; return Math.max(a, b) <= PARTS * Math.max(1, Math.min(a, b)); }));
 });
 
 // ------------------------------------------------------------------ report

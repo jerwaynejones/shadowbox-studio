@@ -13,11 +13,17 @@ night landscape you can use to explore every control instantly.
 runs at. Higher = finer detail and slower recompute. 720 px is a good
 default; go higher only for large artwork (400 mm+) with fine detail.
 
-**Cartoon smoothing (1–10 px) and passes (1–3).** The Kuwahara filter radius.
+**Cartoon smoothing (0–5 mm) and passes (1–3).** The Kuwahara filter radius.
 This flattens texture into paint-like patches while keeping edges — the
 "cartoonize" step. Bigger radius / more passes = bolder, simpler shapes and
 far fewer islands to fix. If your layer sheets look like noise, raise this
 first.
+Smoothing is in millimetres; draft and fabrication smooth the same physical
+size (the radius is converted to pixels for each raster, so the draft
+approximates the cut geometry). The Acrylic default is 1.65 mm (the old radius
+4 at the 720 px draft on a 300 mm piece); Plywood height maps are not smoothed.
+Smoothing radii in older settings files are converted from pixels at the v1.1
+720 px pitch.
 
 ## Step 2 — Layers
 
