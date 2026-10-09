@@ -6157,6 +6157,70 @@ suite("raster — speed round F3 streaming resample (NFR-05)", () => {
   check("F3 resample does not alias its input (identity returns a copy)", (() => { const o = R.resample(px, 3, 31, 29, 31, 29, "area"); return o.buffer !== px.buffer && same(o, px); })());
 });
 
+// ------------------------------------------------ speed round F4 (plan Appendix F, S5): windowAny, fused erode/dilate, fused morph
+suite("morph — speed round F4 windowAny, erode/dilate, fused dilations (NFR-05)", () => {
+  const M = SBMorph, { oracleMorph: O } = require("./oracle_kernels.js");
+  const same = (a, b) => a instanceof Uint8Array && b instanceof Uint8Array && a.length === b.length && Buffer.compare(Buffer.from(a.buffer, a.byteOffset, a.length), Buffer.from(b.buffer, b.byteOffset, b.length)) === 0;
+  const OPS = ["dilate", "erode", "open", "close"];
+  // exhaustive: every 4 × 4 and 5 × 3 (and 3 × 5) mask, r = 0..4, all four ops; inputs must not be mutated
+  for (const [w, h] of [[4, 4], [5, 3], [3, 5]]) {
+    let total = 0, eq = 0, intact = true;
+    const n = w * h, m = new Uint8Array(n);
+    for (let bits = 0; bits < 1 << n; bits++) {
+      for (let i = 0; i < n; i++) m[i] = (bits >> i) & 1;
+      const before = m.slice();
+      for (let r = 0; r <= 4; r++) for (const op of OPS) {
+        total++;
+        if (same(M[op](m, w, h, r), O[op](m, w, h, r))) eq++;
+      }
+      if (!same(m, before)) intact = false;
+    }
+    check(`F4 exhaustive ${w} × ${h}: dilate/erode/open/close == oracle for r 0..4 (${eq}/${total})`, eq === total);
+    check(`F4 exhaustive ${w} × ${h}: inputs not mutated`, intact);
+    // the fused open(r) → close(r2) = erode_r → dilate_{r+r2} → erode_{r2}, exhaustively, r and r2 in 1..4
+    let ft = 0, fe = 0;
+    for (let bits = 0; bits < 1 << n; bits++) {
+      for (let i = 0; i < n; i++) m[i] = (bits >> i) & 1;
+      for (let r = 1; r <= 4; r++) for (let r2 = 1; r2 <= 4; r2++) { ft++; if (same(M.openClose(m, w, h, r, r2), O.close(O.open(m, w, h, r), w, h, r2))) fe++; }
+    }
+    check(`F4 exhaustive ${w} × ${h}: SBMorph.openClose(r, r2) == oracle close(open(r), r2), r, r2 1..4 (${fe}/${ft})`, typeof M.openClose === "function" && fe === ft);
+  }
+  let seed = 0x5eed_f4;
+  const rnd = () => { seed = (seed + 0x6d2b79f5) | 0; let t = seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
+  const randMask = (w, h, dens, val) => { const m = new Uint8Array(w * h); for (let i = 0; i < m.length; i++) m[i] = rnd() < dens ? val : 0; return m; };
+  // random: 64 × 48 plus thin and tiny shapes (w < 3, h < 3), r up to beyond the size, values 1 and 255 (nonzero = set)
+  let total = 0, eq = 0, aliasFree = true;
+  for (let t = 0; t < 600; t++) {
+    const kind = t % 4, w = kind === 0 ? 64 : kind === 1 ? ri(1, 2) : ri(1, 70), h = kind === 0 ? 48 : kind === 2 ? ri(1, 2) : ri(1, 60);
+    const m0 = randMask(w, h, [0.02, 0.3, 0.5, 0.8, 0.98][t % 5], t % 7 === 0 ? 255 : 1), off = t % 4;
+    // off > 0: the mask is an unaligned view (byteOffset 1..3), so the word-skipping row scan takes its byte path
+    const m = off ? (() => { const b = new Uint8Array(m0.length + off); b.set(m0, off); return b.subarray(off); })() : m0;
+    const rs = [0, 1, 2, 3, ri(4, 12), w, w + ri(0, 5), h + ri(0, 5)];
+    for (const r of rs) for (const op of OPS) {
+      total++;
+      const got = M[op](m, w, h, r);
+      if (same(got, O[op](m, w, h, r))) eq++;
+      if (got.buffer === m.buffer) aliasFree = false;
+    }
+  }
+  check(`F4 random masks (64 × 48, w < 3, h < 3, r ≥ w, values 1/255, unaligned views) == oracle (${eq}/${total})`, eq === total);
+  check("F4 results never alias the input", aliasFree);
+  // the construct morph chain (open → close(max(1, r − 1)) → removeSpecks → fillHoles), fused dilations, featR 0..9
+  check("F4 SBConstruct._morph test hook exists", typeof SBConstruct._morph === "function");
+  if (typeof SBConstruct._morph !== "function") return;
+  let mc = 0, meq = 0;
+  for (let t = 0; t < 160; t++) {
+    const w = t % 8 === 0 ? ri(1, 4) : ri(20, 90), h = t % 8 === 1 ? ri(1, 4) : ri(20, 70), featR = t % 10, cull = t % 3 === 0;
+    const m = randMask(w, h, [0.15, 0.4, 0.6, 0.85][t % 4], t % 5 === 0 ? 255 : 1), keep = m.slice();
+    const px = { featR, speckPx: ri(0, 30), holePx: ri(0, 60) };
+    const a = SBConstruct._morph(m, w, h, px, cull), b = O.morph(M, m, w, h, px, cull);
+    mc++;
+    if (same(a.m, b.m) && a.specks === b.specks && a.holes === b.holes && same(m, keep)) meq++;
+  }
+  check(`F4 construct morph (fused erode → dilate(r + r') → erode(r')) == oracle chain, featR 0..9 (${meq}/${mc})`, meq === mc);
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

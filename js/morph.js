@@ -19,6 +19,11 @@
  * erodes them) and erodes an interior pixel iff its clipped window has an
  * empty pixel. The iterated forms stay as _dilateIter/_erodeIter (test
  * reference; test/golden/oldrun.json pins the v1.1.0 chain byte for byte).
+ *
+ * Speed round F4 (NFR-05): the window test reads the mask directly (run fill in
+ * the row pass, word-skipping scan; fused column sweep), and SBMorph.openClose
+ * fuses the dilations of open(r) → close(r2) into one dilate_{r+r2}; outputs
+ * are byte-identical (test/oracle_kernels.js keeps the pre-F4 kernels).
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -72,57 +77,106 @@
   };
 
   /**
-   * Clipped (2r+1)² window test, separable: ind is a 0/1 indicator; per row, the number of indicator pixels in
-   * [x−r, x+r] ∩ [0, w) (a sliding count), then per column the same over rows. Returns a Uint8Array with 1 where the
-   * window holds ≥ 1 indicator pixel. O(w·h) for any r.
+   * Clipped (2r+1)² window test, separable, O(w·h) for any r. The indicator is `src[i] !== 0` (or `src[i] === 0` when
+   * `invert`), read directly in the row pass (no indicator plane). Row pass (speed round F4): each indicator run [a, b)
+   * marks [a − r, b + r) ∩ [0, w) in `mid` (a 0/1 plane, zeroed here), each byte written at most once per row. Column
+   * pass: a sliding per-column count over rows [y − r, y + r] ∩ [0, h), split into head/body/tail row ranges so the
+   * inner loops have no bounds tests. Without `erodeOf`: returns a 0/1 Uint8Array, 1 where the window holds ≥ 1
+   * indicator pixel. With `erodeOf` (a copy of the mask, written in place and returned): interior pixels (not on the
+   * 1-px border) whose window holds ≥ 1 indicator pixel are set to 0; the border keeps its values.
    */
-  function windowAny(ind, w, h, r) {
-    const mid = new Uint8Array(w * h), out = new Uint8Array(w * h);
+  // First index i in [i, end) with src[i] !== 0 (nz) or src[i] === 0 (!nz), else end. When src is 4-byte aligned, whole
+  // words are skipped: all-zero words when looking for a nonzero byte, zero-free words (no byte b with (b − 1) & ~b
+  // & 0x80) when looking for a zero byte.
+  function scanTo(src, w32, i, end, nz) {
+    if (nz) {
+      if (w32) { while (i < end && (i & 3)) { if (src[i] !== 0) return i; i++; } while (i + 4 <= end && w32[i >> 2] === 0) i += 4; }
+      while (i < end && src[i] === 0) i++;
+    } else {
+      if (w32) {
+        while (i < end && (i & 3)) { if (src[i] === 0) return i; i++; }
+        while (i + 4 <= end) { const v = w32[i >> 2]; if (((v - 0x01010101) & ~v & 0x80808080) !== 0) break; i += 4; }
+      }
+      while (i < end && src[i] !== 0) i++;
+    }
+    return i;
+  }
+
+  function windowAny(src, w, h, r, invert, mid, erodeOf) {
+    mid.fill(0);
+    const w32 = src.byteOffset % 4 === 0 ? new Uint32Array(src.buffer, src.byteOffset, src.length >> 2) : null;
     for (let y = 0, o = 0; y < h; y++, o += w) {
-      let c = 0;
-      const e0 = Math.min(w - 1, r);
-      for (let x = 0; x <= e0; x++) c += ind[o + x];
-      mid[o] = c > 0 ? 1 : 0;
-      for (let x = 1; x < w; x++) {
-        if (x + r < w) c += ind[o + x + r];
-        if (x - r - 1 >= 0) c -= ind[o + x - r - 1];
-        mid[o + x] = c > 0 ? 1 : 0;
+      const end = o + w;
+      let i = o, hi = o;                                      // mid[o .. hi) of this row is already marked
+      while (i < end) {
+        i = scanTo(src, w32, i, end, !invert);                // start of an indicator run
+        if (i >= end) break;
+        const a = i;
+        i = scanTo(src, w32, i, end, invert);                 // its end
+        const lo = a - r > hi ? a - r : hi, e = i + r < end ? i + r : end;
+        if (e > lo) { mid.fill(1, lo, e); hi = e; }
       }
     }
-    const cnt = new Int32Array(w);
-    for (let y = 0; y <= Math.min(h - 1, r); y++) { const o = y * w; for (let x = 0; x < w; x++) cnt[x] += mid[o + x]; }
-    for (let y = 0, o = 0; y < h; y++, o += w) {
-      if (y > 0) {
-        if (y + r < h) { const a = (y + r) * w; for (let x = 0; x < w; x++) cnt[x] += mid[a + x]; }
-        if (y - r - 1 >= 0) { const b = (y - r - 1) * w; for (let x = 0; x < w; x++) cnt[x] -= mid[b + x]; }
+    const out = erodeOf || new Uint8Array(w * h), cnt = new Int32Array(w);
+    // cnt holds Σ mid over rows [y − r, y + r] ∩ [0, h) when row y is emitted
+    const r0 = Math.min(h - 1, r);
+    for (let y = 0; y <= r0; y++) { const a = y * w; for (let x = 0; x < w; x++) cnt[x] += mid[a + x]; }
+    const emit = (y) => {
+      const o = y * w;
+      if (!erodeOf) { for (let x = 0; x < w; x++) out[o + x] = cnt[x] > 0 ? 1 : 0; return; }
+      if (y === 0 || y === h - 1) return;
+      for (let x = 1; x < w - 1; x++) if (cnt[x] > 0) out[o + x] = 0;
+    };
+    emit(0);
+    // y in [1, h): adds row y + r while y + r < h, subtracts row y − r − 1 while y − r − 1 ≥ 0
+    const addEnd = Math.max(1, h - r), subStart = r + 1;      // add for y < addEnd, subtract for y ≥ subStart
+    const bothStart = Math.max(1, subStart), bothEnd = addEnd;
+    let y = 1;
+    for (; y < h && y < addEnd && y < subStart; y++) { const a = (y + r) * w; for (let x = 0; x < w; x++) cnt[x] += mid[a + x]; emit(y); }
+    for (; y < bothEnd && y >= bothStart; y++) {                // body: add, subtract and emit in one sweep
+      const a = (y + r) * w, b = (y - r - 1) * w, o = y * w;
+      if (!erodeOf) for (let x = 0; x < w; x++) { const c = cnt[x] + mid[a + x] - mid[b + x]; cnt[x] = c; out[o + x] = c > 0 ? 1 : 0; }
+      else {
+        cnt[0] += mid[a] - mid[b];
+        for (let x = 1; x < w - 1; x++) { const c = cnt[x] + mid[a + x] - mid[b + x]; cnt[x] = c; if (c > 0) out[o + x] = 0; }
+        if (w > 1) cnt[w - 1] += mid[a + w - 1] - mid[b + w - 1];
       }
-      for (let x = 0; x < w; x++) out[o + x] = cnt[x] > 0 ? 1 : 0;
+    }
+    for (; y < h; y++) {
+      if (y < addEnd) { const a = (y + r) * w; for (let x = 0; x < w; x++) cnt[x] += mid[a + x]; }
+      else if (y >= subStart) { const b = (y - r - 1) * w; for (let x = 0; x < w; x++) cnt[x] -= mid[b + x]; }
+      emit(y);
     }
     return out;
   }
 
-  M.dilate = function (mask, w, h, r) {
-    if (r < 1) return mask.slice();
-    const ind = new Uint8Array(w * h);
-    for (let i = 0; i < ind.length; i++) ind[i] = mask[i] !== 0 ? 1 : 0;
-    return windowAny(ind, w, h, r);
-  };
-
-  M.erode = function (mask, w, h, r) {
+  function dilateInto(mask, w, h, r, mid) { return r < 1 ? mask.slice() : windowAny(mask, w, h, r, false, mid, null); }
+  function erodeInto(mask, w, h, r, mid) {
     const out = mask.slice();
     if (r < 1 || w < 3 || h < 3) return out;
-    const ind = new Uint8Array(w * h);
-    for (let i = 0; i < ind.length; i++) ind[i] = mask[i] === 0 ? 1 : 0;
-    const hole = windowAny(ind, w, h, r);
-    for (let y = 1; y < h - 1; y++) for (let x = 1, o = y * w + 1; x < w - 1; x++, o++) if (hole[o]) out[o] = 0;
-    return out;
-  };
+    return windowAny(mask, w, h, r, true, mid, out);
+  }
+
+  M.dilate = (mask, w, h, r) => dilateInto(mask, w, h, r, r < 1 ? null : new Uint8Array(w * h));
+  M.erode = (mask, w, h, r) => erodeInto(mask, w, h, r, r < 1 || w < 3 || h < 3 ? null : new Uint8Array(w * h));
 
   /** Opening = erode then dilate. Removes features thinner than ~2r px. */
   M.open = (mask, w, h, r) => (r < 1 ? mask.slice() : M.dilate(M.erode(mask, w, h, r), w, h, r));
 
   /** Closing = dilate then erode. Seals gaps/holes thinner than ~2r px. */
   M.close = (mask, w, h, r) => (r < 1 ? mask.slice() : M.erode(M.dilate(mask, w, h, r), w, h, r));
+
+  /**
+   * open(r) then close(r2), r, r2 ≥ 1, as erode_r → dilate_{r+r2} → erode_{r2} (speed round F4, one scratch plane).
+   * Exact: the dilation is the clipped Chebyshev window, and for p, s in the rectangle with |p − s|∞ ≤ a + b a point q
+   * of the rectangle with |p − q|∞ ≤ a and |q − s|∞ ≤ b exists per axis (between p and s), so dilate_a ∘ dilate_b =
+   * dilate_{a+b}. Erosion is untouched (it never erodes the 1-px border either way).
+   */
+  M.openClose = function (mask, w, h, r, r2) {
+    if (!(r >= 1 && r2 >= 1)) return M.close(M.open(mask, w, h, r), w, h, r2);
+    const mid = new Uint8Array(w * h);
+    return erodeInto(dilateInto(erodeInto(mask, w, h, r, mid), w, h, r + r2, mid), w, h, r2, mid);
+  };
 
   /**
    * Label 4-connected components of `value` pixels.

@@ -1,6 +1,6 @@
 // test/oracle_kernels.js — speed round (plan Appendix F, F.3): the pre-round kernels, moved VERBATIM from js/
 // so every optimised kernel ships with a byte-equality test against the code it replaced. Never edit these
-// bodies; only add kernels (F3 resample; later F4–F7).
+// bodies; only add kernels (F3 resample, F4 morphology; later F5–F7).
 "use strict";
 
 // ---- F3: R.resample as of alpha.3 (js/raster.js before F3), with its helpers, verbatim.
@@ -74,4 +74,69 @@ const oracleResample = (() => {
   return oracleResample;
 })();
 
-module.exports = { oracleResample };
+// ---- F4: windowAny, M.dilate, M.erode, M.open, M.close (js/morph.js before F4) and construct.js `morph`, verbatim.
+// `morph` reads SBMorph from its global; here open/close are the oracle ones and removeSpecks/fillHoles come from the
+// live module passed as `live` (F5 adds its own oracles for those).
+const oracleMorph = (() => {
+  const M = {};
+  function windowAny(ind, w, h, r) {
+    const mid = new Uint8Array(w * h), out = new Uint8Array(w * h);
+    for (let y = 0, o = 0; y < h; y++, o += w) {
+      let c = 0;
+      const e0 = Math.min(w - 1, r);
+      for (let x = 0; x <= e0; x++) c += ind[o + x];
+      mid[o] = c > 0 ? 1 : 0;
+      for (let x = 1; x < w; x++) {
+        if (x + r < w) c += ind[o + x + r];
+        if (x - r - 1 >= 0) c -= ind[o + x - r - 1];
+        mid[o + x] = c > 0 ? 1 : 0;
+      }
+    }
+    const cnt = new Int32Array(w);
+    for (let y = 0; y <= Math.min(h - 1, r); y++) { const o = y * w; for (let x = 0; x < w; x++) cnt[x] += mid[o + x]; }
+    for (let y = 0, o = 0; y < h; y++, o += w) {
+      if (y > 0) {
+        if (y + r < h) { const a = (y + r) * w; for (let x = 0; x < w; x++) cnt[x] += mid[a + x]; }
+        if (y - r - 1 >= 0) { const b = (y - r - 1) * w; for (let x = 0; x < w; x++) cnt[x] -= mid[b + x]; }
+      }
+      for (let x = 0; x < w; x++) out[o + x] = cnt[x] > 0 ? 1 : 0;
+    }
+    return out;
+  }
+
+  M.dilate = function (mask, w, h, r) {
+    if (r < 1) return mask.slice();
+    const ind = new Uint8Array(w * h);
+    for (let i = 0; i < ind.length; i++) ind[i] = mask[i] !== 0 ? 1 : 0;
+    return windowAny(ind, w, h, r);
+  };
+
+  M.erode = function (mask, w, h, r) {
+    const out = mask.slice();
+    if (r < 1 || w < 3 || h < 3) return out;
+    const ind = new Uint8Array(w * h);
+    for (let i = 0; i < ind.length; i++) ind[i] = mask[i] === 0 ? 1 : 0;
+    const hole = windowAny(ind, w, h, r);
+    for (let y = 1; y < h - 1; y++) for (let x = 1, o = y * w + 1; x < w - 1; x++, o++) if (hole[o]) out[o] = 0;
+    return out;
+  };
+
+  /** Opening = erode then dilate. Removes features thinner than ~2r px. */
+  M.open = (mask, w, h, r) => (r < 1 ? mask.slice() : M.dilate(M.erode(mask, w, h, r), w, h, r));
+
+  /** Closing = dilate then erode. Seals gaps/holes thinner than ~2r px. */
+  M.close = (mask, w, h, r) => (r < 1 ? mask.slice() : M.erode(M.dilate(mask, w, h, r), w, h, r));
+
+  /** The shared per-layer morphology: open → close (→ removeSpecks when cull) → fillHoles. Returns {m, specks, holes}. */
+  function morph(live, mask, w, h, px, cull) {
+    const r = px.featR;
+    let m = r > 0 ? M.open(mask, w, h, r) : mask.slice();
+    if (r > 0) m = M.close(m, w, h, Math.max(1, r - 1));
+    const specks = cull ? live.removeSpecks(m, w, h, px.speckPx) : 0;
+    const holes = live.fillHoles(m, w, h, px.holePx);
+    return { m, specks, holes };
+  }
+  return { windowAny, dilate: M.dilate, erode: M.erode, open: M.open, close: M.close, morph };
+})();
+
+module.exports = { oracleResample, oracleMorph };

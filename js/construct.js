@@ -70,12 +70,14 @@
   /** The shared per-layer morphology: open → close (→ removeSpecks when cull) → fillHoles. Returns {m, specks, holes}. */
   function morph(mask, w, h, px, cull) {
     const M = global.SBMorph, r = px.featR;
-    let m = r > 0 ? M.open(mask, w, h, r) : mask.slice();
-    if (r > 0) m = M.close(m, w, h, Math.max(1, r - 1));
+    // open(r) then close(max(1, r − 1)) with the two dilations fused (speed round F4, SBMorph.openClose)
+    const m = r > 0 ? M.openClose(mask, w, h, r, Math.max(1, r - 1)) : mask.slice();
     const specks = cull ? M.removeSpecks(m, w, h, px.speckPx) : 0;
     const holes = M.fillHoles(m, w, h, px.holePx);
     return { m, specks, holes };
   }
+
+  C._morph = morph;   // test hook (speed round F4): compared against the pre-F4 chain in test/oracle_kernels.js
 
   function diff(before, after) {
     let added = 0, removed = 0;
