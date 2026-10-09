@@ -468,6 +468,9 @@
    *   hashes    geometryHash = hashJSON({key: geometryKey(config), engine: VERSION, quality, raster: [rasterW, rasterH],
    *             layers: SBGeom.layerHashes(L).layerHash per index 0..N−1 (omitted layers included), guides: guideHash})
    *             (§3, D4); also in the response as geometryHash
+   *   payload   (alpha.3 E2, UI-05; display data outside the hash input) cleanupReport[k].bridged/.culled (SBConstruct
+   *             report; 0 in bonded), snapshot.repairsApplied (indices replayRepairs applied; [] without repairs),
+   *             snapshot.page {wMM, hMM, frameMM, artWMM, artHMM}, snapshot.construction {mode, tMM, gMM (0 in bonded)}
    *   freeze    every response is deep-frozen (Object.freeze; typed arrays skipped)
    * Draft/fabrication (LYR-06): the hash carries quality and the raster size, so draft diagnostics and acks never
    * apply to a fabrication snapshot; every export regenerates at fabrication (alpha.2 checkpoint; two-phase in G3.10).
@@ -568,7 +571,8 @@
     const fUm = Math.round(page.frameMM * 1000);
     const cleanupReport = built.report.map((r, k) => {
       step("construct", 0.25 + (0.05 * k) / N);
-      const e = { layer: k, addedMM2: r.addedPx * pxMM2, removedMM2: r.removedPx * pxMM2, holesFilled: r.filledHoles, partsRemoved: r.removedParts };
+      const e = { layer: k, addedMM2: r.addedPx * pxMM2, removedMM2: r.removedPx * pxMM2, holesFilled: r.filledHoles, partsRemoved: r.removedParts,
+        bridged: r.bridged || 0, culled: r.culled || 0 };   // alpha.3 E2 (UI-05): SBConstruct report counts (bonded: 0)
       const b = built.bridges[k];
       if (b) { const poly = E.maskPolygons(W, H, geo.sxUm, geo.syUm, fUm, (i) => b[i]); if (poly) e.bridges = poly; }
       // G2.13b (GEO-08, UI-05): change overlays at draft quality only, so the fabrication budget is unchanged.
@@ -602,9 +606,10 @@
 
     // 9. replay reviewed repairs (after the frame union, before holes and validation)
     step("repairs", 0.62);
+    let repairsApplied = [];
     if (con.repairs.length) {
       const rp = S.replayRepairs(layers, con.repairs, { project: p, quality, revision });
-      layers = rp.layers; diagnostics.push(...rp.diagnostics);
+      layers = rp.layers; diagnostics.push(...rp.diagnostics); repairsApplied = rp.applied;
     }
 
     // 10. holes (legacy connected corners until G3.1)
@@ -656,7 +661,10 @@
       raster: [W, H], layers: layerHashes, guides: E.guideHash(guides) });
     const snapshot = {
       revision, engineVersion: E.VERSION, geometryHash, quality, layers, diagnostics, cleanupReport,
-      supportGraph: sv.supportGraph, guides, geometry: geo, page: { wMM: page.wMM, hMM: page.hMM }, stats,
+      supportGraph: sv.supportGraph, guides, geometry: geo, stats, repairsApplied,
+      // alpha.3 E2 (UI-05): display data outside the hash input, so a stale result is drawn with its own settings
+      page: { wMM: page.wMM, hMM: page.hMM, frameMM: page.frameMM, artWMM: geo.artWMM, artHMM: geo.artHMM },
+      construction: { mode: con.mode, tMM: mat.thicknessMM, gMM: bonded ? 0 : con.gapMM },
     };
     step("done", 1);
     return Object.assign({}, head, { status: "done", validatedLayers: layers, snapshot, diagnostics, geometryHash });

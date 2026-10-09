@@ -91,7 +91,8 @@
    * Retained/waste figures for the Layers cards (G2.13a), one per layer (empty ones too), back to front by index.
    * retainedMM2 is SBGeom.area(layer.material) (the same polygons the proof and the cut files draw); wasteMM2 is
    * the rest of the shared page (frame included), so retained + waste = page area. role: the first card is the
-   * backing, the last the front, the others mid.
+   * backing, the last the front, the others mid. omitted (alpha.3 E2, LYR-01): layer.status is "omitted-trailing".
+   * Cut length is not computed here; cards read layer.stats.cutMM (SBMaterial).
    */
   P.cards = function (layers, page) {
     const pg = page || {};
@@ -111,6 +112,7 @@
         retainedMM2,
         wasteMM2: pageMM2 - retainedMM2,
         retainedPct: (100 * retainedMM2) / pageMM2,
+        omitted: l.status === "omitted-trailing",   // alpha.3 E2 (LYR-01)
       };
     });
   };

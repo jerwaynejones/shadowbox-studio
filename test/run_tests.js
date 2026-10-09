@@ -5319,6 +5319,43 @@ suite("engine.js/schema.js/app.js — alpha.3 E1 shared request and installed so
     !/fabricationRequest\(/.test(appSrc) && /sampleHash/.test(fn("regenerate")) && /sampleHash/.test(fn("fabReview")));
 });
 
+// ------------------------------------------------ alpha.3 E2 (engine payload the UI needs; no hash change)
+suite("engine.js/proof.js — alpha.3 E2 snapshot payload (UI-05, G2.13d)", () => {
+  const F = require("./fixtures.js"), E = SBEngine, S = SBSchema, SP = SBSupport;
+  const px = { pixels: F.heightMap(7, 200, 200), channels: 1, w: 200, h: 200, alpha: null };
+  const p = S.withSource(Object.assign(S.defaults("acrylic"), {}), E.sourceRecord(px, { format: "png", decode: "raw-gray8" }));
+  p.interpretation.mode = "height"; p.interpretation.polarity = "white-high"; p.geometry.widthMM = 60; p.geometry.targetMM = 84;
+  const r = E.generate(E.request(p, px, { quality: "draft" })), s = r.snapshot;
+  check("UI-05 cleanupReport carries bridged and culled per layer", r.status === "done" && s.cleanupReport.every((c) => Number.isFinite(c.bridged) && Number.isFinite(c.culled)));
+  if (r.status !== "done") return;
+  check("G2.13d snapshot.repairsApplied is [] without repairs", Array.isArray(s.repairsApplied) && s.repairsApplied.length === 0);
+  check("§3 snapshot.page carries frameMM and the art size", s.page.frameMM === 12 && s.page.artWMM === s.geometry.artWMM && s.page.artHMM === s.geometry.artHMM &&
+    Number.isFinite(s.page.wMM) && Number.isFinite(s.page.hMM));
+  check("NFR-05 the payload additions do not change geometryHash (hash recomputed from its inputs)",
+    s.geometryHash === SBHash.hashJSON({ key: S.geometryKey(p), engine: E.VERSION, quality: "draft", raster: [s.geometry.rasterW, s.geometry.rasterH],
+      layers: s.layers.map((L) => SBGeom.layerHashes(L).layerHash), guides: E.guideHash(s.guides) }));
+  const sq = [{ outer: [0, 0, 10000, 0, 10000, 10000, 0, 10000], holes: [] }];
+  check("UI-05 snapshot.construction carries mode, thickness and gap (connected)", s.construction.mode === "connected-sheet" &&
+    s.construction.tMM === p.material.thicknessMM && s.construction.gMM === p.construction.gapMM && p.construction.gapMM > 0);
+  check("UI-05 cards read MaterialLayer.stats.cutMM (no second cut-length routine)", typeof SBProof.cutLengthMM === "undefined" && s.layers.every((L) => Number.isFinite(L.stats.cutMM)));
+  const cards = SBProof.cards([{ index: 0, material: sq, status: "ok" }, { index: 1, material: [], status: "omitted-trailing" }], { wMM: 10, hMM: 10 });
+  check("LYR-01 cards mark omitted-trailing layers", cards[1].omitted === true && cards[0].omitted === false);
+  check("LYR-01 cards on a real snapshot follow layer.status", SBProof.cards(s.layers, s.page).every((c, k) => c.omitted === (s.layers[k].status === "omitted-trailing")));
+  // Bonded: gap 0 in the display construction, no bridges reported (SUP-06).
+  const pb = S.withSource(S.defaults("plywood"), E.sourceRecord(px, { format: "png", decode: "raw-gray8" })); pb.geometry.targetMM = 60;
+  const sb = E.generate(E.request(pb, px, { quality: "draft" })).snapshot;
+  check("UI-05 bonded snapshot.construction has gap 0 and its own thickness", sb.construction.mode === "bonded-relief" && sb.construction.gMM === 0 && sb.construction.tMM === pb.material.thicknessMM);
+  check("SUP-06 bonded cleanupReport reports bridged 0 on every layer", sb.cleanupReport.every((c) => c.bridged === 0 && Number.isFinite(c.culled)));
+  check("UI-05 snapshot.construction carries exactly {mode, tMM, gMM} (display data outside the hash input)",
+    JSON.stringify(Object.keys(s.construction).sort()) === JSON.stringify(["gMM", "mode", "tMM"]));
+  // Repairs applied: a clip reviewed on the draft replays at fabrication and is reported by index.
+  const dr = E.generate(E.request(pb, px, { quality: "draft" })).snapshot;
+  const q = SP.applyClip(pb, SP.proposeClip(dr, 1));
+  const qs = E.generate(E.request(q, px, { quality: "draft" })).snapshot;
+  check("G2.13d snapshot.repairsApplied lists the replayed repairs", Array.isArray(qs.repairsApplied) && qs.repairsApplied.length === q.construction.repairs.length &&
+    qs.repairsApplied.every((i) => Number.isInteger(i)));
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {
