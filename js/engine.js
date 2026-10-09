@@ -496,7 +496,7 @@
    *  10  holes: the legacy connected corners (G1.7) until G3.1
    *  12  SBGeom.validate (per layer, in fromMasks/withMaterial), SBSupport.validate, featureChecks, checkEnvelope
    *  13  assignParts, then Part.supports from the support graph (SBSupport.annotate)
-   *  14  guides: G3.1 inserts them (snapshot.guides null until then)
+   *  14  guides: SBGuides.build/validate in bonded mode with guides.mode ≠ "none" (alpha.3 E11); otherwise snapshot.guides null
    * A cap over its limit returns status "error", COMPLEXITY_LIMIT and NO layers.
    * Then (G2.10b), all lengths as µm integers (t = round(thicknessMM·1000), g = round(gapMM·1000), g = 0 in bonded mode):
    *   Z         zBottomMM(k) = k·(t + g)/1000, zTopMM = zBottomMM + t (SRS §4.3, UI-03; view.explodeMM never enters)
@@ -542,7 +542,7 @@
 
   /**
    * guideHash(guides) (§3, D4): what the guides add beyond the score polylines already inside each layerHash — labels,
-   * omissions with reasons and the placement map. null guides (until G3.1) hash as hashJSON(null).
+   * omissions with reasons and the placement map. null guides (connected, or guides.mode "none") hash as hashJSON(null).
    */
   E.guideHash = function (guides) {
     const H = global.SBHash;
@@ -700,10 +700,20 @@
     step("envelope", 0.95);
     diagnostics.push(...S.checkEnvelope({ wMM: page.wMM, hMM: page.hMM }, p.machine, mat, dOpts));
 
-    // 13. parts and their supports; 14. guides arrive with G3.1
+    // 13. parts and their supports
     step("parts", 0.98);
     layers = S.annotate(M.assignParts(layers), sv.supportGraph);
-    const guides = null;
+    // 14. guides (G3.1 stage 14, alpha.3 E11; ASM-01/02/03, GEO-07): bonded with guides.mode ≠ "none" only. Built after the
+    // repair replay on every generate (draft and fabrication through the same code), so a clip rebuilds the guides
+    // (SUP-04/05). Score paths go into each layer (→ layerHash); labels and omissions into guides (→ guideHash).
+    let guides = null;
+    if (bonded && con.guides && con.guides.mode !== "none") {
+      step("guides", 0.982);
+      const gb = global.SBGuides.build(layers, con.guides, dOpts);
+      layers = layers.map((L, k) => Object.assign({}, L, { scorePaths: gb.scorePaths[k] }));
+      diagnostics.push(...gb.diagnostics, ...global.SBGuides.validate(layers, gb, con.guides, dOpts));
+      guides = gb.guides;
+    }
 
     // G2.10b: Z model (µm integers; bonded g = 0, D1/SRS §4.3) and trailing-empty accounting (D-4.7, LYR-01)
     step("accounting", 0.985);
@@ -806,7 +816,7 @@
   /**
    * fabricationFiles(snapshot, project, colors) → [{name, data}] in the legacy flat layout (the §9.4 layout is G3.9):
    * sheet_NN.svg (NN = index + 1) for every layer that is not omitted-trailing, then proof.svg (SBSvg.assemblySVG of
-   * those layers) in the snapshot's page frame. Connected sheets keep the v1.1.0 text label "{title} k/n" (until G3.2);
+   * those layers) in the snapshot's page frame, then (bonded only, alpha.3 E11) placement_map.svg. Connected sheets keep the v1.1.0 text label "{title} k/n" (until G3.2);
    * bonded sheets are pure vector. A snapshot that is not at fabrication quality is refused (QUALITY): draft geometry
    * is never exported (LYR-06).
    */
@@ -822,6 +832,8 @@
         : { construction: mode }),
     }));
     files.push({ name: "proof.svg", data: S.assemblySVG(layers, page, colors) });
+    // alpha.3 E11 (ASM-05): bonded bundles always carry the placement map (not a cut file), the fallback for omitted guides
+    if (mode === "bonded-relief") files.push({ name: "placement_map.svg", data: S.placementMapSVG(snapshot, { title: project.title }) });
     return files;
   };
 

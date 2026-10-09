@@ -843,6 +843,7 @@
   }
   const numIn = (v) => typeof v === "number" ? v : (typeof v === "string" && v.trim() !== "" ? Number(v) : NaN);
   const clampTo = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const GUIDE_FIELDS = { gconceal: ["concealInsetMM", 0, 25], gallow: ["allowanceMM", 0, 25], gfoot: ["markFootprintMM", 0, 25], glabel: ["labelHeightMM", 0.5, 50] };
   const MACHINE_FIELDS = { "m-height": ["maxProcessingHeightMM", 0.001, 1e5], "m-length": ["maxLengthMM", 0.001, 1e5],
     "m-matwidth": ["maxMaterialWidthMM", 0.001, 1e5], "m-thick": ["maxThicknessMM", 0.1, 25], "m-kerf": ["kerfMM", 0, 2] };
 
@@ -853,7 +854,8 @@
    *   interp, construction   SBSchema.applyModeChange(project, patch, true) (the app puts the G2.11e review dialog in front)
    *   smooth (interpretation.smoothing.radiusMM in mm, 0.05 mm grid, clamped 0–5; E3b),
    *   polarity, thmode, cullon (bonded only: construction.bridge.cullEnabled), manual-th ("0.2, 0.5, …": N − 1 increasing values in (0, 1)), thickness, thickstate, gap,
-   *   sizeby, target, machine (profile id | "none"), m-height, m-length, m-matwidth, m-thick, m-kerf  — geometry
+   *   sizeby, target, machine (profile id | "none"), m-height, m-length, m-matwidth, m-thick, m-kerf,
+   *   guides (construction.guides.mode), gconceal, gallow, gfoot, glabel (guide distances; bonded only, alpha.3 E11)  — geometry
    *   units, appearance, color (#rrggbb), explode (view.explodeMM)                                     — not geometry
    * A non-numeric entry, an unknown option or a result that fails SBSchema.validate leaves the project unchanged
    * (same revision). revision + 1 exactly when geometryKey changes (PRJ-02).
@@ -924,6 +926,16 @@
         }
         break;
       }
+      // alpha.3 E11 (ASM-01/02): the bonded guide settings; refused (unchanged) in connected mode
+      case "guides":
+        if (c.mode !== "bonded-relief" || !E.guideMode.includes(value)) return unchanged();
+        c.guides.mode = value; break;
+      case "gconceal": case "gallow": case "gfoot": case "glabel": {
+        if (c.mode !== "bonded-relief") return unchanged();
+        const [key, lo, hi] = GUIDE_FIELDS[id], v = length(lo, hi);
+        if (v === null) return unchanged();
+        c.guides[key] = v; break;
+      }
       case "units": if (!E.units.includes(value)) return unchanged(); p.units = value; break;
       case "appearance": if (!E.appearance.includes(value)) return unchanged(); p.appearance.mode = value; break;
       case "color": if (typeof value !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(value)) return unchanged(); p.appearance.color = value.toUpperCase(); break;
@@ -949,6 +961,8 @@
       "in-m-height": mach ? L(mach.maxProcessingHeightMM) : "", "in-m-length": mach ? L(mach.maxLengthMM) : "",
       "in-m-matwidth": mach ? L(mach.maxMaterialWidthMM) : "", "in-m-thick": mach ? L(mach.maxThicknessMM) : "",
       "in-m-kerf": mach ? L(mach.kerfMM) : "",
+      "in-guides": p.construction.guides.mode, "in-gconceal": L(p.construction.guides.concealInsetMM), "in-gallow": L(p.construction.guides.allowanceMM),
+      "in-gfoot": L(p.construction.guides.markFootprintMM), "in-glabel": L(p.construction.guides.labelHeightMM),
     };
   };
 
@@ -963,6 +977,8 @@
     heightThreshold: "Not used in height mode: nearest-layer quantization replaces tone thresholds.",
     heightSmoothing: "Not used in height mode (no default filter, IMG-03).",
     tonalFilter: "Not used in tonal mode.",
+    connectedGuides: "Not used in connected mode: concealed guides are for bonded relief (connected sheets use registration holes).",
+    guidesOff: "Guides are off: choose Inset outline or Interior mark to set their distances.",
   };
   /**
    * The mode-dependent rules. `controls` are disabled with `reason` while `off(p)`; `path` (when given) is the setting
@@ -982,6 +998,8 @@
     { controls: [], off: (p) => !HEIGHT(p), reason: R.tonalFilter, path: "interpretation.heightFilter", neutral: null },
     { controls: ["in-manual-th"], off: (p) => !HEIGHT(p) && p.interpretation.thresholdRule !== "manual", reason: "Choose the Manual tone split to enter thresholds." },
     { controls: ["in-holedia"], off: (p) => !p.construction.registration.enabled, reason: "Registration holes are off: turn them on to set the diameter." },
+    { controls: ["in-guides", "in-gconceal", "in-gallow", "in-gfoot", "in-glabel"], off: (p) => !BONDED(p), reason: R.connectedGuides },
+    { controls: ["in-gconceal", "in-gallow", "in-gfoot", "in-glabel"], off: (p) => BONDED(p) && p.construction.guides.mode === "none", reason: R.guidesOff },
     { controls: ["in-m-height", "in-m-length", "in-m-matwidth", "in-m-thick", "in-m-kerf"], off: (p) => p.machine === null,
       reason: "No laser profile: choose one to edit its limits." },
   ];

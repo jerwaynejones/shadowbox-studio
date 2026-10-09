@@ -21,7 +21,8 @@
  *   Rb_k = offset(upper, −(c + a)) ∩ lower                       where a burn may lie (validate)
  * inset-outline: every ring of Rc_k, closed. interior-mark: a position-only cross per attributed Rc polygon,
  * arm 1500/1000/600/300 µm, centred by SBGeom.placeBox. Sheet label String(k + 1) in Rc_k shrunk by fp + fh
- * (and clear of the crosses), placed by its own box (SBGeom.placeBox). The top sheet gets neither.
+ * (and clear of the crosses), placed by its own box (SBGeom.placeBox) in the first Rc_k polygon, largest area first,
+ * that fits it (alpha.3 E11, E-R4: one polygon per attempt). The top sheet gets neither.
  * validate buffers the EMITTED strokes by fh and requires them inside Rb_k recomputed from the layers; a residue
  * narrower than 4 µm (does not survive an inset of 2 µm; the plan said 1 µm, but three integer offsets measured a
  * 2.09 µm rounding residue at an acute corner) does not count.
@@ -117,11 +118,19 @@
       const text = String(k + 1);
       let at = null, s = null;
       if (Rc.length) {
-        let region = off(Rc, -(P.fp + P.fh));
-        if (region.length && keepOut.length) region = G.normalize(G.difference(region, keepOut));
-        if (region.length && !G.isEmpty(region)) {
-          s = F.strokes(text, P.lh);
-          at = G.placeBox(region, Math.ceil(s.wUm / 2) + P.fh, Math.ceil(s.hUm / 2) + P.fh);
+        // alpha.3 E11 (E-R4): one Rc polygon at a time, largest area first (ties: bbox top, then left), so placeBox
+        // translates and intersects one small polygon instead of the whole layer region (≈ 0.7 s → tens of ms per draft).
+        s = F.strokes(text, P.lh);
+        const hx = Math.ceil(s.wUm / 2) + P.fh, hy = Math.ceil(s.hUm / 2) + P.fh;
+        const order = Rc.map((poly) => ({ poly, a: G.area([poly]), b: G.bbox(poly) }))
+          .filter((e) => e.b[2] - e.b[0] >= 2 * (hx + P.fp + P.fh) && e.b[3] - e.b[1] >= 2 * (hy + P.fp + P.fh))
+          .sort((x, y) => (y.a - x.a) || (x.b[1] - y.b[1]) || (x.b[0] - y.b[0]));
+        for (const e of order) {
+          let region = off([e.poly], -(P.fp + P.fh));
+          if (region.length && keepOut.length) region = G.normalize(G.difference(region, keepOut));
+          if (!region.length || G.isEmpty(region)) continue;
+          at = G.placeBox(region, hx, hy);
+          if (at) break;
         }
       }
       if (at) {

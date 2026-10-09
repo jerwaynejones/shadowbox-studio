@@ -5226,11 +5226,13 @@ suite("engine.js/app.js/CHANGELOG — checkpoint v2.0.0-alpha.2 (LYR-06, EXP-07,
   check("EXP-07 E2E: warnings gate the fabrication export until acknowledged on the fab snapshot, then it is allowed",
     warn.length > 0 && !g0.allowed && g0.reason === "UNACKED" && g1.allowed);
   const files = E.fabricationFiles(s, p, "#c8a26b");
-  check("alpha.2 export keeps the legacy flat layout: sheet_01..08.svg and proof.svg from the fabrication snapshot",
-    files.map((f) => f.name).join() === "sheet_01.svg,sheet_02.svg,sheet_03.svg,sheet_04.svg,sheet_05.svg,sheet_06.svg,sheet_07.svg,sheet_08.svg,proof.svg" &&
-    files.every((f) => typeof f.data === "string" && f.data.includes('viewBox="0 0 ' + SBSvg.fmtUm(Math.round(s.page.wMM * 1000)) + " ")));
+  // alpha.3 E11: bonded bundles add placement_map.svg (not a cut file, A4 width) after proof.svg
+  const cutAndProof = files.filter((f) => f.name !== "placement_map.svg");
+  check("alpha.2 export keeps the legacy flat layout: sheet_01..08.svg and proof.svg from the fabrication snapshot (alpha.3 E11: plus placement_map.svg for bonded)",
+    files.map((f) => f.name).join() === "sheet_01.svg,sheet_02.svg,sheet_03.svg,sheet_04.svg,sheet_05.svg,sheet_06.svg,sheet_07.svg,sheet_08.svg,proof.svg,placement_map.svg" &&
+    cutAndProof.every((f) => typeof f.data === "string" && f.data.includes('viewBox="0 0 ' + SBSvg.fmtUm(Math.round(s.page.wMM * 1000)) + " ")));
   check("EXP-01 bonded sheets are pure vector (no legacy text label) and name the construction",
-    files.slice(0, -1).every((f) => !/<text/.test(f.data) && /construction=bonded-relief/.test(f.data)));
+    cutAndProof.slice(0, -1).every((f) => !/<text/.test(f.data) && /construction=bonded-relief/.test(f.data)));
   check("EXP-07 fabricationFiles refuses a draft snapshot (never exports the draft)",
     (() => { const dr = E.generate(Object.assign({}, rq, { quality: "draft" })).snapshot; try { E.fabricationFiles(dr, p, "#c8a26b"); return false; } catch (e) { return /QUALITY/.test(e.message); } })());
 
@@ -5240,7 +5242,7 @@ suite("engine.js/app.js/CHANGELOG — checkpoint v2.0.0-alpha.2 (LYR-06, EXP-07,
     const t = E.generate(E.fabricationRequest(q, { pixels: half, channels: 1, w, h, alpha: null }, { format: "png", decode: "raw-gray8" })).snapshot;
     const names = E.fabricationFiles(t, q, "#c8a26b").map((f) => f.name);
     check("D-4.7 omitted-trailing layers get no sheet file; the indices of the others are kept",
-      t.stats.omitted.length > 0 && names.length === t.stats.exported + 1 && names[0] === "sheet_01.svg" && names[names.length - 1] === "proof.svg" &&
+      t.stats.omitted.length > 0 && names.length === t.stats.exported + 2 && names[0] === "sheet_01.svg" && names[names.length - 2] === "proof.svg" && names[names.length - 1] === "placement_map.svg" &&
       !names.includes("sheet_" + String(t.stats.omitted[0] + 1).padStart(2, "0") + ".svg")); }
 
   // ---- connected mode keeps the legacy sheet label until G3.2
@@ -5832,6 +5834,113 @@ suite("guides.js — alpha.3 E10 concealed guides and sheet labels (ASM-01/02/03
     SBGuides.validate([L0, L1, L2], shift, cfg, ctx).some((d) => d.code === "GUIDE_UNCONTAINED" && d.layer === 0));
   const order = require("./modules.js").NODE_MODULES;
   check("T0.2 guides.js sits directly after strokefont.js", order.indexOf("guides.js") === order.indexOf("strokefont.js") + 1);
+});
+
+// ------------------------------------------------ alpha.3 E11 (stage 14 guides in generate, preview cards, controls, placement map)
+suite("engine.js/svgout.js/app.js — alpha.3 E11 guides in generate (G3.1 stage 14, ASM-01/05, SUP-04, NFR-05)", () => {
+  const F = require("./fixtures.js"), E = SBEngine, S = SBSchema, px = { pixels: F.heightMap(7, 200, 200), channels: 1, w: 200, h: 200, alpha: null };
+  let p = S.withSource(S.defaults("plywood"), E.sourceRecord(px, { format: "png", decode: "raw-gray8" })); p.geometry.targetMM = 120;
+  p.construction.guides.mode = "inset-outline";
+  const d = E.generate(E.request(p, px, { quality: "draft" })).snapshot, f = E.generate(E.request(p, px, { quality: "fabrication" })).snapshot;
+  check("G3.1 bonded generate fills scorePaths on k for k+1 parts at draft and fabrication", d.layers[0].scorePaths.length > 0 && f.layers[0].scorePaths.length > 0 && !!d.guides && !!f.guides);
+  // construction.guides is already in geometryKey (js/schema.js:968-972), so comparing modes would pass without stage 14; check the hash inputs themselves
+  check("NFR-05 guides are deterministic; labels/omissions enter guideHash and score paths enter layerHash",
+    E.generate(E.request(p, px, { quality: "draft" })).geometryHash === d.geometryHash && E.guideHash(d.guides) !== E.guideHash(null) &&
+    SBGeom.layerHashes(d.layers[0]).layerHash !== d.layers[0].canonicalHash);
+  check("LYR-06 draft and fabrication agree on guide omissions and labels for a fixture well clear of the thresholds",
+    JSON.stringify(d.guides.omitted.map((o) => o.layer)) === JSON.stringify(f.guides.omitted.map((o) => o.layer)) &&
+    d.guides.labels.map((l) => l.text).join() === f.guides.labels.map((l) => l.text).join());
+  check("GEO-07 no GUIDE_UNCONTAINED on the fixture", !f.diagnostics.some((x) => x.code === "GUIDE_UNCONTAINED") && !d.diagnostics.some((x) => x.code === "GUIDE_UNCONTAINED"));
+  const files = E.fabricationFiles(f, p, "#c8a26b");
+  check("ASM-01 bonded bundle contains placement_map.svg; sheet SVGs carry the scores in SCORE and no <text>",
+    files.some((x) => x.name === "placement_map.svg") && /<g id="SCORE"[^>]*>\s*<path/.test(files[0].data) && files.filter((x) => /^sheet_/.test(x.name)).every((x) => !/<text/.test(x.data)));
+  const c = S.defaults("acrylic"); c.interpretation.mode = "height"; c.interpretation.polarity = "white-high";
+  const cs = E.generate(E.request(S.withSource(c, E.sourceRecord(px, { format: "png", decode: "raw-gray8" })), px, { quality: "draft" })).snapshot;
+  check("DEP-04 connected mode gets no guides (guides null, no scores)", cs.guides === null && cs.layers.every((L) => L.scorePaths.length === 0));
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8"), html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+  check("ASM-01 guide controls exist and are bonded-only", /id="in-guides"/.test(html) && /id="in-gallow"/.test(html) && /in-guides/.test(appSrc));
+
+  // ---- implementer additions
+  const pn = JSON.parse(JSON.stringify(p)); pn.construction.guides.mode = "none";
+  const dn = E.generate(E.request(pn, px, { quality: "draft" })).snapshot;
+  check("ASM-01 bonded with guides mode none: build not called (guides null, no scores, no guide diagnostics)",
+    dn.guides === null && dn.layers.every((L) => L.scorePaths.length === 0) && !dn.diagnostics.some((x) => /^GUIDE_|ALIGN_/.test(x.code)));
+  check("ASM-01 the top exported sheet carries no score paths; scores are integer µm", (() => {
+    const top = f.layers.reduce((m, L) => (L.status !== "omitted-trailing" && L.index > m ? L.index : m), 0);
+    return f.layers[top].scorePaths.length === 0 && f.layers.every((L) => L.scorePaths.every((s) => s.every(Number.isInteger)));
+  })());
+  check("AT-13 labels name the sheet number on every sheet that has a concealed area", f.guides.labels.every((l) => l.text === String(l.layer + 1)) && f.guides.labels.length > 0);
+  const im = JSON.parse(JSON.stringify(p)); im.construction.guides.mode = "interior-mark";
+  const fi = E.generate(E.request(im, px, { quality: "fabrication" })).snapshot;
+  check("ASM-03 interior-mark in generate validates clean and differs in layerHash from inset-outline",
+    fi.guides.mode === "interior-mark" && !fi.diagnostics.some((x) => x.code === "GUIDE_UNCONTAINED") && fi.geometryHash !== f.geometryHash);
+  const eng = fs.readFileSync(path.join(__dirname, "..", "js", "engine.js"), "utf8"), gen = eng.slice(eng.indexOf("E.generate = function"));
+  check("SUP-04/SUP-05 guides are built after the repair replay and part assignment, before accounting (rebuilt every generate)",
+    gen.indexOf("replayRepairs(") > 0 && gen.indexOf("SBGuides.build(") > gen.indexOf("replayRepairs(") && gen.indexOf("SBGuides.build(") > gen.indexOf("assignParts(") &&
+    gen.indexOf("SBGuides.build(") < gen.indexOf("trailing-empty accounting") && /SBGuides\.validate\(/.test(gen));
+
+  // ---- E-R4: the sheet label goes in the largest concealed polygon that fits it (one polygon per placeBox attempt)
+  { const sq = (x, y, w, h) => [{ outer: [x, y, x + w, y, x + w, y + h, x, y + h], holes: [] }];
+    const mk = (index, material) => SBMaterial.assignParts([SBMaterial.withMaterial({ index, material: [], parts: [], diagnostics: [], scorePaths: [] }, SBGeom.normalize(material), { revision: 0, quality: "draft" })])[0];
+    const B0 = mk(0, sq(0, 0, 60000, 40000)), B1 = mk(1, sq(2000, 2000, 8000, 8000).concat(sq(20000, 15000, 30000, 20000)));
+    const gb = SBGuides.build([B0, B1], S.defaults("plywood").construction.guides, { revision: 0, quality: "draft" });
+    const at = gb.guides.labels[0] && gb.guides.labels[0].atUm;
+    check("E-R4 the sheet label is placed in the largest concealed area (not the top-most one) and validates clean",
+      !!at && at[0] > 20000 && at[1] > 15000 && SBGuides.validate([B0, B1], gb, S.defaults("plywood").construction.guides, { revision: 0, quality: "draft" }).length === 0); }
+
+  // ---- placement map (not a cut file)
+  const map = SBSvg.placementMapSVG(f, { title: "Test & <map>" });
+  const steps = f.stats.exported - 1;
+  check("ASM-05 placementMapSVG: one panel per glue step with a heading \"Step k: place sheet k+1 on sheet k\"",
+    typeof map === "string" && /^<\?xml/.test(map) && (map.match(/Step \d+: place sheet \d+ on sheet \d+/g) || []).length === steps &&
+    /Step 1: place sheet 2 on sheet 1/.test(map));
+  const ids = f.layers.filter((L) => L.index >= 1 && L.status !== "omitted-trailing").flatMap((L) => L.parts.map((q) => q.id));
+  check("ASM-05 placement map labels every part of the placed sheet with its ID as SVG text, title escaped, A4 width",
+    ids.length > 0 && ids.every((id) => map.includes(">" + id + "<")) && /Test &amp; &lt;map&gt;/.test(map) && /width="210mm"/.test(map));
+  check("ASM-05 placement map: omitted-guide parts are outlined red", (() => {
+    const fake = JSON.parse(JSON.stringify(f)); const L1 = fake.layers[1];
+    fake.guides = Object.assign({}, fake.guides, { omitted: [{ layer: 1, part: L1.parts[0].id, reason: "x" }] });
+    const m2 = SBSvg.placementMapSVG(fake, {});
+    return /stroke="#e5484d"/i.test(m2) && !/stroke="#e5484d"/i.test(SBSvg.placementMapSVG(Object.assign({}, fake, { guides: Object.assign({}, fake.guides, { omitted: [] }) }), {}));
+  })());
+  const conFiles = (() => { const q = S.defaults("acrylic"); q.interpretation.mode = "height"; q.interpretation.polarity = "white-high";
+    const r = E.generate(E.request(S.withSource(q, E.sourceRecord(px, { format: "png", decode: "raw-gray8" })), px, { quality: "fabrication" }));
+    return E.fabricationFiles(r.snapshot, q, "#c8a26b"); })();
+  check("ASM-05 connected bundles get no placement map", !conFiles.some((x) => x.name === "placement_map.svg"));
+
+  // ---- schema controls (bonded only, lengths in mm)
+  const b0 = S.defaults("plywood");
+  const b1 = S.applyControl(b0, "guides", "interior-mark");
+  check("ASM-01 applyControl guides sets construction.guides.mode (revision + 1); an unknown mode is unchanged",
+    b1.construction.guides.mode === "interior-mark" && b1.revision === b0.revision + 1 && S.applyControl(b0, "guides", "bogus").revision === b0.revision);
+  const b2 = S.applyControl(S.applyControl(S.applyControl(S.applyControl(b0, "gconceal", "0.8"), "gallow", "0"), "gfoot", "0.3"), "glabel", "4");
+  check("ASM-02 applyControl gconceal/gallow/gfoot/glabel write the guide distances in mm",
+    b2.construction.guides.concealInsetMM === 0.8 && b2.construction.guides.allowanceMM === 0 && b2.construction.guides.markFootprintMM === 0.3 && b2.construction.guides.labelHeightMM === 4);
+  const bi = Object.assign(JSON.parse(JSON.stringify(b0)), { units: "in" });
+  check("ASM-02 guide distances follow project.units (0.02 in = 0.508 mm)", S.applyControl(bi, "gallow", "0.02").construction.guides.allowanceMM === 0.508);
+  const a0 = S.defaults("acrylic");
+  check("ASM-01 guide controls are refused in connected mode (unchanged)", S.applyControl(a0, "guides", "inset-outline").revision === a0.revision &&
+    S.applyControl(a0, "gallow", "1").revision === a0.revision);
+  const cv = S.controlValues(b2);
+  check("ASM-01 controlValues shows the guide settings", cv["in-guides"] === "inset-outline" && cv["in-gconceal"] === "0.8" && cv["in-gallow"] === "0" &&
+    cv["in-gfoot"] === "0.3" && cv["in-glabel"] === "4");
+  const apC = S.applicability(a0), apB = S.applicability(b0), bNone = S.applyControl(b0, "guides", "none"), apN = S.applicability(bNone);
+  check("UI-01 guide controls are disabled with a reason in connected mode and enabled in bonded",
+    ["in-guides", "in-gconceal", "in-gallow", "in-gfoot", "in-glabel"].every((id) => typeof apC[id] === "string" && apB[id] === null));
+  check("UI-01 guide distances are disabled while guides are off; the mode select stays enabled",
+    apN["in-guides"] === null && ["in-gconceal", "in-gallow", "in-gfoot", "in-glabel"].every((id) => typeof apN[id] === "string"));
+
+  // ---- preview and app wiring
+  const pv = fs.readFileSync(path.join(__dirname, "..", "js", "preview.js"), "utf8");
+  const pfn = (name) => { const i = pv.indexOf("function " + name + "("); return i < 0 ? "" : pv.slice(i, pv.indexOf("\n    }\n", i)); };
+  check("ASM-01 drawCard draws layer.scorePaths only with opts.scores; the Proof, Section and Tilt never draw them",
+    /scorePaths/.test(pfn("drawCard")) && /opts\.scores/.test(pfn("drawCard")) && !/scorePaths/.test(pfn("drawLayers")) && !/scorePaths/.test(pfn("drawSection")) && !/scorePaths/.test(pfn("draw")));
+  check("E-R10 the Layers cards carry the draft guide legend and the #in-guidesvis toggle",
+    /Guides \(approximate at draft; exact in the fabrication preview\)/.test(appSrc) && /id="in-guidesvis"[^>]*checked/.test(html) && /scores:/.test(appSrc));
+  check("ASM-01 every guide control is wired through SBSchema.applyControl", ["guides", "gconceal", "gallow", "gfoot", "glabel"].every((id) => new RegExp('"' + id + '"').test(appSrc)) &&
+    ["in-gconceal", "in-gfoot", "in-glabel"].every((id) => new RegExp('id="' + id + '"').test(html)));
+  const ug = fs.readFileSync(path.join(__dirname, "..", "docs", "USER_GUIDE.md"), "utf8");
+  check("ASM-05 USER_GUIDE explains GUIDE_OMITTED (place that part by the placement map)", /GUIDE_OMITTED/.test(ug) && /place that part by the placement map/.test(ug));
 });
 
 // ------------------------------------------------------------------ report

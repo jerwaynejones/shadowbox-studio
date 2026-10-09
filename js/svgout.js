@@ -220,6 +220,68 @@
     );
   };
 
+  /**
+   * Placement map (alpha.3 E11, ASM-05; the G3.5 subset). Not a cut file: a printable A4-wide guide to the glue-up.
+   *
+   *   placementMapSVG(snapshot, {title?}) → string
+   *
+   * One panel per glue step k = 1 … exported − 1, stacked vertically, each the snapshot's page frame scaled to the
+   * 190 mm printable width of an A4 sheet (210 mm, 10 mm margins): layer k − 1 filled light gray, layer k outlined,
+   * every part of layer k labelled with its part ID as SVG text (allowed: this is not a cut file), parts whose guides
+   * were omitted (snapshot.guides.omitted) outlined red, and the heading "Step k: place sheet k+1 on sheet k".
+   * A part ID sits at its bbox centre when that point is inside the part, else at SBGeom.placeBox's point.
+   * Pure; nothing here enters a hash.
+   */
+  const MAP_W = 210, MAP_M = 10, MAP_HEAD = 9, MAP_GAP = 6;
+  S.placementMapSVG = function (snapshot, opts) {
+    const o = opts || {}, G = global.SBGeom, page = snapshot.page;
+    const wUm = pageUm(page && page.wMM, "wMM", "placementMapSVG"), hUm = pageUm(page && page.hMM, "hMM", "placementMapSVG");
+    const sc = (MAP_W - 2 * MAP_M) / (wUm / 1000), panelH = (hUm / 1000) * sc;
+    const layers = snapshot.layers.filter((L) => L.status !== "omitted-trailing").slice().sort((a, b) => a.index - b.index);
+    const omitted = (snapshot.guides && snapshot.guides.omitted) || [];
+    const title = o.title ? String(o.title) : "";
+    const body = [];
+    let y = MAP_M;
+    body.push(`<text x="${f(MAP_M)}" y="${f(y + 5)}" font-family="sans-serif" font-size="5" fill="#000000">` +
+      esc("Placement map" + (title ? ": " + title : "")) + `</text>`);
+    body.push(`<text x="${f(MAP_M)}" y="${f(y + 10)}" font-family="sans-serif" font-size="3" fill="#000000">` +
+      esc("Not a cut file. Gray: the sheet already glued; outline: the sheet to place; red: parts without a scored guide, place them by this map.") + `</text>`);
+    y += 14;
+    const sw = f(0.3 / sc), swRed = f(0.6 / sc);
+    for (let j = 1; j < layers.length; j++) {
+      const lo = layers[j - 1], up = layers[j];
+      const lower = lo.index + 1, upper = up.index + 1;
+      body.push(`<text x="${f(MAP_M)}" y="${f(y + 5)}" font-family="sans-serif" font-size="4.5" fill="#000000">` +
+        esc("Step " + j + ": place sheet " + upper + " on sheet " + lower) + `</text>`);
+      y += MAP_HEAD;
+      const ringsOf = (polys) => { const d = []; for (const q of polys || []) for (const r of [q.outer, ...(q.holes || [])]) d.push(ringD(r, true)); return d.join(" "); };
+      const omit = new Set(omitted.filter((x) => x.layer === up.index).map((x) => x.part));
+      const g = [`<rect x="0" y="0" width="${S.fmtUm(wUm)}" height="${S.fmtUm(hUm)}" fill="none" stroke="#999999" stroke-width="${sw}"/>`];
+      const lowD = ringsOf(lo.material), upD = ringsOf(up.material);
+      if (lowD) g.push(`<path d="${lowD}" fill="#dddddd" fill-rule="evenodd" stroke="none"/>`);
+      if (upD) g.push(`<path d="${upD}" fill="none" stroke="#222222" stroke-width="${sw}"/>`);
+      const red = (up.parts || []).filter((q) => omit.has(q.id)).map((q) => ringsOf([q.polygon])).filter(Boolean);
+      if (red.length) g.push(`<path d="${red.join(" ")}" fill="none" stroke="#e5484d" stroke-width="${swRed}"/>`);
+      body.push(`<g transform="translate(${f(MAP_M)} ${f(y)}) scale(${Number(sc.toPrecision(9))})">\n${g.join("\n")}\n</g>`);
+      for (const q of up.parts || []) {
+        const b = q.bbox;
+        let at = [Math.round((b[0] + b[2]) / 2), Math.round((b[1] + b[3]) / 2)];
+        if (G && q.polygon && !G.containsPoint([q.polygon], at)) at = G.placeBox([q.polygon], 0, 0) || at;
+        body.push(`<text x="${f(MAP_M + (at[0] / 1000) * sc)}" y="${f(y + (at[1] / 1000) * sc)}" font-family="sans-serif" font-size="2.2" ` +
+          `text-anchor="middle" dominant-baseline="middle" fill="${omit.has(q.id) ? "#e5484d" : "#000000"}">${esc(String(q.id))}</text>`);
+      }
+      y += panelH + MAP_GAP;
+    }
+    const H = y + MAP_M - MAP_GAP;
+    return (
+      `<?xml version="1.0" encoding="UTF-8"?>\n` +
+      `<!-- placement map: not for cutting -->\n` +
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${MAP_W}mm" height="${f(H)}mm" viewBox="0 0 ${MAP_W} ${f(H)}">\n` +
+      `<desc>Shadowbox Studio placement map; glue steps bottom to top; units mm; not a cut file</desc>\n` +
+      body.join("\n") + `\n</svg>\n`
+    );
+  };
+
   /** "#rgb" / "#rrggbb" → lowercase "#rrggbb"; anything else is refused (NFR-06: no attribute injection). */
   function hexColor(c, k, fn) {
     if (typeof c === "string" && /^#[0-9a-fA-F]{6}$/.test(c)) return c.toLowerCase();

@@ -169,6 +169,24 @@
         </select></div>
       </fieldset>
 
+      <!-- alpha.3 E11 (ASM-01/02/03): concealed alignment guides and scored sheet numbers, bonded relief only -->
+      <fieldset class="group"><legend>Alignment guides</legend>
+        <div class="row"><label for="in-guides">Guides</label>
+          <select id="in-guides">
+            <option value="inset-outline">Inset outline (position and rotation)</option>
+            <option value="interior-mark">Interior mark (position)</option>
+            <option value="none">None</option>
+          </select></div>
+        <div class="row"><label for="in-gconceal">Conceal inset (<span class="u">mm</span>)</label>
+          <input id="in-gconceal" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div class="row"><label for="in-gallow">Placement allowance (<span class="u">mm</span>)</label>
+          <input id="in-gallow" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div class="row"><label for="in-gfoot">Score line width (<span class="u">mm</span>)</label>
+          <input id="in-gfoot" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div class="row"><label for="in-glabel">Sheet number height (<span class="u">mm</span>)</label>
+          <input id="in-glabel" type="number" min="0" step="any" inputmode="decimal"></div>
+      </fieldset>
+
       <fieldset class="group"><legend>Machine</legend>
         <div class="row"><label for="in-machine">Laser profile</label>
           <select id="in-machine">
@@ -266,6 +284,11 @@
     </div>
 
     <div id="pane-sheets" class="pane">
+      <div class="stacktools" id="sheettools">
+        <label class="tool check" id="tool-guides"><input id="in-guidesvis" type="checkbox" checked>
+          Show guides</label>
+        <span class="tool hint" id="guides-legend" hidden></span>
+      </div>
       <div id="sheetgrid" class="sheetgrid"></div>
     </div>
 

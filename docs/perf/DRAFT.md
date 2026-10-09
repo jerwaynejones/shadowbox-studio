@@ -38,6 +38,27 @@ worker pool. G4.4 re-measures against 1.5 s.
 **Re-run after E11.** Stage-14 guides run in every draft. E11 re-runs `node test/bench.js draft --record` and may
 lower the decision. The E4 test keeps the schema in step with the file.
 
+**Re-run after E11 (2026-10-09): decision unchanged, 720 px; plywood now misses the 3.0 s target.** Stage 14
+(`SBGuides.build` + `validate`, inset-outline) runs in every bonded draft. Measured with
+`node test/bench.js draft --only a --candidates 720 --no-fab` (same method: 1 cold + 3 warm-ups + 15 warm runs;
+1-minute load average 3.6–5.5), i7-11800H:
+
+| (a) plywood auto-tonal, 720 px | E4 (no guides) warm p50 / p95 | E11 (guides) warm p50 / p95 | cold E4 → E11 |
+|---|---|---|---|
+| realistic | 1763.8 / 1973.9 ms | 3316.3 / 3762.3 ms | 3603.5 → 5486.2 ms |
+| busy (COMPLEXITY_LIMIT before stage 14) | 1938.1 / 2180.1 ms | 1921.4 / 2115.3 ms | 3298.7 → 3185.1 ms |
+
+On the realistic family the guides add about 1.6–1.8 s per warm draft (profile of one warm draft: build ≈ 0.8 s,
+validate ≈ 0.9 s; Clipper offsets ≈ 0.5 s, polyline buffers ≈ 0.5 s, intersections ≈ 0.35 s, on 4–9 k-vertex
+unsmoothed bonded layers). E11 already cut the label placement from ≈ 0.7 s to ≈ 0.2 s by placing each sheet number
+in one concealed polygon at a time, largest first. 720 px is the smallest candidate, so the rule keeps it ("720 when
+none qualifies") and `draft-budget.json` is not re-recorded (its rows and decision stand; the E4 check reproduces
+that decision). **Known gap:** the plywood (bonded) draft now has warm p95 ≈ 3.8 s at 720 px, above the 3.0 s
+target; the fixes are the G4.1 worker pool (off the main thread) and, if the product owner chooses, guides at
+fabrication only (E-R4: only on this bench evidence, never silently). The busy family is unaffected because it is
+rejected by the parts cap before stage 14. The fabrication share of stage 14 (E-R4, `node test/bench.js large`) was
+not measured in E11 (the long large-image bench was out of scope for this run); it is still owed.
+
 ## Method
 
 - **Source.** 4096 × 3084 RGBA (12.6 Mpx, the size of the user's colour illustration). It is built from the bench's

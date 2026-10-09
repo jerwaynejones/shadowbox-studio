@@ -683,12 +683,23 @@
     // bonded "top" is the front-most exported layer, not an omitted (empty) trailing one
     const top = snap.layers.reduce((m, l) => (l.status !== "omitted-trailing" && l.index > m ? l.index : m), 0);
     const cards = SBProof.cards(snap.layers, snap.page);
+    // alpha.3 E11 (ASM-01, E-R10): bonded cards draw the scored guides and sheet numbers (#in-guidesvis); a draft result
+    // says its guides are approximate (they come from the draft outlines; the fabrication preview shows the exact ones)
+    const gv = $("in-guidesvis"), showGuides = !!(bonded && snap.guides && (!gv || gv.checked));
+    const legend = $("guides-legend"), tg = $("tool-guides");
+    if (tg) tg.hidden = !(bonded && snap.guides);
+    if (legend) {
+      legend.hidden = !(bonded && snap.guides);
+      legend.textContent = !(bonded && snap.guides) ? ""
+        : snap.quality === "draft" ? "Guides (approximate at draft; exact in the fabrication preview)"
+        : "Guides: blue lines are scored, hidden under the next sheet";
+    }
     for (const st of cards) {
       const k = st.layerIndex, L = snap.layers.find((l) => l.index === k), rep = snap.cleanupReport[k] || {};
       const card = document.createElement("div");
       card.className = "sheetcard";
       const cvs = document.createElement("canvas");
-      if (!preview.drawCard(cvs, k)) { cvs.width = 4; cvs.height = 3; SBPreview.drawWasteHatch(cvs.getContext("2d"), 4, 3); }   // hatch only
+      if (!preview.drawCard(cvs, k, { scores: showGuides })) { cvs.width = 4; cvs.height = 3; SBPreview.drawWasteHatch(cvs.getContext("2d"), 4, 3); }   // hatch only
       cvs.setAttribute("role", "img");
       cvs.setAttribute("aria-label", `Sheet ${k + 1}: ${SBUtil.fmt(st.retainedPct, 0)}% retained material, ${SBUtil.fmt(100 - st.retainedPct, 0)}% waste (hatched)`);
       const role = bonded ? (k === 0 ? "base" : k === top ? "top" : "layer " + (k + 1)) : st.role;
@@ -1179,7 +1190,8 @@
   // change (revision + 1) regenerates; an appearance, units or view change calls showResult(run.shown) only (PRJ-02).
   // The two mode selects are not in CONTROLS: a mode change is reviewed in #dlg-mode before it applies (G2.11e).
   const CONTROLS = ["polarity", "thmode", "manual-th", "smooth", "thickness", "thickstate", "gap", "units",
-    "sizeby", "target", "machine", "m-height", "m-length", "m-matwidth", "m-thick", "m-kerf", "appearance", "color", "explode"];
+    "sizeby", "target", "machine", "m-height", "m-length", "m-matwidth", "m-thick", "m-kerf", "appearance", "color", "explode",
+    "guides", "gconceal", "gallow", "gfoot", "glabel"];   // alpha.3 E11: the bonded alignment guides (ASM-01/02)
   const MODE_CONTROLS = { "interp": "interpretation", "construction": "construction" };
   const EXPLODE_MAX_MM = 60;   // the #in-explode range; the preview takes a 0–1 fraction
 
@@ -1748,6 +1760,10 @@
     bindSelect("in-corner", "cornerStyle");
 
     // preview controls (#in-explode is a G2.11c view control: project.view.explodeMM, showResult only)
+    // alpha.3 E11: the guides on the Layers cards (view only: no revision change, no regeneration)
+    $("in-guidesvis").addEventListener("change", () => {
+      if (run.shown && run.shown.snapshot) renderSheetGrid(run.shown, sheetColors(run.shown.snapshot.layers.length));
+    });
     $("in-bridgesvis").addEventListener("change", (e) =>
       preview.setShowBridges(e.target.checked));
     // G2.13b: the Changes overlay on the proof (view only: no revision change, no regeneration)

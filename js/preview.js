@@ -52,6 +52,7 @@
   const HATCH = "rgba(255,255,255,0.16)";   // waste hatch strokes on the bed colour
   const HATCH_PX = 7;                       // hatch pitch in card pixels
   const CARD_MAX_PX = 480;                  // long side of a layer card canvas
+  const SCORE_BLUE = "#3B82F6";             // alpha.3 E11: score paths on the Layers cards (SCORE is blue in the files)
 
   /**
    * The waste hatch (G2.13a): the bed colour with 45° strokes, so waste reads as waste without relying on
@@ -140,7 +141,8 @@
      * G2.13a: draw one layer's card from the per-snapshot offscreen cache (no re-rasterization): the waste as a
      * hatch on the bed colour, then the layer's cached material image, with the proof's draw parameters (no
      * smoothing). The card canvas takes the page aspect, long side opts.maxPx (default 480). A layer with no
-     * material is hatch only. Returns false (and draws nothing) when there is no polygon snapshot.
+     * material is hatch only. alpha.3 E11: opts.scores draws layer.scorePaths (guides and sheet number) on top in blue.
+     * Returns false (and draws nothing) when there is no polygon snapshot.
      */
     function drawCard(cardCanvas, layerIndex, opts) {
       const s = state.snap;
@@ -155,6 +157,23 @@
       if (im) {
         c.imageSmoothingEnabled = global.SBProof.drawParams("proof").smoothing;
         c.drawImage(im.canvas, 0, 0, w, h);
+      }
+      // alpha.3 E11 (ASM-01): the concealed guides and the sheet number scored on this layer, as 1 px blue lines.
+      // Cards only: the Proof, Section and Tilt show the visible face, where the scores are hidden by the next sheet.
+      if (opts && opts.scores) {
+        const L = (s.layers || []).find((l) => l.index === layerIndex), sp = (L && L.scorePaths) || [];
+        if (sp.length) {
+          const ku = w / (s.page.wMM * 1000);   // card px per µm
+          c.save();
+          c.beginPath();
+          for (const r of sp) {
+            if (r.length < 4) continue;
+            c.moveTo(r[0] * ku, r[1] * ku);
+            for (let i = 2; i + 1 < r.length; i += 2) c.lineTo(r[i] * ku, r[i + 1] * ku);
+          }
+          c.lineWidth = 1; c.strokeStyle = SCORE_BLUE; c.setLineDash([]); c.stroke();
+          c.restore();
+        }
       }
       return true;
     }

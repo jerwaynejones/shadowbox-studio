@@ -658,6 +658,24 @@ button.diag-go:hover .diag-msg { text-decoration: underline; }
         </select></div>
       </fieldset>
 
+      <!-- alpha.3 E11 (ASM-01/02/03): concealed alignment guides and scored sheet numbers, bonded relief only -->
+      <fieldset class="group"><legend>Alignment guides</legend>
+        <div class="row"><label for="in-guides">Guides</label>
+          <select id="in-guides">
+            <option value="inset-outline">Inset outline (position and rotation)</option>
+            <option value="interior-mark">Interior mark (position)</option>
+            <option value="none">None</option>
+          </select></div>
+        <div class="row"><label for="in-gconceal">Conceal inset (<span class="u">mm</span>)</label>
+          <input id="in-gconceal" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div class="row"><label for="in-gallow">Placement allowance (<span class="u">mm</span>)</label>
+          <input id="in-gallow" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div class="row"><label for="in-gfoot">Score line width (<span class="u">mm</span>)</label>
+          <input id="in-gfoot" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div class="row"><label for="in-glabel">Sheet number height (<span class="u">mm</span>)</label>
+          <input id="in-glabel" type="number" min="0" step="any" inputmode="decimal"></div>
+      </fieldset>
+
       <fieldset class="group"><legend>Machine</legend>
         <div class="row"><label for="in-machine">Laser profile</label>
           <select id="in-machine">
@@ -755,6 +773,11 @@ button.diag-go:hover .diag-msg { text-decoration: underline; }
     </div>
 
     <div id="pane-sheets" class="pane">
+      <div class="stacktools" id="sheettools">
+        <label class="tool check" id="tool-guides"><input id="in-guidesvis" type="checkbox" checked>
+          Show guides</label>
+        <span class="tool hint" id="guides-legend" hidden></span>
+      </div>
       <div id="sheetgrid" class="sheetgrid"></div>
     </div>
 
@@ -3502,6 +3525,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   }
   const numIn = (v) => typeof v === "number" ? v : (typeof v === "string" && v.trim() !== "" ? Number(v) : NaN);
   const clampTo = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const GUIDE_FIELDS = { gconceal: ["concealInsetMM", 0, 25], gallow: ["allowanceMM", 0, 25], gfoot: ["markFootprintMM", 0, 25], glabel: ["labelHeightMM", 0.5, 50] };
   const MACHINE_FIELDS = { "m-height": ["maxProcessingHeightMM", 0.001, 1e5], "m-length": ["maxLengthMM", 0.001, 1e5],
     "m-matwidth": ["maxMaterialWidthMM", 0.001, 1e5], "m-thick": ["maxThicknessMM", 0.1, 25], "m-kerf": ["kerfMM", 0, 2] };
 
@@ -3512,7 +3536,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    *   interp, construction   SBSchema.applyModeChange(project, patch, true) (the app puts the G2.11e review dialog in front)
    *   smooth (interpretation.smoothing.radiusMM in mm, 0.05 mm grid, clamped 0–5; E3b),
    *   polarity, thmode, cullon (bonded only: construction.bridge.cullEnabled), manual-th ("0.2, 0.5, …": N − 1 increasing values in (0, 1)), thickness, thickstate, gap,
-   *   sizeby, target, machine (profile id | "none"), m-height, m-length, m-matwidth, m-thick, m-kerf  — geometry
+   *   sizeby, target, machine (profile id | "none"), m-height, m-length, m-matwidth, m-thick, m-kerf,
+   *   guides (construction.guides.mode), gconceal, gallow, gfoot, glabel (guide distances; bonded only, alpha.3 E11)  — geometry
    *   units, appearance, color (#rrggbb), explode (view.explodeMM)                                     — not geometry
    * A non-numeric entry, an unknown option or a result that fails SBSchema.validate leaves the project unchanged
    * (same revision). revision + 1 exactly when geometryKey changes (PRJ-02).
@@ -3583,6 +3608,16 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
         }
         break;
       }
+      // alpha.3 E11 (ASM-01/02): the bonded guide settings; refused (unchanged) in connected mode
+      case "guides":
+        if (c.mode !== "bonded-relief" || !E.guideMode.includes(value)) return unchanged();
+        c.guides.mode = value; break;
+      case "gconceal": case "gallow": case "gfoot": case "glabel": {
+        if (c.mode !== "bonded-relief") return unchanged();
+        const [key, lo, hi] = GUIDE_FIELDS[id], v = length(lo, hi);
+        if (v === null) return unchanged();
+        c.guides[key] = v; break;
+      }
       case "units": if (!E.units.includes(value)) return unchanged(); p.units = value; break;
       case "appearance": if (!E.appearance.includes(value)) return unchanged(); p.appearance.mode = value; break;
       case "color": if (typeof value !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(value)) return unchanged(); p.appearance.color = value.toUpperCase(); break;
@@ -3608,6 +3643,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       "in-m-height": mach ? L(mach.maxProcessingHeightMM) : "", "in-m-length": mach ? L(mach.maxLengthMM) : "",
       "in-m-matwidth": mach ? L(mach.maxMaterialWidthMM) : "", "in-m-thick": mach ? L(mach.maxThicknessMM) : "",
       "in-m-kerf": mach ? L(mach.kerfMM) : "",
+      "in-guides": p.construction.guides.mode, "in-gconceal": L(p.construction.guides.concealInsetMM), "in-gallow": L(p.construction.guides.allowanceMM),
+      "in-gfoot": L(p.construction.guides.markFootprintMM), "in-glabel": L(p.construction.guides.labelHeightMM),
     };
   };
 
@@ -3622,6 +3659,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     heightThreshold: "Not used in height mode: nearest-layer quantization replaces tone thresholds.",
     heightSmoothing: "Not used in height mode (no default filter, IMG-03).",
     tonalFilter: "Not used in tonal mode.",
+    connectedGuides: "Not used in connected mode: concealed guides are for bonded relief (connected sheets use registration holes).",
+    guidesOff: "Guides are off: choose Inset outline or Interior mark to set their distances.",
   };
   /**
    * The mode-dependent rules. `controls` are disabled with `reason` while `off(p)`; `path` (when given) is the setting
@@ -3641,6 +3680,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     { controls: [], off: (p) => !HEIGHT(p), reason: R.tonalFilter, path: "interpretation.heightFilter", neutral: null },
     { controls: ["in-manual-th"], off: (p) => !HEIGHT(p) && p.interpretation.thresholdRule !== "manual", reason: "Choose the Manual tone split to enter thresholds." },
     { controls: ["in-holedia"], off: (p) => !p.construction.registration.enabled, reason: "Registration holes are off: turn them on to set the diameter." },
+    { controls: ["in-guides", "in-gconceal", "in-gallow", "in-gfoot", "in-glabel"], off: (p) => !BONDED(p), reason: R.connectedGuides },
+    { controls: ["in-gconceal", "in-gallow", "in-gfoot", "in-glabel"], off: (p) => BONDED(p) && p.construction.guides.mode === "none", reason: R.guidesOff },
     { controls: ["in-m-height", "in-m-length", "in-m-matwidth", "in-m-thick", "in-m-kerf"], off: (p) => p.machine === null,
       reason: "No laser profile: choose one to edit its limits." },
   ];
@@ -6929,7 +6970,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *   Rb_k = offset(upper, −(c + a)) ∩ lower                       where a burn may lie (validate)
  * inset-outline: every ring of Rc_k, closed. interior-mark: a position-only cross per attributed Rc polygon,
  * arm 1500/1000/600/300 µm, centred by SBGeom.placeBox. Sheet label String(k + 1) in Rc_k shrunk by fp + fh
- * (and clear of the crosses), placed by its own box (SBGeom.placeBox). The top sheet gets neither.
+ * (and clear of the crosses), placed by its own box (SBGeom.placeBox) in the first Rc_k polygon, largest area first,
+ * that fits it (alpha.3 E11, E-R4: one polygon per attempt). The top sheet gets neither.
  * validate buffers the EMITTED strokes by fh and requires them inside Rb_k recomputed from the layers; a residue
  * narrower than 4 µm (does not survive an inset of 2 µm; the plan said 1 µm, but three integer offsets measured a
  * 2.09 µm rounding residue at an acute corner) does not count.
@@ -7025,11 +7067,19 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       const text = String(k + 1);
       let at = null, s = null;
       if (Rc.length) {
-        let region = off(Rc, -(P.fp + P.fh));
-        if (region.length && keepOut.length) region = G.normalize(G.difference(region, keepOut));
-        if (region.length && !G.isEmpty(region)) {
-          s = F.strokes(text, P.lh);
-          at = G.placeBox(region, Math.ceil(s.wUm / 2) + P.fh, Math.ceil(s.hUm / 2) + P.fh);
+        // alpha.3 E11 (E-R4): one Rc polygon at a time, largest area first (ties: bbox top, then left), so placeBox
+        // translates and intersects one small polygon instead of the whole layer region (≈ 0.7 s → tens of ms per draft).
+        s = F.strokes(text, P.lh);
+        const hx = Math.ceil(s.wUm / 2) + P.fh, hy = Math.ceil(s.hUm / 2) + P.fh;
+        const order = Rc.map((poly) => ({ poly, a: G.area([poly]), b: G.bbox(poly) }))
+          .filter((e) => e.b[2] - e.b[0] >= 2 * (hx + P.fp + P.fh) && e.b[3] - e.b[1] >= 2 * (hy + P.fp + P.fh))
+          .sort((x, y) => (y.a - x.a) || (x.b[1] - y.b[1]) || (x.b[0] - y.b[0]));
+        for (const e of order) {
+          let region = off([e.poly], -(P.fp + P.fh));
+          if (region.length && keepOut.length) region = G.normalize(G.difference(region, keepOut));
+          if (!region.length || G.isEmpty(region)) continue;
+          at = G.placeBox(region, hx, hy);
+          if (at) break;
         }
       }
       if (at) {
@@ -7289,6 +7339,68 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       `<desc>Shadowbox Studio opaque proof; layers back to front; units mm; origin top-left; Y-down; not mirrored</desc>\n` +
       (body.length ? body.join("\n") + "\n" : "") +
       `</svg>\n`
+    );
+  };
+
+  /**
+   * Placement map (alpha.3 E11, ASM-05; the G3.5 subset). Not a cut file: a printable A4-wide guide to the glue-up.
+   *
+   *   placementMapSVG(snapshot, {title?}) → string
+   *
+   * One panel per glue step k = 1 … exported − 1, stacked vertically, each the snapshot's page frame scaled to the
+   * 190 mm printable width of an A4 sheet (210 mm, 10 mm margins): layer k − 1 filled light gray, layer k outlined,
+   * every part of layer k labelled with its part ID as SVG text (allowed: this is not a cut file), parts whose guides
+   * were omitted (snapshot.guides.omitted) outlined red, and the heading "Step k: place sheet k+1 on sheet k".
+   * A part ID sits at its bbox centre when that point is inside the part, else at SBGeom.placeBox's point.
+   * Pure; nothing here enters a hash.
+   */
+  const MAP_W = 210, MAP_M = 10, MAP_HEAD = 9, MAP_GAP = 6;
+  S.placementMapSVG = function (snapshot, opts) {
+    const o = opts || {}, G = global.SBGeom, page = snapshot.page;
+    const wUm = pageUm(page && page.wMM, "wMM", "placementMapSVG"), hUm = pageUm(page && page.hMM, "hMM", "placementMapSVG");
+    const sc = (MAP_W - 2 * MAP_M) / (wUm / 1000), panelH = (hUm / 1000) * sc;
+    const layers = snapshot.layers.filter((L) => L.status !== "omitted-trailing").slice().sort((a, b) => a.index - b.index);
+    const omitted = (snapshot.guides && snapshot.guides.omitted) || [];
+    const title = o.title ? String(o.title) : "";
+    const body = [];
+    let y = MAP_M;
+    body.push(`<text x="${f(MAP_M)}" y="${f(y + 5)}" font-family="sans-serif" font-size="5" fill="#000000">` +
+      esc("Placement map" + (title ? ": " + title : "")) + `</text>`);
+    body.push(`<text x="${f(MAP_M)}" y="${f(y + 10)}" font-family="sans-serif" font-size="3" fill="#000000">` +
+      esc("Not a cut file. Gray: the sheet already glued; outline: the sheet to place; red: parts without a scored guide, place them by this map.") + `</text>`);
+    y += 14;
+    const sw = f(0.3 / sc), swRed = f(0.6 / sc);
+    for (let j = 1; j < layers.length; j++) {
+      const lo = layers[j - 1], up = layers[j];
+      const lower = lo.index + 1, upper = up.index + 1;
+      body.push(`<text x="${f(MAP_M)}" y="${f(y + 5)}" font-family="sans-serif" font-size="4.5" fill="#000000">` +
+        esc("Step " + j + ": place sheet " + upper + " on sheet " + lower) + `</text>`);
+      y += MAP_HEAD;
+      const ringsOf = (polys) => { const d = []; for (const q of polys || []) for (const r of [q.outer, ...(q.holes || [])]) d.push(ringD(r, true)); return d.join(" "); };
+      const omit = new Set(omitted.filter((x) => x.layer === up.index).map((x) => x.part));
+      const g = [`<rect x="0" y="0" width="${S.fmtUm(wUm)}" height="${S.fmtUm(hUm)}" fill="none" stroke="#999999" stroke-width="${sw}"/>`];
+      const lowD = ringsOf(lo.material), upD = ringsOf(up.material);
+      if (lowD) g.push(`<path d="${lowD}" fill="#dddddd" fill-rule="evenodd" stroke="none"/>`);
+      if (upD) g.push(`<path d="${upD}" fill="none" stroke="#222222" stroke-width="${sw}"/>`);
+      const red = (up.parts || []).filter((q) => omit.has(q.id)).map((q) => ringsOf([q.polygon])).filter(Boolean);
+      if (red.length) g.push(`<path d="${red.join(" ")}" fill="none" stroke="#e5484d" stroke-width="${swRed}"/>`);
+      body.push(`<g transform="translate(${f(MAP_M)} ${f(y)}) scale(${Number(sc.toPrecision(9))})">\n${g.join("\n")}\n</g>`);
+      for (const q of up.parts || []) {
+        const b = q.bbox;
+        let at = [Math.round((b[0] + b[2]) / 2), Math.round((b[1] + b[3]) / 2)];
+        if (G && q.polygon && !G.containsPoint([q.polygon], at)) at = G.placeBox([q.polygon], 0, 0) || at;
+        body.push(`<text x="${f(MAP_M + (at[0] / 1000) * sc)}" y="${f(y + (at[1] / 1000) * sc)}" font-family="sans-serif" font-size="2.2" ` +
+          `text-anchor="middle" dominant-baseline="middle" fill="${omit.has(q.id) ? "#e5484d" : "#000000"}">${esc(String(q.id))}</text>`);
+      }
+      y += panelH + MAP_GAP;
+    }
+    const H = y + MAP_M - MAP_GAP;
+    return (
+      `<?xml version="1.0" encoding="UTF-8"?>\n` +
+      `<!-- placement map: not for cutting -->\n` +
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${MAP_W}mm" height="${f(H)}mm" viewBox="0 0 ${MAP_W} ${f(H)}">\n` +
+      `<desc>Shadowbox Studio placement map; glue steps bottom to top; units mm; not a cut file</desc>\n` +
+      body.join("\n") + `\n</svg>\n`
     );
   };
 
@@ -8590,7 +8702,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    *  10  holes: the legacy connected corners (G1.7) until G3.1
    *  12  SBGeom.validate (per layer, in fromMasks/withMaterial), SBSupport.validate, featureChecks, checkEnvelope
    *  13  assignParts, then Part.supports from the support graph (SBSupport.annotate)
-   *  14  guides: G3.1 inserts them (snapshot.guides null until then)
+   *  14  guides: SBGuides.build/validate in bonded mode with guides.mode ≠ "none" (alpha.3 E11); otherwise snapshot.guides null
    * A cap over its limit returns status "error", COMPLEXITY_LIMIT and NO layers.
    * Then (G2.10b), all lengths as µm integers (t = round(thicknessMM·1000), g = round(gapMM·1000), g = 0 in bonded mode):
    *   Z         zBottomMM(k) = k·(t + g)/1000, zTopMM = zBottomMM + t (SRS §4.3, UI-03; view.explodeMM never enters)
@@ -8636,7 +8748,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
 
   /**
    * guideHash(guides) (§3, D4): what the guides add beyond the score polylines already inside each layerHash — labels,
-   * omissions with reasons and the placement map. null guides (until G3.1) hash as hashJSON(null).
+   * omissions with reasons and the placement map. null guides (connected, or guides.mode "none") hash as hashJSON(null).
    */
   E.guideHash = function (guides) {
     const H = global.SBHash;
@@ -8794,10 +8906,20 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     step("envelope", 0.95);
     diagnostics.push(...S.checkEnvelope({ wMM: page.wMM, hMM: page.hMM }, p.machine, mat, dOpts));
 
-    // 13. parts and their supports; 14. guides arrive with G3.1
+    // 13. parts and their supports
     step("parts", 0.98);
     layers = S.annotate(M.assignParts(layers), sv.supportGraph);
-    const guides = null;
+    // 14. guides (G3.1 stage 14, alpha.3 E11; ASM-01/02/03, GEO-07): bonded with guides.mode ≠ "none" only. Built after the
+    // repair replay on every generate (draft and fabrication through the same code), so a clip rebuilds the guides
+    // (SUP-04/05). Score paths go into each layer (→ layerHash); labels and omissions into guides (→ guideHash).
+    let guides = null;
+    if (bonded && con.guides && con.guides.mode !== "none") {
+      step("guides", 0.982);
+      const gb = global.SBGuides.build(layers, con.guides, dOpts);
+      layers = layers.map((L, k) => Object.assign({}, L, { scorePaths: gb.scorePaths[k] }));
+      diagnostics.push(...gb.diagnostics, ...global.SBGuides.validate(layers, gb, con.guides, dOpts));
+      guides = gb.guides;
+    }
 
     // G2.10b: Z model (µm integers; bonded g = 0, D1/SRS §4.3) and trailing-empty accounting (D-4.7, LYR-01)
     step("accounting", 0.985);
@@ -8900,7 +9022,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   /**
    * fabricationFiles(snapshot, project, colors) → [{name, data}] in the legacy flat layout (the §9.4 layout is G3.9):
    * sheet_NN.svg (NN = index + 1) for every layer that is not omitted-trailing, then proof.svg (SBSvg.assemblySVG of
-   * those layers) in the snapshot's page frame. Connected sheets keep the v1.1.0 text label "{title} k/n" (until G3.2);
+   * those layers) in the snapshot's page frame, then (bonded only, alpha.3 E11) placement_map.svg. Connected sheets keep the v1.1.0 text label "{title} k/n" (until G3.2);
    * bonded sheets are pure vector. A snapshot that is not at fabrication quality is refused (QUALITY): draft geometry
    * is never exported (LYR-06).
    */
@@ -8916,6 +9038,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
         : { construction: mode }),
     }));
     files.push({ name: "proof.svg", data: S.assemblySVG(layers, page, colors) });
+    // alpha.3 E11 (ASM-05): bonded bundles always carry the placement map (not a cut file), the fallback for omitted guides
+    if (mode === "bonded-relief") files.push({ name: "placement_map.svg", data: S.placementMapSVG(snapshot, { title: project.title }) });
     return files;
   };
 
@@ -8978,6 +9102,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   const HATCH = "rgba(255,255,255,0.16)";   // waste hatch strokes on the bed colour
   const HATCH_PX = 7;                       // hatch pitch in card pixels
   const CARD_MAX_PX = 480;                  // long side of a layer card canvas
+  const SCORE_BLUE = "#3B82F6";             // alpha.3 E11: score paths on the Layers cards (SCORE is blue in the files)
 
   /**
    * The waste hatch (G2.13a): the bed colour with 45° strokes, so waste reads as waste without relying on
@@ -9066,7 +9191,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
      * G2.13a: draw one layer's card from the per-snapshot offscreen cache (no re-rasterization): the waste as a
      * hatch on the bed colour, then the layer's cached material image, with the proof's draw parameters (no
      * smoothing). The card canvas takes the page aspect, long side opts.maxPx (default 480). A layer with no
-     * material is hatch only. Returns false (and draws nothing) when there is no polygon snapshot.
+     * material is hatch only. alpha.3 E11: opts.scores draws layer.scorePaths (guides and sheet number) on top in blue.
+     * Returns false (and draws nothing) when there is no polygon snapshot.
      */
     function drawCard(cardCanvas, layerIndex, opts) {
       const s = state.snap;
@@ -9081,6 +9207,23 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       if (im) {
         c.imageSmoothingEnabled = global.SBProof.drawParams("proof").smoothing;
         c.drawImage(im.canvas, 0, 0, w, h);
+      }
+      // alpha.3 E11 (ASM-01): the concealed guides and the sheet number scored on this layer, as 1 px blue lines.
+      // Cards only: the Proof, Section and Tilt show the visible face, where the scores are hidden by the next sheet.
+      if (opts && opts.scores) {
+        const L = (s.layers || []).find((l) => l.index === layerIndex), sp = (L && L.scorePaths) || [];
+        if (sp.length) {
+          const ku = w / (s.page.wMM * 1000);   // card px per µm
+          c.save();
+          c.beginPath();
+          for (const r of sp) {
+            if (r.length < 4) continue;
+            c.moveTo(r[0] * ku, r[1] * ku);
+            for (let i = 2; i + 1 < r.length; i += 2) c.lineTo(r[i] * ku, r[i + 1] * ku);
+          }
+          c.lineWidth = 1; c.strokeStyle = SCORE_BLUE; c.setLineDash([]); c.stroke();
+          c.restore();
+        }
       }
       return true;
     }
@@ -10113,12 +10256,23 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     // bonded "top" is the front-most exported layer, not an omitted (empty) trailing one
     const top = snap.layers.reduce((m, l) => (l.status !== "omitted-trailing" && l.index > m ? l.index : m), 0);
     const cards = SBProof.cards(snap.layers, snap.page);
+    // alpha.3 E11 (ASM-01, E-R10): bonded cards draw the scored guides and sheet numbers (#in-guidesvis); a draft result
+    // says its guides are approximate (they come from the draft outlines; the fabrication preview shows the exact ones)
+    const gv = $("in-guidesvis"), showGuides = !!(bonded && snap.guides && (!gv || gv.checked));
+    const legend = $("guides-legend"), tg = $("tool-guides");
+    if (tg) tg.hidden = !(bonded && snap.guides);
+    if (legend) {
+      legend.hidden = !(bonded && snap.guides);
+      legend.textContent = !(bonded && snap.guides) ? ""
+        : snap.quality === "draft" ? "Guides (approximate at draft; exact in the fabrication preview)"
+        : "Guides: blue lines are scored, hidden under the next sheet";
+    }
     for (const st of cards) {
       const k = st.layerIndex, L = snap.layers.find((l) => l.index === k), rep = snap.cleanupReport[k] || {};
       const card = document.createElement("div");
       card.className = "sheetcard";
       const cvs = document.createElement("canvas");
-      if (!preview.drawCard(cvs, k)) { cvs.width = 4; cvs.height = 3; SBPreview.drawWasteHatch(cvs.getContext("2d"), 4, 3); }   // hatch only
+      if (!preview.drawCard(cvs, k, { scores: showGuides })) { cvs.width = 4; cvs.height = 3; SBPreview.drawWasteHatch(cvs.getContext("2d"), 4, 3); }   // hatch only
       cvs.setAttribute("role", "img");
       cvs.setAttribute("aria-label", `Sheet ${k + 1}: ${SBUtil.fmt(st.retainedPct, 0)}% retained material, ${SBUtil.fmt(100 - st.retainedPct, 0)}% waste (hatched)`);
       const role = bonded ? (k === 0 ? "base" : k === top ? "top" : "layer " + (k + 1)) : st.role;
@@ -10609,7 +10763,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   // change (revision + 1) regenerates; an appearance, units or view change calls showResult(run.shown) only (PRJ-02).
   // The two mode selects are not in CONTROLS: a mode change is reviewed in #dlg-mode before it applies (G2.11e).
   const CONTROLS = ["polarity", "thmode", "manual-th", "smooth", "thickness", "thickstate", "gap", "units",
-    "sizeby", "target", "machine", "m-height", "m-length", "m-matwidth", "m-thick", "m-kerf", "appearance", "color", "explode"];
+    "sizeby", "target", "machine", "m-height", "m-length", "m-matwidth", "m-thick", "m-kerf", "appearance", "color", "explode",
+    "guides", "gconceal", "gallow", "gfoot", "glabel"];   // alpha.3 E11: the bonded alignment guides (ASM-01/02)
   const MODE_CONTROLS = { "interp": "interpretation", "construction": "construction" };
   const EXPLODE_MAX_MM = 60;   // the #in-explode range; the preview takes a 0–1 fraction
 
@@ -11178,6 +11333,10 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     bindSelect("in-corner", "cornerStyle");
 
     // preview controls (#in-explode is a G2.11c view control: project.view.explodeMM, showResult only)
+    // alpha.3 E11: the guides on the Layers cards (view only: no revision change, no regeneration)
+    $("in-guidesvis").addEventListener("change", () => {
+      if (run.shown && run.shown.snapshot) renderSheetGrid(run.shown, sheetColors(run.shown.snapshot.layers.length));
+    });
     $("in-bridgesvis").addEventListener("change", (e) =>
       preview.setShowBridges(e.target.checked));
     // G2.13b: the Changes overlay on the proof (view only: no revision change, no regeneration)

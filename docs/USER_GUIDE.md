@@ -97,10 +97,31 @@ self-aligns. 4 mm suits common bamboo dowels; measure yours.
 **Corner style.** *Smooth* rounds contours (paper-cut look, kind to acrylic).
 *Faceted* keeps crisp polygonal corners.
 
+**Alignment guides (bonded relief).** Bonded sheets are aligned by scored
+guides, not holes: on each sheet the laser scores the outline of the next
+sheet's parts, inset so the score line is hidden once that next sheet is glued
+on. *Inset outline* (the plywood default) gives position and rotation;
+*Interior mark* scores a small cross per part (position only); *None* turns
+them off. *Conceal inset* (0.5 mm) and *Placement allowance* (0.5 mm) keep the
+score line that far inside the covering part; *Score line width* (0.2 mm) is
+the burn width; *Sheet number height* (3 mm) sizes the scored sheet number,
+placed in a hidden area of every sheet except the top one. The Layers cards
+show the guides as blue lines (*Show guides*); on a draft they are approximate,
+the fabrication preview shows the exact ones. The Proof never shows them: they
+are hidden in the finished piece.
+
+**GUIDE_OMITTED.** A part too small or too thin to hide a score line under it
+gets no guide: place that part by the placement map (`placement_map.svg` in
+the export, one panel per glue step with every part ID; parts without a
+guide are outlined red). The same warning appears when a sheet number does
+not fit; the map names that sheet too.
+
 ## Step 4 — Export
 
 One ZIP: `sheet_NN.svg` per layer (RED = cut, BLUE = score label),
-`proof.svg` color preview, `ASSEMBLY.md`, `preview.png`, `settings.json`.
+`proof.svg` color preview, `ASSEMBLY.md`, `preview.png`, `settings.json`,
+and for bonded relief `placement_map.svg` (the glue-up order with part IDs;
+print it, do not cut it).
 Import SVGs at 1:1 into LightBurn/RDWorks — they carry mm units.
 
 ## Reading the preview
