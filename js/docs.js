@@ -28,7 +28,11 @@
  *      disclaimers: [COPY.MAT01]}
  *   Lengths are shown in project.units (SBSchema.fromMM); pitch is always mm/px.
  *
- * Looks up SBSchema and SBHeight at call time.
+ *   SBDocs.sourceNotes(warnings) → string[]: one line per preflight/plan diagnostic (alpha.3 E8, PO-PREVIEW-4), shown
+ *              at load: the SBDiag.describe message (title + detail; FAB_EXCEEDS_SOURCE's detail carries the px shortfall,
+ *              appended from shortPx if a detail ever lacks it).
+ *
+ * Looks up SBSchema, SBHeight and SBDiag at call time.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -135,6 +139,16 @@
       : "Nearest-layer reference heights; tonal bands follow the tone split (" + p.interpretation.thresholdRule + ").";
 
     return deepFreeze({ units: unit, layers, z, pitch, page, stock, thresholds, thresholdsNote, disclaimers: [D.COPY.MAT01] });
+  };
+
+  /** alpha.3 E8 (PO-PREVIEW-4): the load-time notes for every preflight warning, one line each. */
+  D.sourceNotes = function (warnings) {
+    if (warnings !== undefined && warnings !== null && !Array.isArray(warnings)) throw dfail("sourceNotes needs an array of diagnostics");
+    return (warnings || []).map((d) => {
+      let line = global.SBDiag.describe(d).message;
+      if (Array.isArray(d.shortPx) && !/px short/.test(line)) line += " (source is " + d.shortPx[0] + " × " + d.shortPx[1] + " px short)";
+      return line;
+    });
   };
 
   global.SBDocs = D;

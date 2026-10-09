@@ -64,6 +64,9 @@
     // alpha.3 E6 (PO-PREVIEW-2): made by "Preview at fabrication resolution" or the first Download click and shown in every
     // view (showFab); files are delivered only while it is shown and current; an edit returns the views to the draft.
     fab: null,
+    // alpha.3 E8 (PO-PREVIEW-4, NFR-04): the fabrication outlook of the shown draft, {plan, sizeErr, prediction}
+    // (fabOutlook); never part of a snapshot, its hash or its acks. null before a source or while a fab result is shown.
+    outlook: null,
     report: "",
   };
 
@@ -134,10 +137,14 @@
     if (!el) return;
     if (state === null) { el.hidden = true; return; }
     const b = SBDiag.stateBadge(run.state);
-    el.textContent = b.label;
-    el.title = b.text;
-    el.setAttribute("aria-label", "Result: " + b.label + ". " + b.text);
+    // alpha.3 E8 (UI-05): a draft whose fabrication prediction is over a cap says so on the badge; it is never Ready
+    const risk = run.state === "draft" && run.outlook && run.outlook.prediction && run.outlook.prediction.over.length > 0;
+    const text = b.text + (risk ? " The fabrication result will likely exceed the complexity cap; see Fabrication resolution in the diagnostics." : "");
+    el.textContent = b.label + (risk ? " \u00B7 over cap" : "");
+    el.title = text;
+    el.setAttribute("aria-label", "Result: " + el.textContent + ". " + text);
     el.dataset.state = b.state;
+    if (risk) el.dataset.fabRisk = "over"; else delete el.dataset.fabRisk;
     el.hidden = false;
   }
 
@@ -306,6 +313,8 @@
     } else if (!run.focus) {
       try { preview.setFocus(null); } catch (_) { /* nothing shown */ }   // a failed run keeps the picture, not its focus
     }
+    run.outlook = r === run.shown ? fabOutlook(r) : run.outlook;
+    if (run.state !== null) showRunState(run.state);   // E8: the badge reflects the fabrication prediction
     renderDiagnostics(r);
     updateDimbar();
     run.report = statusText(r) + note;
@@ -333,6 +342,27 @@
   // ------------------------------------------------------- diagnostics (G2.13c: UI-04, NFR-07, §9.5)
 
   /**
+   * alpha.3 E8 (PO-PREVIEW-4, GEO-06, NFR-04): the fabrication raster plan at the loaded source size (shared with the
+   * dimbar) and, for a draft result with a snapshot, SBProof.predictFabComplexity against the device caps.
+   * → {plan, sizeErr, prediction} or null (no source, or a fabrication result is shown: that run checks the real caps).
+   */
+  function fabPlanNow() {
+    if (!run.sourceImage) return { plan: null, sizeErr: null };
+    try { return { plan: SBEngine.rasterPlan(project, { w: run.sourceW, h: run.sourceH }, "fabrication", deviceClass()), sizeErr: null }; }
+    catch (e) { return { plan: null, sizeErr: e.message }; }
+  }
+  function fabOutlook(r) {
+    if (!r || r === run.fab || !run.sourceImage) return null;
+    const o = fabPlanNow();
+    let prediction = null;
+    if (o.plan && r.snapshot && r.snapshot.quality === "draft") {
+      try { prediction = SBProof.predictFabComplexity(r.snapshot, o.plan.geometry, SBSchema.limits(deviceClass())); }
+      catch (_) { prediction = null; }   // a snapshot without geometry predicts nothing
+    }
+    return { plan: o.plan, sizeErr: o.sizeErr, prediction };
+  }
+
+  /**
    * The diagnostics panel: a summary line (SBDiag.summarize) and the list grouped by severity, each group headed by a
    * badge with a glyph icon (aria-hidden) and the severity in text. Each item (SBDiag.describe) shows where, what, the
    * measured value against the limit and the fix. An item with a layer is a <button> (click, Enter or Space) that
@@ -354,6 +384,12 @@
     list.textContent = "";
     if (!fabScope) $("diag-clear").hidden = !run.focus;
     if (!r) { sum.textContent = "Generate to check the layers"; return; }
+    // alpha.3 E8 (PO-PREVIEW-4, NFR-04): a draft lists the fabrication plan's diagnostics and the predicted complexity
+    // overflow first, in a "Fabrication resolution" group that is not acknowledged here (only in the Fabrication review)
+    const planGroup = fabScope ? null : SBProof.panelModel(r, run.outlook && run.outlook.plan ? run.outlook.plan.diagnostics : [],
+      run.outlook ? run.outlook.prediction : null).groups.find((g) => g.title === "Fabrication resolution") || null;
+    if (planGroup) list.appendChild(renderPlanGroup(planGroup));
+    const planSum = planGroup ? " Fabrication resolution: " + planGroup.items.length + " item" + (planGroup.items.length === 1 ? "" : "s") + " (listed first; acknowledged in the Fabrication review)." : "";
     const failed = r.status === "error" || !r.snapshot;
     // alpha.3 E6: items navigate (switch to the Proof and focus) only on the result the views show
     const onScreen = !failed && r === run.shown;
@@ -364,11 +400,11 @@
       ` (${(r.ms / 1000).toFixed(1)} s)` + (onScreen ? "" : ", not on screen: Download shows it first") + ": " : "";
     if (failed) {
       sum.textContent = (fabScope ? "The fabrication run failed: " : "No layers: ") + (r.error ? r.error.code + ", " + r.error.message : "the run did not finish") +
-        (groups.length ? " (" + groups.map((g) => g.count + " " + noun(g)).join(", ") + ")." : ".");
-    } else if (!groups.length) { sum.textContent = head + "No issues found" + what; return; }
+        (groups.length ? " (" + groups.map((g) => g.count + " " + noun(g)).join(", ") + ")." : ".") + planSum;
+    } else if (!groups.length) { sum.textContent = head + "No issues found" + what + planSum; return; }
     else {
       const acked = diags.filter((d) => SBDiag.describe(d).severity === "warning" && r.acks.has(SBDiag.ackKey(d, hash))).length;
-      sum.textContent = head + groups.map((g) => g.count + " " + noun(g) + (g.severity === "warning" && acked ? " (" + acked + " acknowledged)" : "")).join(", ") + what;
+      sum.textContent = head + groups.map((g) => g.count + " " + noun(g) + (g.severity === "warning" && acked ? " (" + acked + " acknowledged)" : "")).join(", ") + what + planSum;
     }
     for (const g of groups) {
       const li = document.createElement("li");
@@ -387,6 +423,24 @@
       });
       list.appendChild(li);
     }
+  }
+
+  /**
+   * alpha.3 E8: the draft panel's "Fabrication resolution" group (SBProof.panelModel): a heading with its note, then
+   * each item through diagItem with no result (no acknowledgement) and not navigable (it is about the fabrication run).
+   */
+  function renderPlanGroup(g) {
+    const li = document.createElement("li");
+    li.className = "diag-group diag-plan";
+    const gh = document.createElement("div");
+    gh.className = "diag-head";
+    gh.appendChild(document.createTextNode(g.title + " (" + g.items.length + ")"));
+    li.appendChild(gh);
+    if (g.note) { const n = document.createElement("p"); n.className = "diag-fix"; n.textContent = g.note + "."; li.appendChild(n); }
+    const ul = document.createElement("ul");
+    for (const d of g.items) ul.appendChild(diagItem(d, Object.assign({}, SBDiag.describe(d), { navigable: false }), null, false));
+    li.appendChild(ul);
+    return li;
   }
 
   /** alpha.3 E6: after an acknowledgement on r, re-render every panel that lists r (the panel and, for run.fab, the review). */
@@ -1303,11 +1357,7 @@
    * and the counts of the current pipeline run.
    */
   function updateDimbar() {
-    let plan = null, sizeErr = null;
-    if (run.sourceImage) {
-      try { plan = SBEngine.rasterPlan(project, { w: run.sourceW, h: run.sourceH }, "fabrication", deviceClass()); }
-      catch (e) { sizeErr = e.message; }
-    }
+    const { plan, sizeErr } = fabPlanNow();   // alpha.3 E8: the same plan the draft panel's Fabrication resolution group lists
     const snap = run.shown && run.shown.snapshot;
     const stats = snap && run.shown.revision === project.revision ? snap.stats : null;   // alpha.3 E5: the shown snapshot's accounting
     const m = SBDocs.dimbarModel({ project, plan, stats });
@@ -1400,7 +1450,7 @@
     if (gen !== sourceGen) { if (src.bitmap.close) src.bitmap.close(); return; }
     await acceptSource(file.name, src, pre.intake, gen, bytes, autoTonal);
     if (gen !== sourceGen) return;
-    const notes = pre.warnings.filter((d) => d.code === "EXIF_AMBIGUOUS").map((d) => d.message);
+    const notes = SBDocs.sourceNotes(pre.warnings);   // alpha.3 E8 (PO-PREVIEW-4): every preflight warning, at load
     if (autoTonal) notes.unshift(colourNotice());
     if (notes.length) showSourceProblem(`${file.name}: ${notes.join("; ")}`);
   }
@@ -1440,7 +1490,10 @@
         parts.push(`After the downsample: ${planText(SBEngine.rasterPlan(q, target, "fabrication", deviceClass()))}.`);
       } catch (e) { /* the size cannot be resolved: the dimbar says why once a source loads */ }
     } else if (pre.rasterPlan) parts.push(`At this size: ${planText(pre.rasterPlan)}.`);
-    for (const d of pre.warnings) if (d.code === "EXIF_AMBIGUOUS") parts.push(d.message + ".");
+    // alpha.3 E8 (PO-PREVIEW-4): every preflight warning; with a downsample offer only the orientation warning, since the
+    // plan warnings describe a size that will not be used (the "After the downsample" plan replaces them)
+    const shownWarnings = sug ? pre.warnings.filter((w) => w.code === "EXIF_AMBIGUOUS") : pre.warnings;
+    for (const line of SBDocs.sourceNotes(shownWarnings)) parts.push(line + ".");
     showSourceProblem(parts.join(" "), target ? () => downsampleExplicitly(file, bytes, note) : null,
       target ? `Downsample to ${target.w} × ${target.h} px` : "");
   }

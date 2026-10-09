@@ -9,6 +9,9 @@
  *   modelHash(model)                     → sha256 hex of the model
  *   cards(layers, page)                  → [{layerIndex, role, empty, retainedMM2, wasteMM2, retainedPct}]  (G2.13a)
  *   overlays({cleanupReport, diagnostics, mode}) → [{layerIndex, label, holesFilled, partsRemoved, added, removed, bridges, unsupported}]  (G2.13b)
+ *   predictFabComplexity(draftSnapshot, {rasterW, rasterH}, limits) → {scale, verticesPerLayerMax, verticesTotal,
+ *                                        partsPerLayerMax, over: string[], ...}  (alpha.3 E8, §12.3)
+ *   panelModel(shown, fabPlanDiagnostics, prediction?) → {groups: [{title, items, ackable, note?}]}  (alpha.3 E8, NFR-04)
  *
  * Everything is read from layer.material (the canonical polygons that also feed layerSVG and assemblySVG),
  * so the on-screen proof, the section and the cut files share one source. Fill and edge-stroke rules come from
@@ -196,6 +199,77 @@
     if (!d || (d.code !== "REPAIR_STALE" && d.code !== "REPAIR_REVIEW_FAB")) return -1;
     const done = applied || [], want = d.code === "REPAIR_REVIEW_FAB";
     return (repairs || []).findIndex((r, i) => r && r.layer === d.layer && done.includes(i) === want);
+  };
+
+  // ------------------------------------------------------------ fabrication outlook (alpha.3 E8; PO-PREVIEW-4, §12.3, NFR-04)
+  const CAPS = ["maxVerticesPerLayer", "maxVerticesTotal", "maxPartsPerLayer"];
+
+  /**
+   * predictFabComplexity(draftSnapshot, fabGeometry, limits) → {scale, verticesPerLayerMax, verticesLayer, verticesTotal,
+   * partsPerLayerMax, partsLayer, limits: {maxVerticesPerLayer, maxVerticesTotal, maxPartsPerLayer}, over: string[]}.
+   * The complexity caps are absolute counts enforced per run, and traced vertices grow about linearly with the raster's
+   * long side, so scale = max(fabW, fabH) / max(draftW, draftH); predicted vertices = round(draft stats.vertices × scale)
+   * per layer and in total; predicted parts = the draft's parts (a lower bound: a finer raster only adds parts). over
+   * names each cap (SBSchema.limits key) the prediction exceeds, in the order vertices/layer, vertices total, parts/layer.
+   * verticesLayer / partsLayer: the 0-based index of the layer with the most (−1 with no layers). Pure; no hashing.
+   */
+  P.predictFabComplexity = function (snap, fab, limits) {
+    const g = snap && snap.geometry;
+    if (!g || !(g.rasterW > 0) || !(g.rasterH > 0) || !fab || !(fab.rasterW > 0) || !(fab.rasterH > 0) || !limits)
+      throw new Error("SBProof.predictFabComplexity: needs a draft snapshot with geometry, the fabrication raster and the limits");
+    const scale = Math.max(fab.rasterW, fab.rasterH) / Math.max(g.rasterW, g.rasterH);
+    let vMax = 0, vLayer = -1, pMax = 0, pLayer = -1, total = 0;
+    (snap.layers || []).forEach((L, k) => {
+      const v = Math.round(((L && L.stats && L.stats.vertices) || 0) * scale), n = L && Array.isArray(L.parts) ? L.parts.length : 0;
+      total += v;
+      if (vLayer < 0 || v > vMax) { vMax = v; vLayer = k; }
+      if (pLayer < 0 || n > pMax) { pMax = n; pLayer = k; }
+    });
+    const lim = { maxVerticesPerLayer: limits.maxVerticesPerLayer, maxVerticesTotal: limits.maxVerticesTotal, maxPartsPerLayer: limits.maxPartsPerLayer };
+    const value = { maxVerticesPerLayer: vMax, maxVerticesTotal: total, maxPartsPerLayer: pMax };
+    const over = CAPS.filter((c) => Number.isFinite(lim[c]) && value[c] > lim[c]);
+    return { scale, verticesPerLayerMax: vMax, verticesLayer: vLayer, verticesTotal: total, partsPerLayerMax: pMax, partsLayer: pLayer, limits: lim, over };
+  };
+
+  /** One FAB_COMPLEXITY_LIKELY diagnostic per exceeded cap of a prediction. */
+  function complexityItems(pr, revision) {
+    const D = global.SBDiag, x = pr.scale === 1 ? "" : " (predicted from the draft at " + String(Number(pr.scale.toFixed(2))) + "\u00D7 its raster)";
+    const tail = "; simplify, use fewer sheets or a smaller artwork";
+    return (pr.over || []).map((cap) => {
+      const lim = pr.limits[cap];
+      let layer = null, n, what;
+      if (cap === "maxVerticesPerLayer") { layer = pr.verticesLayer; n = pr.verticesPerLayerMax; what = "vertices on layer " + (layer + 1); }
+      else if (cap === "maxVerticesTotal") { n = pr.verticesTotal; what = "vertices in total"; }
+      else { layer = pr.partsLayer; n = pr.partsPerLayerMax; what = "parts on layer " + (layer + 1) + " (at least)"; }
+      const unit = cap === "maxPartsPerLayer" ? "parts" : "vertices";
+      return D.make("FAB_COMPLEXITY_LIKELY", { quality: "fabrication", revision: revision === undefined ? null : revision, layer,
+        measured: { value: n, unit }, limit: { value: lim, unit },
+        detail: "likely exceeds the fabrication cap: about " + n + " " + what + " vs " + lim + x + tail });
+    });
+  }
+
+  /**
+   * panelModel(shown, fabPlanDiagnostics, prediction?) → {groups: [{title, items: Diagnostic[], ackable, note?}]}: the
+   * diagnostics panel's groups for the shown result. For a draft result only, a "Fabrication resolution" group
+   * (ackable false, note "Acknowledged in the Fabrication review") comes first with the fabrication raster plan's
+   * diagnostics (SBEngine.rasterPlan(project, source, "fabrication", dc).diagnostics: FAB_EXCEEDS_SOURCE,
+   * FAB_PITCH_CAPPED) and one FAB_COMPLEXITY_LIKELY per cap the prediction exceeds; it is omitted when it would be
+   * empty. These never enter the snapshot, its hash or its acks. A fabrication result raises the plan diagnostics
+   * itself, so it has no plan group. Then the result's own group: "This <quality> result" (its snapshot diagnostics,
+   * ackable) or, for a failed run, "No layers" (r.diagnostics, not ackable).
+   */
+  P.panelModel = function (shown, planDiags, prediction) {
+    if (!shown || typeof shown !== "object") throw new Error("SBProof.panelModel: needs the shown result");
+    const snap = shown.snapshot || null, quality = (snap && snap.quality) || shown.quality, groups = [];
+    if (quality === "draft") {
+      const items = (planDiags || []).slice();
+      if (prediction && prediction.over && prediction.over.length) items.push(...complexityItems(prediction, snap ? snap.revision : shown.revision));
+      if (items.length) groups.push({ title: "Fabrication resolution", items, ackable: false, note: "Acknowledged in the Fabrication review" });
+    }
+    const failed = shown.status === "error" || !snap;
+    groups.push(failed ? { title: "No layers", items: (shown.diagnostics || []).slice(), ackable: false }
+      : { title: "This " + quality + " result", items: (snap.diagnostics || []).slice(), ackable: true });
+    return { groups };
   };
 
   global.SBProof = P;

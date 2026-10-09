@@ -5195,7 +5195,8 @@ suite("schema.js/diag.js/app.js — G2.14 source intake and explicit preflight (
     check("G2.14 app.js: the downsample re-runs intake against the current project (mode may have changed)",
       /SBSchema\.intake\(bytes/.test(ds) && !/function downsampleExplicitly\(file, bytes, pre\)/.test(appSrc));
     check("NFR-04 app.js: a refusal shows the preflight plan (pitch the downsample gives) and EXIF_AMBIGUOUS",
-      /rasterPlan/.test(rs) && /planText\(/.test(rs) && /EXIF_AMBIGUOUS/.test(rs) && /EXIF_AMBIGUOUS/.test(lf));
+      /rasterPlan/.test(rs) && /planText\(/.test(rs) && /EXIF_AMBIGUOUS/.test(rs) &&
+      /SBDocs\.sourceNotes\(pre\.warnings\)/.test(lf));   // alpha.3 E8: loadFile shows every preflight warning (EXIF_AMBIGUOUS included)
     check("G2.14 app.js: #filein value is reset so the same file can be chosen again", /\$\("filein"\)[\s\S]{0,200}e\.target\.value = ""/.test(appSrc));
     check("IMG-05 app.js: downsample target and button label come from SBSchema.downsampleTarget (no intake.w/info.w swap test)",
       /SBSchema\.downsampleTarget\(pre\)/.test(ds) && !/pre\.intake\.w !== pre\.info\.w/.test(appSrc) && (appSrc.match(/SBSchema\.downsampleTarget\(/g) || []).length >= 2); }
@@ -5657,6 +5658,51 @@ suite("schema.js/app.js — alpha.3 E7 presets and colour sources (PRJ-01, IMG-0
   check("ASM-01 a switch to bonded sets guides.mode from none to inset-outline", b.construction.guides.mode === "inset-outline");
   check("ASM-01/Q4 the plywood preset uses inset-outline guides", S.defaults("plywood").construction.guides.mode === "inset-outline");
   check("PO-PREVIEW-3 no 'Use as height map instead' button (it could never succeed)", !/Use as height map instead/.test(appSrc) && !/Use as height map instead/.test(html));
+});
+
+suite("docs.js/proof.js/app.js — alpha.3 E8 source diagnostics up front (PO-PREVIEW-4, GEO-06, NFR-04)", () => {
+  const p = SBSchema.defaults("plywood"); p.geometry.targetMM = 470; p.source = SBSchema.sourceTemplate();
+  const plan = SBEngine.rasterPlan(p, { w: 4096, h: 3084 }, "fabrication", "desktop");
+  const notes = SBDocs.sourceNotes(plan.diagnostics);
+  check("PO-LASER-5 4096×3084 at 470 mm shows FAB_EXCEEDS_SOURCE at load with the px shortfall",
+    plan.diagnostics.some((d) => d.code === "FAB_EXCEEDS_SOURCE") && notes.some((l) => /px/.test(l) && /source/i.test(l)));
+  const shown = { quality: "draft", snapshot: { quality: "draft", diagnostics: [] }, diagnostics: [] };
+  const m = SBProof.panelModel(shown, plan.diagnostics);
+  check("NFR-04 draft panel model has a non-ackable Fabrication resolution group", m.groups[0].title === "Fabrication resolution" && m.groups[0].ackable === false && m.groups[0].items.length === plan.diagnostics.length);
+  check("LYR-06 a fabrication result's panel has no separate plan group (the fab run raises them itself)",
+    !SBProof.panelModel({ quality: "fabrication", snapshot: { quality: "fabrication", diagnostics: [] }, diagnostics: [] }, plan.diagnostics).groups.some((g) => g.title === "Fabrication resolution"));
+  const lim = SBSchema.limits("desktop"), lay = (v, n) => ({ stats: { vertices: v }, parts: new Array(n) });
+  const near = { geometry: { rasterW: 1024, rasterH: 771 }, layers: [lay(40000, 10), lay(30000, 10)] };
+  const pr = SBProof.predictFabComplexity(near, { rasterW: 4096, rasterH: 3084 }, lim);
+  check("§12.3 a draft at 40k vertices/layer at 1024 px predicts ≈160k at 4096 px and flags the per-layer cap",
+    pr.scale === 4 && pr.verticesPerLayerMax === 160000 && pr.over.includes("maxVerticesPerLayer"));
+  check("§12.3 a draft well under the caps predicts no overflow", SBProof.predictFabComplexity({ geometry: near.geometry, layers: [lay(5000, 10)] }, { rasterW: 4096, rasterH: 3084 }, lim).over.length === 0);
+  const mp = SBProof.panelModel(shown, plan.diagnostics, pr);
+  check("NFR-04 the predicted overflow is a non-ackable FAB_COMPLEXITY_LIKELY item in the Fabrication resolution group",
+    SBDiag.CODES.FAB_COMPLEXITY_LIKELY && SBDiag.CODES.FAB_COMPLEXITY_LIKELY.severity === "warning" && mp.groups[0].ackable === false && mp.groups[0].items.some((d) => d.code === "FAB_COMPLEXITY_LIKELY"));
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8");
+  check("UI-05 the badge is never Ready while the fabrication complexity prediction is over a cap", /predictFabComplexity\(/.test(appSrc) && /\.over\.length/.test(appSrc));
+  check("PO-PREVIEW-4 loadFile shows every preflight warning (SBDocs.sourceNotes), not only EXIF_AMBIGUOUS",
+    /SBDocs\.sourceNotes\(pre\.warnings\)/.test(appSrc) && !/filter\(\(d\) => d\.code === "EXIF_AMBIGUOUS"\)/.test(appSrc));
+  // implementer additions (E8 open details)
+  const fl = pr.over.length ? SBProof.panelModel(shown, [], pr).groups[0] : null;
+  check("NFR-04 FAB_COMPLEXITY_LIKELY text names the predicted count, the layer and the cap",
+    !!fl && fl.items.some((d) => d.code === "FAB_COMPLEXITY_LIKELY" && /160000|160,000/.test(d.message) && /layer 1/i.test(d.message) && new RegExp(String(lim.maxVerticesPerLayer)).test(d.message)));
+  check("NFR-04 the Fabrication resolution group notes where it is acknowledged", m.groups[0].note === "Acknowledged in the Fabrication review");
+  check("UI-04 a draft with no plan diagnostics and no predicted overflow has no Fabrication resolution group",
+    !SBProof.panelModel(shown, [], SBProof.predictFabComplexity({ geometry: near.geometry, layers: [lay(5000, 10)] }, { rasterW: 4096, rasterH: 3084 }, lim)).groups.some((g) => g.title === "Fabrication resolution"));
+  check("§12.3 the parts prediction is the draft count (a lower bound) and flags the parts cap",
+    (() => { const q = SBProof.predictFabComplexity({ geometry: near.geometry, layers: [lay(10, lim.maxPartsPerLayer + 1)] }, { rasterW: 1024, rasterH: 771 }, lim);
+      return q.scale === 1 && q.partsPerLayerMax === lim.maxPartsPerLayer + 1 && q.over.includes("maxPartsPerLayer"); })());
+  check("§12.3 the total vertices are predicted and flag the total cap",
+    (() => { const ls = []; for (let i = 0; i < 4; i++) ls.push(lay(30000, 1)); const q = SBProof.predictFabComplexity({ geometry: near.geometry, layers: ls }, { rasterW: 4096, rasterH: 3084 }, lim);
+      return q.verticesTotal === 480000 && q.over.includes("maxVerticesTotal") && !q.over.includes("maxVerticesPerLayer"); })());
+  check("NFR-04 renderDiagnostics lists the draft's Fabrication resolution group from SBProof.panelModel with no acknowledgement",
+    /function renderDiagnostics[\s\S]*?SBProof\.panelModel\(r, [\s\S]*?Fabrication resolution[\s\S]*?\n  \}\n/.test(appSrc) && /renderPlanGroup\(/.test(appSrc));
+  check("GEO-06 the dimbar and the draft panel share one fabrication plan (fabPlanNow)", (appSrc.match(/fabPlanNow\(\)/g) || []).length >= 2);
+  check("PO-PREVIEW-4 sourceNotes keeps the EXIF_AMBIGUOUS warning (the only one loadFile showed before E8)",
+    SBDocs.sourceNotes([SBDiag.make("EXIF_AMBIGUOUS", {})])[0] === SBDiag.make("EXIF_AMBIGUOUS", {}).message);
+  check("PO-PREVIEW-4 sourceNotes returns one line per warning", SBDocs.sourceNotes(plan.diagnostics).length === plan.diagnostics.length && SBDocs.sourceNotes([]).length === 0);
 });
 
 // ------------------------------------------------------------------ report

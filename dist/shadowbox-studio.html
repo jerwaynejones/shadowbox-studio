@@ -2172,7 +2172,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  * SOURCE_TOO_MANY_PIXELS, SOURCE_FORMAT and HEIGHT_NEEDS_PNG (IMG-01/07)
  * and the intake warning EXIF_AMBIGUOUS (Appendix C, S4b), plus
  * GEO_MULTIPART, which SBGeom.validate reports under D3. alpha.3 E7 adds
- * SOURCE_COLOR_TONAL (info): a colour source auto-switched to tonal at load. Programmer-error
+ * SOURCE_COLOR_TONAL (info): a colour source auto-switched to tonal at load. alpha.3 E8 adds
+ * FAB_COMPLEXITY_LIKELY (warning): the draft predicts a fabrication complexity-cap overflow. Programmer-error
  * throws (GEO_MULTIPART_POLYGON, GEO_OFFSET_NONINTEGER, GEO_INSET_NOT_DYADIC)
  * are not user diagnostics.
  *
@@ -2314,6 +2315,10 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       "Check the preview; if it is rotated wrongly, re-save the image with its rotation applied."],
     ["FAB_EXCEEDS_SOURCE", W, P, "Fabrication resolution exceeds the source resolution",
       "Use a higher-resolution source or a smaller artwork; the engine never upsamples, so missing source detail cannot be recovered."],
+    // alpha.3 E8 (PO-PREVIEW-4, §12.3): predicted from the draft (SBProof.predictFabComplexity); shown in the draft panel's
+    // non-ackable "Fabrication resolution" group only, never in a snapshot (the fabrication run checks the real caps)
+    ["FAB_COMPLEXITY_LIKELY", W, P, "Fabrication result likely exceeds the complexity cap",
+      "Simplify busy art, use fewer sheets or a smaller artwork; Preview at fabrication resolution to check the exact counts."],
     // ---- info
     ["KERF_EXTERNAL", I, F, "Kerf is compensated in the laser software",
       "Set kerf offset in your laser software; cut files are at nominal size."],
@@ -7288,6 +7293,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *   modelHash(model)                     → sha256 hex of the model
  *   cards(layers, page)                  → [{layerIndex, role, empty, retainedMM2, wasteMM2, retainedPct}]  (G2.13a)
  *   overlays({cleanupReport, diagnostics, mode}) → [{layerIndex, label, holesFilled, partsRemoved, added, removed, bridges, unsupported}]  (G2.13b)
+ *   predictFabComplexity(draftSnapshot, {rasterW, rasterH}, limits) → {scale, verticesPerLayerMax, verticesTotal,
+ *                                        partsPerLayerMax, over: string[], ...}  (alpha.3 E8, §12.3)
+ *   panelModel(shown, fabPlanDiagnostics, prediction?) → {groups: [{title, items, ackable, note?}]}  (alpha.3 E8, NFR-04)
  *
  * Everything is read from layer.material (the canonical polygons that also feed layerSVG and assemblySVG),
  * so the on-screen proof, the section and the cut files share one source. Fill and edge-stroke rules come from
@@ -7477,6 +7485,77 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     return (repairs || []).findIndex((r, i) => r && r.layer === d.layer && done.includes(i) === want);
   };
 
+  // ------------------------------------------------------------ fabrication outlook (alpha.3 E8; PO-PREVIEW-4, §12.3, NFR-04)
+  const CAPS = ["maxVerticesPerLayer", "maxVerticesTotal", "maxPartsPerLayer"];
+
+  /**
+   * predictFabComplexity(draftSnapshot, fabGeometry, limits) → {scale, verticesPerLayerMax, verticesLayer, verticesTotal,
+   * partsPerLayerMax, partsLayer, limits: {maxVerticesPerLayer, maxVerticesTotal, maxPartsPerLayer}, over: string[]}.
+   * The complexity caps are absolute counts enforced per run, and traced vertices grow about linearly with the raster's
+   * long side, so scale = max(fabW, fabH) / max(draftW, draftH); predicted vertices = round(draft stats.vertices × scale)
+   * per layer and in total; predicted parts = the draft's parts (a lower bound: a finer raster only adds parts). over
+   * names each cap (SBSchema.limits key) the prediction exceeds, in the order vertices/layer, vertices total, parts/layer.
+   * verticesLayer / partsLayer: the 0-based index of the layer with the most (−1 with no layers). Pure; no hashing.
+   */
+  P.predictFabComplexity = function (snap, fab, limits) {
+    const g = snap && snap.geometry;
+    if (!g || !(g.rasterW > 0) || !(g.rasterH > 0) || !fab || !(fab.rasterW > 0) || !(fab.rasterH > 0) || !limits)
+      throw new Error("SBProof.predictFabComplexity: needs a draft snapshot with geometry, the fabrication raster and the limits");
+    const scale = Math.max(fab.rasterW, fab.rasterH) / Math.max(g.rasterW, g.rasterH);
+    let vMax = 0, vLayer = -1, pMax = 0, pLayer = -1, total = 0;
+    (snap.layers || []).forEach((L, k) => {
+      const v = Math.round(((L && L.stats && L.stats.vertices) || 0) * scale), n = L && Array.isArray(L.parts) ? L.parts.length : 0;
+      total += v;
+      if (vLayer < 0 || v > vMax) { vMax = v; vLayer = k; }
+      if (pLayer < 0 || n > pMax) { pMax = n; pLayer = k; }
+    });
+    const lim = { maxVerticesPerLayer: limits.maxVerticesPerLayer, maxVerticesTotal: limits.maxVerticesTotal, maxPartsPerLayer: limits.maxPartsPerLayer };
+    const value = { maxVerticesPerLayer: vMax, maxVerticesTotal: total, maxPartsPerLayer: pMax };
+    const over = CAPS.filter((c) => Number.isFinite(lim[c]) && value[c] > lim[c]);
+    return { scale, verticesPerLayerMax: vMax, verticesLayer: vLayer, verticesTotal: total, partsPerLayerMax: pMax, partsLayer: pLayer, limits: lim, over };
+  };
+
+  /** One FAB_COMPLEXITY_LIKELY diagnostic per exceeded cap of a prediction. */
+  function complexityItems(pr, revision) {
+    const D = global.SBDiag, x = pr.scale === 1 ? "" : " (predicted from the draft at " + String(Number(pr.scale.toFixed(2))) + "\u00D7 its raster)";
+    const tail = "; simplify, use fewer sheets or a smaller artwork";
+    return (pr.over || []).map((cap) => {
+      const lim = pr.limits[cap];
+      let layer = null, n, what;
+      if (cap === "maxVerticesPerLayer") { layer = pr.verticesLayer; n = pr.verticesPerLayerMax; what = "vertices on layer " + (layer + 1); }
+      else if (cap === "maxVerticesTotal") { n = pr.verticesTotal; what = "vertices in total"; }
+      else { layer = pr.partsLayer; n = pr.partsPerLayerMax; what = "parts on layer " + (layer + 1) + " (at least)"; }
+      const unit = cap === "maxPartsPerLayer" ? "parts" : "vertices";
+      return D.make("FAB_COMPLEXITY_LIKELY", { quality: "fabrication", revision: revision === undefined ? null : revision, layer,
+        measured: { value: n, unit }, limit: { value: lim, unit },
+        detail: "likely exceeds the fabrication cap: about " + n + " " + what + " vs " + lim + x + tail });
+    });
+  }
+
+  /**
+   * panelModel(shown, fabPlanDiagnostics, prediction?) → {groups: [{title, items: Diagnostic[], ackable, note?}]}: the
+   * diagnostics panel's groups for the shown result. For a draft result only, a "Fabrication resolution" group
+   * (ackable false, note "Acknowledged in the Fabrication review") comes first with the fabrication raster plan's
+   * diagnostics (SBEngine.rasterPlan(project, source, "fabrication", dc).diagnostics: FAB_EXCEEDS_SOURCE,
+   * FAB_PITCH_CAPPED) and one FAB_COMPLEXITY_LIKELY per cap the prediction exceeds; it is omitted when it would be
+   * empty. These never enter the snapshot, its hash or its acks. A fabrication result raises the plan diagnostics
+   * itself, so it has no plan group. Then the result's own group: "This <quality> result" (its snapshot diagnostics,
+   * ackable) or, for a failed run, "No layers" (r.diagnostics, not ackable).
+   */
+  P.panelModel = function (shown, planDiags, prediction) {
+    if (!shown || typeof shown !== "object") throw new Error("SBProof.panelModel: needs the shown result");
+    const snap = shown.snapshot || null, quality = (snap && snap.quality) || shown.quality, groups = [];
+    if (quality === "draft") {
+      const items = (planDiags || []).slice();
+      if (prediction && prediction.over && prediction.over.length) items.push(...complexityItems(prediction, snap ? snap.revision : shown.revision));
+      if (items.length) groups.push({ title: "Fabrication resolution", items, ackable: false, note: "Acknowledged in the Fabrication review" });
+    }
+    const failed = shown.status === "error" || !snap;
+    groups.push(failed ? { title: "No layers", items: (shown.diagnostics || []).slice(), ackable: false }
+      : { title: "This " + quality + " result", items: (snap.diagnostics || []).slice(), ackable: true });
+    return { groups };
+  };
+
   global.SBProof = P;
 })(typeof window !== "undefined" ? window : globalThis);
 
@@ -7624,7 +7703,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *      disclaimers: [COPY.MAT01]}
  *   Lengths are shown in project.units (SBSchema.fromMM); pitch is always mm/px.
  *
- * Looks up SBSchema and SBHeight at call time.
+ *   SBDocs.sourceNotes(warnings) → string[]: one line per preflight/plan diagnostic (alpha.3 E8, PO-PREVIEW-4), shown
+ *              at load: the SBDiag.describe message (title + detail; FAB_EXCEEDS_SOURCE's detail carries the px shortfall,
+ *              appended from shortPx if a detail ever lacks it).
+ *
+ * Looks up SBSchema, SBHeight and SBDiag at call time.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -7731,6 +7814,16 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       : "Nearest-layer reference heights; tonal bands follow the tone split (" + p.interpretation.thresholdRule + ").";
 
     return deepFreeze({ units: unit, layers, z, pitch, page, stock, thresholds, thresholdsNote, disclaimers: [D.COPY.MAT01] });
+  };
+
+  /** alpha.3 E8 (PO-PREVIEW-4): the load-time notes for every preflight warning, one line each. */
+  D.sourceNotes = function (warnings) {
+    if (warnings !== undefined && warnings !== null && !Array.isArray(warnings)) throw dfail("sourceNotes needs an array of diagnostics");
+    return (warnings || []).map((d) => {
+      let line = global.SBDiag.describe(d).message;
+      if (Array.isArray(d.shortPx) && !/px short/.test(line)) line += " (source is " + d.shortPx[0] + " × " + d.shortPx[1] + " px short)";
+      return line;
+    });
   };
 
   global.SBDocs = D;
@@ -9140,6 +9233,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     // alpha.3 E6 (PO-PREVIEW-2): made by "Preview at fabrication resolution" or the first Download click and shown in every
     // view (showFab); files are delivered only while it is shown and current; an edit returns the views to the draft.
     fab: null,
+    // alpha.3 E8 (PO-PREVIEW-4, NFR-04): the fabrication outlook of the shown draft, {plan, sizeErr, prediction}
+    // (fabOutlook); never part of a snapshot, its hash or its acks. null before a source or while a fab result is shown.
+    outlook: null,
     report: "",
   };
 
@@ -9210,10 +9306,14 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     if (!el) return;
     if (state === null) { el.hidden = true; return; }
     const b = SBDiag.stateBadge(run.state);
-    el.textContent = b.label;
-    el.title = b.text;
-    el.setAttribute("aria-label", "Result: " + b.label + ". " + b.text);
+    // alpha.3 E8 (UI-05): a draft whose fabrication prediction is over a cap says so on the badge; it is never Ready
+    const risk = run.state === "draft" && run.outlook && run.outlook.prediction && run.outlook.prediction.over.length > 0;
+    const text = b.text + (risk ? " The fabrication result will likely exceed the complexity cap; see Fabrication resolution in the diagnostics." : "");
+    el.textContent = b.label + (risk ? " \u00B7 over cap" : "");
+    el.title = text;
+    el.setAttribute("aria-label", "Result: " + el.textContent + ". " + text);
     el.dataset.state = b.state;
+    if (risk) el.dataset.fabRisk = "over"; else delete el.dataset.fabRisk;
     el.hidden = false;
   }
 
@@ -9382,6 +9482,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     } else if (!run.focus) {
       try { preview.setFocus(null); } catch (_) { /* nothing shown */ }   // a failed run keeps the picture, not its focus
     }
+    run.outlook = r === run.shown ? fabOutlook(r) : run.outlook;
+    if (run.state !== null) showRunState(run.state);   // E8: the badge reflects the fabrication prediction
     renderDiagnostics(r);
     updateDimbar();
     run.report = statusText(r) + note;
@@ -9409,6 +9511,27 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   // ------------------------------------------------------- diagnostics (G2.13c: UI-04, NFR-07, §9.5)
 
   /**
+   * alpha.3 E8 (PO-PREVIEW-4, GEO-06, NFR-04): the fabrication raster plan at the loaded source size (shared with the
+   * dimbar) and, for a draft result with a snapshot, SBProof.predictFabComplexity against the device caps.
+   * → {plan, sizeErr, prediction} or null (no source, or a fabrication result is shown: that run checks the real caps).
+   */
+  function fabPlanNow() {
+    if (!run.sourceImage) return { plan: null, sizeErr: null };
+    try { return { plan: SBEngine.rasterPlan(project, { w: run.sourceW, h: run.sourceH }, "fabrication", deviceClass()), sizeErr: null }; }
+    catch (e) { return { plan: null, sizeErr: e.message }; }
+  }
+  function fabOutlook(r) {
+    if (!r || r === run.fab || !run.sourceImage) return null;
+    const o = fabPlanNow();
+    let prediction = null;
+    if (o.plan && r.snapshot && r.snapshot.quality === "draft") {
+      try { prediction = SBProof.predictFabComplexity(r.snapshot, o.plan.geometry, SBSchema.limits(deviceClass())); }
+      catch (_) { prediction = null; }   // a snapshot without geometry predicts nothing
+    }
+    return { plan: o.plan, sizeErr: o.sizeErr, prediction };
+  }
+
+  /**
    * The diagnostics panel: a summary line (SBDiag.summarize) and the list grouped by severity, each group headed by a
    * badge with a glyph icon (aria-hidden) and the severity in text. Each item (SBDiag.describe) shows where, what, the
    * measured value against the limit and the fix. An item with a layer is a <button> (click, Enter or Space) that
@@ -9430,6 +9553,12 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     list.textContent = "";
     if (!fabScope) $("diag-clear").hidden = !run.focus;
     if (!r) { sum.textContent = "Generate to check the layers"; return; }
+    // alpha.3 E8 (PO-PREVIEW-4, NFR-04): a draft lists the fabrication plan's diagnostics and the predicted complexity
+    // overflow first, in a "Fabrication resolution" group that is not acknowledged here (only in the Fabrication review)
+    const planGroup = fabScope ? null : SBProof.panelModel(r, run.outlook && run.outlook.plan ? run.outlook.plan.diagnostics : [],
+      run.outlook ? run.outlook.prediction : null).groups.find((g) => g.title === "Fabrication resolution") || null;
+    if (planGroup) list.appendChild(renderPlanGroup(planGroup));
+    const planSum = planGroup ? " Fabrication resolution: " + planGroup.items.length + " item" + (planGroup.items.length === 1 ? "" : "s") + " (listed first; acknowledged in the Fabrication review)." : "";
     const failed = r.status === "error" || !r.snapshot;
     // alpha.3 E6: items navigate (switch to the Proof and focus) only on the result the views show
     const onScreen = !failed && r === run.shown;
@@ -9440,11 +9569,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       ` (${(r.ms / 1000).toFixed(1)} s)` + (onScreen ? "" : ", not on screen: Download shows it first") + ": " : "";
     if (failed) {
       sum.textContent = (fabScope ? "The fabrication run failed: " : "No layers: ") + (r.error ? r.error.code + ", " + r.error.message : "the run did not finish") +
-        (groups.length ? " (" + groups.map((g) => g.count + " " + noun(g)).join(", ") + ")." : ".");
-    } else if (!groups.length) { sum.textContent = head + "No issues found" + what; return; }
+        (groups.length ? " (" + groups.map((g) => g.count + " " + noun(g)).join(", ") + ")." : ".") + planSum;
+    } else if (!groups.length) { sum.textContent = head + "No issues found" + what + planSum; return; }
     else {
       const acked = diags.filter((d) => SBDiag.describe(d).severity === "warning" && r.acks.has(SBDiag.ackKey(d, hash))).length;
-      sum.textContent = head + groups.map((g) => g.count + " " + noun(g) + (g.severity === "warning" && acked ? " (" + acked + " acknowledged)" : "")).join(", ") + what;
+      sum.textContent = head + groups.map((g) => g.count + " " + noun(g) + (g.severity === "warning" && acked ? " (" + acked + " acknowledged)" : "")).join(", ") + what + planSum;
     }
     for (const g of groups) {
       const li = document.createElement("li");
@@ -9463,6 +9592,24 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       });
       list.appendChild(li);
     }
+  }
+
+  /**
+   * alpha.3 E8: the draft panel's "Fabrication resolution" group (SBProof.panelModel): a heading with its note, then
+   * each item through diagItem with no result (no acknowledgement) and not navigable (it is about the fabrication run).
+   */
+  function renderPlanGroup(g) {
+    const li = document.createElement("li");
+    li.className = "diag-group diag-plan";
+    const gh = document.createElement("div");
+    gh.className = "diag-head";
+    gh.appendChild(document.createTextNode(g.title + " (" + g.items.length + ")"));
+    li.appendChild(gh);
+    if (g.note) { const n = document.createElement("p"); n.className = "diag-fix"; n.textContent = g.note + "."; li.appendChild(n); }
+    const ul = document.createElement("ul");
+    for (const d of g.items) ul.appendChild(diagItem(d, Object.assign({}, SBDiag.describe(d), { navigable: false }), null, false));
+    li.appendChild(ul);
+    return li;
   }
 
   /** alpha.3 E6: after an acknowledgement on r, re-render every panel that lists r (the panel and, for run.fab, the review). */
@@ -10379,11 +10526,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    * and the counts of the current pipeline run.
    */
   function updateDimbar() {
-    let plan = null, sizeErr = null;
-    if (run.sourceImage) {
-      try { plan = SBEngine.rasterPlan(project, { w: run.sourceW, h: run.sourceH }, "fabrication", deviceClass()); }
-      catch (e) { sizeErr = e.message; }
-    }
+    const { plan, sizeErr } = fabPlanNow();   // alpha.3 E8: the same plan the draft panel's Fabrication resolution group lists
     const snap = run.shown && run.shown.snapshot;
     const stats = snap && run.shown.revision === project.revision ? snap.stats : null;   // alpha.3 E5: the shown snapshot's accounting
     const m = SBDocs.dimbarModel({ project, plan, stats });
@@ -10476,7 +10619,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     if (gen !== sourceGen) { if (src.bitmap.close) src.bitmap.close(); return; }
     await acceptSource(file.name, src, pre.intake, gen, bytes, autoTonal);
     if (gen !== sourceGen) return;
-    const notes = pre.warnings.filter((d) => d.code === "EXIF_AMBIGUOUS").map((d) => d.message);
+    const notes = SBDocs.sourceNotes(pre.warnings);   // alpha.3 E8 (PO-PREVIEW-4): every preflight warning, at load
     if (autoTonal) notes.unshift(colourNotice());
     if (notes.length) showSourceProblem(`${file.name}: ${notes.join("; ")}`);
   }
@@ -10516,7 +10659,10 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
         parts.push(`After the downsample: ${planText(SBEngine.rasterPlan(q, target, "fabrication", deviceClass()))}.`);
       } catch (e) { /* the size cannot be resolved: the dimbar says why once a source loads */ }
     } else if (pre.rasterPlan) parts.push(`At this size: ${planText(pre.rasterPlan)}.`);
-    for (const d of pre.warnings) if (d.code === "EXIF_AMBIGUOUS") parts.push(d.message + ".");
+    // alpha.3 E8 (PO-PREVIEW-4): every preflight warning; with a downsample offer only the orientation warning, since the
+    // plan warnings describe a size that will not be used (the "After the downsample" plan replaces them)
+    const shownWarnings = sug ? pre.warnings.filter((w) => w.code === "EXIF_AMBIGUOUS") : pre.warnings;
+    for (const line of SBDocs.sourceNotes(shownWarnings)) parts.push(line + ".");
     showSourceProblem(parts.join(" "), target ? () => downsampleExplicitly(file, bytes, note) : null,
       target ? `Downsample to ${target.w} × ${target.h} px` : "");
   }

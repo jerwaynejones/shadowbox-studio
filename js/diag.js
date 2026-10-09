@@ -35,7 +35,8 @@
  * SOURCE_TOO_MANY_PIXELS, SOURCE_FORMAT and HEIGHT_NEEDS_PNG (IMG-01/07)
  * and the intake warning EXIF_AMBIGUOUS (Appendix C, S4b), plus
  * GEO_MULTIPART, which SBGeom.validate reports under D3. alpha.3 E7 adds
- * SOURCE_COLOR_TONAL (info): a colour source auto-switched to tonal at load. Programmer-error
+ * SOURCE_COLOR_TONAL (info): a colour source auto-switched to tonal at load. alpha.3 E8 adds
+ * FAB_COMPLEXITY_LIKELY (warning): the draft predicts a fabrication complexity-cap overflow. Programmer-error
  * throws (GEO_MULTIPART_POLYGON, GEO_OFFSET_NONINTEGER, GEO_INSET_NOT_DYADIC)
  * are not user diagnostics.
  *
@@ -177,6 +178,10 @@
       "Check the preview; if it is rotated wrongly, re-save the image with its rotation applied."],
     ["FAB_EXCEEDS_SOURCE", W, P, "Fabrication resolution exceeds the source resolution",
       "Use a higher-resolution source or a smaller artwork; the engine never upsamples, so missing source detail cannot be recovered."],
+    // alpha.3 E8 (PO-PREVIEW-4, §12.3): predicted from the draft (SBProof.predictFabComplexity); shown in the draft panel's
+    // non-ackable "Fabrication resolution" group only, never in a snapshot (the fabrication run checks the real caps)
+    ["FAB_COMPLEXITY_LIKELY", W, P, "Fabrication result likely exceeds the complexity cap",
+      "Simplify busy art, use fewer sheets or a smaller artwork; Preview at fabrication resolution to check the exact counts."],
     // ---- info
     ["KERF_EXTERNAL", I, F, "Kerf is compensated in the laser software",
       "Set kerf offset in your laser software; cut files are at nominal size."],
