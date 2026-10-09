@@ -14,7 +14,7 @@
  *                                warnings and "n/a" for blocking and info.
  *   SBDiag.aggregate(diags)      merges PART_SMALL, PART_THIN, NECK_NARROW and
  *                                FEATURE_MARGINAL per (code, layer[, detail.kind])
- *                                into one diagnostic with count, parts[] and a
+ *                                (and GUIDE_OMITTED, alpha.3 E10) into one diagnostic with count, parts[] and a
  *                                region list.
  *   SBDiag.ackKey(diag, geometryHash)  "code|layer|part-or-*|geometryHash"
  *   SBDiag.exportGate(diags, acks, snapshot, expectedQuality="fabrication")
@@ -211,7 +211,7 @@
   Object.freeze(CODES);
 
   const QUALITIES = ["draft", "fabrication"];
-  const AGGREGATED = new Set(["PART_SMALL", "PART_THIN", "NECK_NARROW", "FEATURE_MARGINAL"]);
+  const AGGREGATED = new Set(["PART_SMALL", "PART_THIN", "NECK_NARROW", "FEATURE_MARGINAL", "GUIDE_OMITTED"]);
   // G2.8 (GEO-05): small-part, thin-part and neck warnings (and FEATURE_MARGINAL of kind part|neck) are labelled.
   const GEO05 = new Set(["PART_SMALL", "PART_THIN", "NECK_NARROW", "FEATURE_MARGINAL"]);
   const GEO05_NOTE = "Conservative fabrication warning — not a structural simulation";

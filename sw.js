@@ -43,6 +43,7 @@ const SHELL = [
   "./js/material.js",
   "./js/support.js",
   "./js/strokefont.js",
+  "./js/guides.js",
   "./js/svgout.js",
   "./js/svgread.js",
   "./js/proof.js",

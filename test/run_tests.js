@@ -5752,6 +5752,88 @@ suite("strokefont.js/geom.js — alpha.3 E9 stroke digits, box placement and buf
     const b = SBGeom.bufferPolylines([[0, 0, 1000, 0], [500, 0, 1500, 0]], 50); return b.length === 1 && Math.abs(SBGeom.area(b) - 1600 * 100) <= 4; })());
 });
 
+suite("guides.js — alpha.3 E10 concealed guides and sheet labels (ASM-01/02/03, AT-14, GEO-07)", () => {
+  check("E10 API present", typeof globalThis.SBGuides === "object" && typeof SBGuides.build === "function" && typeof SBGuides.validate === "function");
+  if (typeof globalThis.SBGuides !== "object") return;
+  const sq = (x, y, w, h) => [{ outer: [x, y, x + w, y, x + w, y + h, x, y + h], holes: [] }];
+  const mk = (index, material) => SBMaterial.assignParts([SBMaterial.withMaterial({ index, material: [], parts: [], diagnostics: [], scorePaths: [] }, SBGeom.normalize(material), { revision: 0, quality: "draft" })])[0];
+  // base, a 20×20 mm block, a crescent, a 1.5 mm sliver
+  const L0 = mk(0, sq(0, 0, 60000, 40000));
+  const L1 = mk(1, sq(5000, 5000, 20000, 20000).concat(sq(40000, 5000, 1500, 20000)));
+  const cres = SBGeom.normalize(SBGeom.difference(sq(5000, 5000, 20000, 20000), sq(11000, 4000, 20000, 22000)));
+  const L2 = mk(2, cres);
+  const cfg = SBSchema.defaults("plywood").construction.guides;
+  const ctx = { revision: 0, quality: "draft" };
+  const b = SBGuides.build([L0, L1, L2], Object.assign({}, cfg, { mode: "inset-outline" }), ctx);
+  check("ASM-01 inset-outline scores guides of layer k+1 on layer k (sheet 1 and 2), none on the top sheet",
+    b.scorePaths[0].length > 0 && b.scorePaths[1].length > 0 && b.scorePaths[2].length === 0);
+  check("AT-14 the 1.5 mm sliver and nothing else on layer 1 is omitted with GUIDE_OMITTED (warning)",
+    b.guides.omitted.filter((o) => o.layer === 1).length === 1 && b.diagnostics.some((d) => d.code === "GUIDE_OMITTED" && d.layer === 1 && d.severity === "warning"));
+  // L2 is a 6 mm strip: Rc_1 is 6.0 − 2·1.1 = 3.8 mm wide, the label region 3.8 − 2·0.3 = 3.2 mm; the box for "2" at 3 mm
+  // needs 2·(1000 + 100) = 2.2 mm, so it fits (the circumscribed circle would need 3.806 mm and would not)
+  check("AT-13 sheet labels are vector strokes with the sheet number, placed on sheets 1 and 2 only",
+    b.guides.labels.map((l) => l.text).join() === "1,2" && b.scorePaths[0].length === 1 + SBFont.strokes("1", 3000).paths.length &&
+    b.scorePaths[1].length === 1 + SBFont.strokes("2", 3000).paths.length);
+  check("ASM-02/GEO-07 validate finds every score inside Rb (no GUIDE_UNCONTAINED)", SBGuides.validate([L0, L1, L2], b, cfg, ctx).length === 0);
+  const tamper = JSON.parse(JSON.stringify(b)); tamper.scorePaths[0].push([0, 0, 60000, 0]);
+  check("GEO-07 validate catches a score on visible material (GUIDE_UNCONTAINED, blocking)",
+    SBGuides.validate([L0, L1, L2], tamper, cfg, ctx).some((d) => d.code === "GUIDE_UNCONTAINED" && d.severity === "blocking"));
+  const im = SBGuides.build([L0, L1, L2], Object.assign({}, cfg, { mode: "interior-mark" }), ctx);
+  check("ASM-03 interior-mark crosses sit on a checked interior point (crescent included), deterministic",
+    im.scorePaths[1].length >= 2 && JSON.stringify(im) === JSON.stringify(SBGuides.build([L0, L1, L2], Object.assign({}, cfg, { mode: "interior-mark" }), ctx)));
+  const z = SBGuides.build([L0, L1], Object.assign({}, cfg, { allowanceMM: 0 }), ctx);
+  check("ASM-02 allowance 0 raises ALIGN_CLEARANCE_ZERO", z.diagnostics.some((d) => d.code === "ALIGN_CLEARANCE_ZERO"));
+  check("UI-04 GUIDE_OMITTED aggregates per layer", SBDiag.aggregate([0, 1, 2].map((i) => SBDiag.make("GUIDE_OMITTED", { revision: 0, quality: "draft", layer: 1, parts: ["L01-P00" + i], detail: { kind: "part", reason: "x" } }))).length === 1);
+  check("UI-04 a sheet-label omission is not merged into the part omissions (detail.kind label)",
+    SBDiag.aggregate([SBDiag.make("GUIDE_OMITTED", { revision: 0, quality: "draft", layer: 1, parts: ["L01-P001"], detail: { kind: "part", reason: "x" } }),
+      SBDiag.make("GUIDE_OMITTED", { revision: 0, quality: "draft", layer: 1, parts: [], detail: { kind: "label", sheet: 2, text: "sheet 2 label did not fit; see the placement map" } })]).length === 2);
+  const top = JSON.parse(JSON.stringify(b)); top.scorePaths[2].push([5000, 5000, 6000, 5000]);
+  check("GEO-07 a score path on the top sheet (no concealed area) is uncontained", SBGuides.validate([L0, L1, L2], top, cfg, ctx).some((d) => d.code === "GUIDE_UNCONTAINED"));
+  // implementer additions (E.4 Review Focus 3 and the E10 open details)
+  const ring = [{ outer: [30000, 5000, 50000, 5000, 50000, 25000, 30000, 25000], holes: [[32000, 7000, 32000, 23000, 48000, 23000, 48000, 7000]] }]; // 2 mm donut ring
+  const Lx = mk(1, sq(5000, 5000, 20000, 20000).concat(ring, sq(54000, 30000, 1500, 1500), SBGeom.normalize(SBGeom.difference(sq(5000, 28000, 10000, 10000), sq(7000, 27000, 10000, 10000)))));
+  const bx = SBGuides.build([L0, Lx], cfg, ctx), omit = bx.guides.omitted.filter((o) => o.layer === 1);
+  const agg = SBDiag.aggregate(bx.diagnostics).filter((d) => d.code === "GUIDE_OMITTED" && d.layer === 1 && d.detail && d.detail.kind === "part");
+  check("AT-14 crescent/donut/small part: the 2 mm donut, the 1.5 mm square and the 2 mm crescent are omitted, the block is guided",
+    omit.length === 3 && bx.scorePaths[0].length === 1 + SBFont.strokes("1", 3000).paths.length && omit.every((o) => /^L01-P\d{3}$/.test(o.part) && o.reason));
+  check("AT-14 one aggregated GUIDE_OMITTED warning per layer with a count", agg.length === 1 && agg[0].count === 3 && agg[0].parts.length === 3);
+  check("AT-14 no score line on visible material for the omitted parts (validate clean)", SBGuides.validate([L0, Lx], bx, cfg, ctx).length === 0 &&
+    bx.scorePaths[0].every((p) => p.every((v, i) => i % 2 ? true : v < 30000)));
+  const Lsmall = mk(1, sq(10000, 10000, 3500, 3500));   // Rc = 1.3 mm square: the guide fits, the 2.2 × 3.2 mm label box does not
+  const bs = SBGuides.build([L0, Lsmall], cfg, ctx), lo = bs.diagnostics.find((d) => d.code === "GUIDE_OMITTED" && d.detail && d.detail.kind === "label");
+  check("ASM-03 a label that does not fit is GUIDE_OMITTED kind label on that sheet, pointing at the placement map; the guide stays",
+    bs.guides.labels.length === 0 && bs.scorePaths[0].length === 1 && lo && lo.layer === 0 && Array.isArray(lo.parts) && lo.parts.length === 0 &&
+    /placement map/.test(lo.message) && /placement map/.test(SBDiag.describe(lo).text) && bs.guides.omitted.length === 0);
+  check("ASM-02 the default allowance raises no ALIGN_CLEARANCE_ZERO; allowance 0 raises exactly one",
+    !b.diagnostics.some((d) => d.code === "ALIGN_CLEARANCE_ZERO") && z.diagnostics.filter((d) => d.code === "ALIGN_CLEARANCE_ZERO").length === 1);
+  check("NFR-05 inset-outline build is deterministic, integer µm, rings closed",
+    JSON.stringify(b) === JSON.stringify(SBGuides.build([L0, L1, L2], Object.assign({}, cfg, { mode: "inset-outline" }), ctx)) &&
+    b.scorePaths.every((ps) => ps.every((p) => p.every(Number.isInteger))) && b.scorePaths[0][0][0] === b.scorePaths[0][0][b.scorePaths[0][0].length - 2] &&
+    b.scorePaths[0][0][1] === b.scorePaths[0][0][b.scorePaths[0][0].length - 1]);
+  check("ASM-01 the guide ring of sheet 1 is the block inset by inset + allowance + footprint/2 (17.8 mm square)",
+    SBGeom.area([{ outer: b.scorePaths[0][0].slice(0, -2), holes: [] }]) === 17800 * 17800);
+  const lab = b.guides.labels[1];
+  check("AT-13 the label record names its sheet layer, height and centre; strokes sit in the concealed strip",
+    lab.layer === 1 && lab.heightUm === 3000 && lab.atUm.every(Number.isInteger) && lab.atUm[0] - 1100 >= 6400 && lab.atUm[0] + 1100 <= 9600 &&
+    b.guides.mode === "inset-outline" && b.guides.map === null);
+  check("ASM-03 interior-mark validates clean and scores no ring", SBGuides.validate([L0, L1, L2], im, cfg, ctx).length === 0 &&
+    im.scorePaths[0].filter((p) => p.length === 4).length >= 2 && im.guides.labels.map((l) => l.text).join() === "1,2");
+  check("ASM-01 a single sheet gets no guides and no label", (() => { const o = SBGuides.build([L0], cfg, ctx); return o.scorePaths.length === 1 && o.scorePaths[0].length === 0 && o.guides.labels.length === 0 && o.diagnostics.length === 0; })());
+  // E-R5: acute corners, a thick donut and a staircase must never raise GUIDE_UNCONTAINED on correct guides
+  const tri = [{ outer: [2000, 2000, 30000, 4000, 6000, 30000], holes: [] }];
+  const fat = [{ outer: [34000, 2000, 58000, 2000, 58000, 26000, 34000, 26000], holes: [[40000, 8000, 40000, 20000, 52000, 20000, 52000, 8000]] }];
+  const stair = [{ outer: [3000, 31000, 9000, 31000, 9000, 33000, 15000, 33000, 15000, 39000, 3000, 39000], holes: [] }];
+  const La = mk(1, SBGeom.normalize(tri.concat(fat, stair))), Lb = mk(2, SBGeom.normalize(SBGeom.offset(La.material, -3000, "miter")));
+  check("E-R5 acute corners, a thick donut and a staircase validate clean in both modes (no false GUIDE_UNCONTAINED)",
+    ["inset-outline", "interior-mark"].every((mode) => { const c2 = Object.assign({}, cfg, { mode }), g = SBGuides.build([L0, La, Lb], c2, ctx);
+      return g.scorePaths[0].length > 0 && g.scorePaths[1].length > 0 && SBGuides.validate([L0, La, Lb], g, c2, ctx).length === 0; }));
+  const shift = JSON.parse(JSON.stringify(b)); shift.scorePaths[0][0] = shift.scorePaths[0][0].map((v, i) => (i % 2 ? v : v + 20));
+  check("GEO-07 a guide ring 20 µm past the concealed edge is caught (the rounding tolerance is far below a real excursion)",
+    SBGuides.validate([L0, L1, L2], shift, cfg, ctx).some((d) => d.code === "GUIDE_UNCONTAINED" && d.layer === 0));
+  const order = require("./modules.js").NODE_MODULES;
+  check("T0.2 guides.js sits directly after strokefont.js", order.indexOf("guides.js") === order.indexOf("strokefont.js") + 1);
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {
