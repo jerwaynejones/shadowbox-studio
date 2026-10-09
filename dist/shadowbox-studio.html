@@ -5845,75 +5845,65 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
 
   /**
    * Trace all boundary loops of a 0/1 mask.
+   * Speed round F7: the corner table is a typed array (one bitmask of unused outgoing directions per corner)
+   * scanned in ascending corner order. That equals alpha.3's sorted snapshot of the Map's keys, because a
+   * corner never gains bits once emission ends (it only loses them), so a corner whose bits are gone by the time
+   * the scan reaches it is skipped by both. Oracle: test/oracle_kernels.js oracleTrace (NFR-05).
    * @returns {Array<Array<[x,y]>>} closed loops in pixel-corner coordinates
    */
   T.trace = function (mask, w, h) {
-    // outgoing[cornerIndex] = list of directions with an unused edge leaving
-    // that corner. Corner grid is (w+1) x (h+1).
+    // out[cornerIndex] = bitmask of directions with an unused edge leaving that corner. Corner grid is (w+1) x (h+1).
     const CW = w + 1;
-    const outgoing = new Map(); // cornerIdx -> Uint8 bitmask of dirs
-
-    const at = (x, y) => (x >= 0 && y >= 0 && x < w && y < h ? mask[y * w + x] : 0);
-    const addEdge = (x, y, dir) => {
-      const idx = y * CW + x;
-      outgoing.set(idx, (outgoing.get(idx) || 0) | (1 << dir));
-    };
+    const out = new Uint8Array(CW * (h + 1));
 
     // Emit directed edges: material on the LEFT of travel (screen coords, y down).
     for (let y = 0; y < h; y++) {
+      const row = y * w, c0 = y * CW, c1 = c0 + CW; // corner rows y and y + 1
       for (let x = 0; x < w; x++) {
-        if (!mask[y * w + x]) continue;
-        if (!at(x, y - 1)) addEdge(x + 1, y, 2);       // top edge, travel -x
-        if (!at(x, y + 1)) addEdge(x, y + 1, 0);       // bottom edge, travel +x
-        if (!at(x - 1, y)) addEdge(x, y, 1);           // left edge, travel +y
-        if (!at(x + 1, y)) addEdge(x + 1, y + 1, 3);   // right edge, travel -y
+        if (!mask[row + x]) continue;
+        if (y === 0 || !mask[row - w + x]) out[c0 + x + 1] |= 4;       // top edge, travel -x (dir 2)
+        if (y === h - 1 || !mask[row + w + x]) out[c1 + x] |= 1;       // bottom edge, travel +x (dir 0)
+        if (x === 0 || !mask[row + x - 1]) out[c0 + x] |= 2;           // left edge, travel +y (dir 1)
+        if (x === w - 1 || !mask[row + x + 1]) out[c1 + x + 1] |= 8;   // right edge, travel -y (dir 3)
       }
     }
 
     const loops = [];
-    // Deterministic iteration: sort corner indices.
-    const starts = Array.from(outgoing.keys()).sort((a, b) => a - b);
-
-    for (const start of starts) {
-      let bits = outgoing.get(start);
-      while (bits) {
+    const guard0 = (w + 2) * (h + 2) * 4;
+    // Deterministic iteration: ascending corner index.
+    for (let start = 0, n = out.length; start < n; start++) {
+      if (!out[start]) continue;
+      const sx = start % CW, sy = (start / CW) | 0;
+      let bits;
+      while ((bits = out[start])) {
         // take lowest set direction as loop start
         const startDir = 31 - Math.clz32(bits & -bits);
         const loop = [];
-        let cx = start % CW, cy = (start / CW) | 0, dir = startDir;
+        let cx = sx, cy = sy, dir = startDir;
         // consume the starting edge
-        consumeEdge(outgoing, start, startDir);
+        out[start] = bits & ~(1 << startDir);
         loop.push([cx, cy]);
         cx += DX[dir]; cy += DY[dir];
 
         // Walk until we return to the start corner via a closed chain.
-        let guard = (w + 2) * (h + 2) * 4;
-        while (!(cx === start % CW && cy === ((start / CW) | 0)) && guard-- > 0) {
+        let guard = guard0;
+        while (!(cx === sx && cy === sy) && guard-- > 0) {
           loop.push([cx, cy]);
           const idx = cy * CW + cx;
-          const avail = outgoing.get(idx) || 0;
-          // Prefer the left-most turn relative to current direction:
-          // left, straight, right (never reverse).
-          const prefs = [(dir + 3) & 3, dir, (dir + 1) & 3];
-          let next = -1;
-          for (const d of prefs) if (avail & (1 << d)) { next = d; break; }
+          const avail = out[idx];
+          // Prefer the left-most turn relative to current direction: left, straight, right (never reverse).
+          const l = (dir + 3) & 3, r = (dir + 1) & 3;
+          const next = avail & (1 << l) ? l : avail & (1 << dir) ? dir : avail & (1 << r) ? r : -1;
           if (next < 0) break; // broken chain — abandon defensively
-          consumeEdge(outgoing, idx, next);
+          out[idx] = avail & ~(1 << next);
           dir = next;
           cx += DX[dir]; cy += DY[dir];
         }
         if (loop.length >= 4) loops.push(dedupeCollinear(loop));
-        bits = outgoing.get(start) || 0;
       }
-      outgoing.delete(start);
     }
     return loops;
   };
-
-  function consumeEdge(outgoing, idx, dir) {
-    const bits = (outgoing.get(idx) || 0) & ~(1 << dir);
-    if (bits) outgoing.set(idx, bits); else outgoing.delete(idx);
-  }
 
   /** Merge runs of collinear rectilinear points to shrink loop size early. */
   function dedupeCollinear(loop) {

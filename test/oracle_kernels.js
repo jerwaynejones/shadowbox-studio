@@ -1,6 +1,6 @@
 // test/oracle_kernels.js — speed round (plan Appendix F, F.3): the pre-round kernels, moved VERBATIM from js/
 // so every optimised kernel ships with a byte-equality test against the code it replaced. Never edit these
-// bodies; only add kernels (F3 resample, F4 morphology, F5 components, F6 Kuwahara; later F7).
+// bodies; only add kernels (F3 resample, F4 morphology, F5 components, F6 Kuwahara, F7 trace).
 "use strict";
 
 // ---- F3: R.resample as of alpha.3 (js/raster.js before F3), with its helpers, verbatim.
@@ -387,4 +387,100 @@ const oracleKuwahara = (() => {
   return R;
 })();
 
-module.exports = { oracleResample, oracleMorph, oracleComponents, oracleConstruct, oracleKuwahara };
+// ---- F7: T.trace as of alpha.3 (js/trace.js before F7), with consumeEdge and dedupeCollinear, verbatim.
+const oracleTrace = (() => {
+  const T = {};
+
+  // Direction encoding for chaining: 0=+x, 1=+y, 2=-x, 3=-y
+  const DX = [1, 0, -1, 0];
+  const DY = [0, 1, 0, -1];
+
+  /**
+   * Trace all boundary loops of a 0/1 mask.
+   * @returns {Array<Array<[x,y]>>} closed loops in pixel-corner coordinates
+   */
+  T.trace = function (mask, w, h) {
+    // outgoing[cornerIndex] = list of directions with an unused edge leaving
+    // that corner. Corner grid is (w+1) x (h+1).
+    const CW = w + 1;
+    const outgoing = new Map(); // cornerIdx -> Uint8 bitmask of dirs
+
+    const at = (x, y) => (x >= 0 && y >= 0 && x < w && y < h ? mask[y * w + x] : 0);
+    const addEdge = (x, y, dir) => {
+      const idx = y * CW + x;
+      outgoing.set(idx, (outgoing.get(idx) || 0) | (1 << dir));
+    };
+
+    // Emit directed edges: material on the LEFT of travel (screen coords, y down).
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (!mask[y * w + x]) continue;
+        if (!at(x, y - 1)) addEdge(x + 1, y, 2);       // top edge, travel -x
+        if (!at(x, y + 1)) addEdge(x, y + 1, 0);       // bottom edge, travel +x
+        if (!at(x - 1, y)) addEdge(x, y, 1);           // left edge, travel +y
+        if (!at(x + 1, y)) addEdge(x + 1, y + 1, 3);   // right edge, travel -y
+      }
+    }
+
+    const loops = [];
+    // Deterministic iteration: sort corner indices.
+    const starts = Array.from(outgoing.keys()).sort((a, b) => a - b);
+
+    for (const start of starts) {
+      let bits = outgoing.get(start);
+      while (bits) {
+        // take lowest set direction as loop start
+        const startDir = 31 - Math.clz32(bits & -bits);
+        const loop = [];
+        let cx = start % CW, cy = (start / CW) | 0, dir = startDir;
+        // consume the starting edge
+        consumeEdge(outgoing, start, startDir);
+        loop.push([cx, cy]);
+        cx += DX[dir]; cy += DY[dir];
+
+        // Walk until we return to the start corner via a closed chain.
+        let guard = (w + 2) * (h + 2) * 4;
+        while (!(cx === start % CW && cy === ((start / CW) | 0)) && guard-- > 0) {
+          loop.push([cx, cy]);
+          const idx = cy * CW + cx;
+          const avail = outgoing.get(idx) || 0;
+          // Prefer the left-most turn relative to current direction:
+          // left, straight, right (never reverse).
+          const prefs = [(dir + 3) & 3, dir, (dir + 1) & 3];
+          let next = -1;
+          for (const d of prefs) if (avail & (1 << d)) { next = d; break; }
+          if (next < 0) break; // broken chain — abandon defensively
+          consumeEdge(outgoing, idx, next);
+          dir = next;
+          cx += DX[dir]; cy += DY[dir];
+        }
+        if (loop.length >= 4) loops.push(dedupeCollinear(loop));
+        bits = outgoing.get(start) || 0;
+      }
+      outgoing.delete(start);
+    }
+    return loops;
+  };
+
+  function consumeEdge(outgoing, idx, dir) {
+    const bits = (outgoing.get(idx) || 0) & ~(1 << dir);
+    if (bits) outgoing.set(idx, bits); else outgoing.delete(idx);
+  }
+
+  /** Merge runs of collinear rectilinear points to shrink loop size early. */
+  function dedupeCollinear(loop) {
+    const out = [];
+    const n = loop.length;
+    for (let i = 0; i < n; i++) {
+      const p = loop[(i + n - 1) % n], c = loop[i], q = loop[(i + 1) % n];
+      const straight =
+        (p[0] === c[0] && c[0] === q[0]) || (p[1] === c[1] && c[1] === q[1]);
+      if (!straight) out.push(c);
+    }
+    return out.length >= 3 ? out : loop;
+  }
+
+  return T.trace;
+})();
+
+module.exports = { oracleResample, oracleMorph, oracleComponents, oracleConstruct, oracleKuwahara, oracleTrace };

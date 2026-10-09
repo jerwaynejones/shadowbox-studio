@@ -6407,6 +6407,54 @@ suite("raster — speed round F6 Kuwahara fast path and band kernel (NFR-05)", (
       [1.5, 2.25].every((rr) => { const a = R.kuwahara(src, w, h, rr, 2), b = OK.kuwahara(src, w, h, rr, 2); return Buffer.compare(bytes(a), bytes(b)) === 0; })); }
 });
 
+// ------------------------------------------------ speed round F7 (plan Appendix F, S5): typed corner table in T.trace
+suite("trace — speed round F7 typed corner table (NFR-05)", () => {
+  const T = SBTrace, { oracleTrace } = require("./oracle_kernels.js");
+  let seed = 0x5eed_f7;
+  const rnd = () => { seed = (seed + 0x6d2b79f5) | 0; let t = seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  // mask families: random densities, checkerboards (every corner a saddle), full, empty, holes touching the border, blobs
+  const makeMask = (w, h, kind) => {
+    const m = new Uint8Array(w * h);
+    if (kind === 0) { const d = 0.05 + 0.9 * rnd(); for (let i = 0; i < m.length; i++) m[i] = rnd() < d ? 1 : 0; }
+    else if (kind === 1) { const p = ri(0, 1); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = (x + y + p) & 1; }
+    else if (kind === 2) m.fill(1);
+    else if (kind === 3) { /* empty */ }
+    else if (kind === 4) { m.fill(1); const k = ri(1, 6); for (let j = 0; j < k; j++) { const x0 = ri(0, w - 1), y0 = ri(0, h - 1), x1 = Math.min(w, x0 + ri(1, 5)), y1 = Math.min(h, y0 + ri(1, 5)); for (let y = (j & 1 ? 0 : y0); y < y1; y++) for (let x = (j & 2 ? 0 : x0); x < x1; x++) m[y * w + x] = 0; } } // holes, often touching the border
+    else if (kind === 5) { const k = ri(1, 4); for (let j = 0; j < k; j++) { const cx = ri(0, w - 1), cy = ri(0, h - 1), rr = ri(1, 8); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const d2 = (x - cx) ** 2 + (y - cy) ** 2; if (d2 < rr * rr) m[y * w + x] = d2 < (rr / 2) ** 2 ? 0 : 1; } } } // rings (holes inside material)
+    else { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = ((x >> 1) + (y >> 1) + (rnd() < 0.1 ? 1 : 0)) & 1; } // 2×2 checker with noise
+    return m;
+  };
+  let cases = 0, eq = 0, unmut = 0, loopsSeen = 0;
+  const kinds = new Set();
+  // exhaustive: every mask up to 3 × 3 (512 masks), plus every 4 × 2 and 2 × 4
+  for (const [w, h] of [[1, 1], [1, 2], [2, 1], [2, 2], [3, 1], [1, 3], [3, 2], [2, 3], [3, 3], [4, 2], [2, 4]]) {
+    for (let b = 0; b < 1 << (w * h); b++) {
+      const m = new Uint8Array(w * h); for (let i = 0; i < m.length; i++) m[i] = (b >> i) & 1;
+      const copy = m.slice(), want = oracleTrace(m, w, h), got = T.trace(m, w, h);
+      cases++; if (same(got, want)) eq++; if (Buffer.compare(Buffer.from(m), Buffer.from(copy)) === 0) unmut++; loopsSeen += want.length;
+    }
+  }
+  const exhaustive = cases;
+  for (let t = 0; t < 700; t++) {
+    const kind = t % 7, w = ri(1, t % 9 === 0 ? 4 : 70), h = ri(1, t % 11 === 0 ? 4 : 60), m = makeMask(w, h, kind), copy = m.slice();
+    kinds.add(kind);
+    const want = oracleTrace(m, w, h), got = T.trace(m, w, h);
+    cases++; if (same(got, want)) eq++; if (Buffer.compare(Buffer.from(m), Buffer.from(copy)) === 0) unmut++; loopsSeen += want.length;
+  }
+  check(`F7 T.trace loops deep-equal the oracle (${eq}/${cases}: ${exhaustive} exhaustive ≤ 3×3/4×2/2×4, the rest random over ${kinds.size} families; ${loopsSeen} loops)`,
+    eq === cases && kinds.size === 7 && loopsSeen > 5000);
+  check(`F7 T.trace never writes its mask (${unmut}/${cases})`, unmut === cases);
+  check("F7 T.trace edge cases equal the oracle (1 × 1 empty/full, w = 0, h = 0, 1 × N strips, plain arrays)",
+    [[[0], 1, 1], [[1], 1, 1], [new Uint8Array(0), 0, 5], [new Uint8Array(0), 4, 0], [Uint8Array.from([1, 0, 1, 1, 0, 1]), 6, 1], [Uint8Array.from([1, 1, 0, 1]), 1, 4], [[1, 0, 0, 1], 2, 2]]
+      .every(([m, w, h]) => same(T.trace(m, w, h), oracleTrace(m, w, h))));
+  // the typed corner table replaces the Map (plan F7 Step 2): no Map in T.trace's body
+  const src = fs.readFileSync(path.join(__dirname, "..", "js", "trace.js"), "utf8");
+  const body = src.slice(src.indexOf("T.trace = function"), src.indexOf("function dedupeCollinear"));
+  check("F7 T.trace uses a typed corner table (no Map, no sorted key snapshot)", body.length > 0 && !/new Map\(/.test(body) && !/\.sort\(/.test(body) && /new Uint8Array\(/.test(body));
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {
