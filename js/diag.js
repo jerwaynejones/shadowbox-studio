@@ -36,7 +36,8 @@
  * and the intake warning EXIF_AMBIGUOUS (Appendix C, S4b), plus
  * GEO_MULTIPART, which SBGeom.validate reports under D3. alpha.3 E7 adds
  * SOURCE_COLOR_TONAL (info): a colour source auto-switched to tonal at load. alpha.3 E8 adds
- * FAB_COMPLEXITY_LIKELY (warning): the draft predicts a fabrication complexity-cap overflow. Programmer-error
+ * FAB_COMPLEXITY_LIKELY (warning): the draft predicts a fabrication complexity-cap overflow. alpha.3 E13 adds
+ * LEGACY_PROJECT_BLOCK (info): a v2 settings.json re-imported through the lossy v1.1 mapping. Programmer-error
  * throws (GEO_MULTIPART_POLYGON, GEO_OFFSET_NONINTEGER, GEO_INSET_NOT_DYADIC)
  * are not user diagnostics.
  *
@@ -204,6 +205,9 @@
     // alpha.3 E7 (IMG-01, PO-PREVIEW-3): a colour source that height mode refuses switched the project to tonal at load
     ["SOURCE_COLOR_TONAL", I, P, "Colour image: using Tonal (light/dark \u2192 layers). Height mode needs a grayscale height map.",
       "No action needed; change Read the image as (Interpretation) to choose another reading, or load a grayscale height map for Height."],
+    // alpha.3 E13 (DEP-04, EXP-06): a settings.json written by v2 carries a project block that the v1.1 import ignores
+    ["LEGACY_PROJECT_BLOCK", I, P, "This settings.json came from a v2 project; only the v1.1 settings were imported",
+      "The import builds an acrylic connected-sheet project from the v1.1 keys (a bonded relief re-imports as connected sheets); the v2 project block is kept but not applied. Open the .sbrproj (G3.8) for a full round trip."],
   ];
 
   const CODES = {};

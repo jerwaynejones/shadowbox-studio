@@ -92,7 +92,10 @@
  *                                    settings.json → tonal + connected-sheet
  *                                    (DEP-04, G2.4b); heightMM null raises
  *                                    LEGACY_NEEDS_SOURCE; original JSON kept
- *                                    in extras.legacy.
+ *                                    in extras.legacy. A v2 `project` block
+ *                                    (alpha.3 E13) is kept there too, not
+ *                                    applied, and raises LEGACY_PROJECT_BLOCK
+ *                                    (info): the re-import is lossy.
  *   SBSchema.resolveLegacy(p, w, h)  → project with heightMM, the legacy pitch
  *                                    (longSide/procRes) and toleranceMM.
  *   SBSchema.legacyDiagnostics(p)    → [LEGACY_NEEDS_SOURCE] or [].
@@ -694,7 +697,17 @@
     g.targetMM = grid(L.widthMM + (L.marginMM > 0 ? 2 * L.marginMM : 0));   // page width = art + frame on both sides
     p.machine = clone(S.MACHINES[S.DEFAULT_MACHINE]);
     p.extras = { legacy: clone(json) };
-    return { project: p, diagnostics: S.legacyDiagnostics(p) };
+    const diagnostics = S.legacyDiagnostics(p);
+    // alpha.3 E13 (EXP-06): a v2 settings.json carries a project block (modes, thickness, pitch, raster, hash). The import
+    // stays the v1.1 mapping (acrylic connected sheets): the block is kept in extras.legacy and the loss is reported.
+    if (isObj(json.project)) {
+      const pb = json.project, modes = [pb.constructionMode, pb.interpretationMode].filter((v) => typeof v === "string");
+      diagnostics.push(global.SBDiag.make("LEGACY_PROJECT_BLOCK", {
+        detail: "This settings.json came from a v2 project" + (modes.length ? " (" + modes.join(", ") + ")" : "") +
+          "; only the v1.1 settings were imported. Open the .sbrproj (G3.8) for a full round trip.",
+      }));
+    }
+    return { project: p, diagnostics };
   };
 
   /**

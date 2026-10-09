@@ -124,6 +124,22 @@ and for bonded relief `placement_map.svg` (the glue-up order with part IDs;
 print it, do not cut it).
 Import SVGs at 1:1 into LightBurn/RDWorks — they carry mm units.
 
+`ASSEMBLY.md` is written from the exported fabrication result. For bonded
+relief it lists only the exported sheets (role base, layer or top) and the
+omitted empty layers, the glue-up order (sheet 1 front face up, each next
+sheet onto the scored outlines of the one below, front face up, never
+mirrored), what the guides and the scored sheet numbers mean, the machine
+profile and the kerf note (no kerf offset applied; set the kerf in your laser
+software). It gives no speed or power settings. Its short geometry hash
+matches the Fabrication review and `settings.json`.
+
+`settings.json` keeps the v1.1 settings and adds a `project` block (modes,
+thickness, fabrication pitch, raster, geometry hash, engine version).
+Re-importing it is **lossy**: only the v1.1 settings are read, so the import
+is always an acrylic connected-sheet project (a bonded relief comes back as
+connected sheets) and an info notice `LEGACY_PROJECT_BLOCK` says so. The full
+round trip will be the `.sbrproj` project file (G3.8).
+
 ## Reading the preview
 
 - **Drag** the stack to tilt it; the parallax shows the physical depth.

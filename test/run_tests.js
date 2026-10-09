@@ -5514,8 +5514,7 @@ suite("app.js — alpha.3 E5 real-engine draft (PO-PREVIEW-1, LYR-06, UI-05)", (
   check("UI-05 regenerate paints the Stale state before the blocking run (rAF + task)", /requestAnimationFrame\(/.test(fn("regenerate")) || /paintThen\(/.test(fn("regenerate")));
   check("UI-04 the diagnostics panel lists res.diagnostics when generate fails with no layers (COMPLEXITY_LIMIT)",
     /\.status === "error"/.test(appSrc) && /renderDiagnostics\(/.test(fn("regenerate") + fn("showResult")) && /No layers/.test(fn("renderDiagnostics")));
-  // buildAssemblyMD (js/app.js) still exists until E13 deletes it; it is excluded here and E13 drops the exclusion
-  check("alpha.3 no run.sheets / procW / viewToken left in app.js (outside buildAssemblyMD until E13)", !/run\.sheets\b|run\.procW|run\.viewToken/.test(appSrc.replace(fn("buildAssemblyMD"), "")));
+  check("alpha.3 no run.sheets / procW / viewToken left in app.js", !/run\.sheets\b|run\.procW|run\.viewToken/.test(appSrc));
   check("UI-05 showResult reads only the result's snapshot (no project.* reference)", fn("showResult").length > 0 && !/\bproject\./.test(fn("showResult")));
   check("UI-05 showResult feeds the preview from r.snapshot.page/.layers/.construction and overlays in the snapshot's own mode",
     /preview\.setSnapshot\([^;]*\.page[^;]*\.layers[^;]*\.construction\.tMM[^;]*\.construction\.gMM/.test(fn("showResult")) &&
@@ -5979,4 +5978,45 @@ suite("app.js/support.js — alpha.3 E12 repair re-review at fabrication (SUP-04
   const dg = SBDiag.make("REPAIR_REVIEW_FAB", { layer: 1, areaMM2: 2.5, measured: { value: 2.5, unit: "mm2" }, detail: "clip-to-lower 1 was reviewed at draft quality; at this resolution it removes 2.5 mm² and parts 3 → 2" });
   check("EXP-07 the REPAIR_REVIEW_FAB item shows its fabrication mm² and part counts", /2\.5 mm²/.test(SBDiag.describe(dg).message) && /parts 3 → 2/.test(SBDiag.describe(dg).message));
   check("PO-PREVIEW-6 the replayed entry is the one Revert removes", SBProof.repairForDiagnostic(dg, q.construction.repairs, [0]) === 0);
+});
+
+// ------------------------------------------------ alpha.3 E13 (bonded ASSEMBLY.md and the settings.json project block)
+suite("docs.js/app.js — alpha.3 E13 assembly and settings (ASM-05, EXP-06, PO-PREVIEW-7)", () => {
+  const E = SBEngine, S = SBSchema, w = 400, h = 100;
+  const px = { pixels: new Uint8Array(w * h).fill(100), channels: 1, w, h, alpha: null };
+  const p = S.withSource(S.defaults("plywood"), E.sourceRecord(px, { format: "png", decode: "raw-gray8" })); p.geometry.targetMM = 10; p.title = "t";
+  const s = E.generate(E.request(p, px, { quality: "fabrication" })).snapshot, md = SBDocs.assembly(p, s, { colors: "#c8a26b" });
+  check("ASM-05 bonded ASSEMBLY names the glue-up order, thickness, guides and the placement map; no bridge or spacer text",
+    /glue/i.test(md) && /6\.35/.test(md) && /placement_map\.svg/.test(md) && /concealment/i.test(md) && !/bridge|dowel|spacer/i.test(md));
+  check("D-4.7 ASSEMBLY rows are the exported sheets only; omitted layers are listed",
+    (md.match(/^\| sheet_\d\d\.svg/gm) || []).length === s.stats.exported && /omitted/i.test(md));
+  check("PO-LASER-7/MAT-05 ASSEMBLY states the machine and the external kerf in the G3.5 wording", /xTool S1/.test(md) && /0\.15/.test(md) && md.includes("no kerf offset applied (kerfMode=external)"));
+  check("NFR-12/EXP-09 no speed/power values; the downstream-edit warning is present",
+    !/\b\d+(\.\d+)?\s*(%|mm\/s|mm\/min|k?W)(?!\w)/i.test(md) && /edit/i.test(md) && /laser software/i.test(md));
+  check("PO-PREVIEW-2 ASSEMBLY names the short geometryHash of the exported result", md.includes(s.geometryHash.slice(0, 12)));
+  check("ASM-05 bonded glue-up: sheet 1 face up, no mirroring; the scored number is the sheet's own; MAT-01/MAT-04 disclaimers",
+    /face up/i.test(md) && /mirror/i.test(md) && /own (sheet )?number/i.test(md) && md.includes(SBDocs.COPY.MAT01) && md.includes(SBDocs.COPY.MAT04));
+  check("ASM-05 the exported sheet roles are base, layer and top", /\| base \|/.test(md) && /\| top \|/.test(md));
+  check("ASM-05 SBDocs.assembly is deterministic (same inputs, same text)", SBDocs.assembly(p, s, { colors: "#c8a26b" }) === md);
+  // connected: today's wording, rebuilt from the fabrication snapshot
+  const c = S.withSource(S.defaults("acrylic"), E.sourceRecord(px, { format: "png", decode: "raw-gray8" })); c.title = "c";
+  const cs = E.generate(E.request(c, px, { quality: "fabrication" })).snapshot, cmd = SBDocs.assembly(c, cs, { colors: cs.layers.map(() => "#000000") });
+  check("ASM-05 connected ASSEMBLY keeps the frame, holes, bridges and spacer wording with the snapshot's gap",
+    /frame/i.test(cmd) && /registration holes/i.test(cmd) && /bridge/i.test(cmd) && /spacer/i.test(cmd) && cmd.includes(String(cs.construction.gMM)) &&
+    (cmd.match(/^\| sheet_\d\d\.svg/gm) || []).length === cs.stats.exported && cmd.includes("no kerf offset applied (kerfMode=external)"));
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8");
+  check("PO-PREVIEW-7 buildAndDeliver writes SBDocs.assembly from run.fab.snapshot; buildAssemblyMD is gone",
+    /SBDocs\.assembly\(project, run\.fab\.snapshot/.test(appSrc) && !/function buildAssemblyMD\(/.test(appSrc) && !/run\.sheets\b|run\.procW/.test(appSrc));
+  check("EXP-06 settings.json keeps the 19 v1.1 keys and adds a project block with mode, thickness, pitch and hash",
+    /o\.project = /.test(appSrc) && /run\.fab\.snapshot\.geometryHash/.test(appSrc.slice(appSrc.indexOf("function settingsJSON("), appSrc.indexOf("function settingsJSON(") + 1500)));
+  const sj = appSrc.slice(appSrc.indexOf("function settingsJSON("), appSrc.indexOf("function settingsJSON(") + 1500);
+  check("EXP-06 the project block names geometryKey, both modes, thickness, pitch, raster and engineVersion",
+    ["geometryKey", "constructionMode", "interpretationMode", "thicknessMM", "fabPitchMM", "raster", "engineVersion"].every((k) => sj.includes(k)));
+  const back = S.fromLegacySettings(Object.assign({ procRes: 720, nSheets: 5 }, { project: { constructionMode: "bonded-relief" } }));
+  check("DEP-04 a settings.json with a project block re-imports as the documented lossy v1.1 mapping and says so",
+    back && back.project && S.validate(back.project).ok === true && back.project.construction.mode === "connected-sheet" &&
+    back.project.extras.legacy && back.project.extras.legacy.project && back.diagnostics.some((d) => d.code === "LEGACY_PROJECT_BLOCK" && SBDiag.CODES.LEGACY_PROJECT_BLOCK.severity === "info"));
+  check("DEP-04 a plain v1.1 settings.json raises no LEGACY_PROJECT_BLOCK", !S.fromLegacySettings({ procRes: 720 }).diagnostics.some((d) => d.code === "LEGACY_PROJECT_BLOCK"));
+  const ug = fs.readFileSync(path.join(__dirname, "..", "docs", "USER_GUIDE.md"), "utf8");
+  check("DEP-04 USER_GUIDE says a v2 settings.json re-imports as v1.1 settings only (LEGACY_PROJECT_BLOCK)", /LEGACY_PROJECT_BLOCK/.test(ug) && /\.sbrproj/.test(ug));
 });
