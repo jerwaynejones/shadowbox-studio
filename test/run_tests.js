@@ -6087,6 +6087,76 @@ suite("support/engine — speed round F1 sampling on the fabrication plan (GEO-0
     !!f1 && f1.ids.length > 0 && off.length === 0 && Object.keys(f1.previous).sort().join() === f1.ids.slice().sort().join());
 });
 
+// ------------------------------------------------ speed round F3 (plan Appendix F, S5): streaming exact area resample, row bands
+suite("raster — speed round F3 streaming resample (NFR-05)", () => {
+  const R = SBRaster, { oracleResample } = require("./oracle_kernels.js");
+  check("F3 SBRaster.resampleRows exists", typeof R.resampleRows === "function");
+  if (typeof R.resampleRows !== "function") return;
+  let seed = 0x5eed_f3;
+  const rnd = () => { seed = (seed + 0x6d2b79f5) | 0; let t = seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
+  const codeOf = (f) => { try { f(); return null; } catch (e) { return e.code || "?"; } };
+  const same = (a, b) => a instanceof Uint8Array && b instanceof Uint8Array && Buffer.compare(Buffer.from(a.buffer, a.byteOffset, a.length), Buffer.from(b.buffer, b.byteOffset, b.length)) === 0;
+  const PRIMES = [2, 3, 5, 7, 11, 13];
+  const target = (n, mode) => {
+    if (mode === 0) return n;                                            // identity on this axis
+    if (mode === 1) { const p = PRIMES[ri(0, PRIMES.length - 1)]; return Math.max(1, Math.floor(n / p)); } // prime ratio
+    return ri(1, n);
+  };
+  let cases = 0, eq = 0, bandsOk = 0, bandCases = 0, nonId = 0;
+  for (let t = 0; t < 400; t++) {
+    const w = ri(1, 97), h = ri(1, 83), c = ri(1, 4), px = new Uint8Array(w * h * c);
+    for (let i = 0; i < px.length; i++) px[i] = t % 5 === 0 ? (rnd() < 0.5 ? 0 : 255) : ri(0, 255);
+    const mx = t % 3, my = (t >> 1) % 3, W = target(w, mx), H = target(h, my);
+    for (const method of ["area", "nearest", "none"]) {
+      if (method === "none" && (W !== w || H !== h)) continue;
+      cases++;
+      if (W !== w || H !== h) nonId++;
+      const got = R.resample(px, c, w, h, W, H, method), want = oracleResample(px, c, w, h, W, H, method);
+      if (same(got, want)) eq++;
+      const nb = 1 + (t % 9);
+      if (nb <= H) {
+        bandCases++;
+        const parts = [], cuts = [0];
+        for (let b = 1; b < nb; b++) cuts.push(Math.floor((b * H) / nb));
+        cuts.push(H);
+        for (let b = 0; b < nb; b++) parts.push(R.resampleRows(px, c, w, h, W, H, method, cuts[b], cuts[b + 1]));
+        const cat = new Uint8Array(parts.reduce((s, p) => s + p.length, 0));
+        let o = 0; for (const p of parts) { cat.set(p, o); o += p.length; }
+        if (same(cat, want) && parts.every((p, b) => p.length === (cuts[b + 1] - cuts[b]) * W * c)) bandsOk++;
+      }
+    }
+  }
+  check(`F3 resample == oracleResample byte-for-byte (${eq}/${cases} cases, ${nonId} non-identity; sizes 1–97 × 1–83, c 1–4, prime ratios)`, eq === cases && nonId > 100);
+  check(`F3 resampleRows bands (1..9) concatenated == whole (${bandsOk}/${bandCases})`, bandsOk === bandCases && bandCases > 300);
+  // full-range resampleRows equals resample; empty band
+  const px = Uint8Array.from({ length: 31 * 29 * 3 }, (_, i) => (i * 37) & 255);
+  check("F3 resampleRows(…, 0, H) == resample; an empty band is empty",
+    same(R.resampleRows(px, 3, 31, 29, 7, 5, "area", 0, 5), R.resample(px, 3, 31, 29, 7, 5, "area")) &&
+    R.resampleRows(px, 3, 31, 29, 7, 5, "area", 2, 2).length === 0);
+  check("F3 upsampling throws RESAMPLE_UPSAMPLE in both", ["area", "nearest"].every((m) =>
+    codeOf(() => R.resample(px, 3, 31, 29, 32, 5, m)) === "RESAMPLE_UPSAMPLE" && codeOf(() => oracleResample(px, 3, 31, 29, 32, 5, m)) === "RESAMPLE_UPSAMPLE" &&
+    codeOf(() => R.resampleRows(px, 3, 31, 29, 7, 30, m, 0, 1)) === "RESAMPLE_UPSAMPLE" && codeOf(() => oracleResample(px, 3, 31, 29, 7, 30, m)) === "RESAMPLE_UPSAMPLE"));
+  check("F3 error codes unchanged vs the oracle (method, channels, sizes, short buffer, none with a new size)",
+    [[px, 3, 31, 29, 7, 5, "cubic"], [px, 5, 31, 29, 7, 5, "area"], [px, 3, 0, 29, 7, 5, "area"], [px.subarray(0, 10), 3, 31, 29, 7, 5, "area"], [px, 3, 31, 29, 7, 5, "none"]]
+      .every((a) => codeOf(() => R.resample(...a)) === codeOf(() => oracleResample(...a)) && codeOf(() => oracleResample(...a)) !== null));
+  check("F3 resampleRows rejects a bad band (Y0 > Y1, Y1 > H, negative, non-integer) with RESAMPLE_SIZE",
+    [[3, 2], [0, 6], [-1, 2], [0.5, 2]].every(([a, b]) => codeOf(() => R.resampleRows(px, 3, 31, 29, 7, 5, "area", a, b)) === "RESAMPLE_SIZE"));
+  // the fast rounding Math.floor((2v + D) / 2D) used while 512·D < 2^53 equals exact half-up division (BigInt), at the
+  // half-way points and one off them, for D up to the bound
+  check("F3 float half-up rounding == exact BigInt half-up near every tie (D up to 2^53/512)", (() => {
+    const lim = Math.floor(Number.MAX_SAFE_INTEGER / 512);
+    for (let t = 0; t < 4000; t++) {
+      const D = t < 2000 ? ri(1, 1 << 30) : lim - ri(0, 1 << 20), D2 = 2 * D, k = ri(0, 255);
+      for (const v of [k * D, k * D + Math.floor(D / 2), k * D + Math.ceil(D / 2), k * D + Math.ceil(D / 2) - 1, k * D + D - 1].filter((x) => x <= 255 * D)) {
+        const want = Number((2n * BigInt(v) + BigInt(D)) / (2n * BigInt(D)));
+        if (Math.floor((2 * v + D) / D2) !== want) return false;
+      }
+    }
+    return true; })());
+  check("F3 resample does not alias its input (identity returns a copy)", (() => { const o = R.resample(px, 3, 31, 29, 31, 29, "area"); return o.buffer !== px.buffer && same(o, px); })());
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

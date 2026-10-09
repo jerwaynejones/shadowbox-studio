@@ -268,58 +268,157 @@
     return { start, count, idx: Int32Array.from(idx), wt: Float64Array.from(wt) };
   }
 
+  // F3 area kernels (module-level, so each keeps one optimised call target). The horizontal spans are padded to a
+  // fixed width m (the largest span): span X reads source samples i0[X] … i0[X]+m−1 with weights pw[X·m …], the
+  // padding weights being 0. Every product and partial sum is a non-negative integer ≤ 255·w < 2^53, so adding the
+  // exact zeros and summing in this order gives the same doubles as the pre-F3 loop (a = 0; a += px·wt, j ascending).
+  // A fixed trip count (unrolled for m ≤ 3) avoids the per-span branch mispredictions of variable 1–3 term loops.
+  function padSpans(sp, n, N) {
+    let m = 1;
+    for (let X = 0; X < N; X++) if (sp.count[X] > m) m = sp.count[X];
+    const i0 = new Int32Array(N), pw = new Float64Array(N * m);
+    for (let X = 0; X < N; X++) {
+      const s0 = sp.start[X], cnt = sp.count[X], b = Math.min(sp.idx[s0], n - m);
+      i0[X] = b;
+      for (let j = 0; j < cnt; j++) pw[X * m + sp.idx[s0 + j] - b] = sp.wt[s0 + j];
+    }
+    return { m, i0, pw };
+  }
+  // hsumRow*: the horizontal integer sums of one source row starting at sample `src` into dst (W·c).
+  function hsumRow1(pixels, src, W, hp, dst) {
+    const m = hp.m, i0 = hp.i0, pw = hp.pw;
+    if (m === 2) { for (let X = 0, q = 0; X < W; X++, q += 2) { const p = src + i0[X]; dst[X] = pixels[p] * pw[q] + pixels[p + 1] * pw[q + 1]; } return; }
+    if (m === 3) { for (let X = 0, q = 0; X < W; X++, q += 3) { const p = src + i0[X]; dst[X] = pixels[p] * pw[q] + pixels[p + 1] * pw[q + 1] + pixels[p + 2] * pw[q + 2]; } return; }
+    for (let X = 0, q = 0; X < W; X++, q += m) {
+      const p = src + i0[X];
+      let a = pixels[p] * pw[q];
+      for (let j = 1; j < m; j++) a += pixels[p + j] * pw[q + j];
+      dst[X] = a;
+    }
+  }
+  function hsumRow4(pixels, src, W, hp, dst) {
+    const m = hp.m, i0 = hp.i0, pw = hp.pw;
+    if (m === 2) {
+      for (let X = 0, q = 0, d = 0; X < W; X++, q += 2, d += 4) {
+        const p = src + i0[X] * 4, f0 = pw[q], f1 = pw[q + 1];
+        dst[d] = pixels[p] * f0 + pixels[p + 4] * f1; dst[d + 1] = pixels[p + 1] * f0 + pixels[p + 5] * f1;
+        dst[d + 2] = pixels[p + 2] * f0 + pixels[p + 6] * f1; dst[d + 3] = pixels[p + 3] * f0 + pixels[p + 7] * f1;
+      }
+      return;
+    }
+    if (m === 3) {
+      for (let X = 0, q = 0, d = 0; X < W; X++, q += 3, d += 4) {
+        const p = src + i0[X] * 4, f0 = pw[q], f1 = pw[q + 1], f2 = pw[q + 2];
+        dst[d] = pixels[p] * f0 + pixels[p + 4] * f1 + pixels[p + 8] * f2;
+        dst[d + 1] = pixels[p + 1] * f0 + pixels[p + 5] * f1 + pixels[p + 9] * f2;
+        dst[d + 2] = pixels[p + 2] * f0 + pixels[p + 6] * f1 + pixels[p + 10] * f2;
+        dst[d + 3] = pixels[p + 3] * f0 + pixels[p + 7] * f1 + pixels[p + 11] * f2;
+      }
+      return;
+    }
+    for (let X = 0, q = 0, d = 0; X < W; X++, q += m, d += 4) {
+      let p = src + i0[X] * 4, f = pw[q];
+      let a0 = pixels[p] * f, a1 = pixels[p + 1] * f, a2 = pixels[p + 2] * f, a3 = pixels[p + 3] * f;
+      for (let j = 1; j < m; j++) {
+        p += 4; f = pw[q + j];
+        a0 += pixels[p] * f; a1 += pixels[p + 1] * f; a2 += pixels[p + 2] * f; a3 += pixels[p + 3] * f;
+      }
+      dst[d] = a0; dst[d + 1] = a1; dst[d + 2] = a2; dst[d + 3] = a3;
+    }
+  }
+  function hsumRowN(pixels, src, W, hp, dst, c) {
+    const m = hp.m, i0 = hp.i0, pw = hp.pw;
+    for (let X = 0, q = 0; X < W; X++, q += m) {
+      const d = X * c, p0 = src + i0[X] * c;
+      for (let k = 0; k < c; k++) {
+        let p = p0 + k, a = pixels[p] * pw[q];
+        for (let j = 1; j < m; j++) { p += c; a += pixels[p] * pw[q + j]; }
+        dst[d + k] = a;
+      }
+    }
+  }
+  // One vertical term j of n for an output row: acc = 0; acc += row·f, j ascending (the first term is stored, since
+  // 0 + x === x for x ≥ 0), and the last term is rounded half up into out. halfUp(v, D) = floor((2v + D) / 2D) with
+  // integer N = 2v + D ≤ 511·D. If N/2D = k − ε is not an integer then ε ≥ 1/2D and k·2D ≤ N + 2D ≤ 512·D, so the
+  // relative gap ε/k ≥ 1/(512·D) exceeds the 2^−53 rounding bound while 512·D < 2^53: the correctly rounded double
+  // quotient never reaches k and Math.floor of it is the exact integer division (fastRound); otherwise halfUp is used.
+  // Returns the next output index.
+  function vfold(row, f, j, n, acc, out, o, Wc, D, D2, fastRound) {
+    if (j < n - 1) {
+      if (j === 0) for (let i = 0; i < Wc; i++) acc[i] = row[i] * f;
+      else for (let i = 0; i < Wc; i++) acc[i] += row[i] * f;
+      return o;
+    }
+    if (fastRound) {
+      if (j === 0) for (let i = 0; i < Wc; i++) out[o++] = Math.floor((2 * (row[i] * f) + D) / D2);
+      else for (let i = 0; i < Wc; i++) out[o++] = Math.floor((2 * (acc[i] + row[i] * f) + D) / D2);
+    } else {
+      if (j === 0) for (let i = 0; i < Wc; i++) out[o++] = halfUp(row[i] * f, D);
+      else for (let i = 0; i < Wc; i++) out[o++] = halfUp(acc[i] + row[i] * f, D);
+    }
+    return o;
+  }
+
   /**
    * Resample interleaved 8-bit samples from w×h to W×H. Never upsamples.
    *   none    — identity (W×H must equal w×h); returns a copy.
    *   nearest — sx = floor((2x+1)·w / (2W)); picks existing values only (IMG-03).
    *   area    — exact integer box average per channel, rounded half up.
-   * @returns {Uint8Array} W·H·channels samples
+   * resampleRows returns only output rows [Y0, Y1) (a row band, speed round F3); resample = resampleRows(…, 0, H).
+   * Bands concatenated in order are byte-equal to the whole.
+   * @returns {Uint8Array} (Y1−Y0)·W·channels samples
    */
-  R.resample = function (pixels, channels, w, h, W, H, method) {
+  R.resampleRows = function (pixels, channels, w, h, W, H, method, Y0, Y1) {
     if (!METHODS.includes(method)) throw rfail("RESAMPLE_METHOD", "method must be none|nearest|area (got " + method + ")");
     if (![1, 2, 3, 4].includes(channels)) throw rfail("RESAMPLE_SIZE", "channels must be 1..4");
     if (![w, h, W, H].every(isPosInt)) throw rfail("RESAMPLE_SIZE", "sizes must be positive integers");
     if (!pixels || pixels.length < w * h * channels) throw rfail("RESAMPLE_SIZE", "pixel buffer shorter than w·h·channels");
     if (W > w || H > h) throw rfail("RESAMPLE_UPSAMPLE", W + "×" + H + " is larger than the " + w + "×" + h + " source");
-    const c = channels;
+    if (!Number.isSafeInteger(Y0) || !Number.isSafeInteger(Y1) || Y0 < 0 || Y0 > Y1 || Y1 > H)
+      throw rfail("RESAMPLE_SIZE", "row band [" + Y0 + ", " + Y1 + ") must lie within [0, " + H + "]");
+    const c = channels, Wc = W * c;
     if (method === "none" || (W === w && H === h)) {
       if (W !== w || H !== h) throw rfail("RESAMPLE_SIZE", "method none requires the source size");
-      return Uint8Array.from(pixels.subarray ? pixels.subarray(0, w * h * c) : pixels.slice(0, w * h * c));
+      return Uint8Array.from(pixels.subarray ? pixels.subarray(Y0 * w * c, Y1 * w * c) : pixels.slice(Y0 * w * c, Y1 * w * c));
     }
-    const out = new Uint8Array(W * H * c);
+    const out = new Uint8Array((Y1 - Y0) * Wc);
     if (method === "nearest") {
-      const sx = new Int32Array(W), sy = new Int32Array(H);
+      const sx = new Int32Array(W);
       for (let x = 0; x < W; x++) sx[x] = idiv((2 * x + 1) * w, 2 * W);
-      for (let y = 0; y < H; y++) sy[y] = idiv((2 * y + 1) * h, 2 * H);
-      for (let y = 0, o = 0; y < H; y++) {
-        const row = sy[y] * w;
+      for (let y = Y0, o = 0; y < Y1; y++) {
+        const row = idiv((2 * y + 1) * h, 2 * H) * w;
         for (let x = 0; x < W; x++) { const s = (row + sx[x]) * c; for (let k = 0; k < c; k++) out[o++] = pixels[s + k]; }
       }
       return out;
     }
-    // area: horizontal integer sums (≤ 255·w), then vertical (≤ 255·w·h); all exact doubles.
-    const hx = areaSpans(w, W), vy = areaSpans(h, H), D = w * h;
-    const rows = new Float64Array(h * W * c);
-    for (let y = 0; y < h; y++) {
-      const src = y * w * c, dst = y * W * c;
-      for (let X = 0; X < W; X++) {
-        const s0 = hx.start[X], n = hx.count[X];
-        for (let k = 0; k < c; k++) {
-          let acc = 0;
-          for (let j = 0; j < n; j++) acc += pixels[src + hx.idx[s0 + j] * c + k] * hx.wt[s0 + j];
-          rows[dst + X * c + k] = acc;
-        }
-      }
-    }
-    for (let Y = 0; Y < H; Y++) {
+    // area, streamed: output row Y needs the horizontal integer sums (≤ 255·w) of only its vy source rows, weighted
+    // and summed vertically (≤ 255·w·h). Every term is an integer < 2^53, so each double is exact and the summation
+    // order cannot change a bit; the per-element operation order (acc = 0; acc += row·wt, j ascending) is also the
+    // pre-F3 one. Because upsampling is rejected, consecutive output rows share at most their boundary source row,
+    // so a one-row cache (the last source row of the previous output row) is the whole LRU.
+    const hp = padSpans(areaSpans(w, W), w, W), vy = areaSpans(h, H), D = w * h;
+    const acc = new Float64Array(Wc);
+    let keep = new Float64Array(Wc), spare = new Float64Array(Wc), keepIdx = -1;
+    const scratch = new Float64Array(Wc);
+    const hsum = c === 4 ? hsumRow4 : c === 1 ? hsumRow1 : hsumRowN;
+    const D2 = 2 * D, fastRound = 512 * D <= Number.MAX_SAFE_INTEGER;
+    let o = 0;
+    for (let Y = Y0; Y < Y1; Y++) {
       const s0 = vy.start[Y], n = vy.count[Y];
-      for (let i = 0; i < W * c; i++) {
-        let acc = 0;
-        for (let j = 0; j < n; j++) acc += rows[vy.idx[s0 + j] * W * c + i] * vy.wt[s0 + j];
-        out[Y * W * c + i] = halfUp(acc, D);
+      for (let j = 0; j < n; j++) {
+        const y = vy.idx[s0 + j], f = vy.wt[s0 + j];
+        let row;
+        if (y === keepIdx) row = keep;
+        else if (j === n - 1) { hsum(pixels, y * w * c, W, hp, spare, c); const t = keep; keep = spare; spare = t; keepIdx = y; row = keep; }
+        else { hsum(pixels, y * w * c, W, hp, scratch, c); row = scratch; }
+        o = vfold(row, f, j, n, acc, out, o, Wc, D, D2, fastRound);
       }
     }
     return out;
+  };
+
+  R.resample = function (pixels, channels, w, h, W, H, method) {
+    return R.resampleRows(pixels, channels, w, h, W, H, method, 0, isPosInt(H) ? H : 0);
   };
 
   /**
