@@ -2247,7 +2247,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  * GEO_MULTIPART, which SBGeom.validate reports under D3. alpha.3 E7 adds
  * SOURCE_COLOR_TONAL (info): a colour source auto-switched to tonal at load. alpha.3 E8 adds
  * FAB_COMPLEXITY_LIKELY (warning): the draft predicts a fabrication complexity-cap overflow. alpha.3 E13 adds
- * LEGACY_PROJECT_BLOCK (info): a v2 settings.json re-imported through the lossy v1.1 mapping. Programmer-error
+ * LEGACY_PROJECT_BLOCK (info): a v2 settings.json re-imported through the lossy v1.1 mapping. Speed round F1
+ * (S4, F-D1) adds DRAFT_COARSER (info): the draft raster alone gives < 3 samples across the minimum feature, but
+ * the fabrication plan, at which SAMPLING_LOW is judged, gives ≥ 3. Programmer-error
  * throws (GEO_MULTIPART_POLYGON, GEO_OFFSET_NONINTEGER, GEO_INSET_NOT_DYADIC)
  * are not user diagnostics.
  *
@@ -2410,6 +2412,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       "The recorded filter is applied deterministically; remove it to slice raw heights."],
     ["RESAMPLED", I, P, "Source was resampled to the working resolution",
       "No action needed; use a matching source size to avoid resampling."],
+    // speed round F1 (S4, PO-PERF-4, F-D1): SAMPLING_LOW is judged on the fabrication plan; a draft-only shortfall is info
+    ["DRAFT_COARSER", I, P, "Draft sampling is below 3 samples per minimum feature",
+      "No action needed; the minimum feature is checked at the fabrication pitch. Preview at fabrication resolution to see the full detail."],
     ["BUSY_SIMPLIFIED", I, P, "Busy art was simplified",
       "Small parts were dropped and close parts merged at the minimum feature size; set Simplify busy art to off to keep every part."],
     // alpha.3 E7 (IMG-01, PO-PREVIEW-3): a colour source that height mode refuses switched the project to tonal at load
@@ -6463,8 +6468,12 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *   annotate(layers, supportGraph) → layers' with Part.supports[] rewritten to part IDs (§3).
  *   featureChecks(layers, cfg) → Diagnostic[] (plan G2.8; GEO-05/06, MAT-03, AT-10, PO-LASER-6), aggregated per
  *     (code, layer[, kind]) through SBDiag.aggregate:
- *       · SAMPLING_LOW (blocking) when minFeatureMM / mmPerPxMax < 3 (measured = samples across the feature, limit 3;
- *         the ratio is taken on values rounded to 1e-9 mm and rounded to 1e-9, so 0.3 mm at 0.1 mm/px is 3 samples).
+ *       · SAMPLING_LOW (blocking) when minFeatureMM / (samplingMmPerPx ?? mmPerPxMax) < 3 (measured = samples across the
+ *         feature, limit 3; the ratio is taken on values rounded to 1e-9 mm and rounded to 1e-9, so 0.3 mm at 0.1 mm/px is
+ *         3 samples). Speed round F1 (S4, PO-PERF-4, deviation F-D1): generate passes samplingMmPerPx = the mmPerPxMax of
+ *         the FABRICATION raster plan at both qualities, so a draft-only shortfall never blocks; it is reported as
+ *         DRAFT_COARSER (info, measured = draft samples, limit 3) when quality is "draft" and minFeatureMM / mmPerPxMax < 3
+ *         ≤ the fabrication samples. Without samplingMmPerPx the evaluated raster's mmPerPxMax is judged (unchanged).
  *       · Per part, the miter erosion by the INTEGER halfUm = Math.floor(minFeatureUm / 2), minFeatureUm =
  *         Math.round(minFeatureMM·1000) (D3: SBGeom.offset refuses non-integer deltas; on integer-µm geometry a width
  *         w ≤ 2·halfUm vanishes): empty → PART_THIN, more than one component → NECK_NARROW (warnings).
@@ -6742,6 +6751,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const minPart = cfg.minPartMM2 === undefined || cfg.minPartMM2 === null ? 0 : cfg.minPartMM2;
     if (typeof minPart !== "number" || !Number.isFinite(minPart) || minPart < 0) throw sfail("minPartMM2 must be a finite number ≥ 0 (got " + cfg.minPartMM2 + ")");
     if (!posNum(cfg.mmPerPxMax)) throw sfail("mmPerPxMax must be a finite number > 0 (got " + cfg.mmPerPxMax + ")");
+    const hasSampling = cfg.samplingMmPerPx !== undefined && cfg.samplingMmPerPx !== null;
+    if (hasSampling && !posNum(cfg.samplingMmPerPx)) throw sfail("samplingMmPerPx must be a finite number > 0 (got " + cfg.samplingMmPerPx + ")");
     if (typeof cfg.calibrated !== "boolean") throw sfail("calibrated must be a boolean");
     const G = global.SBGeom, D = global.SBDiag;
     const dOpts = { revision: cfg.revision === undefined ? 0 : cfg.revision, quality: cfg.quality || "draft" };
@@ -6749,9 +6760,17 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const diags = [];
     if (!cfg.calibrated) diags.push(make("MAT_UNCALIBRATED", { detail: "the minimum feature and part area are provisional" }));
     // in µm, rounded to 1e-9 so that binary-float noise (0.3 / 0.1 = 2.9999999999999996) never creates a shortfall
-    const samples = Math.round((Math.round(cfg.minFeatureMM * 1e9) / Math.round(cfg.mmPerPxMax * 1e9)) * 1e9) / 1e9;
+    const samplesAt = (mmPerPx) => Math.round((Math.round(cfg.minFeatureMM * 1e9) / Math.round(mmPerPx * 1e9)) * 1e9) / 1e9;
+    // speed round F1 (S4, PO-PERF-4, F-D1): judged at samplingMmPerPx (the fabrication plan) when given
+    const sPitch = hasSampling ? cfg.samplingMmPerPx : cfg.mmPerPxMax, samples = samplesAt(sPitch);
+    const r2 = (x) => Math.round(x * 100) / 100;
     if (samples < 3) diags.push(make("SAMPLING_LOW", { measured: { value: samples, unit: "samples" }, limit: { value: 3, unit: "samples" },
-      detail: cfg.mmPerPxMax + " mm/px gives " + Math.round(samples * 100) / 100 + " samples across the " + cfg.minFeatureMM + " mm minimum feature (3 needed)" }));
+      detail: sPitch + " mm/px gives " + r2(samples) + " samples across the " + cfg.minFeatureMM + " mm minimum feature (3 needed)" }));
+    else if (dOpts.quality === "draft" && hasSampling) {
+      const draftSamples = samplesAt(cfg.mmPerPxMax);
+      if (draftSamples < 3) diags.push(make("DRAFT_COARSER", { measured: { value: draftSamples, unit: "samples" }, limit: { value: 3, unit: "samples" },
+        detail: "draft is coarser than fabrication; detail is checked at the fabrication pitch (" + sPitch + " mm/px, " + r2(samples) + " samples)" }));
+    }
     const mfUm = Math.round(cfg.minFeatureMM * 1000), halfMin = Math.floor(mfUm / 2);
     const advUm = hasAdv ? Math.round(cfg.advisoryFeatureMM * 1000) : mfUm, halfAdv = Math.floor(advUm / 2);
     layers.forEach((L, k) => {
@@ -8535,7 +8554,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    * draft quality and the project revision: each layer's geometry diagnostics, SBSupport.validate in the project's
    * construction mode (bonded: containment and the support graph, one layer-level boolean per adjacent pair;
    * connected: CONNECTED_SPLIT), SBSupport.featureChecks at the legacy pitch (mmPerPxMax = the coarser axis of the
-   * view's page over w × h, so SAMPLING_LOW reflects the geometry the app exports) and SBSupport.checkEnvelope.
+   * view's page over w × h, so SAMPLING_LOW reflects the geometry the legacy path exports; unlike generate, which since
+   * speed round F1 / F-D1 judges SAMPLING_LOW on the fabrication raster plan, no samplingMmPerPx is passed here, because
+   * the legacy sheets are cut at this pitch) and SBSupport.checkEnvelope.
    * Pure; the view is not mutated.
    */
   E.legacyDiagnostics = function (view, w, h, project) {
@@ -9053,8 +9074,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const sv = S.validate(layers, con.mode, { minFeatureMM: mat.minFeatureMM, advisoryFeatureMM: mat.advisoryFeatureMM, revision, quality });
     diagnostics.push(...sv.diagnostics);
     step("features", 0.85);
+    // speed round F1 (S4, PO-PERF-4, F-D1): SAMPLING_LOW is judged on the fabrication raster plan at both qualities
+    // (rasterPlan reads only sizes; its FAB_* diagnostics are not repeated here). Diagnostics are not hash input.
+    const fabGeo = quality === "fabrication" ? geo : E.rasterPlan(p, { w: ns.w, h: ns.h }, "fabrication", deviceClass).geometry;
     diagnostics.push(...S.featureChecks(layers, { minFeatureMM: mat.minFeatureMM, advisoryFeatureMM: mat.advisoryFeatureMM, minPartMM2: mat.minPartMM2,
-      mmPerPxMax: geo.mmPerPxMax, calibrated: mat.calibrated, revision, quality }));
+      mmPerPxMax: geo.mmPerPxMax, samplingMmPerPx: fabGeo.mmPerPxMax, calibrated: mat.calibrated, revision, quality }));
     step("envelope", 0.95);
     diagnostics.push(...S.checkEnvelope({ wMM: page.wMM, hMM: page.hMM }, p.machine, mat, dOpts));
 

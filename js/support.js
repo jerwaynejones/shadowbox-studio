@@ -48,8 +48,12 @@
  *   annotate(layers, supportGraph) → layers' with Part.supports[] rewritten to part IDs (§3).
  *   featureChecks(layers, cfg) → Diagnostic[] (plan G2.8; GEO-05/06, MAT-03, AT-10, PO-LASER-6), aggregated per
  *     (code, layer[, kind]) through SBDiag.aggregate:
- *       · SAMPLING_LOW (blocking) when minFeatureMM / mmPerPxMax < 3 (measured = samples across the feature, limit 3;
- *         the ratio is taken on values rounded to 1e-9 mm and rounded to 1e-9, so 0.3 mm at 0.1 mm/px is 3 samples).
+ *       · SAMPLING_LOW (blocking) when minFeatureMM / (samplingMmPerPx ?? mmPerPxMax) < 3 (measured = samples across the
+ *         feature, limit 3; the ratio is taken on values rounded to 1e-9 mm and rounded to 1e-9, so 0.3 mm at 0.1 mm/px is
+ *         3 samples). Speed round F1 (S4, PO-PERF-4, deviation F-D1): generate passes samplingMmPerPx = the mmPerPxMax of
+ *         the FABRICATION raster plan at both qualities, so a draft-only shortfall never blocks; it is reported as
+ *         DRAFT_COARSER (info, measured = draft samples, limit 3) when quality is "draft" and minFeatureMM / mmPerPxMax < 3
+ *         ≤ the fabrication samples. Without samplingMmPerPx the evaluated raster's mmPerPxMax is judged (unchanged).
  *       · Per part, the miter erosion by the INTEGER halfUm = Math.floor(minFeatureUm / 2), minFeatureUm =
  *         Math.round(minFeatureMM·1000) (D3: SBGeom.offset refuses non-integer deltas; on integer-µm geometry a width
  *         w ≤ 2·halfUm vanishes): empty → PART_THIN, more than one component → NECK_NARROW (warnings).
@@ -327,6 +331,8 @@
     const minPart = cfg.minPartMM2 === undefined || cfg.minPartMM2 === null ? 0 : cfg.minPartMM2;
     if (typeof minPart !== "number" || !Number.isFinite(minPart) || minPart < 0) throw sfail("minPartMM2 must be a finite number ≥ 0 (got " + cfg.minPartMM2 + ")");
     if (!posNum(cfg.mmPerPxMax)) throw sfail("mmPerPxMax must be a finite number > 0 (got " + cfg.mmPerPxMax + ")");
+    const hasSampling = cfg.samplingMmPerPx !== undefined && cfg.samplingMmPerPx !== null;
+    if (hasSampling && !posNum(cfg.samplingMmPerPx)) throw sfail("samplingMmPerPx must be a finite number > 0 (got " + cfg.samplingMmPerPx + ")");
     if (typeof cfg.calibrated !== "boolean") throw sfail("calibrated must be a boolean");
     const G = global.SBGeom, D = global.SBDiag;
     const dOpts = { revision: cfg.revision === undefined ? 0 : cfg.revision, quality: cfg.quality || "draft" };
@@ -334,9 +340,17 @@
     const diags = [];
     if (!cfg.calibrated) diags.push(make("MAT_UNCALIBRATED", { detail: "the minimum feature and part area are provisional" }));
     // in µm, rounded to 1e-9 so that binary-float noise (0.3 / 0.1 = 2.9999999999999996) never creates a shortfall
-    const samples = Math.round((Math.round(cfg.minFeatureMM * 1e9) / Math.round(cfg.mmPerPxMax * 1e9)) * 1e9) / 1e9;
+    const samplesAt = (mmPerPx) => Math.round((Math.round(cfg.minFeatureMM * 1e9) / Math.round(mmPerPx * 1e9)) * 1e9) / 1e9;
+    // speed round F1 (S4, PO-PERF-4, F-D1): judged at samplingMmPerPx (the fabrication plan) when given
+    const sPitch = hasSampling ? cfg.samplingMmPerPx : cfg.mmPerPxMax, samples = samplesAt(sPitch);
+    const r2 = (x) => Math.round(x * 100) / 100;
     if (samples < 3) diags.push(make("SAMPLING_LOW", { measured: { value: samples, unit: "samples" }, limit: { value: 3, unit: "samples" },
-      detail: cfg.mmPerPxMax + " mm/px gives " + Math.round(samples * 100) / 100 + " samples across the " + cfg.minFeatureMM + " mm minimum feature (3 needed)" }));
+      detail: sPitch + " mm/px gives " + r2(samples) + " samples across the " + cfg.minFeatureMM + " mm minimum feature (3 needed)" }));
+    else if (dOpts.quality === "draft" && hasSampling) {
+      const draftSamples = samplesAt(cfg.mmPerPxMax);
+      if (draftSamples < 3) diags.push(make("DRAFT_COARSER", { measured: { value: draftSamples, unit: "samples" }, limit: { value: 3, unit: "samples" },
+        detail: "draft is coarser than fabrication; detail is checked at the fabrication pitch (" + sPitch + " mm/px, " + r2(samples) + " samples)" }));
+    }
     const mfUm = Math.round(cfg.minFeatureMM * 1000), halfMin = Math.floor(mfUm / 2);
     const advUm = hasAdv ? Math.round(cfg.advisoryFeatureMM * 1000) : mfUm, halfAdv = Math.floor(advUm / 2);
     layers.forEach((L, k) => {

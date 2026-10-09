@@ -177,7 +177,9 @@
    * draft quality and the project revision: each layer's geometry diagnostics, SBSupport.validate in the project's
    * construction mode (bonded: containment and the support graph, one layer-level boolean per adjacent pair;
    * connected: CONNECTED_SPLIT), SBSupport.featureChecks at the legacy pitch (mmPerPxMax = the coarser axis of the
-   * view's page over w × h, so SAMPLING_LOW reflects the geometry the app exports) and SBSupport.checkEnvelope.
+   * view's page over w × h, so SAMPLING_LOW reflects the geometry the legacy path exports; unlike generate, which since
+   * speed round F1 / F-D1 judges SAMPLING_LOW on the fabrication raster plan, no samplingMmPerPx is passed here, because
+   * the legacy sheets are cut at this pitch) and SBSupport.checkEnvelope.
    * Pure; the view is not mutated.
    */
   E.legacyDiagnostics = function (view, w, h, project) {
@@ -695,8 +697,11 @@
     const sv = S.validate(layers, con.mode, { minFeatureMM: mat.minFeatureMM, advisoryFeatureMM: mat.advisoryFeatureMM, revision, quality });
     diagnostics.push(...sv.diagnostics);
     step("features", 0.85);
+    // speed round F1 (S4, PO-PERF-4, F-D1): SAMPLING_LOW is judged on the fabrication raster plan at both qualities
+    // (rasterPlan reads only sizes; its FAB_* diagnostics are not repeated here). Diagnostics are not hash input.
+    const fabGeo = quality === "fabrication" ? geo : E.rasterPlan(p, { w: ns.w, h: ns.h }, "fabrication", deviceClass).geometry;
     diagnostics.push(...S.featureChecks(layers, { minFeatureMM: mat.minFeatureMM, advisoryFeatureMM: mat.advisoryFeatureMM, minPartMM2: mat.minPartMM2,
-      mmPerPxMax: geo.mmPerPxMax, calibrated: mat.calibrated, revision, quality }));
+      mmPerPxMax: geo.mmPerPxMax, samplingMmPerPx: fabGeo.mmPerPxMax, calibrated: mat.calibrated, revision, quality }));
     step("envelope", 0.95);
     diagnostics.push(...S.checkEnvelope({ wMM: page.wMM, hMM: page.hMM }, p.machine, mat, dOpts));
 

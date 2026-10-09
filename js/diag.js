@@ -37,7 +37,9 @@
  * GEO_MULTIPART, which SBGeom.validate reports under D3. alpha.3 E7 adds
  * SOURCE_COLOR_TONAL (info): a colour source auto-switched to tonal at load. alpha.3 E8 adds
  * FAB_COMPLEXITY_LIKELY (warning): the draft predicts a fabrication complexity-cap overflow. alpha.3 E13 adds
- * LEGACY_PROJECT_BLOCK (info): a v2 settings.json re-imported through the lossy v1.1 mapping. Programmer-error
+ * LEGACY_PROJECT_BLOCK (info): a v2 settings.json re-imported through the lossy v1.1 mapping. Speed round F1
+ * (S4, F-D1) adds DRAFT_COARSER (info): the draft raster alone gives < 3 samples across the minimum feature, but
+ * the fabrication plan, at which SAMPLING_LOW is judged, gives ≥ 3. Programmer-error
  * throws (GEO_MULTIPART_POLYGON, GEO_OFFSET_NONINTEGER, GEO_INSET_NOT_DYADIC)
  * are not user diagnostics.
  *
@@ -200,6 +202,9 @@
       "The recorded filter is applied deterministically; remove it to slice raw heights."],
     ["RESAMPLED", I, P, "Source was resampled to the working resolution",
       "No action needed; use a matching source size to avoid resampling."],
+    // speed round F1 (S4, PO-PERF-4, F-D1): SAMPLING_LOW is judged on the fabrication plan; a draft-only shortfall is info
+    ["DRAFT_COARSER", I, P, "Draft sampling is below 3 samples per minimum feature",
+      "No action needed; the minimum feature is checked at the fabrication pitch. Preview at fabrication resolution to see the full detail."],
     ["BUSY_SIMPLIFIED", I, P, "Busy art was simplified",
       "Small parts were dropped and close parts merged at the minimum feature size; set Simplify busy art to off to keep every part."],
     // alpha.3 E7 (IMG-01, PO-PREVIEW-3): a colour source that height mode refuses switched the project to tonal at load

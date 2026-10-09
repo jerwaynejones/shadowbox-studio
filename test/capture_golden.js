@@ -9,6 +9,8 @@ const rel = (p) => path.relative(process.cwd(), p);
 // ---- speed round F0 (plan Appendix F, NFR-05): the pool-equality golden. Handled before the legacy guard below.
 //   node test/capture_golden.js --pool-equality                      write test/golden/pool-equality.json (refuses to overwrite)
 //   node test/capture_golden.js --pool-equality --recapture id1,id2  rewrite only the named fixtures' entries
+//     [--task F1]  label the recapture; the record keeps each re-captured id's previous digest under `previous`, so a
+//                  test can assert what changed (speed round F1: only diagSha/wholeSha).
 if (process.argv.includes("--pool-equality")) {
   const POOL = path.join(__dirname, "golden", "pool-equality.json");
   const ri = process.argv.indexOf("--recapture"), recapture = ri > 0 ? String(process.argv[ri + 1] || "").split(",").filter(Boolean) : null;
@@ -21,6 +23,8 @@ if (process.argv.includes("--pool-equality")) {
   const unknown = (recapture || []).filter((id) => !ids.includes(id));
   if (unknown.length) { console.error("capture_golden: unknown fixture ids: " + unknown.join(", ")); process.exit(1); }
   const out = exists ? JSON.parse(fs.readFileSync(POOL, "utf8")) : { capturedFrom: null, engineVersion: SBEngine.VERSION, fixtures: {} };
+  const ti = process.argv.indexOf("--task"), task = ti > 0 ? String(process.argv[ti + 1] || "") : null, previous = {};
+  if (recapture) for (const id of recapture) if (out.fixtures[id]) previous[id] = out.fixtures[id];
   if (!exists) {
     try { out.capturedFrom = require("child_process").execSync("git rev-parse --short HEAD", { cwd: path.join(__dirname, ".."), stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch (e) { out.capturedFrom = "unknown"; }
   }
@@ -30,7 +34,7 @@ if (process.argv.includes("--pool-equality")) {
     out.fixtures[fx.id] = Object.assign({ slow: fx.slow }, C.digest(r));
     console.log("  " + fx.id + " " + r.status + " (" + (Date.now() - t) + " ms)");
   }
-  if (recapture) out.recaptured = (out.recaptured || []).concat([{ ids: recapture, engineVersion: SBEngine.VERSION }]);
+  if (recapture) out.recaptured = (out.recaptured || []).concat([Object.assign(task ? { task } : {}, { ids: recapture, engineVersion: SBEngine.VERSION, previous })]);
   fs.mkdirSync(path.dirname(POOL), { recursive: true });
   fs.writeFileSync(POOL, JSON.stringify(out, null, 1) + "\n");
   console.log("capture_golden: " + (recapture ? "re-captured " + recapture.length + " fixture(s) in " : "wrote ") + rel(POOL) + " (" + Object.keys(out.fixtures).length + " fixtures)");

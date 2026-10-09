@@ -1767,7 +1767,7 @@ suite("diag.js — SBDiag registry, make() and aggregate() (§9.1, §9.5, UI-04;
     warning: ["MAT_UNCALIBRATED", "PART_SMALL", "PART_THIN", "NECK_NARROW", "SUPPORT_NARROW",
       "GUIDE_OMITTED", "CLEANUP_ALTERED", "SMOOTH_FALLBACK", "TRAILING_OMITTED",
       "ALIGN_CLEARANCE_ZERO", "REPAIR_REVIEW_FAB", "FAB_EXCEEDS_SOURCE"],
-    info: ["KERF_EXTERNAL", "PALETTE_ONLY", "IDENTICAL_LAYERS", "EMPTY_BAND", "DISPLAY_ONLY_IGNORED", "HEIGHT_FILTERED", "RESAMPLED"],
+    info: ["KERF_EXTERNAL", "PALETTE_ONLY", "IDENTICAL_LAYERS", "EMPTY_BAND", "DISPLAY_ONLY_IGNORED", "HEIGHT_FILTERED", "RESAMPLED", "DRAFT_COARSER"],
   };
   for (const sev of Object.keys(PLAN)) {
     const wrong = PLAN[sev].filter((c) => !C[c] || C[c].severity !== sev);
@@ -6041,6 +6041,50 @@ suite("js/* — speed round F0 module-state audit (NFR-05)", () => {
   const audited = ["geom.js", "vendor/clipper2.js", "trace.js", "morph.js", "support.js", "guides.js", "strokefont.js", "construct.js", "material.js", "islands.js", "raster.js", "height.js", "diag.js", "util.js", "engine.js"];
   check("NFR-05 F0 ARCHITECTURE.md speed-round section records every audited module as pure or per-call reset",
     audited.every((f) => new RegExp("`js/" + f.replace(/[.\/]/g, (c) => "\\" + c) + "`[^\\n]*\\b(pure|per-call reset)\\b").test(sec)) && /_intResult/.test(sec) && /TEST_HOOKS/.test(sec));
+});
+
+// ------------------------------------------------ speed round F1 (plan Appendix F, S4/F-D1): SAMPLING_LOW on the fabrication plan
+suite("support/engine — speed round F1 sampling on the fabrication plan (GEO-06, PO-PERF-4)", () => {
+  const S = SBSchema, E = SBEngine, F = require("./fixtures.js");
+  const base = { minFeatureMM: 1.5, mmPerPxMax: 0.55, calibrated: true };
+  const codes = (ds) => ds.map((d) => d.code);
+  check("F1 featureChecks without samplingMmPerPx is unchanged (0.55 mm/px → SAMPLING_LOW)",
+    codes(SBSupport.featureChecks([], base)).includes("SAMPLING_LOW"));
+  check("F1 samplingMmPerPx 0.1 judges the fabrication pitch (no SAMPLING_LOW)",
+    !codes(SBSupport.featureChecks([], { ...base, samplingMmPerPx: 0.1 })).includes("SAMPLING_LOW"));
+  check("F1 samplingMmPerPx 0.6 still blocks (measured = 2.5 fabrication samples, limit 3)", (() => {
+    const d = SBSupport.featureChecks([], { ...base, mmPerPxMax: 0.1, samplingMmPerPx: 0.6 }).find((x) => x.code === "SAMPLING_LOW");
+    return !!d && d.severity === "blocking" && d.measured.value === 2.5 && d.limit.value === 3; })());
+  check("F1 featureChecks rejects a non-finite or non-positive samplingMmPerPx",
+    [0, -1, NaN, Infinity, "0.1"].every((v) => { try { SBSupport.featureChecks([], { ...base, samplingMmPerPx: v }); return false; } catch (e) { return true; } }));
+  check("F1 DRAFT_COARSER registered as info (no ack), with title and fix",
+    !!SBDiag.CODES.DRAFT_COARSER && SBDiag.CODES.DRAFT_COARSER.severity === "info" && !!SBDiag.CODES.DRAFT_COARSER.title && !!SBDiag.CODES.DRAFT_COARSER.fix &&
+    SBDiag.make("DRAFT_COARSER", {}).ackState === "n/a");
+  check("F1 featureChecks: DRAFT_COARSER at draft when only the draft pitch is short (measured = draft samples, limit 3, fabrication pitch in detail)", (() => {
+    const ds = SBSupport.featureChecks([], { ...base, samplingMmPerPx: 0.1, quality: "draft" }), d = ds.find((x) => x.code === "DRAFT_COARSER");
+    return !!d && d.severity === "info" && d.ackState === "n/a" && Math.abs(d.measured.value - 1.5 / 0.55) < 1e-8 && d.limit.value === 3 && /draft is coarser than fabrication; detail is checked at the fabrication pitch \(0\.1 mm\/px, 15 samples\)/.test(d.message) && !codes(ds).includes("SAMPLING_LOW"); })());
+  check("F1 no DRAFT_COARSER at fabrication quality, when the draft is fine, or when the fabrication plan is short too",
+    !codes(SBSupport.featureChecks([], { ...base, samplingMmPerPx: 0.1, quality: "fabrication" })).includes("DRAFT_COARSER") &&
+    !codes(SBSupport.featureChecks([], { ...base, mmPerPxMax: 0.4, samplingMmPerPx: 0.1, quality: "draft" })).includes("DRAFT_COARSER") &&
+    !codes(SBSupport.featureChecks([], { ...base, samplingMmPerPx: 0.6, quality: "draft" })).includes("DRAFT_COARSER"));
+  const w = 1024, h = 771, px = { pixels: F.heightMap(2022, w, h), channels: 1, w, h, alpha: null };
+  let p = S.withSource(S.defaults("plywood"), E.sourceRecord(px, { format: "png", decode: "raw-gray8" }));
+  p.geometry.sizeBy = "height"; p.geometry.targetMM = 300;
+  const d = E.generate(E.request(p, px, { quality: "draft" }));
+  check("PO-PERF-4 default plywood draft: no blocking SAMPLING_LOW, DRAFT_COARSER info present",
+    d.status === "done" && !codes(d.diagnostics).includes("SAMPLING_LOW") && d.diagnostics.some((x) => x.code === "DRAFT_COARSER" && x.severity === "info"));
+  const q = JSON.parse(JSON.stringify(p)); q.geometry.fabPitchMM = 0.6;
+  check("GEO-06 a coarse fabrication pitch still blocks at draft and at fabrication",
+    ["draft", "fabrication"].every((qq) => codes(E.generate(E.request(q, px, { quality: qq })).diagnostics).includes("SAMPLING_LOW")));
+  // geometryHash/layerHashes unchanged: the F0 golden's re-captured fixtures differ from their previous digests only in
+  // diagSha/wholeSha (capture_golden --recapture records the previous digests).
+  const gold = JSON.parse(fs.readFileSync(path.join(__dirname, "golden", "pool-equality.json"), "utf8"));
+  const f1 = (gold.recaptured || []).find((r) => r.task === "F1");
+  const keep = ["status", "code", "geometryHash", "layerHashes", "cleanupSha", "supportSha", "guidesSha", "statsSha"];
+  const off = f1 ? f1.ids.filter((id) => !f1.previous || !f1.previous[id] || keep.some((k) => JSON.stringify(f1.previous[id][k]) !== JSON.stringify(gold.fixtures[id][k])) ||
+    f1.previous[id].diagSha === gold.fixtures[id].diagSha) : ["(no F1 recapture record)"];
+  check("F-D1 F1 re-captured golden ids differ from their previous digests only in diagSha/wholeSha" + (off.length ? " — " + off.join(", ") : ""),
+    !!f1 && f1.ids.length > 0 && off.length === 0 && Object.keys(f1.previous).sort().join() === f1.ids.slice().sort().join());
 });
 
 // ------------------------------------------------------------------ report
