@@ -186,6 +186,9 @@
       <h2 id="h-review"><span class="stepnum">4</span> Review</h2>
       <button id="btn-generate" class="btn wide" disabled aria-describedby="why-generate">Generate</button>
       <p id="why-generate" class="why" role="status">Choose a source</p>
+      <!-- alpha.3 E6 (PO-PREVIEW-2): the exact fabrication run (same request and hash as the export) shown in every view -->
+      <button id="btn-fabpreview" class="btn" type="button" disabled aria-describedby="fabpreview-note">Preview at fabrication resolution</button>
+      <p id="fabpreview-note" class="hint" role="status" aria-live="polite">Shows the exact cut geometry and its fabrication review. The page does not respond while it is generated.</p>
       <!-- G2.13c (UI-04, NFR-07): diagnostics grouped by severity, icon plus text; an item with a layer is a button
            that shows its layer, parts and region in the Proof; warnings carry an Acknowledge checkbox for this result. -->
       <div id="diag-panel" class="diag" role="region" aria-labelledby="h-diag">
@@ -215,7 +218,8 @@
       <h2 id="h-export"><span class="stepnum">5</span> Export</h2>
       <p class="hint">One ZIP with every sheet SVG (real mm units), a color
       proof, the assembly guide, a preview render, and your settings. Export regenerates the layers at fabrication
-      quality and checks them first; blocking issues stop it and warnings need an acknowledgement below.</p>
+      quality and shows that result first; the next click downloads exactly what is on screen. Blocking issues stop it
+      and warnings need an acknowledgement below.</p>
       <button id="btn-export" class="btn primary wide" disabled aria-describedby="why-export">Download cut files (.zip)</button>
       <p id="why-export" class="why" role="status">Choose a source</p>
       <!-- alpha.2 (LYR-06, EXP-07): the fabrication review of the last export, scoped to its snapshot's geometryHash. -->

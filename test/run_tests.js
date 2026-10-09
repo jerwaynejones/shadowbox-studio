@@ -5257,8 +5257,11 @@ suite("engine.js/app.js/CHANGELOG — checkpoint v2.0.0-alpha.2 (LYR-06, EXP-07,
     /SBEngine\.request\(/.test(appSrc) && /SBEngine\.generate\(/.test(appSrc) && /fabReview\(/.test(ex));
   check("EXP-07 app.js export is gated by SBDiag.exportGate(…, \"fabrication\") before any file is built",
     /SBDiag\.exportGate\([^)]*"fabrication"\)/.test(appSrc) && ex.indexOf("exportGate(") >= 0 && ex.indexOf("exportGate(") < ex.indexOf("buildAndDeliver("));
+  // alpha.3 E6: the fabrication review goes through the one diagnostics renderer with r = run.fab, so its acks are
+  // SBDiag.ackKey(d, r.snapshot.geometryHash) in r.acks = run.fab.acks (no separate fab-only ack code any more)
   check("EXP-07 app.js: the fabrication review lists the fab snapshot's diagnostics with acks keyed on its geometryHash; draft acks are not reused",
-    /id="fab-review"/.test(html) && /id="fab-list"/.test(html) && /SBDiag\.ackKey\(d, run\.fab\.snapshot\.geometryHash\)/.test(appSrc) && /run\.fab\.acks/.test(appSrc) &&
+    /id="fab-review"/.test(html) && /id="fab-list"/.test(html) && /renderDiagnostics\(run\.fab, \{ scope: "fabrication" \}\)/.test(appSrc) &&
+    /SBDiag\.ackKey\(d, r\.snapshot\.geometryHash\)/.test(appSrc) && /r\.acks\.has\(key\)/.test(appSrc) && /run\.fab\.acks/.test(appSrc) &&
     !/run\.fab\.acks\s*=\s*run\.acks/.test(appSrc) && /function fabCurrent\(\)/.test(appSrc) && /project\.revision/.test(fn("fabCurrent")));
   check("EXP-07 app.js: a blocking fabrication diagnostic disables Export with its reason",
     /reason === "BLOCKING"/.test(appSrc) && /btn\.disabled = /.test(fn("updateGate")) && /fabCurrent\(\)/.test(fn("updateGate")));
@@ -5569,6 +5572,43 @@ suite("app.js — alpha.3 E5 real-engine draft (PO-PREVIEW-1, LYR-06, UI-05)", (
       fq.status === "done" && !err && out.colors.length === fs5.layers.length && out.colors.every((c) => /^#[0-9a-fA-F]{3,6}$/.test(c)) &&
       out.files.some((f) => f.name === "proof.svg" && /<path /.test(f.data)));
   }
+});
+
+// ------------------------------------------------ alpha.3 E6 (fabrication preview; files only from the shown fabrication result)
+suite("index.html/app.js — alpha.3 E6 fabrication preview (PO-PREVIEW-2, LYR-06, UI-06)", () => {
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8"), html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+  const fn = (name) => { const i = appSrc.indexOf("function " + name + "("); return i < 0 ? "" : appSrc.slice(i, appSrc.indexOf("\n  }\n", i)); };
+  check("PO-PREVIEW-2 index.html has #btn-fabpreview", /id="btn-fabpreview"/.test(html));
+  check("PO-PREVIEW-2 #btn-fabpreview and #fabpreview-note sit in the Review stage",
+    (() => { const m = /<section class="step" id="stage-review"[\s\S]*?<\/section>/.exec(html); return !!m && /id="btn-fabpreview"/.test(m[0]) && /id="fabpreview-note"/.test(m[0]); })());
+  check("PO-PREVIEW-2 the button runs fabReview and shows run.fab in every view", /btn-fabpreview/.test(appSrc) && /run\.shown = run\.fab/.test(appSrc));
+  check("NFR-02 (deviation) the busy text is painted before the blocking fabrication run", /will not respond/.test(appSrc) && /requestAnimationFrame\(/.test(fn("fabReview")));
+  check("NFR-02 the busy estimate uses SBSchema.limits(…).fabMsPerMpx (the app cannot read docs/ at runtime)", /fabMsPerMpx/.test(fn("fabReview") + fn("fabBusyText")));
+  check("LYR-06 exportBundle does not regenerate while fabCurrent()", /fabCurrent\(\)/.test(fn("fabReview")) && fn("exportBundle").indexOf("SBEngine.generate(") < 0);
+  check("UI-06 fab preview of revision r is not shown for r+1 (fabCurrent checks the revision; an edit shows the draft)",
+    /run\.fab\.revision === project\.revision/.test(fn("fabCurrent")) && /run\.shown = run\.draft/.test(appSrc));
+  check("UI-06 an edit (recompute) leaves the fabrication result for the Stale draft at once",
+    /showDraft\(\)/.test(fn("recompute")) && /run\.shown = run\.draft/.test(fn("showDraft")));
+  check("UI-06 a draft finishing while the current fabrication result is shown does not replace it",
+    /run\.shown === run\.fab && fabCurrent\(\)/.test(fn("regenerate")));
+  const bd = fn("buildAndDeliver"), ex = fn("exportBundle");
+  check("PO-PREVIEW-2 delivery requires the shown, current fabrication result; otherwise export shows it and stops",
+    /run\.shown === run\.fab/.test(ex) && /fabCurrent\(\)/.test(ex) && /showFab\(\)/.test(ex) && ex.indexOf("showFab()") < ex.indexOf("buildAndDeliver("));
+  check("PO-PREVIEW-7 buildAndDeliver builds files, settings and preview.png from run.fab.snapshot and never restores the draft",
+    /SBEngine\.fabricationFiles\(run\.fab\.snapshot/.test(bd) && /run\.fab\.snapshot/.test(fn("settingsJSON")) && !/run\.shown = (back|run\.draft)/.test(bd) && !/showResult\(back\)/.test(bd));
+  check("PO-PREVIEW-7 preview.png is captured with overlays off and focus cleared",
+    /setOverlays\(null\)/.test(bd) && /setFocus\(null\)/.test(bd) && bd.indexOf("setOverlays(null)") < bd.indexOf("preview.snapshot("));
+  check("LYR-06 fabReview passes no stage cache (E-R7) and checks the sample hash", !/cache:/.test(fn("fabReview")) && /sampleHash/.test(fn("fabReview")));
+  check("UI-04 one renderer: the fabrication review is renderDiagnostics(run.fab, {scope: \"fabrication\"}), its header names the short geometryHash",
+    /renderDiagnostics\(run\.fab, \{ scope: "fabrication" \}\)/.test(fn("renderFabReview")) && /geometryHash\.slice\(0, 12\)/.test(fn("renderDiagnostics")) &&
+    /Acknowledge for this fabrication result/.test(appSrc));
+  check("UI-04 diagnostics items are navigable only on the shown result (fabrication items once run.shown === run.fab)",
+    /r === run\.shown/.test(fn("renderDiagnostics")));
+  const E = SBEngine, F = require("./fixtures.js"), px = { pixels: F.heightMap(9, 160, 120), channels: 1, w: 160, h: 120, alpha: null };
+  const p = SBSchema.withSource(SBSchema.defaults("plywood"), E.sourceRecord(px, { format: "png", decode: "raw-gray8" })); p.geometry.targetMM = 12;
+  const g1 = E.generate(E.request(p, px, { quality: "fabrication" })), g2 = E.generate(E.request(p, px, { quality: "fabrication" }));
+  check("LYR-06 two fabrication requests on unchanged inputs give the same geometryHash (the previewed snapshot is the exported one)",
+    g1.status === "done" && typeof g1.snapshot.geometryHash === "string" && g1.snapshot.geometryHash === g2.snapshot.geometryHash);
 });
 
 // ------------------------------------------------------------------ report

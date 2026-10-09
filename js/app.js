@@ -56,10 +56,12 @@
     // a failed draft (no snapshot) keeps the last draft that had one as lastGood, so its acks carry over to the same hash.
     draft: null,
     // alpha.3 E5 (UI-05): the one result every view reads (Proof, Section, Layers, Tilt, overlays, diagnostics, badge,
-    // clip dialog), through shown.snapshot only: run.draft (or, from E6, run.fab). null before the first run.
+    // clip dialog), through shown.snapshot only: run.draft or (alpha.3 E6) run.fab. null before the first run.
     shown: null,
-    // alpha.2 (LYR-06, EXP-07): the fabrication run of the last export, {status, snapshot, diagnostics, error, revision, gen,
+    // alpha.2 (LYR-06, EXP-07): the fabrication run, {kind: "fabrication", status, snapshot, diagnostics, error, revision, gen,
     // deviceClass, acks, ms}. Its acks are keyed on the fab snapshot's geometryHash; draft acks (run.draft.acks) never carry over.
+    // alpha.3 E6 (PO-PREVIEW-2): made by "Preview at fabrication resolution" or the first Download click and shown in every
+    // view (showFab); files are delivered only while it is shown and current; an edit returns the views to the draft.
     fab: null,
     report: "",
   };
@@ -82,8 +84,38 @@
 
   // ------------------------------------------------------------- pipeline
   const regenerateSoon = SBUtil.debounce(regenerate, 300);   // alpha.3 E5: sliders commit on release, so 300 ms
-  /** A geometry edit: the shown result is stale at once (UI-05), then the pipeline reruns debounced. */
-  function recompute() { setRunState({ type: "edit" }); regenerateSoon(); }
+  /**
+   * A geometry edit: the shown result is stale at once (UI-05), then the pipeline reruns debounced. alpha.3 E6 (UI-06):
+   * a fabrication result on screen belongs to the previous revision, so the view returns to the (Stale) draft at once.
+   */
+  function recompute() {
+    setRunState({ type: "edit" });
+    if (run.shown === run.fab) showDraft();
+    regenerateSoon();
+  }
+
+  /**
+   * alpha.3 E6 (PO-PREVIEW-2): show the fabrication result in every view (Proof, Section, Layers, Tilt, overlays, the
+   * diagnostics panel with navigable items, the badge, the clip dialog). A new geometry clears the diagnostics focus.
+   */
+  function showFab() {
+    if (!run.fab) return;
+    if (run.shown !== run.fab) run.focus = null;
+    run.shown = run.fab;
+    const f = run.fab;   // the badge is the fabrication result's own state (validated, or failed with a blocking item)
+    showRunState(f.status === "done" && f.snapshot ? SBDiag.nextState("processing", { type: "done", quality: "fabrication", diagnostics: f.snapshot.diagnostics }) : "failed");
+    showResult(run.fab);
+    renderFabReview();
+  }
+
+  /** alpha.3 E6 (UI-06): leave the fabrication result for the draft (an edit or a new source); its next run replaces it. */
+  function showDraft() {
+    if (!run.draft || run.shown === run.draft) return;
+    run.focus = null;
+    run.shown = run.draft;
+    showResult(run.shown);
+    renderFabReview();
+  }
 
   /**
    * G2.13b (UI-05): advance the result state with SBDiag.nextState and show its text badge. Before the first run
@@ -116,12 +148,20 @@
     const gen = $("btn-generate"), whyGen = $("why-generate");
     if (gen) gen.disabled = !gate.ok;
     if (whyGen) { whyGen.textContent = gate.ok ? "" : gate.reason; whyGen.hidden = gate.ok; }
+    // alpha.3 E6: "Preview at fabrication resolution" needs an installed source; it is done while the current fab result is shown
+    const fp = $("btn-fabpreview"), fabShown = run.shown === run.fab && fabCurrent();
+    if (fp && fp.dataset.busy !== "1") {
+      fp.disabled = !gate.ok || !run.src || fabShown;
+      fp.textContent = fabShown ? "Showing the fabrication result" : "Preview at fabrication resolution";
+    }
     const btn = $("btn-export"), why = $("why-export");
     if (!btn || btn.dataset.busy === "1") return;
     const shown = run.shown && run.shown.snapshot;
     const blocked = !gate.ok || !shown;
+    const failedNoun = run.shown === run.fab ? "The fabrication run" : "The draft";
     let disabled = blocked, text = blocked ? (gate.reason || (run.shown && run.shown.status === "error"
-      ? "The draft failed (" + (run.shown.error ? run.shown.error.code : run.shown.status) + "); change the settings" : "Generating…")) : "";
+      ? failedNoun + " failed (" + (run.shown.error ? run.shown.error.code : run.shown.status) + "); change the settings" : "Generating…")) : "";
+    if (!blocked && !fabShown) text = "Download first shows the fabrication result for review; the next click saves exactly what is on screen";
     if (!blocked && fabCurrent()) {
       // alpha.2 (EXP-07): the fabrication review of this revision decides; a blocking item disables Export.
       const g = fabGate(), f = run.fab;
@@ -177,12 +217,16 @@
       setVeil(false);
       // a canceled run keeps the previous result and the state it started from (it did not fail)
       if (res.status === "canceled") { showRunState(stateBefore); showResult(run.shown); return; }
+      // alpha.3 E6 (UI-06): the current fabrication result of this revision stays on screen when a draft of the same
+      // revision finishes after it (an edit's debounced draft overtaken by a "Preview at fabrication resolution" click)
+      const keepFab = run.shown === run.fab && fabCurrent();
       // acks carry over from the last draft that had a snapshot (a failed draft in between keeps them, lastGood)
       const prev = run.draft, snap = res.snapshot || null, base = prev && prev.snapshot ? prev : (prev && prev.lastGood) || null;
       const acks = base && snap && base.snapshot.geometryHash === snap.geometryHash ? base.acks : new Set();
-      if (!snap || !prev || !prev.snapshot || prev.snapshot.geometryHash !== snap.geometryHash) run.focus = null;
+      if (!keepFab && (!snap || !prev || !prev.snapshot || prev.snapshot.geometryHash !== snap.geometryHash)) run.focus = null;
       run.draft = { status: res.status, snapshot: snap, diagnostics: (snap ? snap.diagnostics : res.diagnostics) || [], error: res.error || null,
         revision: rev, gen, ms: performance.now() - t0, acks, overlays: withOverlays, lastGood: snap ? null : base };
+      if (keepFab) { showRunState(stateBefore); setStatus(run.report); updateGate(gate); return; }
       if (res.status === "done") setRunState({ type: "done", quality: "draft", diagnostics: snap.diagnostics });
       else setRunState({ type: "fail" });
       run.shown = run.draft;
@@ -293,49 +337,61 @@
    * measured value against the limit and the fix. An item with a layer is a <button> (click, Enter or Space) that
    * switches to the Proof and focuses that layer, its parts and region (preview.setFocus). Warnings carry an
    * "Acknowledge" checkbox keyed by SBDiag.ackKey on the shown result's snapshot.geometryHash (r.acks), so an ack never
-   * outlives the snapshot; blocking items have none (§9.5). These are draft acks: the export regenerates at fabrication
-   * and is gated by its own fabrication review (renderFabReview), where these never apply.
+   * outlives the snapshot; blocking items have none (§9.5). Draft acks never gate the export: it is gated by the
+   * fabrication result's own acks (run.fab.acks), listed here when run.fab is shown and in the fabrication review
+   * (renderFabReview, scope "fabrication") through this same renderer (alpha.3 E6).
    * alpha.3 E5 (UI-04): r is the shown result (default run.shown). A failed run (status "error", e.g. COMPLEXITY_LIMIT
    * with no layers) lists r.diagnostics under "No layers: …"; its items are not navigable (the Proof still shows the
    * previous result) and carry no acknowledgement.
    */
-  function renderDiagnostics(r) {
-    r = r || run.shown;
-    renderRepairs();
-    const list = $("diag-list"), sum = $("diag-summary");
+  function renderDiagnostics(r, opts) {
+    const fabScope = !!(opts && opts.scope === "fabrication");   // alpha.3 E6: the fabrication review (#fab-review)
+    r = r || (fabScope ? null : run.shown);
+    if (!fabScope) renderRepairs();
+    const list = $(fabScope ? "fab-list" : "diag-list"), sum = $(fabScope ? "fab-summary" : "diag-summary");
     if (!list || !sum) return;
     list.textContent = "";
-    $("diag-clear").hidden = !run.focus;
+    if (!fabScope) $("diag-clear").hidden = !run.focus;
     if (!r) { sum.textContent = "Generate to check the layers"; return; }
     const failed = r.status === "error" || !r.snapshot;
+    // alpha.3 E6: items navigate (switch to the Proof and focus) only on the result the views show
+    const onScreen = !failed && r === run.shown;
     const diags = (failed ? r.diagnostics : r.snapshot.diagnostics) || [], groups = SBDiag.summarize(diags);
     const hash = failed ? null : r.snapshot.geometryHash, what = failed ? "" : " in this " + r.snapshot.quality + " result.";
     const noun = (g) => (g.severity === "warning" ? (g.count === 1 ? "warning" : "warnings") : g.label.toLowerCase());
+    const head = fabScope && !failed ? `Fabrication result ${r.snapshot.geometryHash.slice(0, 12)} at ${r.snapshot.geometry.rasterW} × ${r.snapshot.geometry.rasterH} px` +
+      ` (${(r.ms / 1000).toFixed(1)} s)` + (onScreen ? "" : ", not on screen: Download shows it first") + ": " : "";
     if (failed) {
-      sum.textContent = "No layers: " + (r.error ? r.error.code + ", " + r.error.message : "the run did not finish") +
+      sum.textContent = (fabScope ? "The fabrication run failed: " : "No layers: ") + (r.error ? r.error.code + ", " + r.error.message : "the run did not finish") +
         (groups.length ? " (" + groups.map((g) => g.count + " " + noun(g)).join(", ") + ")." : ".");
-    } else if (!groups.length) { sum.textContent = "No issues found" + what; return; }
+    } else if (!groups.length) { sum.textContent = head + "No issues found" + what; return; }
     else {
       const acked = diags.filter((d) => SBDiag.describe(d).severity === "warning" && r.acks.has(SBDiag.ackKey(d, hash))).length;
-      sum.textContent = groups.map((g) => g.count + " " + noun(g) + (g.severity === "warning" && acked ? " (" + acked + " acknowledged)" : "")).join(", ") + what;
+      sum.textContent = head + groups.map((g) => g.count + " " + noun(g) + (g.severity === "warning" && acked ? " (" + acked + " acknowledged)" : "")).join(", ") + what;
     }
     for (const g of groups) {
       const li = document.createElement("li");
       li.className = "diag-group";
-      const head = document.createElement("div");
-      head.className = "diag-head";
-      head.appendChild(badge(g.severity, g.icon, g.label));
-      head.appendChild(document.createTextNode(String(g.count)));
-      li.appendChild(head);
+      const gh = document.createElement("div");
+      gh.className = "diag-head";
+      gh.appendChild(badge(g.severity, g.icon, g.label));
+      gh.appendChild(document.createTextNode(String(g.count)));
+      li.appendChild(gh);
       const ul = document.createElement("ul");
       li.appendChild(ul);
       diags.forEach((d) => {
         const it = SBDiag.describe(d);
         if (it.severity !== g.severity) return;
-        ul.appendChild(diagItem(d, failed ? Object.assign({}, it, { navigable: false }) : it, failed ? null : r));
+        ul.appendChild(diagItem(d, onScreen ? it : Object.assign({}, it, { navigable: false }), failed ? null : r, onScreen));
       });
       list.appendChild(li);
     }
+  }
+
+  /** alpha.3 E6: after an acknowledgement on r, re-render every panel that lists r (the panel and, for run.fab, the review). */
+  function refreshDiagnostics(r) {
+    if (r === run.shown) renderDiagnostics(r);
+    if (r === run.fab) renderFabReview();
   }
 
   /** A severity badge: glyph icon (aria-hidden) plus the severity label in text. */
@@ -351,8 +407,11 @@
     return b;
   }
 
-  /** One diagnostics item; r is the result whose snapshot it belongs to (null: no acknowledgement, failed run). */
-  function diagItem(d, it, r) {
+  /**
+   * One diagnostics item; r is the result whose snapshot it belongs to (null: no acknowledgement, failed run); onScreen:
+   * r is the shown result (repair actions are offered only there).
+   */
+  function diagItem(d, it, r, onScreen) {
     const li = document.createElement("li");
     li.className = "diag-item";
     const go = it.navigable ? document.createElement("button") : document.createElement("div");
@@ -372,7 +431,7 @@
     fix.className = "diag-fix";
     fix.textContent = "Fix: " + it.fix;
     li.appendChild(fix);
-    const act = clipAction(d);
+    const act = onScreen ? clipAction(d) : null;
     if (act) li.appendChild(act);
     if (it.severity === "warning" && r && r.snapshot) {
       const key = SBDiag.ackKey(d, r.snapshot.geometryHash);
@@ -382,14 +441,15 @@
       cb.type = "checkbox";
       cb.checked = r.acks.has(key);
       cb.addEventListener("change", () => {
+        const home = li.closest(".diag-list");   // the panel the user is working in (#diag-list or #fab-list)
         if (cb.checked) r.acks.add(key); else r.acks.delete(key);
-        renderDiagnostics(r);
-        const again = Array.from($("diag-list").querySelectorAll(".diag-ack input")).find((x) => x.dataset.key === key);
+        refreshDiagnostics(r);
+        const again = home && home.isConnected ? Array.from(home.querySelectorAll(".diag-ack input")).find((x) => x.dataset.key === key) : null;
         if (again) again.focus();   // keep the keyboard position across the re-render
       });
       cb.dataset.key = key;
       lab.appendChild(cb);
-      lab.appendChild(document.createTextNode("Acknowledge for this result"));
+      lab.appendChild(document.createTextNode(r === run.fab ? "Acknowledge for this fabrication result" : "Acknowledge for this result"));
       li.appendChild(lab);
     }
     if (run.focus && it.focus && run.focus.key === d.id) li.setAttribute("aria-current", "true");
@@ -403,7 +463,7 @@
     try { preview.setFocus(f); }
     catch (err) { setStatus(`${run.report} · cannot show ${it.where}: ${err.message || err}`, true); return; }
     switchTab("proof");
-    document.querySelectorAll("#diag-list .diag-item[aria-current]").forEach((x) => x.removeAttribute("aria-current"));
+    document.querySelectorAll(".diag-list .diag-item[aria-current]").forEach((x) => x.removeAttribute("aria-current"));
     li.setAttribute("aria-current", "true");
     run.focus = f;
     $("diag-clear").hidden = false;
@@ -413,7 +473,7 @@
   function clearDiagnosticFocus() {
     run.focus = null;
     try { preview.setFocus(null); } catch (_) { /* nothing shown */ }
-    document.querySelectorAll("#diag-list .diag-item[aria-current]").forEach((x) => x.removeAttribute("aria-current"));
+    document.querySelectorAll(".diag-list .diag-item[aria-current]").forEach((x) => x.removeAttribute("aria-current"));
     $("diag-clear").hidden = true;
   }
 
@@ -744,6 +804,9 @@
     ];
     const state = cfg(), o = {};
     keep.forEach((k) => (o[k] = state[k]));
+    // alpha.3 E6 (PO-PREVIEW-2): the short geometryHash of the delivered fabrication result, as in the review header,
+    // so the files can be matched to the screen (E13 adds the full project block)
+    o.geometryHash = run.fab.snapshot.geometryHash.slice(0, 12);
     return JSON.stringify(o, null, 2);
   }
 
@@ -759,10 +822,19 @@
     const label = btn.textContent;
     btn.textContent = "Preparing…";
     try {
-      // alpha.2 (G2.10b rule, LYR-06, EXP-07): every export regenerates at fabrication quality, reviews that snapshot's
-      // diagnostics and is gated by SBDiag.exportGate on it. Draft diagnostics and acks are never reused.
+      // alpha.2 (G2.10b rule, LYR-06, EXP-07): every export is the fabrication run of the current revision, reviewed on
+      // that snapshot's diagnostics and gated by SBDiag.exportGate on it. Draft diagnostics and acks are never reused.
+      // alpha.3 E6 (PO-PREVIEW-2): files are built only from the fabrication result that is on screen at the click.
+      // Otherwise the click generates it if needed (fabReview), shows it in every view and stops; the next click
+      // delivers what the user saw. After delivery the fabrication result stays shown.
+      const ready = run.shown === run.fab && fabCurrent();
       const ok = await fabReview();
       if (!ok) { setStatus("the project changed during the fabrication run; export again", true); return; }
+      if (!ready) {
+        showFab();
+        openFabReview("Review the fabrication result, then Download");
+        return;
+      }
       const gate = SBDiag.exportGate(run.fab.diagnostics, run.fab.acks, run.fab.snapshot, "fabrication");
       if (!gate.allowed) {
         const fr = $("fab-review");
@@ -794,83 +866,106 @@
   }
 
   /**
-   * alpha.2 (LYR-06): make run.fab the fabrication run of the current revision. Reused while current (so the user can
-   * acknowledge warnings and download again); otherwise the source is read at its own size and SBEngine.generate runs at
-   * quality "fabrication" on the main thread (the G4.1 worker moves it off). Acks carry over only to the same
-   * geometryHash. Resolves true when run.fab is current, false when the project or source changed meanwhile.
+   * alpha.3 E6 (NFR-02 deviation until G4.1): the busy text shown before the blocking fabrication run, from the
+   * fabrication raster plan of the current revision and the measured SBSchema.limits(dc).fabMsPerMpx (E4; the offline
+   * app cannot read docs/ at runtime).
    */
-  async function fabReview() {
-    if (fabCurrent()) { renderFabReview(); return true; }
-    const gen = sourceGen, rev = project.revision, dc = deviceClass();
-    setStatus("generating the fabrication geometry (the page is busy until it finishes)…");
-    await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));   // paint the status first
-    if (gen !== sourceGen || rev !== project.revision || !run.sourceImage) return false;
-    // alpha.3 E1 (LYR-06): the same request builder as the draft, on the installed source record and its own pixels
-    if (!run.src || !project.source || run.src.sampleHash !== project.source.sampleHash) return false;
-    const t0 = performance.now();
-    const res = SBEngine.generate(SBEngine.request(project, run.src, { quality: "fabrication", requestId: "export-" + rev, deviceClass: dc }));
-    const snap = res.snapshot || null;
-    const acks = run.fab && run.fab.snapshot && snap && run.fab.snapshot.geometryHash === snap.geometryHash ? run.fab.acks : new Set();
-    run.fab = { status: res.status, snapshot: snap, diagnostics: (snap ? snap.diagnostics : res.diagnostics) || [], error: res.error || null,
-      revision: rev, gen, deviceClass: dc, acks, ms: performance.now() - t0 };
-    renderFabReview();
-    return true;
+  const FABPREVIEW_NOTE = "Shows the exact cut geometry and its fabrication review. The page does not respond while it is generated.";
+  function fabBusyText(dc) {
+    try {
+      const g = SBEngine.rasterPlan(project, { w: run.src.w, h: run.src.h }, "fabrication", dc).geometry;
+      const est = Math.max(1, Math.round((g.rasterW * g.rasterH / 1e6) * SBSchema.limits(dc).fabMsPerMpx / 1000));
+      return `Generating ${g.rasterW} × ${g.rasterH} px at ${g.mmPerPxMax.toFixed(3)} mm/px (about ${est} s; the page will not respond until it finishes)…`;
+    } catch (_) {
+      return "Generating the fabrication result (the page will not respond until it finishes)…";
+    }
   }
 
   /**
-   * The fabrication review (#fab-review): the current fabrication run's diagnostics grouped by severity (SBDiag.summarize
-   * and describe), each warning with an "Acknowledge" checkbox keyed by SBDiag.ackKey on the fab snapshot's geometryHash.
-   * Hidden while there is no current fabrication run. Items are not navigable: the Proof shows the draft geometry.
+   * alpha.2 (LYR-06): make run.fab the fabrication run of the current revision. Reused while current (fabCurrent(): so
+   * the user can acknowledge warnings and download what is on screen); otherwise SBEngine.generate runs at quality
+   * "fabrication" on the installed source record and its own full-size pixels, on the main thread (the G4.1 worker moves
+   * it off), with no stage cache (E-R7). alpha.3 E6: the busy text (raster, pitch, estimate), the Processing badge and the
+   * veil are painted first (a frame, then a task). Acks carry over only to the same geometryHash. Resolves true when
+   * run.fab is current, false when the project or source changed meanwhile. The caller shows it (showFab).
+   */
+  let fabInFlight = null;   // one fabrication run at a time (a second click during the paint wait joins it)
+  async function fabReview() {
+    if (fabCurrent()) { renderFabReview(); return true; }
+    if (fabInFlight) return fabInFlight;
+    fabInFlight = (async () => {
+      if (!run.src || !project.source) return false;
+      const gen = sourceGen, rev = project.revision, dc = deviceClass();
+      const busy = fabBusyText(dc), fb = $("btn-fabpreview"), note = $("fabpreview-note");
+      if (fb) { fb.dataset.busy = "1"; fb.disabled = true; fb.textContent = busy; }
+      if (note) note.textContent = busy;
+      setRunState({ type: "start" });
+      setVeil(true);
+      setStatus(busy);
+      await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));   // paint the busy state first
+      let res = null, t0 = 0;
+      try {
+        // alpha.3 E1 (LYR-06): the same request builder as the draft, on the installed source record and its own pixels
+        if (gen === sourceGen && rev === project.revision && run.sourceImage && run.src && project.source && run.src.sampleHash === project.source.sampleHash) {
+          t0 = performance.now();
+          try {
+            res = SBEngine.generate(SBEngine.request(project, run.src, { quality: "fabrication", requestId: "fab-" + rev, deviceClass: dc }));
+          } catch (err) {   // a caller error (SOURCE_MISMATCH); generate itself never throws
+            res = { status: "error", error: { code: (err && err.code) || "ENGINE_ARG", message: (err && err.message) || String(err) }, diagnostics: [] };
+          }
+        }
+      } finally {
+        setVeil(false);
+        if (fb) { fb.dataset.busy = "0"; fb.textContent = "Preview at fabrication resolution"; }
+        if (note) note.textContent = FABPREVIEW_NOTE;
+      }
+      if (!res) { setStatus(run.report); return false; }   // superseded: the edit or new source set the state and reruns the draft
+      const snap = res.snapshot || null;
+      const acks = run.fab && run.fab.snapshot && snap && run.fab.snapshot.geometryHash === snap.geometryHash ? run.fab.acks : new Set();
+      run.fab = { kind: "fabrication", status: res.status, snapshot: snap, diagnostics: (snap ? snap.diagnostics : res.diagnostics) || [], error: res.error || null,
+        revision: rev, gen, deviceClass: dc, acks, ms: performance.now() - t0 };
+      renderFabReview();
+      return true;
+    })();
+    try { return await fabInFlight; } finally { fabInFlight = null; }
+  }
+
+  /** alpha.3 E6 (PO-PREVIEW-2): "Preview at fabrication resolution": run (or reuse) the fabrication result and show it. */
+  async function previewFabrication() {
+    const fp = $("btn-fabpreview");
+    if (fp && fp.dataset.busy === "1") return;
+    try {
+      if (!(await fabReview())) { setStatus("the project changed during the fabrication run; preview again", true); return; }
+      showFab();
+    } catch (err) {
+      setStatus(`fabrication preview failed: ${err.message || err}`, true);
+    } finally {
+      updateGate(SBSchema.canGenerate(project, run.sourceImage));
+    }
+  }
+
+  /** alpha.3 E6: open the fabrication review next to Download with a leading instruction (export shows it and stops). */
+  function openFabReview(lead) {
+    renderFabReview();
+    const fr = $("fab-review"), sum = $("fab-summary");
+    if (sum && lead) sum.textContent = lead + ". " + sum.textContent;
+    if (fr && !fr.hidden && fr.scrollIntoView) fr.scrollIntoView({ block: "nearest" });
+    setStatus(lead, true);
+  }
+
+  /**
+   * The fabrication review (#fab-review) next to Download: the current fabrication run through the one diagnostics
+   * renderer (renderDiagnostics at scope "fabrication": header with the raster, time and short geometryHash, the items
+   * grouped by severity, each warning with "Acknowledge for this fabrication result" keyed by SBDiag.ackKey on the fab
+   * snapshot's geometryHash). alpha.3 E6: its items are navigable while run.shown === run.fab (the Proof then shows the
+   * fabrication geometry). Hidden while there is no current fabrication run.
    */
   function renderFabReview() {
-    const box = $("fab-review"), list = $("fab-list"), sum = $("fab-summary");
-    if (!box || !list || !sum) return;
-    list.textContent = "";
-    if (!fabCurrent()) { box.hidden = true; updateGate(SBSchema.canGenerate(project, run.sourceImage)); return; }
+    const box = $("fab-review"), list = $("fab-list");
+    if (!box || !list) return;
+    if (!fabCurrent()) { list.textContent = ""; box.hidden = true; updateGate(SBSchema.canGenerate(project, run.sourceImage)); return; }
     box.hidden = false;
-    const f = run.fab, diags = f.diagnostics, hash = f.snapshot ? f.snapshot.geometryHash : null;
-    const head = f.snapshot ? `Fabrication result at ${f.snapshot.geometry.rasterW} × ${f.snapshot.geometry.rasterH} px (${(f.ms / 1000).toFixed(1)} s): ` : "";
-    if (f.status !== "done") sum.textContent = `The fabrication run failed: ${f.error ? f.error.code + ", " + f.error.message : f.status}.`;
-    else {
-      const groups = SBDiag.summarize(diags);
-      const acked = diags.filter((d) => SBDiag.describe(d).severity === "warning" && f.acks.has(SBDiag.ackKey(d, run.fab.snapshot.geometryHash))).length;
-      sum.textContent = head + (groups.length ? groups.map((g) => g.count + " " + (g.severity === "warning" ? (g.count === 1 ? "warning" : "warnings") : g.label.toLowerCase())).join(", ") +
-        (acked ? ` (${acked} acknowledged)` : "") + "." : "no issues.");
-    }
-    for (const d of diags) {
-      const it = SBDiag.describe(d), li = document.createElement("li");
-      li.className = "diag-item";
-      const go = document.createElement("div");
-      go.className = "diag-go";
-      go.appendChild(badge(it.severity, it.icon, it.severityLabel));
-      for (const [cls, text] of [["diag-where", it.where], ["diag-msg", it.message], ["diag-measure", it.measure]]) {
-        if (!text) continue;
-        const s2 = document.createElement("span"); s2.className = cls; s2.textContent = text; go.appendChild(s2);
-      }
-      li.appendChild(go);
-      const fix = document.createElement("p");
-      fix.className = "diag-fix";
-      fix.textContent = "Fix: " + it.fix;
-      li.appendChild(fix);
-      if (it.severity === "warning" && hash) {
-        const key = SBDiag.ackKey(d, run.fab.snapshot.geometryHash);
-        const lab = document.createElement("label"), cb = document.createElement("input");
-        lab.className = "diag-ack";
-        cb.type = "checkbox";
-        cb.checked = run.fab.acks.has(key);
-        cb.dataset.key = key;
-        cb.addEventListener("change", () => {
-          if (cb.checked) run.fab.acks.add(key); else run.fab.acks.delete(key);
-          renderFabReview();
-          const again = Array.from($("fab-list").querySelectorAll(".diag-ack input")).find((x) => x.dataset.key === key);
-          if (again) again.focus();
-        });
-        lab.appendChild(cb);
-        lab.appendChild(document.createTextNode("Acknowledge for this fabrication result"));
-        li.appendChild(lab);
-      }
-      list.appendChild(li);
-    }
+    renderDiagnostics(run.fab, { scope: "fabrication" });
     updateGate(SBSchema.canGenerate(project, run.sourceImage));
   }
 
@@ -879,12 +974,24 @@
     const colors = sheetColors(run.fab.snapshot.layers.length);
     // alpha.2: cut files and proof come from the reviewed fabrication snapshot (SBEngine.generate at fabrication
     // quality, gated by exportGate in exportBundle), in the legacy flat layout (sheet_NN.svg, proof.svg) until G3.9.
+    // alpha.3 E6 (PO-PREVIEW-2/7): exportBundle calls this only while run.fab is the shown, current result, so the
+    // files, settings.json and preview.png are the geometry on screen; the fabrication result stays shown afterwards.
     const state = cfg();
     const files = SBEngine.fabricationFiles(run.fab.snapshot, project, colors);
     files.push({ name: "ASSEMBLY.md", data: buildAssemblyMD(colors) });
     files.push({ name: "settings.json", data: settingsJSON() });
 
-    const snap = await preview.snapshot("proof");   // the bundle image is always the opaque proof, whatever tab is open
+    // preview.png: the opaque proof of run.fab (whatever tab is open) without UI state: the Changes overlay (amber
+    // bridges, BOND_UNSUPPORTED regions) and the diagnostics focus are cleared for the capture, then restored.
+    const fsnap = run.fab.snapshot, fo = run.focus;
+    preview.setOverlays(null);
+    preview.setFocus(null);
+    let snap = null;
+    try { snap = await preview.snapshot("proof"); }
+    finally {
+      preview.setOverlays(SBProof.overlays({ cleanupReport: fsnap.cleanupReport, diagnostics: fsnap.diagnostics, mode: fsnap.construction.mode }));
+      if (fo) { try { preview.setFocus(fo); } catch (_) { run.focus = null; } }
+    }
     if (snap) files.push({ name: "preview.png", data: new Uint8Array(await snap.arrayBuffer()) });
 
     const zipName = `${safeName(state.projectName)}_shadowbox.zip`;
@@ -1367,6 +1474,7 @@
     project = SBSchema.withSource(project, SBEngine.sourceRecord(px, route, Object.assign({}, project.source, { byteHash, sampleHash })));
     if (old && old !== src && typeof old.close === "function") old.close();   // release a replaced ImageBitmap
     if (project.title === "untitled") setProjectName(name.replace(/\.[^.]+$/, ""));
+    if (run.shown === run.fab) showDraft();   // alpha.3 E6: a fabrication result belongs to the previous source
     regenerate();   // syncs the controls and the dimbar to the installed project first
   }
 
@@ -1537,6 +1645,10 @@
 
     // export
     $("btn-export").addEventListener("click", exportBundle);
+    // alpha.3 E6 (PO-PREVIEW-2): the exact fabrication run, shown in every view (reused while current)
+    $("btn-fabpreview").addEventListener("click", previewFabrication);
+    // an explicit Generate returns the views to the draft (UI-06)
+    $("btn-generate").addEventListener("click", showDraft);
 
     // mobile rail toggle
     $("railtoggle").addEventListener("click", () =>
