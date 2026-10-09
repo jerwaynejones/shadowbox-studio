@@ -1,0 +1,1752 @@
+{
+ "task": "speed round end-to-end browser verification (S2, S3)",
+ "at": "2026-10-09T21:19:54.574Z",
+ "machine": {
+  "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+  "threads": 16,
+  "memGiB": 62.5,
+  "loadavgStart": [
+   5.56,
+   6.29,
+   6.32
+  ],
+  "uptimeH": 101.3,
+  "loadavgEnd": [
+   9.75,
+   7.77,
+   6.87
+  ]
+ },
+ "fixture": {
+  "generator": "tools/alpha3_scene.js",
+  "w": 4096,
+  "h": 3084,
+  "bytes": 318060,
+  "sha256": "34a03ba01c08c83403a8c2c05a73d086db4119fda22127ec2cf215086180131a"
+ },
+ "settings": {
+  "machine": "xtool-s1-feeder",
+  "preset": "plywood",
+  "construction": "bonded-relief",
+  "sizeBy": "height",
+  "heightsMM": [
+   300
+  ],
+  "pitchMM": 0.1,
+  "sheets": 8
+ },
+ "method": {
+  "warmEdits": 5,
+  "warmup": 2,
+  "edit": "sheets 8 ↔ 7; dispatch → painted draft (includes the app's 300 ms edit debounce); runMs = pool submit → done (or sync generate)",
+  "cold": "file input set → first painted draft (decode, source install, draft)",
+  "fab": "Preview at fabrication resolution click → painted Fabrication status",
+  "export": "Download click → Browser.downloadProgress completed",
+  "longTask": "PerformanceObserver longtask (buffered) max per phase window"
+ },
+ "runs": [
+  {
+   "label": "shipped@300",
+   "page": "shipped",
+   "heightMM": 300,
+   "serial": false,
+   "browser": "Chrome/152.0.7977.82",
+   "version": "v2.0.0-alpha.4",
+   "controls": {
+    "preset": "plywood",
+    "construction": "bonded-relief",
+    "machine": "xtool-s1-feeder",
+    "pitch": "0.1",
+    "sheets": "8",
+    "sizeby": "height",
+    "target": "300"
+   },
+   "coldDraftMs": 3216,
+   "coldDraftRunMs": 2063,
+   "coldVia": "pool",
+   "longTask": {
+    "coldDraft": {
+     "max": 439,
+     "count": 4,
+     "totalMs": 1048
+    },
+    "warmEdits": {
+     "max": 132,
+     "count": 16,
+     "totalMs": 1494
+    },
+    "fab": {
+     "max": 201,
+     "count": 2,
+     "totalMs": 300
+    },
+    "export": {
+     "max": 52,
+     "count": 1,
+     "totalMs": 52
+    }
+   },
+   "draftStatus": "Draft (approximate; Preview at fabrication resolution for the exact cut) · 720 × 542 px · 0.55 mm/px · 8 sheets · 2.1 s",
+   "pool": {
+    "mode": "pool",
+    "rung": "blob",
+    "hardwareConcurrency": 16,
+    "deviceMemory": 32,
+    "helperCount": 8,
+    "workersSpawned": 11,
+    "workerNames": [
+     "sb-coord",
+     "sb-helper-1",
+     "sb-helper-2",
+     "sb-helper-3",
+     "sb-helper-4",
+     "sb-helper-5",
+     "sb-helper-6",
+     "sb-helper-7",
+     "sb-helper-8",
+     "sb-coord",
+     "sb-helper-spare"
+    ],
+    "workersSpawnedAfterFab": 11
+   },
+   "draftOfferShown": false,
+   "warm": {
+    "n": 5,
+    "p50Ms": 929,
+    "p95Ms": 1093,
+    "maxMs": 1093,
+    "minMs": 850,
+    "runMs": {
+     "n": 5,
+     "p50Ms": 419,
+     "p95Ms": 643,
+     "maxMs": 643,
+     "minMs": 365
+    },
+    "via": [
+     "pool"
+    ],
+    "rows": [
+     {
+      "ms": 1093,
+      "runMs": 643,
+      "status": "done"
+     },
+     {
+      "ms": 1035,
+      "runMs": 560,
+      "status": "done"
+     },
+     {
+      "ms": 861,
+      "runMs": 399,
+      "status": "done"
+     },
+     {
+      "ms": 929,
+      "runMs": 419,
+      "status": "done"
+     },
+     {
+      "ms": 850,
+      "runMs": 365,
+      "status": "done"
+     }
+    ]
+   },
+   "fabMs": 6634,
+   "fabRunMs": 6362,
+   "fabVia": "pool",
+   "fabStatus": "Fabrication · 3985 × 3000 px · 0.10 mm/px · 8 sheets · 6.4 s · 0cb9e9fdeb0b",
+   "acked": 30,
+   "exportDisabled": false,
+   "whyExport": "",
+   "exportMs": 581,
+   "exportZip": {
+    "name": "scene_4096x3084_shadowbox.zip",
+    "bytes": 3193137
+   },
+   "generateCallsDuringExport": 0,
+   "exportStatus": "saved scene_4096x3084_shadowbox.zip to your downloads",
+   "runs": [
+    {
+     "quality": "draft",
+     "via": "pool",
+     "rev": 2,
+     "status": "done",
+     "ms": 2063,
+     "geometryHash": "f4390b428d4c71c17381afe42280b3c0a53a39b8d54d9a60456f1a347d769d79",
+     "raster": [
+      720,
+      542
+     ],
+     "mmPerPx": 0.5535055350553506,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 8,
+     "layerHashes": [
+      "fe1dd4a397cb2943b0171cf4237862bb14b56f80c638aa29ad7902a08d97e582",
+      "fce4672297a143044e09fc6241bf892a718eb1951fb868368e0e28d671fe1f9f",
+      "d1f6c9555aefbfc5e316c3c556ea43bbf0d45d0e5e3387af605344216cb6f7ec",
+      "6b6a6c6b6e830f49bb41f093df8d0b3025afa0f72175c2dd08bba8aa345fe2ab",
+      "200e7ae645bd6d956b84ef3025747e1f86705e84e2c4b3fd7f673889f15de61e",
+      "be8cb6cf0fe91543a7c4021a54c5eb73dee3bf67576f3b62be8fd201c0cd9eb6",
+      "2d486922495b188221b4f1e4db428a1ff894975b5e734485e3172b7aaca1d213",
+      "ffd95ce11a7ede3465a728bcc554a8cc6c3cea009bc671be2f4753e43f276ef1"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "EMPTY_BAND/info": 1,
+      "SUPPORT_NARROW/warning": 23,
+      "FEATURE_MARGINAL/warning": 15,
+      "IDENTICAL_LAYERS/info": 1,
+      "MAT_UNCALIBRATED/warning": 1,
+      "DRAFT_COARSER/info": 1,
+      "NECK_NARROW/warning": 7,
+      "PART_SMALL/warning": 7,
+      "PART_THIN/warning": 7,
+      "GUIDE_OMITTED/warning": 53
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "pool",
+     "rev": 3,
+     "status": "done",
+     "ms": 964,
+     "geometryHash": "8b30e9751eb07a69c16d631f003338b4299c61248682509288f183076a49fe1b",
+     "raster": [
+      720,
+      542
+     ],
+     "mmPerPx": 0.5535055350553506,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 7,
+     "layerHashes": [
+      "e4deb1f2a36e1394a07154b4e893c263886af2f897620f7726e7621b7baf608a",
+      "08a92c30c240a07ebda68cb48eaad074b6db08119c36405d1aa0a3944b05930d",
+      "2177fa0996c82f71ad1136b068eb3e81371ca2522edfdebf2f4a0d8910c0fc8c",
+      "d78f35c196697434c86a33bf370c9d67161f244ec296be95bd280d0c61138f08",
+      "50678ddf05be03c5f73653f4eb53dab6ba4fd92ff7145ce3d16f1a5e5a63fb8a",
+      "e74de853ff1b5b985d01d809e0406b74e07660d662419cb85bd902dc315930ae",
+      "f9ca301aa06ab68e7d01ec2cf0f5ff58b73e8bb1013944e4e5115cd283f63c79"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "SUPPORT_NARROW/warning": 16,
+      "FEATURE_MARGINAL/warning": 14,
+      "MAT_UNCALIBRATED/warning": 1,
+      "DRAFT_COARSER/info": 1,
+      "NECK_NARROW/warning": 6,
+      "PART_SMALL/warning": 6,
+      "PART_THIN/warning": 6,
+      "GUIDE_OMITTED/warning": 39
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "pool",
+     "rev": 4,
+     "status": "done",
+     "ms": 799,
+     "geometryHash": "f4390b428d4c71c17381afe42280b3c0a53a39b8d54d9a60456f1a347d769d79",
+     "raster": [
+      720,
+      542
+     ],
+     "mmPerPx": 0.5535055350553506,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 8,
+     "layerHashes": [
+      "fe1dd4a397cb2943b0171cf4237862bb14b56f80c638aa29ad7902a08d97e582",
+      "fce4672297a143044e09fc6241bf892a718eb1951fb868368e0e28d671fe1f9f",
+      "d1f6c9555aefbfc5e316c3c556ea43bbf0d45d0e5e3387af605344216cb6f7ec",
+      "6b6a6c6b6e830f49bb41f093df8d0b3025afa0f72175c2dd08bba8aa345fe2ab",
+      "200e7ae645bd6d956b84ef3025747e1f86705e84e2c4b3fd7f673889f15de61e",
+      "be8cb6cf0fe91543a7c4021a54c5eb73dee3bf67576f3b62be8fd201c0cd9eb6",
+      "2d486922495b188221b4f1e4db428a1ff894975b5e734485e3172b7aaca1d213",
+      "ffd95ce11a7ede3465a728bcc554a8cc6c3cea009bc671be2f4753e43f276ef1"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "EMPTY_BAND/info": 1,
+      "SUPPORT_NARROW/warning": 23,
+      "FEATURE_MARGINAL/warning": 15,
+      "IDENTICAL_LAYERS/info": 1,
+      "MAT_UNCALIBRATED/warning": 1,
+      "DRAFT_COARSER/info": 1,
+      "NECK_NARROW/warning": 7,
+      "PART_SMALL/warning": 7,
+      "PART_THIN/warning": 7,
+      "GUIDE_OMITTED/warning": 53
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "pool",
+     "rev": 5,
+     "status": "done",
+     "ms": 643,
+     "geometryHash": "8b30e9751eb07a69c16d631f003338b4299c61248682509288f183076a49fe1b",
+     "raster": [
+      720,
+      542
+     ],
+     "mmPerPx": 0.5535055350553506,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 7,
+     "layerHashes": [
+      "e4deb1f2a36e1394a07154b4e893c263886af2f897620f7726e7621b7baf608a",
+      "08a92c30c240a07ebda68cb48eaad074b6db08119c36405d1aa0a3944b05930d",
+      "2177fa0996c82f71ad1136b068eb3e81371ca2522edfdebf2f4a0d8910c0fc8c",
+      "d78f35c196697434c86a33bf370c9d67161f244ec296be95bd280d0c61138f08",
+      "50678ddf05be03c5f73653f4eb53dab6ba4fd92ff7145ce3d16f1a5e5a63fb8a",
+      "e74de853ff1b5b985d01d809e0406b74e07660d662419cb85bd902dc315930ae",
+      "f9ca301aa06ab68e7d01ec2cf0f5ff58b73e8bb1013944e4e5115cd283f63c79"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "SUPPORT_NARROW/warning": 16,
+      "FEATURE_MARGINAL/warning": 14,
+      "MAT_UNCALIBRATED/warning": 1,
+      "DRAFT_COARSER/info": 1,
+      "NECK_NARROW/warning": 6,
+      "PART_SMALL/warning": 6,
+      "PART_THIN/warning": 6,
+      "GUIDE_OMITTED/warning": 39
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "pool",
+     "rev": 6,
+     "status": "done",
+     "ms": 560,
+     "geometryHash": "f4390b428d4c71c17381afe42280b3c0a53a39b8d54d9a60456f1a347d769d79",
+     "raster": [
+      720,
+      542
+     ],
+     "mmPerPx": 0.5535055350553506,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 8,
+     "layerHashes": [
+      "fe1dd4a397cb2943b0171cf4237862bb14b56f80c638aa29ad7902a08d97e582",
+      "fce4672297a143044e09fc6241bf892a718eb1951fb868368e0e28d671fe1f9f",
+      "d1f6c9555aefbfc5e316c3c556ea43bbf0d45d0e5e3387af605344216cb6f7ec",
+      "6b6a6c6b6e830f49bb41f093df8d0b3025afa0f72175c2dd08bba8aa345fe2ab",
+      "200e7ae645bd6d956b84ef3025747e1f86705e84e2c4b3fd7f673889f15de61e",
+      "be8cb6cf0fe91543a7c4021a54c5eb73dee3bf67576f3b62be8fd201c0cd9eb6",
+      "2d486922495b188221b4f1e4db428a1ff894975b5e734485e3172b7aaca1d213",
+      "ffd95ce11a7ede3465a728bcc554a8cc6c3cea009bc671be2f4753e43f276ef1"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "EMPTY_BAND/info": 1,
+      "SUPPORT_NARROW/warning": 23,
+      "FEATURE_MARGINAL/warning": 15,
+      "IDENTICAL_LAYERS/info": 1,
+      "MAT_UNCALIBRATED/warning": 1,
+      "DRAFT_COARSER/info": 1,
+      "NECK_NARROW/warning": 7,
+      "PART_SMALL/warning": 7,
+      "PART_THIN/warning": 7,
+      "GUIDE_OMITTED/warning": 53
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "pool",
+     "rev": 7,
+     "status": "done",
+     "ms": 399,
+     "geometryHash": "8b30e9751eb07a69c16d631f003338b4299c61248682509288f183076a49fe1b",
+     "raster": [
+      720,
+      542
+     ],
+     "mmPerPx": 0.5535055350553506,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 7,
+     "layerHashes": [
+      "e4deb1f2a36e1394a07154b4e893c263886af2f897620f7726e7621b7baf608a",
+      "08a92c30c240a07ebda68cb48eaad074b6db08119c36405d1aa0a3944b05930d",
+      "2177fa0996c82f71ad1136b068eb3e81371ca2522edfdebf2f4a0d8910c0fc8c",
+      "d78f35c196697434c86a33bf370c9d67161f244ec296be95bd280d0c61138f08",
+      "50678ddf05be03c5f73653f4eb53dab6ba4fd92ff7145ce3d16f1a5e5a63fb8a",
+      "e74de853ff1b5b985d01d809e0406b74e07660d662419cb85bd902dc315930ae",
+      "f9ca301aa06ab68e7d01ec2cf0f5ff58b73e8bb1013944e4e5115cd283f63c79"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "SUPPORT_NARROW/warning": 16,
+      "FEATURE_MARGINAL/warning": 14,
+      "MAT_UNCALIBRATED/warning": 1,
+      "DRAFT_COARSER/info": 1,
+      "NECK_NARROW/warning": 6,
+      "PART_SMALL/warning": 6,
+      "PART_THIN/warning": 6,
+      "GUIDE_OMITTED/warning": 39
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "pool",
+     "rev": 8,
+     "status": "done",
+     "ms": 419,
+     "geometryHash": "f4390b428d4c71c17381afe42280b3c0a53a39b8d54d9a60456f1a347d769d79",
+     "raster": [
+      720,
+      542
+     ],
+     "mmPerPx": 0.5535055350553506,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 8,
+     "layerHashes": [
+      "fe1dd4a397cb2943b0171cf4237862bb14b56f80c638aa29ad7902a08d97e582",
+      "fce4672297a143044e09fc6241bf892a718eb1951fb868368e0e28d671fe1f9f",
+      "d1f6c9555aefbfc5e316c3c556ea43bbf0d45d0e5e3387af605344216cb6f7ec",
+      "6b6a6c6b6e830f49bb41f093df8d0b3025afa0f72175c2dd08bba8aa345fe2ab",
+      "200e7ae645bd6d956b84ef3025747e1f86705e84e2c4b3fd7f673889f15de61e",
+      "be8cb6cf0fe91543a7c4021a54c5eb73dee3bf67576f3b62be8fd201c0cd9eb6",
+      "2d486922495b188221b4f1e4db428a1ff894975b5e734485e3172b7aaca1d213",
+      "ffd95ce11a7ede3465a728bcc554a8cc6c3cea009bc671be2f4753e43f276ef1"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "EMPTY_BAND/info": 1,
+      "SUPPORT_NARROW/warning": 23,
+      "FEATURE_MARGINAL/warning": 15,
+      "IDENTICAL_LAYERS/info": 1,
+      "MAT_UNCALIBRATED/warning": 1,
+      "DRAFT_COARSER/info": 1,
+      "NECK_NARROW/warning": 7,
+      "PART_SMALL/warning": 7,
+      "PART_THIN/warning": 7,
+      "GUIDE_OMITTED/warning": 53
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "pool",
+     "rev": 9,
+     "status": "done",
+     "ms": 365,
+     "geometryHash": "8b30e9751eb07a69c16d631f003338b4299c61248682509288f183076a49fe1b",
+     "raster": [
+      720,
+      542
+     ],
+     "mmPerPx": 0.5535055350553506,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 7,
+     "layerHashes": [
+      "e4deb1f2a36e1394a07154b4e893c263886af2f897620f7726e7621b7baf608a",
+      "08a92c30c240a07ebda68cb48eaad074b6db08119c36405d1aa0a3944b05930d",
+      "2177fa0996c82f71ad1136b068eb3e81371ca2522edfdebf2f4a0d8910c0fc8c",
+      "d78f35c196697434c86a33bf370c9d67161f244ec296be95bd280d0c61138f08",
+      "50678ddf05be03c5f73653f4eb53dab6ba4fd92ff7145ce3d16f1a5e5a63fb8a",
+      "e74de853ff1b5b985d01d809e0406b74e07660d662419cb85bd902dc315930ae",
+      "f9ca301aa06ab68e7d01ec2cf0f5ff58b73e8bb1013944e4e5115cd283f63c79"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "SUPPORT_NARROW/warning": 16,
+      "FEATURE_MARGINAL/warning": 14,
+      "MAT_UNCALIBRATED/warning": 1,
+      "DRAFT_COARSER/info": 1,
+      "NECK_NARROW/warning": 6,
+      "PART_SMALL/warning": 6,
+      "PART_THIN/warning": 6,
+      "GUIDE_OMITTED/warning": 39
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "pool",
+     "rev": 10,
+     "status": "done",
+     "ms": 372,
+     "geometryHash": "f4390b428d4c71c17381afe42280b3c0a53a39b8d54d9a60456f1a347d769d79",
+     "raster": [
+      720,
+      542
+     ],
+     "mmPerPx": 0.5535055350553506,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 8,
+     "layerHashes": [
+      "fe1dd4a397cb2943b0171cf4237862bb14b56f80c638aa29ad7902a08d97e582",
+      "fce4672297a143044e09fc6241bf892a718eb1951fb868368e0e28d671fe1f9f",
+      "d1f6c9555aefbfc5e316c3c556ea43bbf0d45d0e5e3387af605344216cb6f7ec",
+      "6b6a6c6b6e830f49bb41f093df8d0b3025afa0f72175c2dd08bba8aa345fe2ab",
+      "200e7ae645bd6d956b84ef3025747e1f86705e84e2c4b3fd7f673889f15de61e",
+      "be8cb6cf0fe91543a7c4021a54c5eb73dee3bf67576f3b62be8fd201c0cd9eb6",
+      "2d486922495b188221b4f1e4db428a1ff894975b5e734485e3172b7aaca1d213",
+      "ffd95ce11a7ede3465a728bcc554a8cc6c3cea009bc671be2f4753e43f276ef1"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "EMPTY_BAND/info": 1,
+      "SUPPORT_NARROW/warning": 23,
+      "FEATURE_MARGINAL/warning": 15,
+      "IDENTICAL_LAYERS/info": 1,
+      "MAT_UNCALIBRATED/warning": 1,
+      "DRAFT_COARSER/info": 1,
+      "NECK_NARROW/warning": 7,
+      "PART_SMALL/warning": 7,
+      "PART_THIN/warning": 7,
+      "GUIDE_OMITTED/warning": 53
+     }
+    },
+    {
+     "quality": "fabrication",
+     "via": "pool",
+     "rev": 10,
+     "status": "done",
+     "ms": 6362,
+     "geometryHash": "0cb9e9fdeb0be3beda2e53b7c61352034b666bea2270a40af8d0b1f461bf500a",
+     "raster": [
+      3985,
+      3000
+     ],
+     "mmPerPx": 0.1,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 8,
+     "layerHashes": [
+      "d9a4cbfd1b520f019ad687a01a7f6d61978e4112e6eda031867185736392d330",
+      "4c85ee3064b35b94b74eee80a5cacb72538787cd2575624d5c5bf330490564af",
+      "e71a9249264952d3f13e4bc0acc97a3179c51470fb23595201a9fdeb66f23699",
+      "46ed42b40d85d54ca6af2e602a1488cf2208404970e5c73eea38747940f87736",
+      "967c9f57eb3c27ea15e7126bd0a4cd9394d37c55269336bb51b9ca5c26765bf4",
+      "f912573963895a5f1fd9819506687ad679a0f6521421e292842eb1c42c32d830",
+      "2046c9f68c2857e00d2c48efae575c2c1d99075b957f3e4b28acdd78268bca90",
+      "eb9057f4b20bf7f32b32dd3b0cfe3456a158984d11228073561921fd00f1f929"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "EMPTY_BAND/info": 1,
+      "FEATURE_MARGINAL/warning": 15,
+      "SUPPORT_NARROW/warning": 2,
+      "IDENTICAL_LAYERS/info": 1,
+      "MAT_UNCALIBRATED/warning": 1,
+      "NECK_NARROW/warning": 7,
+      "PART_SMALL/warning": 7,
+      "PART_THIN/warning": 2,
+      "GUIDE_OMITTED/warning": 35
+     }
+    }
+   ],
+   "draft": {
+    "raster": [
+     720,
+     542
+    ],
+    "geometryHash": "f4390b428d4c71c17381afe42280b3c0a53a39b8d54d9a60456f1a347d769d79",
+    "diagnostics": {
+     "RESAMPLED/info": 1,
+     "EMPTY_BAND/info": 1,
+     "SUPPORT_NARROW/warning": 23,
+     "FEATURE_MARGINAL/warning": 15,
+     "IDENTICAL_LAYERS/info": 1,
+     "MAT_UNCALIBRATED/warning": 1,
+     "DRAFT_COARSER/info": 1,
+     "NECK_NARROW/warning": 7,
+     "PART_SMALL/warning": 7,
+     "PART_THIN/warning": 7,
+     "GUIDE_OMITTED/warning": 53
+    },
+    "samplingLow": [],
+    "blocking": []
+   },
+   "fabSnapshot": {
+    "raster": [
+     3985,
+     3000
+    ],
+    "geometryHash": "0cb9e9fdeb0be3beda2e53b7c61352034b666bea2270a40af8d0b1f461bf500a",
+    "layerHashes": [
+     "d9a4cbfd1b520f019ad687a01a7f6d61978e4112e6eda031867185736392d330",
+     "4c85ee3064b35b94b74eee80a5cacb72538787cd2575624d5c5bf330490564af",
+     "e71a9249264952d3f13e4bc0acc97a3179c51470fb23595201a9fdeb66f23699",
+     "46ed42b40d85d54ca6af2e602a1488cf2208404970e5c73eea38747940f87736",
+     "967c9f57eb3c27ea15e7126bd0a4cd9394d37c55269336bb51b9ca5c26765bf4",
+     "f912573963895a5f1fd9819506687ad679a0f6521421e292842eb1c42c32d830",
+     "2046c9f68c2857e00d2c48efae575c2c1d99075b957f3e4b28acdd78268bca90",
+     "eb9057f4b20bf7f32b32dd3b0cfe3456a158984d11228073561921fd00f1f929"
+    ],
+    "page": {
+     "wMM": 398.444,
+     "hMM": 300,
+     "frameMM": 0,
+     "artWMM": 398.444,
+     "artHMM": 300
+    },
+    "blocking": []
+   },
+   "exceptions": []
+  },
+  {
+   "label": "draft1536@300",
+   "page": "draft1536",
+   "heightMM": 300,
+   "serial": false,
+   "browser": "Chrome/152.0.7977.82",
+   "version": "v2.0.0-alpha.4",
+   "controls": {
+    "preset": "plywood",
+    "construction": "bonded-relief",
+    "machine": "xtool-s1-feeder",
+    "pitch": "0.1",
+    "sheets": "8",
+    "sizeby": "height",
+    "target": "300"
+   },
+   "coldDraftMs": 3996,
+   "coldDraftRunMs": 3037,
+   "coldVia": "pool",
+   "longTask": {
+    "coldDraft": {
+     "max": 380,
+     "count": 4,
+     "totalMs": 861
+    },
+    "warmEdits": {
+     "max": 126,
+     "count": 16,
+     "totalMs": 1404
+    }
+   },
+   "draftStatus": "Draft (approximate; Preview at fabrication resolution for the exact cut) · 1536 × 1157 px · 0.26 mm/px · 8 sheets · 3.1 s",
+   "pool": {
+    "mode": "pool",
+    "rung": "blob",
+    "hardwareConcurrency": 16,
+    "deviceMemory": 32,
+    "helperCount": 8,
+    "workersSpawned": 11,
+    "workerNames": [
+     "sb-coord",
+     "sb-helper-1",
+     "sb-helper-2",
+     "sb-helper-3",
+     "sb-helper-4",
+     "sb-helper-5",
+     "sb-helper-6",
+     "sb-helper-7",
+     "sb-helper-8",
+     "sb-coord",
+     "sb-helper-spare"
+    ]
+   },
+   "draftOfferShown": false,
+   "warm": {
+    "n": 5,
+    "p50Ms": 1402,
+    "p95Ms": 1864,
+    "maxMs": 1864,
+    "minMs": 1280,
+    "runMs": {
+     "n": 5,
+     "p50Ms": 897,
+     "p95Ms": 1375,
+     "maxMs": 1375,
+     "minMs": 802
+    },
+    "via": [
+     "pool"
+    ],
+    "rows": [
+     {
+      "ms": 1548,
+      "runMs": 1105,
+      "status": "done"
+     },
+     {
+      "ms": 1864,
+      "runMs": 1375,
+      "status": "done"
+     },
+     {
+      "ms": 1402,
+      "runMs": 897,
+      "status": "done"
+     },
+     {
+      "ms": 1394,
+      "runMs": 894,
+      "status": "done"
+     },
+     {
+      "ms": 1280,
+      "runMs": 802,
+      "status": "done"
+     }
+    ]
+   },
+   "runs": [
+    {
+     "quality": "draft",
+     "via": "pool",
+     "rev": 2,
+     "status": "done",
+     "ms": 3037,
+     "geometryHash": "e977cff9e434d041734f764b1b967e60338d03f450be9e59623bcce32eaadc32",
+     "raster": [
+      1536,
+      1157
+     ],
+     "mmPerPx": 0.2594036458333333,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 8,
+     "layerHashes": [
+      "e391ceb5e756056fb2e61d5f9be212dfa8d32b2d5b32f392a9769116ebbdc9e1",
+      "c180f933adff47719fd043badd64f819d5351ea2c656da300b9314dfc874d8f1",
+      "4265825c91b4688a125500268f2ae294900e13fcd3c2a7845bf649f0ee57ed57",
+      "19dc8578c31d106745d36c39ec4a73d0ab93af9b607d23a3e38fbb54c9838211",
+      "6dbed8c2c1693ef25b0dad7140e25d2abbad83ac6a66a3afb28992e0d23dbe3c",
+      "ccf1bcdfc2c44e92fe6c1f01e8a9141941f06ff3f6a7a548bbd71a20f1e51b10",
+      "383023e48cb578819420aa5c9dfb4eb3377f7066c1e10f40e12f8ea72d93b305",
+      "dd97c54d8807f77383cf244b3c42f7a33842e6a0dc88c005787438046cd7476f"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "EMPTY_BAND/info": 1,
+      "FEATURE_MARGINAL/warning": 13,
+      "SUPPORT_NARROW/warning": 6,
+      "IDENTICAL_LAYERS/info": 1,
+      "MAT_UNCALIBRATED/warning": 1,
+      "NECK_NARROW/warning": 5,
+      "PART_SMALL/warning": 7,
+      "PART_THIN/warning": 2,
+      "GUIDE_OMITTED/warning": 49
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "pool",
+     "rev": 3,
+     "status": "done",
+     "ms": 1300,
+     "geometryHash": "ad19f615b90e0c5e980c7bdc3c833613626d87c9588415a4cd2627d2d5e55adb",
+     "raster": [
+      1536,
+      1157
+     ],
+     "mmPerPx": 0.2594036458333333,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 7,
+     "layerHashes": [
+      "0ae9e213ec392dbdf51b218bffb91d9a63b1367e0997fd89d75db9ef0d91ec14",
+      "d18e9bb8f00fc50be4afaecde73beaa4f19f90adbba970ac7bd3eb52d20c422f",
+      "ad875f7153d4c62351e7a42248165e08d9571c2636bed13fb842e60f2fb87dd9",
+      "e83602a2cd6c1b1c0674f3bcade5bb3bfe2d65406c735f365449f339fffe9a1f",
+      "cee7fb149c8841b858bb04ed09e437f334101b4b90b6c95b032a060e4f5aa04f",
+      "6081152326646e24aad939d39ce4faabe43bc31d7d5f5d2a3570f9e7caeae17b",
+      "29cad116b39f40d36b020eedf58b84d122a4ec0b9e60afee7b563f33ff7402ef"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "FEATURE_MARGINAL/warning": 11,
+      "SUPPORT_NARROW/warning": 4,
+      "MAT_UNCALIBRATED/warning": 1,
+      "PART_SMALL/warning": 5,
+      "NECK_NARROW/warning": 5,
+      "PART_THIN/warning": 2,
+      "GUIDE_OMITTED/warning": 46
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "pool",
+     "rev": 4,
+     "status": "done",
+     "ms": 1098,
+     "geometryHash": "e977cff9e434d041734f764b1b967e60338d03f450be9e59623bcce32eaadc32",
+     "raster": [
+      1536,
+      1157
+     ],
+     "mmPerPx": 0.2594036458333333,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 8,
+     "layerHashes": [
+      "e391ceb5e756056fb2e61d5f9be212dfa8d32b2d5b32f392a9769116ebbdc9e1",
+      "c180f933adff47719fd043badd64f819d5351ea2c656da300b9314dfc874d8f1",
+      "4265825c91b4688a125500268f2ae294900e13fcd3c2a7845bf649f0ee57ed57",
+      "19dc8578c31d106745d36c39ec4a73d0ab93af9b607d23a3e38fbb54c9838211",
+      "6dbed8c2c1693ef25b0dad7140e25d2abbad83ac6a66a3afb28992e0d23dbe3c",
+      "ccf1bcdfc2c44e92fe6c1f01e8a9141941f06ff3f6a7a548bbd71a20f1e51b10",
+      "383023e48cb578819420aa5c9dfb4eb3377f7066c1e10f40e12f8ea72d93b305",
+      "dd97c54d8807f77383cf244b3c42f7a33842e6a0dc88c005787438046cd7476f"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "EMPTY_BAND/info": 1,
+      "FEATURE_MARGINAL/warning": 13,
+      "SUPPORT_NARROW/warning": 6,
+      "IDENTICAL_LAYERS/info": 1,
+      "MAT_UNCALIBRATED/warning": 1,
+      "NECK_NARROW/warning": 5,
+      "PART_SMALL/warning": 7,
+      "PART_THIN/warning": 2,
+      "GUIDE_OMITTED/warning": 49
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "pool",
+     "rev": 5,
+     "status": "done",
+     "ms": 1105,
+     "geometryHash": "ad19f615b90e0c5e980c7bdc3c833613626d87c9588415a4cd2627d2d5e55adb",
+     "raster": [
+      1536,
+      1157
+     ],
+     "mmPerPx": 0.2594036458333333,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 7,
+     "layerHashes": [
+      "0ae9e213ec392dbdf51b218bffb91d9a63b1367e0997fd89d75db9ef0d91ec14",
+      "d18e9bb8f00fc50be4afaecde73beaa4f19f90adbba970ac7bd3eb52d20c422f",
+      "ad875f7153d4c62351e7a42248165e08d9571c2636bed13fb842e60f2fb87dd9",
+      "e83602a2cd6c1b1c0674f3bcade5bb3bfe2d65406c735f365449f339fffe9a1f",
+      "cee7fb149c8841b858bb04ed09e437f334101b4b90b6c95b032a060e4f5aa04f",
+      "6081152326646e24aad939d39ce4faabe43bc31d7d5f5d2a3570f9e7caeae17b",
+      "29cad116b39f40d36b020eedf58b84d122a4ec0b9e60afee7b563f33ff7402ef"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "FEATURE_MARGINAL/warning": 11,
+      "SUPPORT_NARROW/warning": 4,
+      "MAT_UNCALIBRATED/warning": 1,
+      "PART_SMALL/warning": 5,
+      "NECK_NARROW/warning": 5,
+      "PART_THIN/warning": 2,
+      "GUIDE_OMITTED/warning": 46
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "pool",
+     "rev": 6,
+     "status": "done",
+     "ms": 1375,
+     "geometryHash": "e977cff9e434d041734f764b1b967e60338d03f450be9e59623bcce32eaadc32",
+     "raster": [
+      1536,
+      1157
+     ],
+     "mmPerPx": 0.2594036458333333,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 8,
+     "layerHashes": [
+      "e391ceb5e756056fb2e61d5f9be212dfa8d32b2d5b32f392a9769116ebbdc9e1",
+      "c180f933adff47719fd043badd64f819d5351ea2c656da300b9314dfc874d8f1",
+      "4265825c91b4688a125500268f2ae294900e13fcd3c2a7845bf649f0ee57ed57",
+      "19dc8578c31d106745d36c39ec4a73d0ab93af9b607d23a3e38fbb54c9838211",
+      "6dbed8c2c1693ef25b0dad7140e25d2abbad83ac6a66a3afb28992e0d23dbe3c",
+      "ccf1bcdfc2c44e92fe6c1f01e8a9141941f06ff3f6a7a548bbd71a20f1e51b10",
+      "383023e48cb578819420aa5c9dfb4eb3377f7066c1e10f40e12f8ea72d93b305",
+      "dd97c54d8807f77383cf244b3c42f7a33842e6a0dc88c005787438046cd7476f"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "EMPTY_BAND/info": 1,
+      "FEATURE_MARGINAL/warning": 13,
+      "SUPPORT_NARROW/warning": 6,
+      "IDENTICAL_LAYERS/info": 1,
+      "MAT_UNCALIBRATED/warning": 1,
+      "NECK_NARROW/warning": 5,
+      "PART_SMALL/warning": 7,
+      "PART_THIN/warning": 2,
+      "GUIDE_OMITTED/warning": 49
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "pool",
+     "rev": 7,
+     "status": "done",
+     "ms": 897,
+     "geometryHash": "ad19f615b90e0c5e980c7bdc3c833613626d87c9588415a4cd2627d2d5e55adb",
+     "raster": [
+      1536,
+      1157
+     ],
+     "mmPerPx": 0.2594036458333333,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 7,
+     "layerHashes": [
+      "0ae9e213ec392dbdf51b218bffb91d9a63b1367e0997fd89d75db9ef0d91ec14",
+      "d18e9bb8f00fc50be4afaecde73beaa4f19f90adbba970ac7bd3eb52d20c422f",
+      "ad875f7153d4c62351e7a42248165e08d9571c2636bed13fb842e60f2fb87dd9",
+      "e83602a2cd6c1b1c0674f3bcade5bb3bfe2d65406c735f365449f339fffe9a1f",
+      "cee7fb149c8841b858bb04ed09e437f334101b4b90b6c95b032a060e4f5aa04f",
+      "6081152326646e24aad939d39ce4faabe43bc31d7d5f5d2a3570f9e7caeae17b",
+      "29cad116b39f40d36b020eedf58b84d122a4ec0b9e60afee7b563f33ff7402ef"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "FEATURE_MARGINAL/warning": 11,
+      "SUPPORT_NARROW/warning": 4,
+      "MAT_UNCALIBRATED/warning": 1,
+      "PART_SMALL/warning": 5,
+      "NECK_NARROW/warning": 5,
+      "PART_THIN/warning": 2,
+      "GUIDE_OMITTED/warning": 46
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "pool",
+     "rev": 8,
+     "status": "done",
+     "ms": 894,
+     "geometryHash": "e977cff9e434d041734f764b1b967e60338d03f450be9e59623bcce32eaadc32",
+     "raster": [
+      1536,
+      1157
+     ],
+     "mmPerPx": 0.2594036458333333,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 8,
+     "layerHashes": [
+      "e391ceb5e756056fb2e61d5f9be212dfa8d32b2d5b32f392a9769116ebbdc9e1",
+      "c180f933adff47719fd043badd64f819d5351ea2c656da300b9314dfc874d8f1",
+      "4265825c91b4688a125500268f2ae294900e13fcd3c2a7845bf649f0ee57ed57",
+      "19dc8578c31d106745d36c39ec4a73d0ab93af9b607d23a3e38fbb54c9838211",
+      "6dbed8c2c1693ef25b0dad7140e25d2abbad83ac6a66a3afb28992e0d23dbe3c",
+      "ccf1bcdfc2c44e92fe6c1f01e8a9141941f06ff3f6a7a548bbd71a20f1e51b10",
+      "383023e48cb578819420aa5c9dfb4eb3377f7066c1e10f40e12f8ea72d93b305",
+      "dd97c54d8807f77383cf244b3c42f7a33842e6a0dc88c005787438046cd7476f"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "EMPTY_BAND/info": 1,
+      "FEATURE_MARGINAL/warning": 13,
+      "SUPPORT_NARROW/warning": 6,
+      "IDENTICAL_LAYERS/info": 1,
+      "MAT_UNCALIBRATED/warning": 1,
+      "NECK_NARROW/warning": 5,
+      "PART_SMALL/warning": 7,
+      "PART_THIN/warning": 2,
+      "GUIDE_OMITTED/warning": 49
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "pool",
+     "rev": 9,
+     "status": "done",
+     "ms": 802,
+     "geometryHash": "ad19f615b90e0c5e980c7bdc3c833613626d87c9588415a4cd2627d2d5e55adb",
+     "raster": [
+      1536,
+      1157
+     ],
+     "mmPerPx": 0.2594036458333333,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 7,
+     "layerHashes": [
+      "0ae9e213ec392dbdf51b218bffb91d9a63b1367e0997fd89d75db9ef0d91ec14",
+      "d18e9bb8f00fc50be4afaecde73beaa4f19f90adbba970ac7bd3eb52d20c422f",
+      "ad875f7153d4c62351e7a42248165e08d9571c2636bed13fb842e60f2fb87dd9",
+      "e83602a2cd6c1b1c0674f3bcade5bb3bfe2d65406c735f365449f339fffe9a1f",
+      "cee7fb149c8841b858bb04ed09e437f334101b4b90b6c95b032a060e4f5aa04f",
+      "6081152326646e24aad939d39ce4faabe43bc31d7d5f5d2a3570f9e7caeae17b",
+      "29cad116b39f40d36b020eedf58b84d122a4ec0b9e60afee7b563f33ff7402ef"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "FEATURE_MARGINAL/warning": 11,
+      "SUPPORT_NARROW/warning": 4,
+      "MAT_UNCALIBRATED/warning": 1,
+      "PART_SMALL/warning": 5,
+      "NECK_NARROW/warning": 5,
+      "PART_THIN/warning": 2,
+      "GUIDE_OMITTED/warning": 46
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "pool",
+     "rev": 10,
+     "status": "done",
+     "ms": 791,
+     "geometryHash": "e977cff9e434d041734f764b1b967e60338d03f450be9e59623bcce32eaadc32",
+     "raster": [
+      1536,
+      1157
+     ],
+     "mmPerPx": 0.2594036458333333,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 8,
+     "layerHashes": [
+      "e391ceb5e756056fb2e61d5f9be212dfa8d32b2d5b32f392a9769116ebbdc9e1",
+      "c180f933adff47719fd043badd64f819d5351ea2c656da300b9314dfc874d8f1",
+      "4265825c91b4688a125500268f2ae294900e13fcd3c2a7845bf649f0ee57ed57",
+      "19dc8578c31d106745d36c39ec4a73d0ab93af9b607d23a3e38fbb54c9838211",
+      "6dbed8c2c1693ef25b0dad7140e25d2abbad83ac6a66a3afb28992e0d23dbe3c",
+      "ccf1bcdfc2c44e92fe6c1f01e8a9141941f06ff3f6a7a548bbd71a20f1e51b10",
+      "383023e48cb578819420aa5c9dfb4eb3377f7066c1e10f40e12f8ea72d93b305",
+      "dd97c54d8807f77383cf244b3c42f7a33842e6a0dc88c005787438046cd7476f"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "EMPTY_BAND/info": 1,
+      "FEATURE_MARGINAL/warning": 13,
+      "SUPPORT_NARROW/warning": 6,
+      "IDENTICAL_LAYERS/info": 1,
+      "MAT_UNCALIBRATED/warning": 1,
+      "NECK_NARROW/warning": 5,
+      "PART_SMALL/warning": 7,
+      "PART_THIN/warning": 2,
+      "GUIDE_OMITTED/warning": 49
+     }
+    }
+   ],
+   "draft": {
+    "raster": [
+     1536,
+     1157
+    ],
+    "geometryHash": "e977cff9e434d041734f764b1b967e60338d03f450be9e59623bcce32eaadc32",
+    "diagnostics": {
+     "RESAMPLED/info": 1,
+     "EMPTY_BAND/info": 1,
+     "FEATURE_MARGINAL/warning": 13,
+     "SUPPORT_NARROW/warning": 6,
+     "IDENTICAL_LAYERS/info": 1,
+     "MAT_UNCALIBRATED/warning": 1,
+     "NECK_NARROW/warning": 5,
+     "PART_SMALL/warning": 7,
+     "PART_THIN/warning": 2,
+     "GUIDE_OMITTED/warning": 49
+    },
+    "samplingLow": [],
+    "blocking": []
+   },
+   "exceptions": []
+  },
+  {
+   "label": "serial@300",
+   "page": "serial",
+   "heightMM": 300,
+   "serial": true,
+   "browser": "Chrome/152.0.7977.82",
+   "version": "v2.0.0-alpha.4",
+   "controls": {
+    "preset": "plywood",
+    "construction": "bonded-relief",
+    "machine": "xtool-s1-feeder",
+    "pitch": "0.1",
+    "sheets": "8",
+    "sizeby": "height",
+    "target": "300"
+   },
+   "coldDraftMs": 2764,
+   "coldDraftRunMs": 1769,
+   "coldVia": "sync",
+   "longTask": {
+    "coldDraft": {
+     "max": 1867,
+     "count": 4,
+     "totalMs": 2611
+    },
+    "warmEdits": {
+     "max": 1051,
+     "count": 16,
+     "totalMs": 8098
+    },
+    "fab": {
+     "max": 12906,
+     "count": 2,
+     "totalMs": 12989
+    },
+    "export": {
+     "max": 66,
+     "count": 1,
+     "totalMs": 66
+    }
+   },
+   "draftStatus": "Draft (approximate; Preview at fabrication resolution for the exact cut) · 720 × 542 px · 0.55 mm/px · 8 sheets · 1.8 s",
+   "pool": {
+    "mode": "fallback",
+    "rung": null,
+    "hardwareConcurrency": 16,
+    "deviceMemory": 32,
+    "helperCount": 8,
+    "workersSpawned": 0,
+    "workerNames": [],
+    "workersSpawnedAfterFab": 0
+   },
+   "draftOfferShown": false,
+   "warm": {
+    "n": 5,
+    "p50Ms": 1349,
+    "p95Ms": 1478,
+    "maxMs": 1478,
+    "minMs": 1216,
+    "runMs": {
+     "n": 5,
+     "p50Ms": 861,
+     "p95Ms": 960,
+     "maxMs": 960,
+     "minMs": 724
+    },
+    "via": [
+     "sync"
+    ],
+    "rows": [
+     {
+      "ms": 1417,
+      "runMs": 947,
+      "status": "done"
+     },
+     {
+      "ms": 1312,
+      "runMs": 833,
+      "status": "done"
+     },
+     {
+      "ms": 1216,
+      "runMs": 724,
+      "status": "done"
+     },
+     {
+      "ms": 1478,
+      "runMs": 960,
+      "status": "done"
+     },
+     {
+      "ms": 1349,
+      "runMs": 861,
+      "status": "done"
+     }
+    ]
+   },
+   "fabMs": 13050,
+   "fabRunMs": 12761,
+   "fabVia": "sync",
+   "fabStatus": "Fabrication · 3985 × 3000 px · 0.10 mm/px · 8 sheets · 12.8 s · 0cb9e9fdeb0b",
+   "acked": 30,
+   "exportDisabled": false,
+   "whyExport": "",
+   "exportMs": 753,
+   "exportZip": {
+    "name": "scene_4096x3084_shadowbox.zip",
+    "bytes": 3193118
+   },
+   "generateCallsDuringExport": 0,
+   "exportStatus": "saved scene_4096x3084_shadowbox.zip to your downloads",
+   "runs": [
+    {
+     "quality": "draft",
+     "via": "sync",
+     "rev": 2,
+     "status": "done",
+     "ms": 1769,
+     "geometryHash": "f4390b428d4c71c17381afe42280b3c0a53a39b8d54d9a60456f1a347d769d79",
+     "raster": [
+      720,
+      542
+     ],
+     "mmPerPx": 0.5535055350553506,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 8,
+     "layerHashes": [
+      "fe1dd4a397cb2943b0171cf4237862bb14b56f80c638aa29ad7902a08d97e582",
+      "fce4672297a143044e09fc6241bf892a718eb1951fb868368e0e28d671fe1f9f",
+      "d1f6c9555aefbfc5e316c3c556ea43bbf0d45d0e5e3387af605344216cb6f7ec",
+      "6b6a6c6b6e830f49bb41f093df8d0b3025afa0f72175c2dd08bba8aa345fe2ab",
+      "200e7ae645bd6d956b84ef3025747e1f86705e84e2c4b3fd7f673889f15de61e",
+      "be8cb6cf0fe91543a7c4021a54c5eb73dee3bf67576f3b62be8fd201c0cd9eb6",
+      "2d486922495b188221b4f1e4db428a1ff894975b5e734485e3172b7aaca1d213",
+      "ffd95ce11a7ede3465a728bcc554a8cc6c3cea009bc671be2f4753e43f276ef1"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "EMPTY_BAND/info": 1,
+      "SUPPORT_NARROW/warning": 23,
+      "FEATURE_MARGINAL/warning": 15,
+      "IDENTICAL_LAYERS/info": 1,
+      "MAT_UNCALIBRATED/warning": 1,
+      "DRAFT_COARSER/info": 1,
+      "NECK_NARROW/warning": 7,
+      "PART_SMALL/warning": 7,
+      "PART_THIN/warning": 7,
+      "GUIDE_OMITTED/warning": 53
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "sync",
+     "rev": 3,
+     "status": "done",
+     "ms": 855,
+     "geometryHash": "8b30e9751eb07a69c16d631f003338b4299c61248682509288f183076a49fe1b",
+     "raster": [
+      720,
+      542
+     ],
+     "mmPerPx": 0.5535055350553506,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 7,
+     "layerHashes": [
+      "e4deb1f2a36e1394a07154b4e893c263886af2f897620f7726e7621b7baf608a",
+      "08a92c30c240a07ebda68cb48eaad074b6db08119c36405d1aa0a3944b05930d",
+      "2177fa0996c82f71ad1136b068eb3e81371ca2522edfdebf2f4a0d8910c0fc8c",
+      "d78f35c196697434c86a33bf370c9d67161f244ec296be95bd280d0c61138f08",
+      "50678ddf05be03c5f73653f4eb53dab6ba4fd92ff7145ce3d16f1a5e5a63fb8a",
+      "e74de853ff1b5b985d01d809e0406b74e07660d662419cb85bd902dc315930ae",
+      "f9ca301aa06ab68e7d01ec2cf0f5ff58b73e8bb1013944e4e5115cd283f63c79"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "SUPPORT_NARROW/warning": 16,
+      "FEATURE_MARGINAL/warning": 14,
+      "MAT_UNCALIBRATED/warning": 1,
+      "DRAFT_COARSER/info": 1,
+      "NECK_NARROW/warning": 6,
+      "PART_SMALL/warning": 6,
+      "PART_THIN/warning": 6,
+      "GUIDE_OMITTED/warning": 39
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "sync",
+     "rev": 4,
+     "status": "done",
+     "ms": 964,
+     "geometryHash": "f4390b428d4c71c17381afe42280b3c0a53a39b8d54d9a60456f1a347d769d79",
+     "raster": [
+      720,
+      542
+     ],
+     "mmPerPx": 0.5535055350553506,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 8,
+     "layerHashes": [
+      "fe1dd4a397cb2943b0171cf4237862bb14b56f80c638aa29ad7902a08d97e582",
+      "fce4672297a143044e09fc6241bf892a718eb1951fb868368e0e28d671fe1f9f",
+      "d1f6c9555aefbfc5e316c3c556ea43bbf0d45d0e5e3387af605344216cb6f7ec",
+      "6b6a6c6b6e830f49bb41f093df8d0b3025afa0f72175c2dd08bba8aa345fe2ab",
+      "200e7ae645bd6d956b84ef3025747e1f86705e84e2c4b3fd7f673889f15de61e",
+      "be8cb6cf0fe91543a7c4021a54c5eb73dee3bf67576f3b62be8fd201c0cd9eb6",
+      "2d486922495b188221b4f1e4db428a1ff894975b5e734485e3172b7aaca1d213",
+      "ffd95ce11a7ede3465a728bcc554a8cc6c3cea009bc671be2f4753e43f276ef1"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "EMPTY_BAND/info": 1,
+      "SUPPORT_NARROW/warning": 23,
+      "FEATURE_MARGINAL/warning": 15,
+      "IDENTICAL_LAYERS/info": 1,
+      "MAT_UNCALIBRATED/warning": 1,
+      "DRAFT_COARSER/info": 1,
+      "NECK_NARROW/warning": 7,
+      "PART_SMALL/warning": 7,
+      "PART_THIN/warning": 7,
+      "GUIDE_OMITTED/warning": 53
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "sync",
+     "rev": 5,
+     "status": "done",
+     "ms": 947,
+     "geometryHash": "8b30e9751eb07a69c16d631f003338b4299c61248682509288f183076a49fe1b",
+     "raster": [
+      720,
+      542
+     ],
+     "mmPerPx": 0.5535055350553506,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 7,
+     "layerHashes": [
+      "e4deb1f2a36e1394a07154b4e893c263886af2f897620f7726e7621b7baf608a",
+      "08a92c30c240a07ebda68cb48eaad074b6db08119c36405d1aa0a3944b05930d",
+      "2177fa0996c82f71ad1136b068eb3e81371ca2522edfdebf2f4a0d8910c0fc8c",
+      "d78f35c196697434c86a33bf370c9d67161f244ec296be95bd280d0c61138f08",
+      "50678ddf05be03c5f73653f4eb53dab6ba4fd92ff7145ce3d16f1a5e5a63fb8a",
+      "e74de853ff1b5b985d01d809e0406b74e07660d662419cb85bd902dc315930ae",
+      "f9ca301aa06ab68e7d01ec2cf0f5ff58b73e8bb1013944e4e5115cd283f63c79"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "SUPPORT_NARROW/warning": 16,
+      "FEATURE_MARGINAL/warning": 14,
+      "MAT_UNCALIBRATED/warning": 1,
+      "DRAFT_COARSER/info": 1,
+      "NECK_NARROW/warning": 6,
+      "PART_SMALL/warning": 6,
+      "PART_THIN/warning": 6,
+      "GUIDE_OMITTED/warning": 39
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "sync",
+     "rev": 6,
+     "status": "done",
+     "ms": 833,
+     "geometryHash": "f4390b428d4c71c17381afe42280b3c0a53a39b8d54d9a60456f1a347d769d79",
+     "raster": [
+      720,
+      542
+     ],
+     "mmPerPx": 0.5535055350553506,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 8,
+     "layerHashes": [
+      "fe1dd4a397cb2943b0171cf4237862bb14b56f80c638aa29ad7902a08d97e582",
+      "fce4672297a143044e09fc6241bf892a718eb1951fb868368e0e28d671fe1f9f",
+      "d1f6c9555aefbfc5e316c3c556ea43bbf0d45d0e5e3387af605344216cb6f7ec",
+      "6b6a6c6b6e830f49bb41f093df8d0b3025afa0f72175c2dd08bba8aa345fe2ab",
+      "200e7ae645bd6d956b84ef3025747e1f86705e84e2c4b3fd7f673889f15de61e",
+      "be8cb6cf0fe91543a7c4021a54c5eb73dee3bf67576f3b62be8fd201c0cd9eb6",
+      "2d486922495b188221b4f1e4db428a1ff894975b5e734485e3172b7aaca1d213",
+      "ffd95ce11a7ede3465a728bcc554a8cc6c3cea009bc671be2f4753e43f276ef1"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "EMPTY_BAND/info": 1,
+      "SUPPORT_NARROW/warning": 23,
+      "FEATURE_MARGINAL/warning": 15,
+      "IDENTICAL_LAYERS/info": 1,
+      "MAT_UNCALIBRATED/warning": 1,
+      "DRAFT_COARSER/info": 1,
+      "NECK_NARROW/warning": 7,
+      "PART_SMALL/warning": 7,
+      "PART_THIN/warning": 7,
+      "GUIDE_OMITTED/warning": 53
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "sync",
+     "rev": 7,
+     "status": "done",
+     "ms": 724,
+     "geometryHash": "8b30e9751eb07a69c16d631f003338b4299c61248682509288f183076a49fe1b",
+     "raster": [
+      720,
+      542
+     ],
+     "mmPerPx": 0.5535055350553506,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 7,
+     "layerHashes": [
+      "e4deb1f2a36e1394a07154b4e893c263886af2f897620f7726e7621b7baf608a",
+      "08a92c30c240a07ebda68cb48eaad074b6db08119c36405d1aa0a3944b05930d",
+      "2177fa0996c82f71ad1136b068eb3e81371ca2522edfdebf2f4a0d8910c0fc8c",
+      "d78f35c196697434c86a33bf370c9d67161f244ec296be95bd280d0c61138f08",
+      "50678ddf05be03c5f73653f4eb53dab6ba4fd92ff7145ce3d16f1a5e5a63fb8a",
+      "e74de853ff1b5b985d01d809e0406b74e07660d662419cb85bd902dc315930ae",
+      "f9ca301aa06ab68e7d01ec2cf0f5ff58b73e8bb1013944e4e5115cd283f63c79"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "SUPPORT_NARROW/warning": 16,
+      "FEATURE_MARGINAL/warning": 14,
+      "MAT_UNCALIBRATED/warning": 1,
+      "DRAFT_COARSER/info": 1,
+      "NECK_NARROW/warning": 6,
+      "PART_SMALL/warning": 6,
+      "PART_THIN/warning": 6,
+      "GUIDE_OMITTED/warning": 39
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "sync",
+     "rev": 8,
+     "status": "done",
+     "ms": 960,
+     "geometryHash": "f4390b428d4c71c17381afe42280b3c0a53a39b8d54d9a60456f1a347d769d79",
+     "raster": [
+      720,
+      542
+     ],
+     "mmPerPx": 0.5535055350553506,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 8,
+     "layerHashes": [
+      "fe1dd4a397cb2943b0171cf4237862bb14b56f80c638aa29ad7902a08d97e582",
+      "fce4672297a143044e09fc6241bf892a718eb1951fb868368e0e28d671fe1f9f",
+      "d1f6c9555aefbfc5e316c3c556ea43bbf0d45d0e5e3387af605344216cb6f7ec",
+      "6b6a6c6b6e830f49bb41f093df8d0b3025afa0f72175c2dd08bba8aa345fe2ab",
+      "200e7ae645bd6d956b84ef3025747e1f86705e84e2c4b3fd7f673889f15de61e",
+      "be8cb6cf0fe91543a7c4021a54c5eb73dee3bf67576f3b62be8fd201c0cd9eb6",
+      "2d486922495b188221b4f1e4db428a1ff894975b5e734485e3172b7aaca1d213",
+      "ffd95ce11a7ede3465a728bcc554a8cc6c3cea009bc671be2f4753e43f276ef1"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "EMPTY_BAND/info": 1,
+      "SUPPORT_NARROW/warning": 23,
+      "FEATURE_MARGINAL/warning": 15,
+      "IDENTICAL_LAYERS/info": 1,
+      "MAT_UNCALIBRATED/warning": 1,
+      "DRAFT_COARSER/info": 1,
+      "NECK_NARROW/warning": 7,
+      "PART_SMALL/warning": 7,
+      "PART_THIN/warning": 7,
+      "GUIDE_OMITTED/warning": 53
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "sync",
+     "rev": 9,
+     "status": "done",
+     "ms": 861,
+     "geometryHash": "8b30e9751eb07a69c16d631f003338b4299c61248682509288f183076a49fe1b",
+     "raster": [
+      720,
+      542
+     ],
+     "mmPerPx": 0.5535055350553506,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 7,
+     "layerHashes": [
+      "e4deb1f2a36e1394a07154b4e893c263886af2f897620f7726e7621b7baf608a",
+      "08a92c30c240a07ebda68cb48eaad074b6db08119c36405d1aa0a3944b05930d",
+      "2177fa0996c82f71ad1136b068eb3e81371ca2522edfdebf2f4a0d8910c0fc8c",
+      "d78f35c196697434c86a33bf370c9d67161f244ec296be95bd280d0c61138f08",
+      "50678ddf05be03c5f73653f4eb53dab6ba4fd92ff7145ce3d16f1a5e5a63fb8a",
+      "e74de853ff1b5b985d01d809e0406b74e07660d662419cb85bd902dc315930ae",
+      "f9ca301aa06ab68e7d01ec2cf0f5ff58b73e8bb1013944e4e5115cd283f63c79"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "SUPPORT_NARROW/warning": 16,
+      "FEATURE_MARGINAL/warning": 14,
+      "MAT_UNCALIBRATED/warning": 1,
+      "DRAFT_COARSER/info": 1,
+      "NECK_NARROW/warning": 6,
+      "PART_SMALL/warning": 6,
+      "PART_THIN/warning": 6,
+      "GUIDE_OMITTED/warning": 39
+     }
+    },
+    {
+     "quality": "draft",
+     "via": "sync",
+     "rev": 10,
+     "status": "done",
+     "ms": 809,
+     "geometryHash": "f4390b428d4c71c17381afe42280b3c0a53a39b8d54d9a60456f1a347d769d79",
+     "raster": [
+      720,
+      542
+     ],
+     "mmPerPx": 0.5535055350553506,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 8,
+     "layerHashes": [
+      "fe1dd4a397cb2943b0171cf4237862bb14b56f80c638aa29ad7902a08d97e582",
+      "fce4672297a143044e09fc6241bf892a718eb1951fb868368e0e28d671fe1f9f",
+      "d1f6c9555aefbfc5e316c3c556ea43bbf0d45d0e5e3387af605344216cb6f7ec",
+      "6b6a6c6b6e830f49bb41f093df8d0b3025afa0f72175c2dd08bba8aa345fe2ab",
+      "200e7ae645bd6d956b84ef3025747e1f86705e84e2c4b3fd7f673889f15de61e",
+      "be8cb6cf0fe91543a7c4021a54c5eb73dee3bf67576f3b62be8fd201c0cd9eb6",
+      "2d486922495b188221b4f1e4db428a1ff894975b5e734485e3172b7aaca1d213",
+      "ffd95ce11a7ede3465a728bcc554a8cc6c3cea009bc671be2f4753e43f276ef1"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "EMPTY_BAND/info": 1,
+      "SUPPORT_NARROW/warning": 23,
+      "FEATURE_MARGINAL/warning": 15,
+      "IDENTICAL_LAYERS/info": 1,
+      "MAT_UNCALIBRATED/warning": 1,
+      "DRAFT_COARSER/info": 1,
+      "NECK_NARROW/warning": 7,
+      "PART_SMALL/warning": 7,
+      "PART_THIN/warning": 7,
+      "GUIDE_OMITTED/warning": 53
+     }
+    },
+    {
+     "quality": "fabrication",
+     "via": "sync",
+     "rev": 10,
+     "status": "done",
+     "ms": 12761,
+     "geometryHash": "0cb9e9fdeb0be3beda2e53b7c61352034b666bea2270a40af8d0b1f461bf500a",
+     "raster": [
+      3985,
+      3000
+     ],
+     "mmPerPx": 0.1,
+     "page": {
+      "wMM": 398.444,
+      "hMM": 300,
+      "frameMM": 0,
+      "artWMM": 398.444,
+      "artHMM": 300
+     },
+     "nLayers": 8,
+     "layerHashes": [
+      "d9a4cbfd1b520f019ad687a01a7f6d61978e4112e6eda031867185736392d330",
+      "4c85ee3064b35b94b74eee80a5cacb72538787cd2575624d5c5bf330490564af",
+      "e71a9249264952d3f13e4bc0acc97a3179c51470fb23595201a9fdeb66f23699",
+      "46ed42b40d85d54ca6af2e602a1488cf2208404970e5c73eea38747940f87736",
+      "967c9f57eb3c27ea15e7126bd0a4cd9394d37c55269336bb51b9ca5c26765bf4",
+      "f912573963895a5f1fd9819506687ad679a0f6521421e292842eb1c42c32d830",
+      "2046c9f68c2857e00d2c48efae575c2c1d99075b957f3e4b28acdd78268bca90",
+      "eb9057f4b20bf7f32b32dd3b0cfe3456a158984d11228073561921fd00f1f929"
+     ],
+     "diagnostics": {
+      "RESAMPLED/info": 1,
+      "EMPTY_BAND/info": 1,
+      "FEATURE_MARGINAL/warning": 15,
+      "SUPPORT_NARROW/warning": 2,
+      "IDENTICAL_LAYERS/info": 1,
+      "MAT_UNCALIBRATED/warning": 1,
+      "NECK_NARROW/warning": 7,
+      "PART_SMALL/warning": 7,
+      "PART_THIN/warning": 2,
+      "GUIDE_OMITTED/warning": 35
+     }
+    }
+   ],
+   "draft": {
+    "raster": [
+     720,
+     542
+    ],
+    "geometryHash": "f4390b428d4c71c17381afe42280b3c0a53a39b8d54d9a60456f1a347d769d79",
+    "diagnostics": {
+     "RESAMPLED/info": 1,
+     "EMPTY_BAND/info": 1,
+     "SUPPORT_NARROW/warning": 23,
+     "FEATURE_MARGINAL/warning": 15,
+     "IDENTICAL_LAYERS/info": 1,
+     "MAT_UNCALIBRATED/warning": 1,
+     "DRAFT_COARSER/info": 1,
+     "NECK_NARROW/warning": 7,
+     "PART_SMALL/warning": 7,
+     "PART_THIN/warning": 7,
+     "GUIDE_OMITTED/warning": 53
+    },
+    "samplingLow": [],
+    "blocking": []
+   },
+   "fabSnapshot": {
+    "raster": [
+     3985,
+     3000
+    ],
+    "geometryHash": "0cb9e9fdeb0be3beda2e53b7c61352034b666bea2270a40af8d0b1f461bf500a",
+    "layerHashes": [
+     "d9a4cbfd1b520f019ad687a01a7f6d61978e4112e6eda031867185736392d330",
+     "4c85ee3064b35b94b74eee80a5cacb72538787cd2575624d5c5bf330490564af",
+     "e71a9249264952d3f13e4bc0acc97a3179c51470fb23595201a9fdeb66f23699",
+     "46ed42b40d85d54ca6af2e602a1488cf2208404970e5c73eea38747940f87736",
+     "967c9f57eb3c27ea15e7126bd0a4cd9394d37c55269336bb51b9ca5c26765bf4",
+     "f912573963895a5f1fd9819506687ad679a0f6521421e292842eb1c42c32d830",
+     "2046c9f68c2857e00d2c48efae575c2c1d99075b957f3e4b28acdd78268bca90",
+     "eb9057f4b20bf7f32b32dd3b0cfe3456a158984d11228073561921fd00f1f929"
+    ],
+    "page": {
+     "wMM": 398.444,
+     "hMM": 300,
+     "frameMM": 0,
+     "artWMM": 398.444,
+     "artHMM": 300
+    },
+    "blocking": []
+   },
+   "exceptions": []
+  }
+ ],
+ "shippedDraftPx": 720,
+ "port": 45079,
+ "equality": {
+  "300": {
+   "fabGeometryHashEqual": true,
+   "fabLayerHashesEqual": true,
+   "fabGeometryHash": "0cb9e9fdeb0be3beda2e53b7c61352034b666bea2270a40af8d0b1f461bf500a",
+   "nLayers": 8,
+   "draftGeometryHashEqual": true,
+   "draftGeometryHashPool": "f4390b428d4c71c17381afe42280b3c0a53a39b8d54d9a60456f1a347d769d79",
+   "draftGeometryHashSerial": "f4390b428d4c71c17381afe42280b3c0a53a39b8d54d9a60456f1a347d769d79",
+   "draftLayerHashesEqual": true
+  }
+ },
+ "note": "smoke run at lower load (1-min load 5.56 at 16:19, 5-min 6.29): heights 300 only, draft 1536 only, 5 warm sheets edits, no K2-miss edits (added after this run); same script otherwise"
+}
