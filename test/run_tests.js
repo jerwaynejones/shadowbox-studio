@@ -5491,22 +5491,64 @@ suite("schema.js/engine.js — alpha.3 E3b physical filter radii and draft fidel
 suite("schema.js/engine.js — alpha.3 E4 draft budget (PO-PREVIEW-1)", () => {
   const rec = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "docs/perf/draft-budget.json"), "utf8"));
   const L = SBSchema.limits;
-  check("PO-PREVIEW-1 draft budget equals docs/perf/draft-budget.json (desktop cap, mobile cap, preset draftPx)",
-    L("desktop").draftPxCap === rec.decision.desktopDraftPx && L("mobile").draftPxCap === rec.decision.mobileDraftPx &&
+  check("PO-PREVIEW-1 PO-PERF-3 draft budget equals docs/perf/draft-budget.json (desktop cap, mobile cap, both presets' draftPx, fallback 720)",
+    rec.task === "F17" && L("desktop").draftPxCap === rec.decision.desktopDraftPx && L("mobile").draftPxCap === rec.decision.mobileDraftPx && rec.decision.mobileDraftPx === 720 &&
     rec.decision.desktopDraftPx === Math.max(rec.decision.presets.plywood, rec.decision.presets.acrylic) &&
-    SBSchema.defaults("plywood").geometry.draftPx === rec.decision.presets.plywood && SBSchema.defaults("acrylic").geometry.draftPx === rec.decision.presets.acrylic);
-  check("PO-PREVIEW-2 limits().fabMsPerMpx equals the recorded fabrication row (desktop) and × 4 (mobile)",
-    L("desktop").fabMsPerMpx === rec.decision.fabMsPerMpx && L("mobile").fabMsPerMpx === 4 * rec.decision.fabMsPerMpx);
+    SBSchema.defaults("plywood").geometry.draftPx === rec.decision.presets.plywood && SBSchema.defaults("acrylic").geometry.draftPx === rec.decision.presets.acrylic &&
+    L("desktop").draftPxFallback === 720 && L("mobile").draftPxFallback === 720 && rec.decision.fallbackDraftPx === 720);
+  check("PO-PERF-3 the decision is a candidate (or 720) within the schema ceiling (draftPx ≤ 2000) and validates in both presets",
+    [720, 1280, 1536, 1792, 2000].includes(rec.decision.desktopDraftPx) && SBSchema.validate(SBSchema.defaults("plywood")).ok && SBSchema.validate(SBSchema.defaults("acrylic")).ok &&
+    !SBSchema.validate(Object.assign(SBSchema.defaults("plywood"), { geometry: Object.assign(SBSchema.defaults("plywood").geometry, { draftPx: 2001 }) })).ok);
+  check("PO-PREVIEW-2 limits().fabMsPerMpx (pool) and fabMsPerMpxFallback (sync driver) equal the recorded fabrication rows (desktop) and × 4 (mobile)",
+    Number.isInteger(rec.decision.fabMsPerMpx) && Number.isInteger(rec.decision.fabMsPerMpxFallback) &&
+    L("desktop").fabMsPerMpx === rec.decision.fabMsPerMpx && L("mobile").fabMsPerMpx === 4 * rec.decision.fabMsPerMpx &&
+    L("desktop").fabMsPerMpxFallback === rec.decision.fabMsPerMpxFallback && L("mobile").fabMsPerMpxFallback === 4 * rec.decision.fabMsPerMpxFallback);
   const p = SBSchema.defaults("plywood"); p.source = SBSchema.sourceTemplate();
   const m = SBEngine.rasterPlan(p, { w: 4096, h: 3084 }, "draft", "mobile").geometry, d = SBEngine.rasterPlan(p, { w: 4096, h: 3084 }, "draft", "desktop").geometry;
   check("PO-PREVIEW-1 rasterPlan applies the mobile draftPxCap without changing the project key",
     Math.max(m.rasterW, m.rasterH) === Math.min(p.geometry.draftPx, 720) && Math.max(d.rasterW, d.rasterH) === Math.min(p.geometry.draftPx, rec.decision.desktopDraftPx));
-  check("PO-PREVIEW-1 the rationale names the rule (p95, both families, G4.4 deviation), machine and workload",
-    /3\.0 s/.test(rec.rule) && /p95/.test(rec.rule) && /1\.5 s/.test(rec.rule) && /11800H/.test(rec.machine) && /4096/.test(rec.workload) && /busy/.test(rec.workload) && /realistic/.test(rec.workload));
+  check("PO-PREVIEW-1 PO-PERF-3 the rationale names the F.7 rule (warm p95 ≤ 2.5 s Chromium and Firefox on the i7, ≤ 3.0 s M5, both families, E4 warm edit, scene caps), machine and workload",
+    /2\.5 s/.test(rec.rule) && /3\.0 s/.test(rec.rule) && /p95/.test(rec.rule) && /Chromium/.test(rec.rule) && /Firefox/.test(rec.rule) && /M5/.test(rec.rule) &&
+    /BOTH the realistic and the busy/.test(rec.rule) && /sheets 8 ↔ 7/.test(rec.rule) && /alpha\.3 scene/.test(rec.rule) &&
+    /11800H/.test(rec.machine) && /4096/.test(rec.workload) && /busy/.test(rec.workload) && /realistic/.test(rec.workload));
+  check("PO-PERF-3 the E4 record (rule 3.0 s, 720) is kept as history under e4",
+    rec.e4 && rec.e4.task === "E4" && rec.e4.decision.desktopDraftPx === 720 && /3\.0 s/.test(rec.e4.rule) && Array.isArray(rec.e4.rows));
   // the recorded decision is the rule applied to the recorded rows (bench decideDraft), and a cap above the project value never upsamples
   const B = require("./bench.js");
-  check("PO-PREVIEW-1 decideDraft reproduces the recorded decision from the recorded rows",
-    typeof B.decideDraft === "function" && JSON.stringify(B.decideDraft(rec.rows, rec.fabRows)) === JSON.stringify(rec.decision));
+  check("PO-PREVIEW-1 E4 decideDraft reproduces the E4 decision from the E4 rows (history)",
+    typeof B.decideDraft === "function" && JSON.stringify(B.decideDraft(rec.e4.rows, rec.e4.fabRows)) === JSON.stringify(rec.e4.decision));
+  check("PO-PERF-3 decideDraftF17 reproduces the recorded decision from the recorded f17 rows (browser rows, alpha.3 scene, Node fabrication rows)",
+    typeof B.decideDraftF17 === "function" && rec.rule === B.F17.rule && JSON.stringify(B.decideDraftF17(rec.f17)) === JSON.stringify(rec.decision));
+  check("PO-PERF-3 the recorded f17 evidence: Chromium and Firefox on the i7 for every candidate, both families, ≥ 15 warm runs; Node pool 8 sweep with the alpha.3 scene at 720 and every candidate",
+    ["chromium-i7", "firefox-i7"].every((k) => rec.f17.browser[k] && B.F17.candidates.every((c) => { const r = rec.f17.browser[k].rows.find((x) => x.draftPx === c);
+      return r && r.pool.mode === "pool" && B.F17.families.every((f) => r.families[f] && r.families[f].warmRuns >= 15 && Number.isFinite(r.families[f].k2MissP95Ms) && Number.isFinite(r.families[f].renderP95Ms)); })) &&
+    [720].concat(B.F17.candidates).every((c) => rec.f17.node.pool8.sceneRows.some((x) => x.draftPx === c)) && rec.f17.node.pool8.pool === 8);
+  {
+    // the rule on synthetic records: every browser and family must pass, the scene must not hit a new cap, the largest passing size wins
+    const fam = (r, b) => ({ realistic: { warmP95Ms: r }, busy: { warmP95Ms: b } });
+    const rows = (t) => t.map(([c, r, b]) => ({ draftPx: c, families: fam(r, b) }));
+    const scene = (hits) => [720, 1280, 1536, 1792, 2000].map((c) => ({ draftPx: c, capHits: (hits[c] || []).concat(hits.all || []) }));
+    const mk = (chr, ff, hits, m5) => ({ browser: Object.assign({ "chromium-i7": { rows: rows(chr) }, "firefox-i7": { rows: rows(ff) } }, m5 ? { "chromium-m5": { rows: rows(m5) } } : {}),
+      node: { pool8: { sceneRows: scene(hits || {}), fabRows: [{ family: "realistic", status: "done", p50Ms: 1000, mpx: 2 }] }, pool0: { fabRows: [{ family: "realistic", status: "done", p50Ms: 3001, mpx: 2 }] } } });
+    const all = (r, b) => [1280, 1536, 1792, 2000].map((c, i) => [c, r[i], b[i]]);
+    const D = (x) => B.decideDraftF17(x);
+    const d1 = D(mk(all([2000, 2400, 2600, 3000], [1000, 1500, 2000, 2400]), all([2100, 2450, 2490, 2800], [1100, 1200, 1300, 1400])));
+    check("PO-PERF-3 decideDraftF17: largest size passing in both browsers on both families (a Chromium miss at 1792 decides 1536); fabrication ms/Mpx rounded up to 10",
+      d1.desktopDraftPx === 1536 && d1.presets.plywood === 1536 && d1.presets.acrylic === 1536 && d1.mobileDraftPx === 720 && d1.fallbackDraftPx === 720 &&
+      d1.fabMsPerMpx === 500 && d1.fabMsPerMpxFallback === 1510 && d1.m5 === "pending" && d1.rejected.some((r) => r.draftPx === 1792 && /chromium-i7 realistic/.test(r.reason)));
+    const d2 = D(mk(all([1000, 1000, 1000, 1000], [1000, 1000, 1000, 2600]), all([1000, 1000, 1000, 1000], [1000, 1000, 1000, 1000])));
+    check("PO-PERF-3 decideDraftF17: the busy family gates too (busy 2.6 s at 2000 → 1792)", d2.desktopDraftPx === 1792);
+    const d3 = D(mk(all([1000, 1000, 1000, 1000], [1000, 1000, 1000, 1000]), all([1000, 1000, 1000, 1000], [1000, 1000, 1000, 1000]), { 1792: ["COMPLEXITY_LIMIT"], 2000: ["COMPLEXITY_LIMIT"] }));
+    const d3b = D(mk(all([1000, 1000, 1000, 1000], [1000, 1000, 1000, 1000]), all([1000, 1000, 1000, 1000], [1000, 1000, 1000, 1000]), { all: ["FAB_COMPLEXITY_LIKELY"] }));
+    check("PO-PERF-3 decideDraftF17: a size whose alpha.3 scene draft hits a cap 720 did not is rejected (F.4 #5); a cap hit already at 720 does not reject",
+      d3.desktopDraftPx === 1536 && d3.rejected.some((r) => r.draftPx === 1792 && /COMPLEXITY_LIMIT/.test(r.reason)) && d3b.desktopDraftPx === 2000);
+    const d4 = D(mk(all([1000, 1000, 1000, 1000], [1000, 1000, 1000, 1000]), all([1000, 1000, 1000, 1000], [1000, 1000, 1000, 1000]), {}, all([2900, 3100, 3200, 3300], [1000, 1000, 1000, 1000])));
+    const d5 = D(mk(all([2600, 2700, 2800, 2900], [1000, 1000, 1000, 1000]), all([1000, 1000, 1000, 1000], [1000, 1000, 1000, 1000])));
+    const d6 = D(mk(all([1000, 1000, 1000], [1000, 1000, 1000]), all([1000, 1000, 1000, 1000], [1000, 1000, 1000, 1000])));
+    check("PO-PERF-3 decideDraftF17: the M5 (3.0 s) gates once recorded; none passing → 720; a size not measured in a required browser is rejected",
+      d4.desktopDraftPx === 1280 && d4.m5 === "measured" && d5.desktopDraftPx === 720 && d5.passing.length === 0 && d6.desktopDraftPx === 1792 &&
+      d6.rejected.some((r) => r.draftPx === 2000 && /not measured/.test(r.reason)));
+  }
   const q = JSON.parse(JSON.stringify(p)); q.geometry.draftPx = 300;
   const qm = SBEngine.rasterPlan(q, { w: 4096, h: 3084 }, "draft", "mobile").geometry;
   check("PO-PREVIEW-1 a project draftPx below the device cap is kept (min(draftPx, cap)); the cap is not a project field",
@@ -5523,7 +5565,44 @@ suite("schema.js/engine.js — alpha.3 E4 draft budget (PO-PREVIEW-1)", () => {
     on.status === "done" && off.status === "done" && has(on) && !has(off) && on.geometryHash === off.geometryHash &&
     on.snapshot.cleanupReport.every((e, k) => e.addedMM2 === off.snapshot.cleanupReport[k].addedMM2 && e.removedMM2 === off.snapshot.cleanupReport[k].removedMM2));
   check("G2.13b overlays:false is recorded as worth it (overlay share >= 0.15 on the gating draft rows)",
-    rec.rows.some((x) => x.mode === "a" && x.draftPx === rec.decision.presets.plywood && x.overlayShare >= 0.15));
+    rec.e4.rows.some((x) => x.mode === "a" && x.draftPx === rec.e4.decision.presets.plywood && x.overlayShare >= 0.15));
+});
+
+suite("schema.js/app.js — speed round F17 draft default offer (PO-PERF-3, Q2: saved projects are not migrated silently)", () => {
+  const S = SBSchema, D = S.limits("desktop").draftPxCap;
+  check("F17 SBSchema.draftPxOffer / applyDraftOffer exist", typeof S.draftPxOffer === "function" && typeof S.applyDraftOffer === "function");
+  if (typeof S.draftPxOffer !== "function") return;
+  const old0 = S.defaults("plywood"); old0.geometry.draftPx = 720; old0.revision = 4;
+  check("F17 the offer follows the decision: offered on desktop when the cap was raised, never when it stayed 720",
+    D > 720 ? !!S.draftPxOffer(old0, "desktop") : S.draftPxOffer(old0, "desktop") === null && JSON.stringify(S.applyDraftOffer(old0, true)) === JSON.stringify(old0));
+  // the offer itself, on js/schema.js with a raised desktop decision (the shipped schema when it is raised; else a copy with 1280)
+  const Sx = D > 720 ? S : (() => { const ctx = {}; vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "js", "schema.js"), "utf8")
+    .replace(/const DRAFT_BUDGET = \{ desktopDraftPx: \d+,/, "const DRAFT_BUDGET = { desktopDraftPx: 1280,"), ctx); return ctx.SBSchema; })();
+  const Dx = Sx.limits("desktop").draftPxCap, old = Sx.defaults("plywood"); old.geometry.draftPx = 720; old.revision = 4;
+  const o = Sx.draftPxOffer(old, "desktop");
+  check("F17 a project at the pre-F17 720 px draft is offered the raised default on desktop", Dx > 720 && !!o && o.from === 720 && o.to === Dx);
+  check("F17 no offer on mobile (cap 720), for a project at another draftPx, or for a new project", Sx.draftPxOffer(old, "mobile") === null &&
+    Sx.draftPxOffer(Object.assign(Sx.defaults("plywood"), { geometry: Object.assign(Sx.defaults("plywood").geometry, { draftPx: 1000 }) }), "desktop") === null &&
+    Sx.draftPxOffer(Sx.defaults("plywood"), "desktop") === null && Sx.draftPxOffer(Sx.defaults("acrylic"), "desktop") === null);
+  const before = JSON.stringify(old), acc = Sx.applyDraftOffer(old, true), dec = Sx.applyDraftOffer(old, false);
+  check("F17 accepting applies the default (revision + 1: draftPx is in the geometryKey), records history and answers the offer; input not mutated",
+    acc.geometry.draftPx === Dx && acc.revision === 5 && acc.extras.draftOffer === "applied" && Sx.validate(acc).ok &&
+      acc.extras.history.some((h) => h.op === "draft-default" && h.from === 720 && h.to === Dx && h.revision === 5) && JSON.stringify(old) === before);
+  check("F17 declining keeps the geometry and the revision and answers the offer, so it is shown once",
+    dec.geometry.draftPx === 720 && dec.revision === 4 && dec.extras.draftOffer === "declined" && Sx.draftPxOffer(dec, "desktop") === null &&
+      Sx.draftPxOffer(acc, "desktop") === null && Sx.validate(dec).ok && JSON.stringify(Sx.geometryKey(dec)) === JSON.stringify(Sx.geometryKey(old)));
+  check("F17 the answer survives a save/load round trip (extras)", Sx.draftPxOffer(JSON.parse(JSON.stringify(dec)), "desktop") === null);
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8"), html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+  const fn = (name) => { const i = appSrc.indexOf("function " + name + "("); return i < 0 ? "" : appSrc.slice(i, appSrc.indexOf("\n  }\n", i)); };
+  check("F17 index.html has the one-time offer (#draft-offer with its text, Use and Keep buttons), hidden by default",
+    /<p id="draft-offer"[^>]*role="status"[^>]*hidden>/.test(html) && /id="draft-offer-text"/.test(html) && /id="btn-draft-offer"/.test(html) && /id="btn-draft-keep"/.test(html));
+  check("F17 the app shows the offer from SBSchema.draftPxOffer on every regenerate and applies it only on the user's click (applyDraftOffer only in answerDraftOffer)",
+    /SBSchema\.draftPxOffer\(project, deviceClass\(\)\)/.test(fn("updateDraftOffer")) && /updateDraftOffer\(\)/.test(fn("regenerate")) &&
+    (appSrc.match(/SBSchema\.applyDraftOffer\(/g) || []).length === 1 && /SBSchema\.applyDraftOffer\(project, accept\)/.test(fn("answerDraftOffer")) &&
+    /"btn-draft-offer"\)\.addEventListener\("click", \(\) => answerDraftOffer\(true\)\)/.test(appSrc) &&
+    /"btn-draft-keep"\)\.addEventListener\("click", \(\) => answerDraftOffer\(false\)\)/.test(appSrc));
+  check("F17 the fallback fabrication estimate uses fabMsPerMpxFallback, the pooled one fabMsPerMpx",
+    /fallback \? "fabMsPerMpxFallback" : "fabMsPerMpx"/.test(fn("fabBusyText")) && /fabBusyText\(dc, true\)/.test(fn("fabFallback")) && /fabBusyText\(dc\)/.test(fn("fabReview")));
 });
 
 suite("app.js — alpha.3 E5 real-engine draft (PO-PREVIEW-1, LYR-06, UI-05)", () => {

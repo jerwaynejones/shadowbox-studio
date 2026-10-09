@@ -10,6 +10,8 @@
  *     node test/bench.js caps [--large-runs N] [--record] [--quick]
  *     node test/bench.js draft [--record] [--runs N] [--warm N] [--only a,b,c] [--all] [--quick]   (alpha.3 E4, see benchDraft)
  *     node test/bench.js draft --only a --candidates 720 --no-fab --guides none|inset-outline|interior-mark [--record-speed warm720]
+ *     node test/bench.js draft --draft-sweep 720,1280,1536,1792,2000 --pool 8 [--record]   (speed round F17, see benchDraftSweep)
+ *     node test/bench.js draft-decide   (F17: the F.7 rule over docs/perf/draft-budget.json f17 → decision)
  *     node test/bench.js large --only user12 [--guides …] [--runs N] [--rows draft720,fab3600,fab4096] [--record] [--quick]
  *
  * Speed round F2 (S5, PO-PERF-5): every engine-driven row (draft, fabrication, user12) carries a per-stage table
@@ -102,7 +104,7 @@ const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] :
 const stage = argv[0];
 const QUICK = argv.includes("--quick"), QUICK_ARG = QUICK;
 const RUNS = QUICK ? 1 : +arg("--runs", 15);
-const STAGES = { geom: benchGeom, support: benchSupport, large: benchLarge, "large-assemble": benchLargeAssemble, caps: benchCaps, draft: benchDraft };
+const STAGES = { geom: benchGeom, support: benchSupport, large: benchLarge, "large-assemble": benchLargeAssemble, caps: benchCaps, draft: benchDraft, "draft-decide": () => benchDraftDecide() };
 if (MAIN && !STAGES[stage]) { console.error("usage: node test/bench.js " + Object.keys(STAGES).join("|") + " [--runs N] [--json out.json] [--no-fail] [--quick]"); process.exit(2); }
 
 function timeRuns(fn, runs, warm) {
@@ -788,7 +790,7 @@ function benchLargeAssemble() {
  * --all disables this). Fabrication rows: workload (a) per family at the fabrication raster, no cache (as the app),
  * DRAFT.fabCold + DRAFT.fabRuns runs; fabMsPerMpx = the larger p50 ÷ raster Mpx of the families that finished.
  * The bench measures above the shipped device cap: SBSchema.limits is wrapped for the run so draftPxCap does not clamp.
- * --record writes docs/perf/draft-budget.json; decideDraft reproduces its decision (test "alpha.3 E4").
+ * --record writes docs/perf/draft-budget.json `e4` (history since F17); decideDraft reproduces its decision (test "alpha.3 E4").
  *
  *     node test/bench.js draft [--record] [--runs N] [--warm N] [--fab-runs N] [--only a,c] [--families realistic,busy]
  *                              [--candidates 720,1024] [--all] [--no-fab] [--quick]
@@ -1011,20 +1013,249 @@ function benchDraft(o = {}) {
       rows: report.rows, fabRows: report.fabRows, skipped: report.skipped, decision: report.decision,
       informational: { plywoodHeightDraftPx: draftPick(report.rows, "b"), note: "workload (b) under the same rule; reported, not gating (the plywood preset follows (a), the auto-tonal colour route)" },
     };
+    // speed round F17: the E4 record is history under `e4`; the F17 record (decision, rule, f17) stays as it is
+    let whole = {};
+    try { whole = JSON.parse(fs.readFileSync(DRAFT.perfJson, "utf8")); } catch (e) { whole = {}; }
+    whole.e4 = out;
     fs.mkdirSync(path.dirname(DRAFT.perfJson), { recursive: true });
-    fs.writeFileSync(DRAFT.perfJson, JSON.stringify(out, null, 1) + "\n");
+    fs.writeFileSync(DRAFT.perfJson, JSON.stringify(whole, null, 1) + "\n");
   }
   report.rows = report.rows.map((r) => ({ mode: r.mode, family: r.family, draftPx: r.draftPx, status: r.status, coldMs: r.coldMs, warmP95Ms: r.warmP95Ms, overlayShare: r.overlayShare,
     guides: r.guides, stages: r.stagesP50Ms }));
   return report;
 }
 
-function main() {
+// =========================================================================== draft sweep (speed round F17, S3)
+/**
+ * Speed round F17 (S3, PO-PERF-3): the draft budget re-measured with the worker pool.
+ *
+ *     node test/bench.js draft --draft-sweep 720,1280,1536,1792,2000 --pool 8 [--record] [--families realistic,busy]
+ *                              [--warm N] [--runs N] [--k2-runs N] [--colds N] [--no-scene] [--no-fab] [--fab-runs N] [--quick]
+ *
+ * Workload (a) (draftProject("a"), guides as the plywood preset: inset-outline) on the E4 sources (DRAFT.src, both art
+ * families). --pool N runs SBPool (js/pool.js) with N helpers on worker threads (test/node_worker_shim.js), as the page
+ * does; --pool 0 the sync driver. Each size is passed as the request's explicit draftCapPx (F-D5), so the shipped cap
+ * never clamps it. Per family and size: `colds` cold-after-source runs (a new source identity each: nothing cached),
+ * then DRAFT.warm warm-ups and `runs` warm runs with the E4 warm edit (sheets 8 ↔ 7, revision changing; K1/K2 hit), then
+ * `k2Runs` K2-miss runs (smoothing radius 1.65 ↔ 1.70 mm: K1 hit, K2 miss). Stages are the onProgress marks
+ * (stageDurations). Every run records status/code, max parts and vertices per layer, total vertices and the
+ * cap diagnostics (COMPLEXITY_LIMIT, FAB_COMPLEXITY_LIKELY). Scene rows: one cold draft of the alpha.3 scene
+ * (tools/alpha3_scene.js, 4096 × 3084, the user12 project) per size, for the F.4 #5 cap rule. Fabrication rows
+ * (fabMsPerMpx, pooled and serial): workload (a) realistic at the fabrication raster, 1 cold + fabRuns.
+ * --record merges the rows into docs/perf/draft-budget.json under `f17.node` (pool size as the key) — the browser
+ * rows (`f17.browser`, ?bench=draft) are added by tools; decideDraftF17 applies the F.7 rule to the record.
+ */
+const SWEEP = {
+  warm: 3, runs: 15, k2Runs: 7, colds: 3, fabRuns: 3, smoothing: [1.65, 1.7],
+  capCodes: ["COMPLEXITY_LIMIT", "FAB_COMPLEXITY_LIKELY"],
+};
+
+/** The draft result summary of one response (status, code, parts/vertices, cap diagnostics). */
+function sweepShape(res) {
+  const L = res && res.snapshot ? res.snapshot.layers : null, diags = (res && res.diagnostics) || [];
+  const codes = [...new Set(diags.map((d) => d.code))].sort();
+  return { status: res ? res.status : "none", code: res && res.error ? res.error.code : null,
+    maxParts: L ? Math.max(0, ...L.map((x) => x.parts.length)) : null,
+    maxVertices: L ? Math.max(0, ...L.map((x) => (x.stats && x.stats.vertices) || 0)) : null,
+    totalVertices: L ? L.reduce((a, x) => a + ((x.stats && x.stats.vertices) || 0), 0) : null,
+    capHits: SWEEP.capCodes.filter((c) => (res && res.error && res.error.code === c) || codes.includes(c)),
+    raster: res && res.snapshot ? res.snapshot.geometry.rasterW + "×" + res.snapshot.geometry.rasterH : null };
+}
+
+/** A Node pool of `helpers` helpers (worker threads through the shim), or null for the sync driver. */
+async function sweepPool(helpers) {
+  if (!helpers) return null;
+  const JS = path.join(__dirname, "..", "js"), text = (n) => fs.readFileSync(path.join(JS, n), "utf8");
+  const shim = require("./node_worker_shim.js");
+  if (typeof globalThis.SBPool === "undefined") vm.runInThisContext(text("pool.js"), { filename: "pool.js" });
+  const appVersion = (text("app.js").match(/const APP_VERSION = "([^"]+)"/) || [])[1];
+  const pool = SBPool.create({ appVersion, helpers, helloTimeoutMs: 30000, deviceClass: "desktop",
+    loadText: async (n) => text(n), spawn: (name) => shim.spawn(path.join(JS, "worker.js"), { name }) });
+  if (!(await pool.ready)) throw new Error("the Node pool did not come up (" + pool.mode + ")");
+  await pool.helpersReady;
+  return pool;
+}
+
+/** One timed draft/fabrication through the pool or the sync driver → {ms, stages, shape}. */
+async function sweepPass(pool, p, px, sampleHash, quality, capPx, cache) {
+  const E = SBEngine, seq = [], onProgress = (st) => seq.push([typeof st === "string" ? st : st.stage, performance.now()]);
+  const req = E.request(p, px, { quality, requestId: quality + "-" + p.revision, deviceClass: "desktop", draftCapPx: capPx });
+  const t0 = performance.now();
+  let res;
+  if (pool) {
+    pool.setSource(Object.assign({ sampleHash }, px));
+    const r = await pool.submit(req, { sampleHash, gen: 1, overlays: true, onProgress }).done;
+    res = r.response || { status: r.status };
+    if (process.env.SWEEP_DEBUG) console.error("pass", quality, sampleHash.slice(-8), r.status, res.status, res.error && res.error.code);
+  } else res = E.generate(req, { cache: cache || undefined, onProgress });
+  const ms = performance.now() - t0;
+  if (res.status !== "done" && !(res.error && res.error.code === "COMPLEXITY_LIMIT"))   // a bench error is never a timing
+    throw new Error("sweep run " + quality + " " + (capPx || "") + ": " + res.status + " " + (res.error ? res.error.code + " " + res.error.message : ""));
+  const shape = sweepShape(res);
+  if (!shape.raster) { const g = E.rasterPlan(p, { w: px.w, h: px.h }, quality, "desktop", quality === "draft" ? capPx : undefined).geometry; shape.raster = g.rasterW + "×" + g.rasterH; }
+  return { ms, stages: stageDurations(seq, t0, t0 + ms), shape };
+}
+
+/** Rows of one series → {n, p50Ms, p95Ms, maxMs}; stats of the ms values. */
+const sweepStats = (runs) => (runs.length ? stats(runs.map((r) => r.ms)) : { n: 0, p50Ms: null, p95Ms: null, maxMs: null });
+
+/**
+ * F.7 S3 rule (PO-PERF-3), applied to docs/perf/draft-budget.json f17 by decideDraftF17 (pure; the test reproduces the
+ * recorded decision with it). Browser keys: f17.browser["chromium-i7"|"firefox-i7"] are required; "chromium-m5" is
+ * applied when recorded (until then the decision is marked m5: "pending").
+ */
+const F17 = {
+  candidates: [1280, 1536, 1792, 2000], baseline: 720, families: ["realistic", "busy"],
+  targets: { "chromium-i7": 2500, "firefox-i7": 2500, "chromium-m5": 3000 }, required: ["chromium-i7", "firefox-i7"], optional: ["chromium-m5"],
+};
+F17.rule = "desktop draftPx = the largest of {" + F17.candidates.join(", ") + "} whose warm p95 (in-app ?bench=draft, the E4 warm edit: sheets 8 ↔ 7 " +
+  "with the revision changing, K1/K2 hit, 3 warm-ups + 15 warm runs, edit → painted draft, worker pool up) is ≤ 2.5 s in Chromium AND Firefox " +
+  "on the i7-11800H and ≤ 3.0 s in Chromium on the MacBook Air M5, on BOTH the realistic and the busy art family (E4 workload (a)); " +
+  "a size whose draft of the alpha.3 scene (4096 × 3084, the user12 project) hits a complexity cap (COMPLEXITY_LIMIT, FAB_COMPLEXITY_LIKELY) " +
+  "that the 720 draft does not hit is rejected (F.4 #5); the smaller " +
+  "decision wins; 720 when none qualifies. Both presets take the decision; mobile and the no-worker fallback keep 720 (draftPxFallback, " +
+  "passed as the request's draftCapPx, F-D5). The 0.5 s headroom under the E4 3.0 s rule covers browser variance. " +
+  "fabMsPerMpx (pool) and fabMsPerMpxFallback (sync driver) = the realistic (a) fabrication p50 ÷ Mpx in Node with --pool 8 and " +
+  "--pool 0, rounded up to 10 ms; mobile = 4 × desktop. Node --pool 8 rows are supporting evidence, not the rule.";
+
+/** decideDraftF17(f17) → the F17 decision (pure). */
+function decideDraftF17(f17) {
+  const b = f17.browser || {}, rejected = [], keys = F17.required.concat(F17.optional.filter((k) => b[k]));
+  const scene = (f17.node && f17.node.pool8 && f17.node.pool8.sceneRows) || [];
+  const ok = (c) => {
+    for (const k of keys) {
+      const row = b[k] && b[k].rows.find((r) => r.draftPx === c);
+      if (!row) { rejected.push({ draftPx: c, reason: k + " not measured" }); return false; }
+      for (const f of F17.families) {
+        const v = row.families[f];
+        if (!v || v.warmP95Ms === null || v.warmP95Ms === undefined) { rejected.push({ draftPx: c, reason: k + " " + f + " not measured" }); return false; }
+        if (v.warmP95Ms > F17.targets[k]) { rejected.push({ draftPx: c, reason: k + " " + f + " warm p95 " + v.warmP95Ms + " ms > " + F17.targets[k] + " ms" }); return false; }
+      }
+    }
+    const sc = scene.find((r) => r.draftPx === c), base = scene.find((r) => r.draftPx === F17.baseline);
+    if (!sc || !base) { rejected.push({ draftPx: c, reason: "alpha.3 scene not measured at " + (sc ? F17.baseline : c) }); return false; }
+    const fresh = sc.capHits.filter((h) => !base.capHits.includes(h));
+    if (fresh.length) { rejected.push({ draftPx: c, reason: "alpha.3 scene hits " + fresh.join(", ") + " (not hit at " + F17.baseline + ")" }); return false; }
+    return true;
+  };
+  const pass = F17.candidates.filter(ok), d = pass.length ? Math.max(...pass) : F17.baseline;
+  const fab = (k) => { const r = f17.node && f17.node[k] && (f17.node[k].fabRows || []).find((x) => x.family === "realistic" && x.status === "done");
+    return r ? Math.ceil(r.p50Ms / r.mpx / 10) * 10 : null; };
+  return { presets: { plywood: d, acrylic: d }, desktopDraftPx: d, mobileDraftPx: F17.baseline, fallbackDraftPx: F17.baseline,
+    fabMsPerMpx: fab("pool8"), fabMsPerMpxFallback: fab("pool0"), passing: pass, rejected, m5: b["chromium-m5"] ? "measured" : "pending" };
+}
+
+/**
+ * node test/bench.js draft-decide — applies decideDraftF17 to docs/perf/draft-budget.json f17 and writes the F17 record
+ * (task, machine, workload, rule, method, decision); a top-level E4 record found there is moved under `e4` first.
+ */
+function benchDraftDecide() {
+  const rec = JSON.parse(fs.readFileSync(DRAFT.perfJson, "utf8"));
+  if (rec.task === "E4") {
+    const e4 = {};
+    for (const k of Object.keys(rec)) if (k !== "f17") { e4[k] = rec[k]; delete rec[k]; }
+    rec.e4 = e4;
+  }
+  const f17 = rec.f17, n8 = f17.node.pool8, out = {
+    task: "F17", machine: n8.machine.replace(/, node .*$/, "") + "; browsers: " + Object.values(f17.browser || {}).map((b) => b.key + " = " + b.browser).join(", "),
+    workload: "E4 workload (a) (plywood auto-tonal, light-front, smoothing 1.65 mm × 2, bonded, 8 sheets, 300 mm high, inset-outline guides) on the E4 sources: " +
+      DRAFT.src.join(" × ") + " RGBA, realistic (F.heightMap seed " + DRAFT.seeds.realistic + ") and busy (F.busyHeightMap seed " + DRAFT.seeds.busy + ", " + DRAFT.busyCellPx +
+      " px cells) art families; cap check on the alpha.3 scene (tools/alpha3_scene.js 4096 × 3084, user12 project)",
+    rule: F17.rule,
+    method: { candidates: F17.candidates, browser: "tools/bench_draft_browser.mjs: ?bench=draft in the built bundle (Blob-worker pool, P = 8 helpers on 16 threads), cap raised to 2000 for the measurement, " +
+      "&draftPx per size; per family the cold draft after the source install, 3 warm-ups + 15 warm edits (sheets 8 ↔ 7) and 7 K2-miss edits (smoothing 1.65 ↔ 1.70 mm), edit → painted draft",
+      node: "node test/bench.js draft --draft-sweep 720,1280,1536,1792,2000 --pool 8 --record (and --draft-sweep 720 --pool 0 --no-scene for the sync driver)" },
+    decision: decideDraftF17(f17), e4: rec.e4, f17,
+  };
+  fs.writeFileSync(DRAFT.perfJson, JSON.stringify(out, null, 1) + "\n");
+  return { stage: "draft-decide", decision: out.decision };
+}
+
+async function benchDraftSweep(o = {}) {
+  const os = require("os"), E = SBEngine, crypto = require("crypto");
+  const QUICK = o.quick !== undefined ? !!o.quick : QUICK_ARG, div = QUICK ? 8 : 1;
+  const num = (name, d) => (arg(name) !== undefined ? +arg(name) : d);
+  const sizes = (o.sizes || arg("--draft-sweep").split(",").map(Number)).map((c) => (QUICK ? Math.max(64, Math.round(c / div)) : c));
+  const helpers = o.pool !== undefined ? +o.pool : num("--pool", 0);
+  const fams = o.families || (arg("--families") ? arg("--families").split(",") : DRAFT.families);
+  const warmN = QUICK ? 1 : num("--warm", SWEEP.warm), runsN = QUICK ? 2 : num("--runs", SWEEP.runs), k2N = QUICK ? 1 : num("--k2-runs", SWEEP.k2Runs);
+  const coldN = QUICK ? 1 : num("--colds", SWEEP.colds), fabN = QUICK ? 1 : num("--fab-runs", SWEEP.fabRuns);
+  const [SW, SH] = [Math.round(DRAFT.src[0] / div), Math.round(DRAFT.src[1] / div)];
+  const pool = await sweepPool(helpers);
+  const report = { stage: "draft-sweep", quick: QUICK, pool: helpers, node: process.version, cpu: os.cpus()[0].model, threads: os.cpus().length,
+    memGiB: +(os.totalmem() / 2 ** 30).toFixed(1), loadAvgStart: os.loadavg().map((x) => +x.toFixed(2)), rows: [], sceneRows: [], fabRows: [] };
+  const log = (s) => console.error("[sweep pool " + helpers + "] " + s);
+  try {
+    for (const fam of fams) {
+      const px = draftSource(fam, SW, SH), hash = crypto.createHash("sha256").update(E.sampleBytes(px)).digest("hex");
+      for (const c of sizes) {
+        const t0 = performance.now(), base = draftProject("a", px, hash), cache = { quality: "draft" };
+        let rev = base.revision;
+        const at = (h, f) => { const q = JSON.parse(JSON.stringify(base)); q.geometry.draftPx = c; q.source.sampleHash = h; q.revision = ++rev; if (f) f(q); return q; };
+        const colds = [];
+        for (let i = 0; i < coldN; i++) {   // a new source identity each time: K1/K2 miss (the pool keys its cache by sampleHash)
+          const h = hash.slice(0, 56) + (0xc01d0000 + i).toString(16);
+          colds.push(await sweepPass(pool, at(h), px, h, "draft", c, pool ? null : { quality: "draft" }));
+        }
+        await sweepPass(pool, at(hash), px, hash, "draft", c, cache);   // fill the cache for this source
+        const sheets = (i) => (q) => { q.construction.sheets = base.construction.sheets - (i % 2); };
+        for (let i = 0; i < warmN; i++) await sweepPass(pool, at(hash, sheets(i + 1)), px, hash, "draft", c, cache);
+        const warm = [];
+        for (let i = 0; i < runsN; i++) warm.push(await sweepPass(pool, at(hash, sheets(i)), px, hash, "draft", c, cache));
+        const k2 = [];
+        for (let i = 0; i < k2N; i++) k2.push(await sweepPass(pool, at(hash, (q) => { q.interpretation.smoothing = { radiusMM: SWEEP.smoothing[(i + 1) % 2], passes: 2 }; }), px, hash, "draft", c, cache));
+        const shape = warm.length ? warm[warm.length - 1].shape : colds[0].shape, ws = sweepStats(warm), ks = sweepStats(k2), cs = sweepStats(colds);
+        const row = { mode: "a", family: fam, draftPx: c, raster: shape.raster || colds[0].shape.raster, status: shape.status, code: shape.code,
+          warmP50Ms: ws.p50Ms, warmP95Ms: ws.p95Ms, warmMaxMs: ws.maxMs, warmRuns: ws.n, warmUps: warmN,
+          k2MissP50Ms: ks.p50Ms, k2MissP95Ms: ks.p95Ms, k2MissRuns: ks.n, coldP50Ms: cs.p50Ms, coldP95Ms: cs.p95Ms, coldRuns: cs.n,
+          maxParts: shape.maxParts, maxVertices: shape.maxVertices, totalVertices: shape.totalVertices,
+          capHits: [...new Set(warm.concat(k2, colds).flatMap((r) => r.shape.capHits))].sort(),
+          stagesP50Ms: stageP50(warm.map((r) => r.stages)), wallS: +((performance.now() - t0) / 1000).toFixed(1), loadAvg: os.loadavg().map((x) => +x.toFixed(2)) };
+        report.rows.push(row);
+        log(`(a) ${fam} ${c} ${row.raster} ${row.status}${row.code ? " " + row.code : ""}: warm p50 ${row.warmP50Ms} p95 ${row.warmP95Ms} ms, K2-miss p95 ${row.k2MissP95Ms}, cold p95 ${row.coldP95Ms}, parts ≤${row.maxParts}, vertices ≤${row.maxVertices}/${row.totalVertices}, caps [${row.capHits}], ${row.wallS} s`);
+      }
+      if (!argv.includes("--no-fab") && o.fab !== false && fam === "realistic") {
+        const p = Object.assign(draftProject("a", px, hash), {}), fr = [];
+        for (let i = 0; i <= fabN; i++) fr.push(await sweepPass(pool, p, px, hash, "fabrication", undefined, null));
+        const runs = fr.slice(1), st = sweepStats(runs), sh = runs[0].shape, [W, H] = sh.raster ? sh.raster.split("×").map(Number) : [0, 0];
+        const row = { family: fam, mode: "a", raster: sh.raster, mpx: +(W * H / 1e6).toFixed(2), status: sh.status, code: sh.code, p50Ms: st.p50Ms, maxMs: st.maxMs, runs: st.n, cold: 1,
+          msPerMpx: W ? Math.round(st.p50Ms / (W * H / 1e6)) : null, stagesP50Ms: stageP50(runs.map((r) => r.stages)) };
+        report.fabRows.push(row);
+        log(`fab (a) ${fam} ${row.raster} ${row.status}: p50 ${row.p50Ms} ms (${row.msPerMpx} ms/Mpx)`);
+      }
+    }
+    if (!argv.includes("--no-scene") && o.scene !== false) {
+      const px = alpha3Rgba(SW, SH), p0 = user12Project(px), hash = p0.source.sampleHash;
+      for (const c of sizes) {
+        const q = JSON.parse(JSON.stringify(p0)); q.geometry.draftPx = c;
+        const r = await sweepPass(pool, q, px, hash, "draft", c, null);
+        const row = Object.assign({ scene: "alpha.3 (tools/alpha3_scene.js " + SW + " × " + SH + ", user12 project)", draftPx: c, ms: +r.ms.toFixed(1) }, r.shape);
+        report.sceneRows.push(row);
+        log(`scene ${c} ${row.raster} ${row.status}${row.code ? " " + row.code : ""}: ${row.ms} ms, parts ≤${row.maxParts}, vertices ≤${row.maxVertices}/${row.totalVertices}, caps [${row.capHits}]`);
+      }
+    }
+  } finally { if (pool) pool.terminate(); }
+  report.loadAvgEnd = os.loadavg().map((x) => +x.toFixed(2));
+  if (!QUICK && (o.record !== undefined ? o.record : argv.includes("--record"))) {
+    const rec = JSON.parse(fs.readFileSync(DRAFT.perfJson, "utf8"));
+    rec.f17 = rec.f17 || {};
+    rec.f17.node = rec.f17.node || {};
+    rec.f17.node["pool" + helpers] = { machine: report.cpu + " (" + report.threads + " threads, " + report.memGiB + " GiB), node " + report.node,
+      pool: helpers, method: { warmUps: warmN, warmRuns: runsN, k2MissRuns: k2N, coldRuns: coldN, fabRuns: fabN, sizes,
+        warm: "E4 warm edit: sheets 8 ↔ 7, revision changing (K1/K2 hit)", k2Miss: "smoothing radius 1.65 ↔ 1.70 mm (K1 hit, K2 miss)",
+        cold: "a new source identity per run (nothing cached)", draftCapPx: "each size passed as the request's draftCapPx (F-D5)" },
+      loadAvgStart: report.loadAvgStart, loadAvgEnd: report.loadAvgEnd, rows: report.rows, sceneRows: report.sceneRows, fabRows: report.fabRows };
+    fs.writeFileSync(DRAFT.perfJson, JSON.stringify(rec, null, 1) + "\n");
+  }
+  return report;
+}
+
+async function main() {
   if ((stage === "large" || stage === "caps") && typeof global.gc !== "function") { // the working-set pass needs gc()
     const r = require("child_process").spawnSync(process.execPath, ["--expose-gc", __filename, ...argv], { stdio: "inherit" });
     process.exit(r.status === null ? 1 : r.status);
   }
-  const report = STAGES[stage]();
+  const report = stage === "draft" && arg("--draft-sweep") ? await benchDraftSweep() : STAGES[stage]();
   report.heapUsedMB = +(process.memoryUsage().heapUsed / 1048576).toFixed(0);
   report.rssMB = +(process.memoryUsage().rss / 1048576).toFixed(0);
   for (const [k, v] of Object.entries(report)) console.log(k + ":", JSON.stringify(v));
@@ -1036,5 +1267,5 @@ function main() {
     process.exit(1);
   }
 }
-module.exports = { stageDurations, benchDraft, USER12, user12Project, DRAFT, decideDraft, LARGE_WORKLOADS, LARGE, TRACKED_LARGE, LARGE_SHORTENED, CAPS, decideLarge, decideCaps, gateLarge, knownOverLarge, largeRowFromSummary, largeMethodKind };
-if (MAIN) main();
+module.exports = { stageDurations, benchDraft, benchDraftSweep, F17, decideDraftF17, USER12, user12Project, DRAFT, decideDraft, LARGE_WORKLOADS, LARGE, TRACKED_LARGE, LARGE_SHORTENED, CAPS, decideLarge, decideCaps, gateLarge, knownOverLarge, largeRowFromSummary, largeMethodKind };
+if (MAIN) main().catch((e) => { console.error(e); process.exit(1); });

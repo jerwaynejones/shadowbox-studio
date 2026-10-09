@@ -1,12 +1,92 @@
-# Draft budget (alpha.3 E4)
+# Draft budget (alpha.3 E4, re-measured in speed round F17)
 
-Plan Appendix E, task E4 (`PO-PREVIEW-1`, `PO-PREVIEW-2`; amends PO-LASER-4, which said "draft stays about
-720 px on the long side"). Raw data and the decision: `draft-budget.json`, written by
-`node test/bench.js draft --record`. The test suite `schema.js/engine.js — alpha.3 E4 draft budget` keeps
-`SBSchema.limits().draftPxCap`, `limits().fabMsPerMpx` and the preset `draftPx` values equal to the recorded
-decision, and checks that `decideDraft` reproduces that decision from the recorded rows.
+Plan Appendix E, task E4 (`PO-PREVIEW-1`, `PO-PREVIEW-2`; amends PO-LASER-4), re-measured in plan Appendix F, task F17
+(S3, `PO-PERF-3`) once the worker pool (F9–F16) ran the draft off the page. Raw data and the decision:
+`draft-budget.json` (`decision`, `rule`, `f17`; the E4 record is kept under `e4`). The suite
+`schema.js/engine.js — alpha.3 E4 draft budget (PO-PREVIEW-1)` keeps `SBSchema.limits()` (`draftPxCap`,
+`draftPxFallback`, `fabMsPerMpx`, `fabMsPerMpxFallback`) and both presets' `draftPx` equal to the recorded decision,
+and checks that `decideDraftF17` (`test/bench.js`) reproduces that decision from the recorded rows.
 
-## Decision
+## F17 decision (2026-10-09): 720 px stays; no candidate meets the 2.5 s rule
+
+| | Value |
+|---|---|
+| Plywood and Acrylic preset `geometry.draftPx` | **720** (unchanged) |
+| Desktop `draftPxCap` (pooled draft) | **720** (unchanged) |
+| Mobile `draftPxCap`, `draftPxFallback` (no-worker fallback, both device classes) | **720** |
+| Desktop `fabMsPerMpx` (pooled fabrication, the busy text's estimate) | **720** ms/Mpx (was 2410; mobile 4 × = 2880) |
+| Desktop `fabMsPerMpxFallback` (sync driver on the page, `fabBusyText(dc, true)`) | **1640** ms/Mpx (mobile 4 × = 6560) |
+| M5 Air (Chromium, ≤ 3.0 s) | **not measured** (the machine was not available to this run; `decision.m5: "pending"`) |
+
+**Rule (F.7, PO-PERF-3).** The desktop draft is the largest of {1280, 1536, 1792, 2000} whose warm p95 is
+**≤ 2.5 s in Chromium and in Firefox on the i7-11800H** (0.5 s under the E4 3.0 s rule) and ≤ 3.0 s in Chromium on
+the M5 Air, on **both** the realistic and the busy art family, with the E4 warm edit (sheets 8 ↔ 7, the revision
+changing, K1/K2 hit); a size whose draft of the alpha.3 scene hits a complexity cap that the 720 draft does not hit is
+rejected (F.4 #5); the smaller decision wins; 720 when none qualifies. Both presets take the decision; mobile and the
+fallback keep 720 through the request's `draftCapPx` (F-D5). The browser rows decide; the Node rows support them.
+
+**Result.** Chromium misses 2.5 s already at 1280 px on the realistic family (warm p95 **2657 ms**; p50 2434 ms), and
+Firefox misses by more (3314 ms). Every candidate is therefore rejected (`decision.rejected`), and the rule keeps
+720. The busy family passes everywhere (it is rejected by the parts cap before stage 14, as in E4), and the alpha.3
+scene hits no cap at any size (parts ≤ 59, vertices ≤ 4386 per layer), so neither of those decides. **Known gap
+(PO-PERF-3 not met):** the realistic draft at 1280 needs about 0.2 s (Chromium) to 0.8 s (Firefox) more. The serial
+profile shows where: at 720 the guide stage is 1414 ms of a 2964 ms warm draft (48 %); the pool runs it as two batches
+(`buildPair` items, the build fold, then `validatePair` items), so the slowest pair is waited for twice. F18's
+candidates "one item per guide pair" (build + validate fused) and per-layer complexity estimation are the next step; F18 or G4.4 re-runs this sweep (`tools/bench_draft_browser.mjs`, then `node test/bench.js draft-decide`).
+Nothing reset: no preset `draftPx` changed, so no fabrication `geometryHash`, acknowledgement or repair `keyHash` moved.
+
+**Saved projects (Q2).** `draftPx` is user-visible (legacy `procRes`), so a raised default is never applied
+silently: `SBSchema.draftPxOffer(project, deviceClass)` offers it once to a project still at 720 on a device whose
+cap allows it (`#draft-offer`, "Use the finer draft" / "Keep 720 px"), and `SBSchema.applyDraftOffer` applies it only
+on that click (revision + 1, `extras.history` `draft-default`) or records the refusal (`extras.draftOffer`). With the
+decision at 720 the offer never shows; it is live for the next re-measurement.
+
+### Browser rows (the rule's numbers; ms, edit → painted draft)
+
+`tools/bench_draft_browser.mjs --browser chromium|firefox --sizes 720,1280,1536,1792,2000 --record`: the built
+bundle over http (Blob-worker pool, P = 8 helpers on 16 threads), desktop cap raised to 2000 for the measurement only,
+`?bench=draft&draftPx=N`. Per family: the cold draft after the source install, 3 warm-ups + 15 warm edits, 7 K2-miss
+edits (smoothing 1.65 ↔ 1.70 mm). "Render" is the result's receipt → painted frame (`applyDraft`, `preview.setSnapshot`,
+overlays, paint), p95. Busy rows end in `COMPLEXITY_LIMIT` (they time the rejection, as in E4).
+
+| Browser | draftPx | Raster | realistic warm p50 / **p95** | K2-miss p95 | cold | render p95 | busy warm **p95** |
+|---|---|---|---|---|---|---|---|
+| Chromium 152 | 720 | 720×542 | 1406 / **1548** | 1767 | 3693 | 81 | **572** |
+| Chromium 152 | 1280 | 1280×964 | 2434 / **2657** | 2849 | 5230 | 147 | **943** |
+| Chromium 152 | 1536 | 1536×1157 | 2546 / **2950** | 2978 | 5836 | 89 | **1093** |
+| Chromium 152 | 1792 | 1792×1349 | 3119 / **3452** | 3631 | 6655 | 117 | **1450** |
+| Chromium 152 | 2000 | 2000×1506 | 3295 / **3516** | 4005 | 7113 | 102 | **1641** |
+| Firefox 155 | 720 | 720×542 | 1827 / **2116** | 2148 | 2808 | 46 | **619** |
+| Firefox 155 | 1280 | 1280×964 | 3049 / **3314** | 3518 | 3989 | 55 | **1020** |
+| Firefox 155 | 1536 | 1536×1157 | 3440 / **3692** | 4137 | 4765 | 54 | **1078** |
+| Firefox 155 | 1792 | 1792×1349 | 3899 / **4224** | 4471 | 5710 | 96 | **1342** |
+| Firefox 155 | 2000 | 2000×1506 | 3994 / **4447** | 4842 | 5693 | 50 | **1604** |
+
+The pooled 720 draft is **1.55 s** p95 in Chromium (E11 serial, Node: 3.76 s). The bench's `longTaskMaxMs` (≈ 2.0 s,
+Chromium) is the bench building the 4096 × 3084 synthetic art on the page before the run, not the draft path.
+
+### Node rows (supporting; `node test/bench.js draft --draft-sweep 720,1280,1536,1792,2000 --pool 8 --record`)
+
+Same workload and edits through `SBPool` on worker threads (8 helpers) with overlays on; 3 cold runs (a new source
+identity each), 3 + 15 warm, 7 K2-miss. 1-minute load average 3.6–7.4 (desktop processes on the same machine).
+
+| draftPx | realistic warm p50 / **p95** | K2-miss p95 | cold p95 | parts ≤ / vertices ≤ per layer | busy warm p95 (limit) | alpha.3 scene: cold ms, parts ≤, vertices ≤, caps |
+|---|---|---|---|---|---|---|
+| 720 | 1251 / **1358** | 1434 | 3566 | 126 / 9148 | 904 | 695, 59, 1916, none |
+| 1280 | 2058 / **2227** | 2399 | 2841 | 136 / 16410 | 1610 | 1184, 55, 3026, none |
+| 1536 | 2371 / **2653** | 2911 | 3056 | 122 / 18170 | 2156 | 1525, 51, 3490, none |
+| 1792 | 2811 / **2989** | 3215 | 3680 | 132 / 21756 | 2512 | 1745, 51, 3968, none |
+| 2000 | 2965 / **3450** | 3652 | 4105 | 118 / 22496 | 2908 | 2016, 38, 4386, none |
+
+Chromium ran ≈ 1.2× Node at 1280 (2657 / 2227), as F.0 #1 expected. Sync driver (`--pool 0`) at 720: realistic warm
+p95 2964 ms (guides 1414 ms p50), busy 1392 ms. The pooled stage columns in the JSON are the coordinator's progress
+marks (batch boundaries), so their names do not split the time like the serial ones.
+
+**Fabrication (`fabMsPerMpx`).** Workload (a), realistic, 3985 × 3000 (11.96 Mpx), 1 cold + 3 runs: pooled p50
+**8503 ms** (711 ms/Mpx → 720), sync driver p50 **19572 ms** (1637 ms/Mpx → 1640). The busy text's estimate now uses
+the pooled figure for a pooled run and the sync figure in the fallback branch.
+
+## E4 decision (2026-10-08, history)
 
 | | Value |
 |---|---|
@@ -24,7 +104,7 @@ on the long side. The cap is not a project field, so the project key, and with i
 This matches the plan's expected outcome: 720 px, not the 2–4 Mpx the user asked for. The way to see exact
 detail is "Preview at fabrication resolution" (E6).
 
-## Rule
+### E4: Rule
 
 For each preset, `draftPx` is the largest candidate in {720, 1024, 1280, 1536, 2000} whose **warm-cache p95** is
 **≤ 3.0 s on both the realistic and the busy art family** for the preset's workload: plywood uses (a) auto-tonal,
@@ -59,7 +139,7 @@ fabrication only (E-R4: only on this bench evidence, never silently). The busy f
 rejected by the parts cap before stage 14. The fabrication share of stage 14 (E-R4, `node test/bench.js large`) was
 not measured in E11 (the long large-image bench was out of scope for this run); it is still owed.
 
-## Method
+### E4: Method
 
 - **Source.** 4096 × 3084 RGBA (12.6 Mpx, the size of the user's colour illustration). It is built from the bench's
   art generators: realistic (`F.heightMap`, seed 2022) and busy (`F.busyHeightMap`, seed 11, 27 px cells). The colour
@@ -84,7 +164,7 @@ not measured in E11 (the long large-image bench was out of scope for this run); 
 - **Device cap during the bench.** The bench wraps `SBSchema.limits` for its own run so that the shipped cap does not
   clamp the candidates it measures.
 
-## Results (2026-10-08, i7-11800H, Node v26.7.0, single thread)
+### E4: Results (2026-10-08, i7-11800H, Node v26.7.0, single thread)
 
 Times are in ms. "Limit" means the run ended with `COMPLEXITY_LIMIT`: busy art exceeds the desktop parts cap of
 258 parts/layer (G2.7b) in bonded mode. Those rows time the rejection, which is what the user waits for.
@@ -123,7 +203,7 @@ Times are in ms. "Limit" means the run ended with `COMPLEXITY_LIMIT`: busy art e
 - **Cold runs** (new source, smoothing change) cost 3.6 s at 720 px for (a). Orient, resample and Kuwahara on the
   12.6 Mpx source dominate, and E3 caches them for warm edits.
 
-## Draft overlay polygons: `opts.overlays:false` ships
+### E4: Draft overlay polygons: `opts.overlays:false` ships
 
 The change-overlay polygons take **44 %** of construct on the gating row ((a) realistic at 720) and 39–77 % on
 the others, which is above the 15 % threshold (E.5). `SBEngine.generate(req, {overlays: false})` therefore skips
@@ -132,7 +212,7 @@ so `geometryHash` is unchanged (check `G2.13b overlays:false omits added/removed
 Whether and when the app passes `overlays: false` (for example, only while the overlay toggle is off) is decided in
 E5. The budget above was measured with overlays **on**, so it is conservative.
 
-## Why 2–4 Mpx is not interactive on the main thread
+### E4: Why 2–4 Mpx is not interactive on the main thread
 
 A 2–4 Mpx draft is about 1600–2300 px on the long side of a 4:3 image. Warm construct grows about in
 proportion to the pixel count: (a) goes from 0.65 s at 720 px to 1.23 s at 1024 px (×1.9 for ×2.0 pixels), and
@@ -142,7 +222,7 @@ runs and the busy family take longer, and the page is frozen the whole time beca
 meant to remove. The fabrication preview (E6) shows exact detail on request instead. A user "draft detail" choice
 (for example 2.5 Mpx Fine) is deferred until the G4.1 worker exists (Appendix E.8, question 2).
 
-## Known gaps (for the E14 table)
+### E4: Known gaps (for the E14 table)
 
 - The acrylic/connected draft misses 3.0 s even at 720 px (8.9 s realistic, 28.5 s busy): KI-CONN-PERF, G4.1.
 - The plywood draft meets 3.0 s, not G4.4's 1.5 s: G4.1, then G4.4 re-measures.

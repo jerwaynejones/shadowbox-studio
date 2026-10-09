@@ -1,454 +1,18 @@
 {
- "task": "E4",
- "machine": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (16 threads, 62.5 GiB), node v26.7.0",
- "workload": "4096 × 3084 RGBA (12.6 Mpx), realistic (F.heightMap seed 2022) and busy (F.busyHeightMap seed 11, 27 px cells) art families, colour channels R = g, G = 3g mod 256, B = 255 − g; modes: (a) plywood auto-tonal (tonal, light-front, smoothing 1.65 mm × 2 passes, bonded, 8 sheets, 300 mm high); (b) plywood height (white-high, bonded, 8 sheets, 300 mm high; reported, not gating); (c) acrylic connected (tonal dark-front, smoothing 1.65 mm × 2, smooth corners, 5 sheets, 300 mm wide; KI-CONN-PERF)",
- "rule": "per preset, draftPx = the largest candidate in {720, 1024, 1280, 1536, 2000} whose warm-cache p95 (≥ 15 warm runs, E3 cache filled, sheets changed between runs) is ≤ 3.0 s on BOTH the realistic and the busy art family for the preset's workload (plywood: (a) auto-tonal; acrylic: (c) connected) on the reference machine; 720 when none qualifies (recorded as a known gap, G4.1). Desktop draftPxCap = the larger of the two preset values; mobile draftPxCap = 720 (mobile ≈ 4× slower, k provisional as in D.8). Deviation: 3.0 s p95 is twice the G4.4 desktop draft target (p95 ≤ 1.5 s, which needs the G4.1 worker pool); G4.4 re-measures against 1.5 s. fabMsPerMpx = the larger p50 of the (a) fabrication rows that finished ÷ fabrication raster Mpx (rounded up to 10 ms); mobile = 4 × desktop.",
+ "task": "F17",
+ "machine": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (16 threads, 62.5 GiB); browsers: chromium-i7 = Chrome/152.0.7977.82, firefox-i7 = firefox 155.0.1",
+ "workload": "E4 workload (a) (plywood auto-tonal, light-front, smoothing 1.65 mm × 2, bonded, 8 sheets, 300 mm high, inset-outline guides) on the E4 sources: 4096 × 3084 RGBA, realistic (F.heightMap seed 2022) and busy (F.busyHeightMap seed 11, 27 px cells) art families; cap check on the alpha.3 scene (tools/alpha3_scene.js 4096 × 3084, user12 project)",
+ "rule": "desktop draftPx = the largest of {1280, 1536, 1792, 2000} whose warm p95 (in-app ?bench=draft, the E4 warm edit: sheets 8 ↔ 7 with the revision changing, K1/K2 hit, 3 warm-ups + 15 warm runs, edit → painted draft, worker pool up) is ≤ 2.5 s in Chromium AND Firefox on the i7-11800H and ≤ 3.0 s in Chromium on the MacBook Air M5, on BOTH the realistic and the busy art family (E4 workload (a)); a size whose draft of the alpha.3 scene (4096 × 3084, the user12 project) hits a complexity cap (COMPLEXITY_LIMIT, FAB_COMPLEXITY_LIKELY) that the 720 draft does not hit is rejected (F.4 #5); the smaller decision wins; 720 when none qualifies. Both presets take the decision; mobile and the no-worker fallback keep 720 (draftPxFallback, passed as the request's draftCapPx, F-D5). The 0.5 s headroom under the E4 3.0 s rule covers browser variance. fabMsPerMpx (pool) and fabMsPerMpxFallback (sync driver) = the realistic (a) fabrication p50 ÷ Mpx in Node with --pool 8 and --pool 0, rounded up to 10 ms; mobile = 4 × desktop. Node --pool 8 rows are supporting evidence, not the rule.",
  "method": {
   "candidates": [
-   720,
-   1024,
    1280,
    1536,
+   1792,
    2000
   ],
-  "cold": 1,
-  "warmUps": 3,
-  "warmRuns": 15,
-  "fabCold": 1,
-  "fabRuns": 5,
-  "earlyStop": true,
-  "shortened": false,
-  "warm": "E3 cache filled; construction.sheets alternates 8 ↔ 7 (5 ↔ 4 for acrylic) and the revision changes between runs, so construct reruns",
-  "overlayShare": "Σ draft change-overlay polygon time (SBEngine.maskPolygons for e.added/e.removed) ÷ Σ construct-stage time over the warm runs"
+  "browser": "tools/bench_draft_browser.mjs: ?bench=draft in the built bundle (Blob-worker pool, P = 8 helpers on 16 threads), cap raised to 2000 for the measurement, &draftPx per size; per family the cold draft after the source install, 3 warm-ups + 15 warm edits (sheets 8 ↔ 7) and 7 K2-miss edits (smoothing 1.65 ↔ 1.70 mm), edit → painted draft",
+  "node": "node test/bench.js draft --draft-sweep 720,1280,1536,1792,2000 --pool 8 --record (and --draft-sweep 720 --pool 0 --no-scene for the sync driver)"
  },
- "loadAvgStart": [
-  6.44,
-  5.59,
-  5.66
- ],
- "loadAvgEnd": [
-  38.11,
-  27.09,
-  15.23
- ],
- "rows": [
-  {
-   "draftPx": 720,
-   "raster": "720×542",
-   "mode": "a",
-   "family": "realistic",
-   "status": "done",
-   "code": null,
-   "coldMs": 3603.5,
-   "warmP50Ms": 1763.8,
-   "warmP95Ms": 1973.9,
-   "warmMaxMs": 1973.9,
-   "warmRuns": 15,
-   "warmUps": 3,
-   "constructP50Ms": 651.8,
-   "overlayShare": 0.442,
-   "maxPartsPerLayer": 126,
-   "wallS": 35.2,
-   "loadAvg": [
-    6.06,
-    5.6,
-    5.66
-   ]
-  },
-  {
-   "draftPx": 1024,
-   "raster": "1024×771",
-   "mode": "a",
-   "family": "realistic",
-   "status": "done",
-   "code": null,
-   "coldMs": 4768.9,
-   "warmP50Ms": 2752,
-   "warmP95Ms": 3215.9,
-   "warmMaxMs": 3215.9,
-   "warmRuns": 15,
-   "warmUps": 3,
-   "constructP50Ms": 1226.2,
-   "overlayShare": 0.388,
-   "maxPartsPerLayer": 133,
-   "wallS": 53.8,
-   "loadAvg": [
-    6.95,
-    5.95,
-    5.78
-   ]
-  },
-  {
-   "draftPx": 720,
-   "raster": "720×542",
-   "mode": "b",
-   "family": "realistic",
-   "status": "done",
-   "code": null,
-   "coldMs": 1136.6,
-   "warmP50Ms": 1000.7,
-   "warmP95Ms": 1053.7,
-   "warmMaxMs": 1053.7,
-   "warmRuns": 15,
-   "warmUps": 3,
-   "constructP50Ms": 498.9,
-   "overlayShare": 0.288,
-   "maxPartsPerLayer": 97,
-   "wallS": 18.3,
-   "loadAvg": [
-    6.56,
-    5.92,
-    5.78
-   ]
-  },
-  {
-   "draftPx": 1024,
-   "raster": "1024×771",
-   "mode": "b",
-   "family": "realistic",
-   "status": "done",
-   "code": null,
-   "coldMs": 2222.3,
-   "warmP50Ms": 1727.8,
-   "warmP95Ms": 1811.5,
-   "warmMaxMs": 1811.5,
-   "warmRuns": 15,
-   "warmUps": 3,
-   "constructP50Ms": 995,
-   "overlayShare": 0.294,
-   "maxPartsPerLayer": 88,
-   "wallS": 32.5,
-   "loadAvg": [
-    6.42,
-    5.95,
-    5.79
-   ]
-  },
-  {
-   "draftPx": 1280,
-   "raster": "1280×964",
-   "mode": "b",
-   "family": "realistic",
-   "status": "done",
-   "code": null,
-   "coldMs": 3112.8,
-   "warmP50Ms": 2516.9,
-   "warmP95Ms": 3350,
-   "warmMaxMs": 3350,
-   "warmRuns": 15,
-   "warmUps": 3,
-   "constructP50Ms": 1531.2,
-   "overlayShare": 0.29,
-   "maxPartsPerLayer": 99,
-   "wallS": 47.4,
-   "loadAvg": [
-    5.85,
-    5.85,
-    5.76
-   ]
-  },
-  {
-   "draftPx": 720,
-   "raster": "720×542",
-   "mode": "c",
-   "family": "realistic",
-   "status": "done",
-   "code": null,
-   "coldMs": 10192.2,
-   "warmP50Ms": 8573.7,
-   "warmP95Ms": 8902.9,
-   "warmMaxMs": 8902.9,
-   "warmRuns": 15,
-   "warmUps": 3,
-   "constructP50Ms": 752.9,
-   "overlayShare": 0.225,
-   "maxPartsPerLayer": 1,
-   "wallS": 150.6,
-   "loadAvg": [
-    4.35,
-    5.13,
-    5.5
-   ]
-  },
-  {
-   "draftPx": 720,
-   "raster": "720×542",
-   "mode": "a",
-   "family": "busy",
-   "status": "error",
-   "code": "COMPLEXITY_LIMIT",
-   "coldMs": 3298.7,
-   "warmP50Ms": 1938.1,
-   "warmP95Ms": 2180.1,
-   "warmMaxMs": 2180.1,
-   "warmRuns": 15,
-   "warmUps": 3,
-   "constructP50Ms": 1857.5,
-   "overlayShare": 0.769,
-   "maxPartsPerLayer": null,
-   "wallS": 37.4,
-   "loadAvg": [
-    5.02,
-    5.05,
-    5.39
-   ]
-  },
-  {
-   "draftPx": 1024,
-   "raster": "1024×771",
-   "mode": "a",
-   "family": "busy",
-   "status": "error",
-   "code": "COMPLEXITY_LIMIT",
-   "coldMs": 4953,
-   "warmP50Ms": 3424,
-   "warmP95Ms": 3766.9,
-   "warmMaxMs": 3766.9,
-   "warmRuns": 15,
-   "warmUps": 3,
-   "constructP50Ms": 3282.8,
-   "overlayShare": 0.749,
-   "maxPartsPerLayer": null,
-   "wallS": 65,
-   "loadAvg": [
-    4.78,
-    4.94,
-    5.32
-   ]
-  },
-  {
-   "draftPx": 720,
-   "raster": "720×542",
-   "mode": "b",
-   "family": "busy",
-   "status": "error",
-   "code": "COMPLEXITY_LIMIT",
-   "coldMs": 1980,
-   "warmP50Ms": 1510.9,
-   "warmP95Ms": 1732.4,
-   "warmMaxMs": 1732.4,
-   "warmRuns": 15,
-   "warmUps": 3,
-   "constructP50Ms": 1475.4,
-   "overlayShare": 0.743,
-   "maxPartsPerLayer": null,
-   "wallS": 28.4,
-   "loadAvg": [
-    4.61,
-    4.88,
-    5.29
-   ]
-  },
-  {
-   "draftPx": 1024,
-   "raster": "1024×771",
-   "mode": "b",
-   "family": "busy",
-   "status": "error",
-   "code": "COMPLEXITY_LIMIT",
-   "coldMs": 2945.7,
-   "warmP50Ms": 2597,
-   "warmP95Ms": 2910.4,
-   "warmMaxMs": 2910.4,
-   "warmRuns": 15,
-   "warmUps": 3,
-   "constructP50Ms": 2529.6,
-   "overlayShare": 0.709,
-   "maxPartsPerLayer": null,
-   "wallS": 48.9,
-   "loadAvg": [
-    6.27,
-    5.27,
-    5.4
-   ]
-  },
-  {
-   "draftPx": 1280,
-   "raster": "1280×964",
-   "mode": "b",
-   "family": "busy",
-   "status": "error",
-   "code": "COMPLEXITY_LIMIT",
-   "coldMs": 3900.8,
-   "warmP50Ms": 3530.4,
-   "warmP95Ms": 3883.6,
-   "warmMaxMs": 3883.6,
-   "warmRuns": 15,
-   "warmUps": 3,
-   "constructP50Ms": 3423.7,
-   "overlayShare": 0.657,
-   "maxPartsPerLayer": null,
-   "wallS": 66.2,
-   "loadAvg": [
-    5.09,
-    5.15,
-    5.35
-   ]
-  },
-  {
-   "draftPx": 720,
-   "raster": "720×542",
-   "mode": "c",
-   "family": "busy",
-   "status": "done",
-   "code": null,
-   "coldMs": 27229,
-   "warmP50Ms": 26073.1,
-   "warmP95Ms": 28511.1,
-   "warmMaxMs": 28511.1,
-   "warmRuns": 15,
-   "warmUps": 3,
-   "constructP50Ms": 2217.7,
-   "overlayShare": 0.354,
-   "maxPartsPerLayer": 3,
-   "wallS": 453,
-   "loadAvg": [
-    6.82,
-    6.33,
-    5.75
-   ]
-  }
- ],
- "fabRows": [
-  {
-   "family": "realistic",
-   "mode": "a",
-   "raster": "3985×3000",
-   "mpx": 11.96,
-   "ms": 28817.7,
-   "maxMs": 29667.7,
-   "runs": 5,
-   "cold": 1,
-   "status": "done",
-   "code": null,
-   "maxPartsPerLayer": 112,
-   "wallS": 173.1
-  },
-  {
-   "family": "busy",
-   "mode": "a",
-   "raster": "3985×3000",
-   "mpx": 11.96,
-   "ms": 58138,
-   "maxMs": 58516.6,
-   "runs": 5,
-   "cold": 1,
-   "status": "error",
-   "code": "COMPLEXITY_LIMIT",
-   "maxPartsPerLayer": null,
-   "wallS": 340
-  }
- ],
- "skipped": [
-  {
-   "draftPx": 1280,
-   "mode": "a",
-   "family": "realistic",
-   "reason": "a smaller candidate already exceeds the target"
-  },
-  {
-   "draftPx": 1536,
-   "mode": "a",
-   "family": "realistic",
-   "reason": "a smaller candidate already exceeds the target"
-  },
-  {
-   "draftPx": 2000,
-   "mode": "a",
-   "family": "realistic",
-   "reason": "a smaller candidate already exceeds the target"
-  },
-  {
-   "draftPx": 1536,
-   "mode": "b",
-   "family": "realistic",
-   "reason": "a smaller candidate already exceeds the target"
-  },
-  {
-   "draftPx": 2000,
-   "mode": "b",
-   "family": "realistic",
-   "reason": "a smaller candidate already exceeds the target"
-  },
-  {
-   "draftPx": 1024,
-   "mode": "c",
-   "family": "realistic",
-   "reason": "a smaller candidate already exceeds the target"
-  },
-  {
-   "draftPx": 1280,
-   "mode": "c",
-   "family": "realistic",
-   "reason": "a smaller candidate already exceeds the target"
-  },
-  {
-   "draftPx": 1536,
-   "mode": "c",
-   "family": "realistic",
-   "reason": "a smaller candidate already exceeds the target"
-  },
-  {
-   "draftPx": 2000,
-   "mode": "c",
-   "family": "realistic",
-   "reason": "a smaller candidate already exceeds the target"
-  },
-  {
-   "draftPx": 1280,
-   "mode": "a",
-   "family": "busy",
-   "reason": "a smaller candidate already exceeds the target"
-  },
-  {
-   "draftPx": 1536,
-   "mode": "a",
-   "family": "busy",
-   "reason": "a smaller candidate already exceeds the target"
-  },
-  {
-   "draftPx": 2000,
-   "mode": "a",
-   "family": "busy",
-   "reason": "a smaller candidate already exceeds the target"
-  },
-  {
-   "draftPx": 1536,
-   "mode": "b",
-   "family": "busy",
-   "reason": "a smaller candidate already exceeds the target"
-  },
-  {
-   "draftPx": 2000,
-   "mode": "b",
-   "family": "busy",
-   "reason": "a smaller candidate already exceeds the target"
-  },
-  {
-   "draftPx": 1024,
-   "mode": "c",
-   "family": "busy",
-   "reason": "a smaller candidate already exceeds the target"
-  },
-  {
-   "draftPx": 1280,
-   "mode": "c",
-   "family": "busy",
-   "reason": "a smaller candidate already exceeds the target"
-  },
-  {
-   "draftPx": 1536,
-   "mode": "c",
-   "family": "busy",
-   "reason": "a smaller candidate already exceeds the target"
-  },
-  {
-   "draftPx": 2000,
-   "mode": "c",
-   "family": "busy",
-   "reason": "a smaller candidate already exceeds the target"
-  }
- ],
  "decision": {
   "presets": {
    "plywood": 720,
@@ -456,17 +20,1763 @@
   },
   "desktopDraftPx": 720,
   "mobileDraftPx": 720,
-  "fabMsPerMpx": 2410
+  "fallbackDraftPx": 720,
+  "fabMsPerMpx": 720,
+  "fabMsPerMpxFallback": 1640,
+  "passing": [],
+  "rejected": [
+   {
+    "draftPx": 1280,
+    "reason": "chromium-i7 realistic warm p95 2657.4 ms > 2500 ms"
+   },
+   {
+    "draftPx": 1536,
+    "reason": "chromium-i7 realistic warm p95 2950.4 ms > 2500 ms"
+   },
+   {
+    "draftPx": 1792,
+    "reason": "chromium-i7 realistic warm p95 3452.3 ms > 2500 ms"
+   },
+   {
+    "draftPx": 2000,
+    "reason": "chromium-i7 realistic warm p95 3516.3 ms > 2500 ms"
+   }
+  ],
+  "m5": "pending"
  },
- "informational": {
-  "plywoodHeightDraftPx": 1024,
-  "note": "workload (b) under the same rule; reported, not gating (the plywood preset follows (a), the auto-tonal colour route)"
+ "e4": {
+  "task": "E4",
+  "machine": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (16 threads, 62.5 GiB), node v26.7.0",
+  "workload": "4096 × 3084 RGBA (12.6 Mpx), realistic (F.heightMap seed 2022) and busy (F.busyHeightMap seed 11, 27 px cells) art families, colour channels R = g, G = 3g mod 256, B = 255 − g; modes: (a) plywood auto-tonal (tonal, light-front, smoothing 1.65 mm × 2 passes, bonded, 8 sheets, 300 mm high); (b) plywood height (white-high, bonded, 8 sheets, 300 mm high; reported, not gating); (c) acrylic connected (tonal dark-front, smoothing 1.65 mm × 2, smooth corners, 5 sheets, 300 mm wide; KI-CONN-PERF)",
+  "rule": "per preset, draftPx = the largest candidate in {720, 1024, 1280, 1536, 2000} whose warm-cache p95 (≥ 15 warm runs, E3 cache filled, sheets changed between runs) is ≤ 3.0 s on BOTH the realistic and the busy art family for the preset's workload (plywood: (a) auto-tonal; acrylic: (c) connected) on the reference machine; 720 when none qualifies (recorded as a known gap, G4.1). Desktop draftPxCap = the larger of the two preset values; mobile draftPxCap = 720 (mobile ≈ 4× slower, k provisional as in D.8). Deviation: 3.0 s p95 is twice the G4.4 desktop draft target (p95 ≤ 1.5 s, which needs the G4.1 worker pool); G4.4 re-measures against 1.5 s. fabMsPerMpx = the larger p50 of the (a) fabrication rows that finished ÷ fabrication raster Mpx (rounded up to 10 ms); mobile = 4 × desktop.",
+  "method": {
+   "candidates": [
+    720,
+    1024,
+    1280,
+    1536,
+    2000
+   ],
+   "cold": 1,
+   "warmUps": 3,
+   "warmRuns": 15,
+   "fabCold": 1,
+   "fabRuns": 5,
+   "earlyStop": true,
+   "shortened": false,
+   "warm": "E3 cache filled; construction.sheets alternates 8 ↔ 7 (5 ↔ 4 for acrylic) and the revision changes between runs, so construct reruns",
+   "overlayShare": "Σ draft change-overlay polygon time (SBEngine.maskPolygons for e.added/e.removed) ÷ Σ construct-stage time over the warm runs"
+  },
+  "loadAvgStart": [
+   6.44,
+   5.59,
+   5.66
+  ],
+  "loadAvgEnd": [
+   38.11,
+   27.09,
+   15.23
+  ],
+  "rows": [
+   {
+    "draftPx": 720,
+    "raster": "720×542",
+    "mode": "a",
+    "family": "realistic",
+    "status": "done",
+    "code": null,
+    "coldMs": 3603.5,
+    "warmP50Ms": 1763.8,
+    "warmP95Ms": 1973.9,
+    "warmMaxMs": 1973.9,
+    "warmRuns": 15,
+    "warmUps": 3,
+    "constructP50Ms": 651.8,
+    "overlayShare": 0.442,
+    "maxPartsPerLayer": 126,
+    "wallS": 35.2,
+    "loadAvg": [
+     6.06,
+     5.6,
+     5.66
+    ]
+   },
+   {
+    "draftPx": 1024,
+    "raster": "1024×771",
+    "mode": "a",
+    "family": "realistic",
+    "status": "done",
+    "code": null,
+    "coldMs": 4768.9,
+    "warmP50Ms": 2752,
+    "warmP95Ms": 3215.9,
+    "warmMaxMs": 3215.9,
+    "warmRuns": 15,
+    "warmUps": 3,
+    "constructP50Ms": 1226.2,
+    "overlayShare": 0.388,
+    "maxPartsPerLayer": 133,
+    "wallS": 53.8,
+    "loadAvg": [
+     6.95,
+     5.95,
+     5.78
+    ]
+   },
+   {
+    "draftPx": 720,
+    "raster": "720×542",
+    "mode": "b",
+    "family": "realistic",
+    "status": "done",
+    "code": null,
+    "coldMs": 1136.6,
+    "warmP50Ms": 1000.7,
+    "warmP95Ms": 1053.7,
+    "warmMaxMs": 1053.7,
+    "warmRuns": 15,
+    "warmUps": 3,
+    "constructP50Ms": 498.9,
+    "overlayShare": 0.288,
+    "maxPartsPerLayer": 97,
+    "wallS": 18.3,
+    "loadAvg": [
+     6.56,
+     5.92,
+     5.78
+    ]
+   },
+   {
+    "draftPx": 1024,
+    "raster": "1024×771",
+    "mode": "b",
+    "family": "realistic",
+    "status": "done",
+    "code": null,
+    "coldMs": 2222.3,
+    "warmP50Ms": 1727.8,
+    "warmP95Ms": 1811.5,
+    "warmMaxMs": 1811.5,
+    "warmRuns": 15,
+    "warmUps": 3,
+    "constructP50Ms": 995,
+    "overlayShare": 0.294,
+    "maxPartsPerLayer": 88,
+    "wallS": 32.5,
+    "loadAvg": [
+     6.42,
+     5.95,
+     5.79
+    ]
+   },
+   {
+    "draftPx": 1280,
+    "raster": "1280×964",
+    "mode": "b",
+    "family": "realistic",
+    "status": "done",
+    "code": null,
+    "coldMs": 3112.8,
+    "warmP50Ms": 2516.9,
+    "warmP95Ms": 3350,
+    "warmMaxMs": 3350,
+    "warmRuns": 15,
+    "warmUps": 3,
+    "constructP50Ms": 1531.2,
+    "overlayShare": 0.29,
+    "maxPartsPerLayer": 99,
+    "wallS": 47.4,
+    "loadAvg": [
+     5.85,
+     5.85,
+     5.76
+    ]
+   },
+   {
+    "draftPx": 720,
+    "raster": "720×542",
+    "mode": "c",
+    "family": "realistic",
+    "status": "done",
+    "code": null,
+    "coldMs": 10192.2,
+    "warmP50Ms": 8573.7,
+    "warmP95Ms": 8902.9,
+    "warmMaxMs": 8902.9,
+    "warmRuns": 15,
+    "warmUps": 3,
+    "constructP50Ms": 752.9,
+    "overlayShare": 0.225,
+    "maxPartsPerLayer": 1,
+    "wallS": 150.6,
+    "loadAvg": [
+     4.35,
+     5.13,
+     5.5
+    ]
+   },
+   {
+    "draftPx": 720,
+    "raster": "720×542",
+    "mode": "a",
+    "family": "busy",
+    "status": "error",
+    "code": "COMPLEXITY_LIMIT",
+    "coldMs": 3298.7,
+    "warmP50Ms": 1938.1,
+    "warmP95Ms": 2180.1,
+    "warmMaxMs": 2180.1,
+    "warmRuns": 15,
+    "warmUps": 3,
+    "constructP50Ms": 1857.5,
+    "overlayShare": 0.769,
+    "maxPartsPerLayer": null,
+    "wallS": 37.4,
+    "loadAvg": [
+     5.02,
+     5.05,
+     5.39
+    ]
+   },
+   {
+    "draftPx": 1024,
+    "raster": "1024×771",
+    "mode": "a",
+    "family": "busy",
+    "status": "error",
+    "code": "COMPLEXITY_LIMIT",
+    "coldMs": 4953,
+    "warmP50Ms": 3424,
+    "warmP95Ms": 3766.9,
+    "warmMaxMs": 3766.9,
+    "warmRuns": 15,
+    "warmUps": 3,
+    "constructP50Ms": 3282.8,
+    "overlayShare": 0.749,
+    "maxPartsPerLayer": null,
+    "wallS": 65,
+    "loadAvg": [
+     4.78,
+     4.94,
+     5.32
+    ]
+   },
+   {
+    "draftPx": 720,
+    "raster": "720×542",
+    "mode": "b",
+    "family": "busy",
+    "status": "error",
+    "code": "COMPLEXITY_LIMIT",
+    "coldMs": 1980,
+    "warmP50Ms": 1510.9,
+    "warmP95Ms": 1732.4,
+    "warmMaxMs": 1732.4,
+    "warmRuns": 15,
+    "warmUps": 3,
+    "constructP50Ms": 1475.4,
+    "overlayShare": 0.743,
+    "maxPartsPerLayer": null,
+    "wallS": 28.4,
+    "loadAvg": [
+     4.61,
+     4.88,
+     5.29
+    ]
+   },
+   {
+    "draftPx": 1024,
+    "raster": "1024×771",
+    "mode": "b",
+    "family": "busy",
+    "status": "error",
+    "code": "COMPLEXITY_LIMIT",
+    "coldMs": 2945.7,
+    "warmP50Ms": 2597,
+    "warmP95Ms": 2910.4,
+    "warmMaxMs": 2910.4,
+    "warmRuns": 15,
+    "warmUps": 3,
+    "constructP50Ms": 2529.6,
+    "overlayShare": 0.709,
+    "maxPartsPerLayer": null,
+    "wallS": 48.9,
+    "loadAvg": [
+     6.27,
+     5.27,
+     5.4
+    ]
+   },
+   {
+    "draftPx": 1280,
+    "raster": "1280×964",
+    "mode": "b",
+    "family": "busy",
+    "status": "error",
+    "code": "COMPLEXITY_LIMIT",
+    "coldMs": 3900.8,
+    "warmP50Ms": 3530.4,
+    "warmP95Ms": 3883.6,
+    "warmMaxMs": 3883.6,
+    "warmRuns": 15,
+    "warmUps": 3,
+    "constructP50Ms": 3423.7,
+    "overlayShare": 0.657,
+    "maxPartsPerLayer": null,
+    "wallS": 66.2,
+    "loadAvg": [
+     5.09,
+     5.15,
+     5.35
+    ]
+   },
+   {
+    "draftPx": 720,
+    "raster": "720×542",
+    "mode": "c",
+    "family": "busy",
+    "status": "done",
+    "code": null,
+    "coldMs": 27229,
+    "warmP50Ms": 26073.1,
+    "warmP95Ms": 28511.1,
+    "warmMaxMs": 28511.1,
+    "warmRuns": 15,
+    "warmUps": 3,
+    "constructP50Ms": 2217.7,
+    "overlayShare": 0.354,
+    "maxPartsPerLayer": 3,
+    "wallS": 453,
+    "loadAvg": [
+     6.82,
+     6.33,
+     5.75
+    ]
+   }
+  ],
+  "fabRows": [
+   {
+    "family": "realistic",
+    "mode": "a",
+    "raster": "3985×3000",
+    "mpx": 11.96,
+    "ms": 28817.7,
+    "maxMs": 29667.7,
+    "runs": 5,
+    "cold": 1,
+    "status": "done",
+    "code": null,
+    "maxPartsPerLayer": 112,
+    "wallS": 173.1
+   },
+   {
+    "family": "busy",
+    "mode": "a",
+    "raster": "3985×3000",
+    "mpx": 11.96,
+    "ms": 58138,
+    "maxMs": 58516.6,
+    "runs": 5,
+    "cold": 1,
+    "status": "error",
+    "code": "COMPLEXITY_LIMIT",
+    "maxPartsPerLayer": null,
+    "wallS": 340
+   }
+  ],
+  "skipped": [
+   {
+    "draftPx": 1280,
+    "mode": "a",
+    "family": "realistic",
+    "reason": "a smaller candidate already exceeds the target"
+   },
+   {
+    "draftPx": 1536,
+    "mode": "a",
+    "family": "realistic",
+    "reason": "a smaller candidate already exceeds the target"
+   },
+   {
+    "draftPx": 2000,
+    "mode": "a",
+    "family": "realistic",
+    "reason": "a smaller candidate already exceeds the target"
+   },
+   {
+    "draftPx": 1536,
+    "mode": "b",
+    "family": "realistic",
+    "reason": "a smaller candidate already exceeds the target"
+   },
+   {
+    "draftPx": 2000,
+    "mode": "b",
+    "family": "realistic",
+    "reason": "a smaller candidate already exceeds the target"
+   },
+   {
+    "draftPx": 1024,
+    "mode": "c",
+    "family": "realistic",
+    "reason": "a smaller candidate already exceeds the target"
+   },
+   {
+    "draftPx": 1280,
+    "mode": "c",
+    "family": "realistic",
+    "reason": "a smaller candidate already exceeds the target"
+   },
+   {
+    "draftPx": 1536,
+    "mode": "c",
+    "family": "realistic",
+    "reason": "a smaller candidate already exceeds the target"
+   },
+   {
+    "draftPx": 2000,
+    "mode": "c",
+    "family": "realistic",
+    "reason": "a smaller candidate already exceeds the target"
+   },
+   {
+    "draftPx": 1280,
+    "mode": "a",
+    "family": "busy",
+    "reason": "a smaller candidate already exceeds the target"
+   },
+   {
+    "draftPx": 1536,
+    "mode": "a",
+    "family": "busy",
+    "reason": "a smaller candidate already exceeds the target"
+   },
+   {
+    "draftPx": 2000,
+    "mode": "a",
+    "family": "busy",
+    "reason": "a smaller candidate already exceeds the target"
+   },
+   {
+    "draftPx": 1536,
+    "mode": "b",
+    "family": "busy",
+    "reason": "a smaller candidate already exceeds the target"
+   },
+   {
+    "draftPx": 2000,
+    "mode": "b",
+    "family": "busy",
+    "reason": "a smaller candidate already exceeds the target"
+   },
+   {
+    "draftPx": 1024,
+    "mode": "c",
+    "family": "busy",
+    "reason": "a smaller candidate already exceeds the target"
+   },
+   {
+    "draftPx": 1280,
+    "mode": "c",
+    "family": "busy",
+    "reason": "a smaller candidate already exceeds the target"
+   },
+   {
+    "draftPx": 1536,
+    "mode": "c",
+    "family": "busy",
+    "reason": "a smaller candidate already exceeds the target"
+   },
+   {
+    "draftPx": 2000,
+    "mode": "c",
+    "family": "busy",
+    "reason": "a smaller candidate already exceeds the target"
+   }
+  ],
+  "decision": {
+   "presets": {
+    "plywood": 720,
+    "acrylic": 720
+   },
+   "desktopDraftPx": 720,
+   "mobileDraftPx": 720,
+   "fabMsPerMpx": 2410
+  },
+  "informational": {
+   "plywoodHeightDraftPx": 1024,
+   "note": "workload (b) under the same rule; reported, not gating (the plywood preset follows (a), the auto-tonal colour route)"
+  },
+  "notes": [
+   "Recorded 2026-10-08 with `node test/bench.js draft --record` (full method: 1 cold + 3 warm-ups + 15 warm runs per row, early stop per mode and family).",
+   "The raster of the COMPLEXITY_LIMIT rows (no snapshot) was filled in after the run from SBEngine.rasterPlan for the same draftPx; the bench now does this itself.",
+   "The (a) realistic 1024 row overlapped a run of the test suite on the same machine (one extra single-threaded process); the decision does not depend on it, because (a) busy at 1024 measures p95 3766.9 ms.",
+   "Background load: 1-minute load average 4.3-7.0 during the draft rows (desktop processes, ≈ 16 threads); it rose to 38 during the busy fabrication row (another workload on the machine), so that row and the late (c) busy row are loaded figures.",
+   "The busy family exceeds the desktop parts cap (258 parts/layer) in bonded mode at every measured draftPx and at the fabrication raster: those rows time the rejection (COMPLEXITY_LIMIT), which is what the user waits for. fabMsPerMpx uses the rows that finished (realistic)."
+  ]
  },
- "notes": [
-  "Recorded 2026-10-08 with `node test/bench.js draft --record` (full method: 1 cold + 3 warm-ups + 15 warm runs per row, early stop per mode and family).",
-  "The raster of the COMPLEXITY_LIMIT rows (no snapshot) was filled in after the run from SBEngine.rasterPlan for the same draftPx; the bench now does this itself.",
-  "The (a) realistic 1024 row overlapped a run of the test suite on the same machine (one extra single-threaded process); the decision does not depend on it, because (a) busy at 1024 measures p95 3766.9 ms.",
-  "Background load: 1-minute load average 4.3-7.0 during the draft rows (desktop processes, ≈ 16 threads); it rose to 38 during the busy fabrication row (another workload on the machine), so that row and the late (c) busy row are loaded figures.",
-  "The busy family exceeds the desktop parts cap (258 parts/layer) in bonded mode at every measured draftPx and at the fabrication raster: those rows time the rejection (COMPLEXITY_LIMIT), which is what the user waits for. fabMsPerMpx uses the rows that finished (realistic)."
- ]
+ "f17": {
+  "node": {
+   "pool8": {
+    "machine": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (16 threads, 62.5 GiB), node v26.7.0",
+    "pool": 8,
+    "method": {
+     "warmUps": 3,
+     "warmRuns": 15,
+     "k2MissRuns": 7,
+     "coldRuns": 3,
+     "fabRuns": 3,
+     "sizes": [
+      720,
+      1280,
+      1536,
+      1792,
+      2000
+     ],
+     "warm": "E4 warm edit: sheets 8 ↔ 7, revision changing (K1/K2 hit)",
+     "k2Miss": "smoothing radius 1.65 ↔ 1.70 mm (K1 hit, K2 miss)",
+     "cold": "a new source identity per run (nothing cached)",
+     "draftCapPx": "each size passed as the request's draftCapPx (F-D5)"
+    },
+    "loadAvgStart": [
+     3.55,
+     4.22,
+     5.12
+    ],
+    "loadAvgEnd": [
+     7.39,
+     7.26,
+     6.6
+    ],
+    "rows": [
+     {
+      "mode": "a",
+      "family": "realistic",
+      "draftPx": 720,
+      "raster": "720×542",
+      "status": "done",
+      "code": null,
+      "warmP50Ms": 1251.2,
+      "warmP95Ms": 1357.6,
+      "warmMaxMs": 1357.6,
+      "warmRuns": 15,
+      "warmUps": 3,
+      "k2MissP50Ms": 1283.3,
+      "k2MissP95Ms": 1433.5,
+      "k2MissRuns": 7,
+      "coldP50Ms": 2140.8,
+      "coldP95Ms": 3566.1,
+      "coldRuns": 3,
+      "maxParts": 126,
+      "maxVertices": 9148,
+      "totalVertices": 47006,
+      "capHits": [],
+      "stagesP50Ms": {
+       "setup": 1,
+       "resample-cached": 124.3,
+       "construct": 205.8,
+       "trace": 128,
+       "complexity": 195.7,
+       "envelope": 489.7,
+       "accounting": 185.3
+      },
+      "wallS": 40.8,
+      "loadAvg": [
+       7.49,
+       5.19,
+       5.41
+      ]
+     },
+     {
+      "mode": "a",
+      "family": "realistic",
+      "draftPx": 1280,
+      "raster": "1280×964",
+      "status": "done",
+      "code": null,
+      "warmP50Ms": 2058.3,
+      "warmP95Ms": 2227.3,
+      "warmMaxMs": 2227.3,
+      "warmRuns": 15,
+      "warmUps": 3,
+      "k2MissP50Ms": 2295.6,
+      "k2MissP95Ms": 2399,
+      "k2MissRuns": 7,
+      "coldP50Ms": 2681.9,
+      "coldP95Ms": 2840.9,
+      "coldRuns": 3,
+      "maxParts": 136,
+      "maxVertices": 16410,
+      "totalVertices": 85692,
+      "capHits": [],
+      "stagesP50Ms": {
+       "setup": 0.9,
+       "resample-cached": 165.4,
+       "construct": 221.2,
+       "complexity": 555.9,
+       "envelope": 783.9,
+       "accounting": 124.7,
+       "trace": 218.8,
+       "features": 219.6
+      },
+      "wallS": 63.5,
+      "loadAvg": [
+       8.37,
+       5.82,
+       5.61
+      ]
+     },
+     {
+      "mode": "a",
+      "family": "realistic",
+      "draftPx": 1536,
+      "raster": "1536×1157",
+      "status": "done",
+      "code": null,
+      "warmP50Ms": 2370.5,
+      "warmP95Ms": 2652.6,
+      "warmMaxMs": 2652.6,
+      "warmRuns": 15,
+      "warmUps": 3,
+      "k2MissP50Ms": 2504.5,
+      "k2MissP95Ms": 2911.1,
+      "k2MissRuns": 7,
+      "coldP50Ms": 2999.8,
+      "coldP95Ms": 3055.5,
+      "coldRuns": 3,
+      "maxParts": 122,
+      "maxVertices": 18170,
+      "totalVertices": 96420,
+      "capHits": [],
+      "stagesP50Ms": {
+       "setup": 0.7,
+       "resample-cached": 133.2,
+       "masks": 105.7,
+       "construct": 267.4,
+       "complexity": 426.3,
+       "features": 244.5,
+       "envelope": 915.7,
+       "accounting": 124.3
+      },
+      "wallS": 72.6,
+      "loadAvg": [
+       8.63,
+       6.42,
+       5.83
+      ]
+     },
+     {
+      "mode": "a",
+      "family": "realistic",
+      "draftPx": 1792,
+      "raster": "1792×1349",
+      "status": "done",
+      "code": null,
+      "warmP50Ms": 2811.2,
+      "warmP95Ms": 2989.2,
+      "warmMaxMs": 2989.2,
+      "warmRuns": 15,
+      "warmUps": 3,
+      "k2MissP50Ms": 2952.9,
+      "k2MissP95Ms": 3215.3,
+      "k2MissRuns": 7,
+      "coldP50Ms": 3466.4,
+      "coldP95Ms": 3680.1,
+      "coldRuns": 3,
+      "maxParts": 132,
+      "maxVertices": 21756,
+      "totalVertices": 114766,
+      "capHits": [],
+      "stagesP50Ms": {
+       "setup": 0.7,
+       "resample-cached": 128.9,
+       "masks": 133.5,
+       "construct": 337.4,
+       "complexity": 462.1,
+       "features": 303.2,
+       "envelope": 1070.5,
+       "accounting": 148
+      },
+      "wallS": 86.1,
+      "loadAvg": [
+       9.45,
+       7.15,
+       6.14
+      ]
+     },
+     {
+      "mode": "a",
+      "family": "realistic",
+      "draftPx": 2000,
+      "raster": "2000×1506",
+      "status": "done",
+      "code": null,
+      "warmP50Ms": 2964.8,
+      "warmP95Ms": 3450.3,
+      "warmMaxMs": 3450.3,
+      "warmRuns": 15,
+      "warmUps": 3,
+      "k2MissP50Ms": 3496.1,
+      "k2MissP95Ms": 3652.3,
+      "k2MissRuns": 7,
+      "coldP50Ms": 4059.1,
+      "coldP95Ms": 4104.8,
+      "coldRuns": 3,
+      "maxParts": 118,
+      "maxVertices": 22496,
+      "totalVertices": 120066,
+      "capHits": [],
+      "stagesP50Ms": {
+       "setup": 0.7,
+       "resample-cached": 137.3,
+       "masks": 166.3,
+       "construct": 358.9,
+       "complexity": 534.7,
+       "features": 293.8,
+       "envelope": 1111,
+       "accounting": 176.4
+      },
+      "wallS": 95.2,
+      "loadAvg": [
+       8.7,
+       7.63,
+       6.42
+      ]
+     },
+     {
+      "mode": "a",
+      "family": "busy",
+      "draftPx": 720,
+      "raster": "720×542",
+      "status": "error",
+      "code": "COMPLEXITY_LIMIT",
+      "warmP50Ms": 745.2,
+      "warmP95Ms": 904.3,
+      "warmMaxMs": 904.3,
+      "warmRuns": 15,
+      "warmUps": 3,
+      "k2MissP50Ms": 750.9,
+      "k2MissP95Ms": 832.4,
+      "k2MissRuns": 7,
+      "coldP50Ms": 848.9,
+      "coldP95Ms": 911.8,
+      "coldRuns": 3,
+      "maxParts": null,
+      "maxVertices": null,
+      "totalVertices": null,
+      "capHits": [
+       "COMPLEXITY_LIMIT"
+      ],
+      "stagesP50Ms": {
+       "setup": 0.8,
+       "orient": 206.4,
+       "domain": 130.6,
+       "construct": 404.4,
+       "complexity": 14.7
+      },
+      "wallS": 22.7,
+      "loadAvg": [
+       7.92,
+       7.63,
+       6.5
+      ]
+     },
+     {
+      "mode": "a",
+      "family": "busy",
+      "draftPx": 1280,
+      "raster": "1280×964",
+      "status": "error",
+      "code": "COMPLEXITY_LIMIT",
+      "warmP50Ms": 1454.1,
+      "warmP95Ms": 1610.1,
+      "warmMaxMs": 1610.1,
+      "warmRuns": 15,
+      "warmUps": 3,
+      "k2MissP50Ms": 1532.3,
+      "k2MissP95Ms": 1596.1,
+      "k2MissRuns": 7,
+      "coldP50Ms": 1573,
+      "coldP95Ms": 1594.6,
+      "coldRuns": 3,
+      "maxParts": null,
+      "maxVertices": null,
+      "totalVertices": null,
+      "capHits": [
+       "COMPLEXITY_LIMIT"
+      ],
+      "stagesP50Ms": {
+       "setup": 0.6,
+       "orient": 280.9,
+       "domain": 206.4,
+       "masks": 208.4,
+       "construct": 726.7,
+       "complexity": 29.3
+      },
+      "wallS": 43.3,
+      "loadAvg": [
+       7.65,
+       7.6,
+       6.54
+      ]
+     },
+     {
+      "mode": "a",
+      "family": "busy",
+      "draftPx": 1536,
+      "raster": "1536×1157",
+      "status": "error",
+      "code": "COMPLEXITY_LIMIT",
+      "warmP50Ms": 1846.6,
+      "warmP95Ms": 2155.5,
+      "warmMaxMs": 2155.5,
+      "warmRuns": 15,
+      "warmUps": 3,
+      "k2MissP50Ms": 1933.5,
+      "k2MissP95Ms": 2071.8,
+      "k2MissRuns": 7,
+      "coldP50Ms": 1871.6,
+      "coldP95Ms": 1918,
+      "coldRuns": 3,
+      "maxParts": null,
+      "maxVertices": null,
+      "totalVertices": null,
+      "capHits": [
+       "COMPLEXITY_LIMIT"
+      ],
+      "stagesP50Ms": {
+       "setup": 0.6,
+       "orient": 351,
+       "domain": 278.1,
+       "masks": 112.8,
+       "construct": 1077,
+       "complexity": 35.1
+      },
+      "wallS": 54.5,
+      "loadAvg": [
+       7.74,
+       7.6,
+       6.59
+      ]
+     },
+     {
+      "mode": "a",
+      "family": "busy",
+      "draftPx": 1792,
+      "raster": "1792×1349",
+      "status": "error",
+      "code": "COMPLEXITY_LIMIT",
+      "warmP50Ms": 2275.5,
+      "warmP95Ms": 2512.1,
+      "warmMaxMs": 2512.1,
+      "warmRuns": 15,
+      "warmUps": 3,
+      "k2MissP50Ms": 2247,
+      "k2MissP95Ms": 2348,
+      "k2MissRuns": 7,
+      "coldP50Ms": 2327.5,
+      "coldP95Ms": 2431,
+      "coldRuns": 3,
+      "maxParts": null,
+      "maxVertices": null,
+      "totalVertices": null,
+      "capHits": [
+       "COMPLEXITY_LIMIT"
+      ],
+      "stagesP50Ms": {
+       "setup": 0.8,
+       "orient": 424.5,
+       "domain": 335.4,
+       "masks": 156.2,
+       "construct": 1311.8,
+       "complexity": 42.5
+      },
+      "wallS": 66.5,
+      "loadAvg": [
+       6.83,
+       7.31,
+       6.56
+      ]
+     },
+     {
+      "mode": "a",
+      "family": "busy",
+      "draftPx": 2000,
+      "raster": "2000×1506",
+      "status": "error",
+      "code": "COMPLEXITY_LIMIT",
+      "warmP50Ms": 2654.9,
+      "warmP95Ms": 2907.9,
+      "warmMaxMs": 2907.9,
+      "warmRuns": 15,
+      "warmUps": 3,
+      "k2MissP50Ms": 2748.5,
+      "k2MissP95Ms": 2808.7,
+      "k2MissRuns": 7,
+      "coldP50Ms": 2756.8,
+      "coldP95Ms": 2765.2,
+      "coldRuns": 3,
+      "maxParts": null,
+      "maxVertices": null,
+      "totalVertices": null,
+      "capHits": [
+       "COMPLEXITY_LIMIT"
+      ],
+      "stagesP50Ms": {
+       "setup": 0.7,
+       "orient": 490.6,
+       "domain": 436.5,
+       "masks": 185.7,
+       "construct": 1484.1,
+       "complexity": 46
+      },
+      "wallS": 77.6,
+      "loadAvg": [
+       7.17,
+       7.21,
+       6.58
+      ]
+     }
+    ],
+    "sceneRows": [
+     {
+      "scene": "alpha.3 (tools/alpha3_scene.js 4096 × 3084, user12 project)",
+      "draftPx": 720,
+      "ms": 695.2,
+      "status": "done",
+      "code": null,
+      "maxParts": 59,
+      "maxVertices": 1916,
+      "totalVertices": 10198,
+      "capHits": [],
+      "raster": "720×542"
+     },
+     {
+      "scene": "alpha.3 (tools/alpha3_scene.js 4096 × 3084, user12 project)",
+      "draftPx": 1280,
+      "ms": 1183.8,
+      "status": "done",
+      "code": null,
+      "maxParts": 55,
+      "maxVertices": 3026,
+      "totalVertices": 16292,
+      "capHits": [],
+      "raster": "1280×964"
+     },
+     {
+      "scene": "alpha.3 (tools/alpha3_scene.js 4096 × 3084, user12 project)",
+      "draftPx": 1536,
+      "ms": 1524.7,
+      "status": "done",
+      "code": null,
+      "maxParts": 51,
+      "maxVertices": 3490,
+      "totalVertices": 18632,
+      "capHits": [],
+      "raster": "1536×1157"
+     },
+     {
+      "scene": "alpha.3 (tools/alpha3_scene.js 4096 × 3084, user12 project)",
+      "draftPx": 1792,
+      "ms": 1744.5,
+      "status": "done",
+      "code": null,
+      "maxParts": 51,
+      "maxVertices": 3968,
+      "totalVertices": 21526,
+      "capHits": [],
+      "raster": "1792×1349"
+     },
+     {
+      "scene": "alpha.3 (tools/alpha3_scene.js 4096 × 3084, user12 project)",
+      "draftPx": 2000,
+      "ms": 2015.5,
+      "status": "done",
+      "code": null,
+      "maxParts": 38,
+      "maxVertices": 4386,
+      "totalVertices": 22986,
+      "capHits": [],
+      "raster": "2000×1506"
+     }
+    ],
+    "fabRows": [
+     {
+      "family": "realistic",
+      "mode": "a",
+      "raster": "3985×3000",
+      "mpx": 11.96,
+      "status": "done",
+      "code": null,
+      "p50Ms": 8503.3,
+      "maxMs": 8507.9,
+      "runs": 3,
+      "cold": 1,
+      "msPerMpx": 711,
+      "stagesP50Ms": {
+       "setup": 1,
+       "orient": 281.7,
+       "domain": 1425.7,
+       "masks": 684,
+       "construct": 959.5,
+       "trace": 780.1,
+       "complexity": 219,
+       "features": 654.5,
+       "envelope": 2353,
+       "accounting": 262.1
+      }
+     }
+    ]
+   },
+   "pool0": {
+    "machine": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (16 threads, 62.5 GiB), node v26.7.0",
+    "pool": 0,
+    "method": {
+     "warmUps": 3,
+     "warmRuns": 15,
+     "k2MissRuns": 7,
+     "coldRuns": 3,
+     "fabRuns": 3,
+     "sizes": [
+      720
+     ],
+     "warm": "E4 warm edit: sheets 8 ↔ 7, revision changing (K1/K2 hit)",
+     "k2Miss": "smoothing radius 1.65 ↔ 1.70 mm (K1 hit, K2 miss)",
+     "cold": "a new source identity per run (nothing cached)",
+     "draftCapPx": "each size passed as the request's draftCapPx (F-D5)"
+    },
+    "loadAvgStart": [
+     5.63,
+     6.86,
+     6.49
+    ],
+    "loadAvgEnd": [
+     3.12,
+     5.07,
+     5.85
+    ],
+    "rows": [
+     {
+      "mode": "a",
+      "family": "realistic",
+      "draftPx": 720,
+      "raster": "720×542",
+      "status": "done",
+      "code": null,
+      "warmP50Ms": 2818.5,
+      "warmP95Ms": 2964.2,
+      "warmMaxMs": 2964.2,
+      "warmRuns": 15,
+      "warmUps": 3,
+      "k2MissP50Ms": 2931.8,
+      "k2MissP95Ms": 2965.8,
+      "k2MissRuns": 7,
+      "coldP50Ms": 3338.4,
+      "coldP95Ms": 4158.3,
+      "coldRuns": 3,
+      "maxParts": 126,
+      "maxVertices": 9148,
+      "totalVertices": 47006,
+      "capHits": [],
+      "stagesP50Ms": {
+       "setup": 0.2,
+       "resample-cached": 0.1,
+       "domain": 0,
+       "interpret": 0,
+       "interpret-cached": 19,
+       "masks": 47.3,
+       "construct": 265,
+       "complexity": 6.4,
+       "trace": 382.6,
+       "repairs": 0,
+       "holes": 0,
+       "validate": 84.1,
+       "features": 378.4,
+       "envelope": 0.1,
+       "parts": 3.6,
+       "guides": 1413.5,
+       "accounting": 0,
+       "hashes": 119.7
+      },
+      "wallS": 82.2,
+      "loadAvg": [
+       4.08,
+       6.06,
+       6.24
+      ]
+     },
+     {
+      "mode": "a",
+      "family": "busy",
+      "draftPx": 720,
+      "raster": "720×542",
+      "status": "error",
+      "code": "COMPLEXITY_LIMIT",
+      "warmP50Ms": 1290.2,
+      "warmP95Ms": 1392.3,
+      "warmMaxMs": 1392.3,
+      "warmRuns": 15,
+      "warmUps": 3,
+      "k2MissP50Ms": 1362.1,
+      "k2MissP95Ms": 1416.1,
+      "k2MissRuns": 7,
+      "coldP50Ms": 1625.3,
+      "coldP95Ms": 1675.3,
+      "coldRuns": 3,
+      "maxParts": null,
+      "maxVertices": null,
+      "totalVertices": null,
+      "capHits": [
+       "COMPLEXITY_LIMIT"
+      ],
+      "stagesP50Ms": {
+       "setup": 0.2,
+       "resample-cached": 0.1,
+       "domain": 0,
+       "interpret": 0,
+       "interpret-cached": 27.3,
+       "masks": 28.3,
+       "construct": 1219.6,
+       "complexity": 14.5
+      },
+      "wallS": 38.2,
+      "loadAvg": [
+       3.12,
+       5.07,
+       5.85
+      ]
+     }
+    ],
+    "sceneRows": [],
+    "fabRows": [
+     {
+      "family": "realistic",
+      "mode": "a",
+      "raster": "3985×3000",
+      "mpx": 11.96,
+      "status": "done",
+      "code": null,
+      "p50Ms": 19571.6,
+      "maxMs": 19888.1,
+      "runs": 3,
+      "cold": 1,
+      "msPerMpx": 1637,
+      "stagesP50Ms": {
+       "setup": 1.5,
+       "orient": 0.4,
+       "resample": 821.4,
+       "domain": 0,
+       "interpret": 2542.1,
+       "masks": 712.9,
+       "construct": 2342.8,
+       "complexity": 83.8,
+       "trace": 2623.9,
+       "repairs": 0,
+       "holes": 0.2,
+       "validate": 314.7,
+       "features": 1904.9,
+       "envelope": 0,
+       "parts": 12.5,
+       "guides": 7677.1,
+       "accounting": 0,
+       "hashes": 549.8
+      }
+     }
+    ]
+   }
+  },
+  "browser": {
+   "chromium-i7": {
+    "key": "chromium-i7",
+    "browser": "Chrome/152.0.7977.82",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36",
+    "machine": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (16 threads, 62.5 GiB)",
+    "page": "dist/shadowbox-studio.html over http (Blob-worker rung), desktop draft cap raised to 2000 for the measurement; &draftPx=N per size",
+    "extra": null,
+    "rows": [
+     {
+      "draftPx": 720,
+      "families": {
+       "realistic": {
+        "raster": [
+         720,
+         542
+        ],
+        "draftPx": 720,
+        "warmP50Ms": 1406,
+        "warmP95Ms": 1548.2,
+        "warmMaxMs": 1548.2,
+        "warmRuns": 15,
+        "k2MissP50Ms": 1528.6,
+        "k2MissP95Ms": 1767,
+        "k2MissRuns": 7,
+        "coldMs": 3693.4,
+        "coldStatus": "done",
+        "renderP50Ms": 72.1,
+        "renderP95Ms": 80.5,
+        "status": "done",
+        "code": null,
+        "maxParts": 126,
+        "maxVertices": 9148,
+        "engineP50Ms": 1198.7
+       },
+       "busy": {
+        "raster": null,
+        "draftPx": 720,
+        "warmP50Ms": 466.4,
+        "warmP95Ms": 571.5,
+        "warmMaxMs": 571.5,
+        "warmRuns": 15,
+        "k2MissP50Ms": 477.7,
+        "k2MissP95Ms": 500.5,
+        "k2MissRuns": 7,
+        "coldMs": 1025.4,
+        "coldStatus": "error",
+        "renderP50Ms": 28,
+        "renderP95Ms": 37.3,
+        "status": "error",
+        "code": "COMPLEXITY_LIMIT",
+        "maxParts": null,
+        "maxVertices": null,
+        "engineP50Ms": 435.2
+       }
+      },
+      "longTaskMaxMs": 1978,
+      "longTasksSupported": true,
+      "pool": {
+       "mode": "pool",
+       "rung": "blob",
+       "helpers": 8
+      },
+      "deviceMemory": 32,
+      "at": "2026-10-09T19:36:36.261Z"
+     },
+     {
+      "draftPx": 1280,
+      "families": {
+       "realistic": {
+        "raster": [
+         1280,
+         964
+        ],
+        "draftPx": 1280,
+        "warmP50Ms": 2434.3,
+        "warmP95Ms": 2657.4,
+        "warmMaxMs": 2657.4,
+        "warmRuns": 15,
+        "k2MissP50Ms": 2696.7,
+        "k2MissP95Ms": 2849.3,
+        "k2MissRuns": 7,
+        "coldMs": 5229.6,
+        "coldStatus": "done",
+        "renderP50Ms": 99.8,
+        "renderP95Ms": 146.6,
+        "status": "done",
+        "code": null,
+        "maxParts": 136,
+        "maxVertices": 16410,
+        "engineP50Ms": 2111.4
+       },
+       "busy": {
+        "raster": null,
+        "draftPx": 1280,
+        "warmP50Ms": 833.3,
+        "warmP95Ms": 943.3,
+        "warmMaxMs": 943.3,
+        "warmRuns": 15,
+        "k2MissP50Ms": 850.3,
+        "k2MissP95Ms": 933.9,
+        "k2MissRuns": 7,
+        "coldMs": 1341.8,
+        "coldStatus": "error",
+        "renderP50Ms": 24.3,
+        "renderP95Ms": 38.6,
+        "status": "error",
+        "code": "COMPLEXITY_LIMIT",
+        "maxParts": null,
+        "maxVertices": null,
+        "engineP50Ms": 798.1
+       }
+      },
+      "longTaskMaxMs": 2028,
+      "longTasksSupported": true,
+      "pool": {
+       "mode": "pool",
+       "rung": "blob",
+       "helpers": 8
+      },
+      "deviceMemory": 32,
+      "at": "2026-10-09T19:38:12.892Z"
+     },
+     {
+      "draftPx": 1536,
+      "families": {
+       "realistic": {
+        "raster": [
+         1536,
+         1157
+        ],
+        "draftPx": 1536,
+        "warmP50Ms": 2545.7,
+        "warmP95Ms": 2950.4,
+        "warmMaxMs": 2950.4,
+        "warmRuns": 15,
+        "k2MissP50Ms": 2766.3,
+        "k2MissP95Ms": 2978.2,
+        "k2MissRuns": 7,
+        "coldMs": 5836.2,
+        "coldStatus": "done",
+        "renderP50Ms": 83.3,
+        "renderP95Ms": 89,
+        "status": "done",
+        "code": null,
+        "maxParts": 109,
+        "maxVertices": 16356,
+        "engineP50Ms": 2227.6
+       },
+       "busy": {
+        "raster": null,
+        "draftPx": 1536,
+        "warmP50Ms": 1033.4,
+        "warmP95Ms": 1092.7,
+        "warmMaxMs": 1092.7,
+        "warmRuns": 15,
+        "k2MissP50Ms": 1033,
+        "k2MissP95Ms": 1083.4,
+        "k2MissRuns": 7,
+        "coldMs": 1594.9,
+        "coldStatus": "error",
+        "renderP50Ms": 28.2,
+        "renderP95Ms": 38.2,
+        "status": "error",
+        "code": "COMPLEXITY_LIMIT",
+        "maxParts": null,
+        "maxVertices": null,
+        "engineP50Ms": 999.1
+       }
+      },
+      "longTaskMaxMs": 2047,
+      "longTasksSupported": true,
+      "pool": {
+       "mode": "pool",
+       "rung": "blob",
+       "helpers": 8
+      },
+      "deviceMemory": 32,
+      "at": "2026-10-09T19:39:59.437Z"
+     },
+     {
+      "draftPx": 1792,
+      "families": {
+       "realistic": {
+        "raster": [
+         1792,
+         1349
+        ],
+        "draftPx": 1792,
+        "warmP50Ms": 3118.9,
+        "warmP95Ms": 3452.3,
+        "warmMaxMs": 3452.3,
+        "warmRuns": 15,
+        "k2MissP50Ms": 3436.7,
+        "k2MissP95Ms": 3630.5,
+        "k2MissRuns": 7,
+        "coldMs": 6654.6,
+        "coldStatus": "done",
+        "renderP50Ms": 96.4,
+        "renderP95Ms": 117,
+        "status": "done",
+        "code": null,
+        "maxParts": 113,
+        "maxVertices": 19852,
+        "engineP50Ms": 2767.5
+       },
+       "busy": {
+        "raster": null,
+        "draftPx": 1792,
+        "warmP50Ms": 1326.4,
+        "warmP95Ms": 1450,
+        "warmMaxMs": 1450,
+        "warmRuns": 15,
+        "k2MissP50Ms": 1324.4,
+        "k2MissP95Ms": 1383.6,
+        "k2MissRuns": 7,
+        "coldMs": 1875.4,
+        "coldStatus": "error",
+        "renderP50Ms": 31.2,
+        "renderP95Ms": 40.1,
+        "status": "error",
+        "code": "COMPLEXITY_LIMIT",
+        "maxParts": null,
+        "maxVertices": null,
+        "engineP50Ms": 1295.8
+       }
+      },
+      "longTaskMaxMs": 2016,
+      "longTasksSupported": true,
+      "pool": {
+       "mode": "pool",
+       "rung": "blob",
+       "helpers": 8
+      },
+      "deviceMemory": 32,
+      "at": "2026-10-09T19:42:08.249Z"
+     },
+     {
+      "draftPx": 2000,
+      "families": {
+       "realistic": {
+        "raster": [
+         2000,
+         1506
+        ],
+        "draftPx": 2000,
+        "warmP50Ms": 3294.9,
+        "warmP95Ms": 3516.3,
+        "warmMaxMs": 3516.3,
+        "warmRuns": 15,
+        "k2MissP50Ms": 3793.2,
+        "k2MissP95Ms": 4004.9,
+        "k2MissRuns": 7,
+        "coldMs": 7113.4,
+        "coldStatus": "done",
+        "renderP50Ms": 90.5,
+        "renderP95Ms": 102.3,
+        "status": "done",
+        "code": null,
+        "maxParts": 102,
+        "maxVertices": 20822,
+        "engineP50Ms": 2987.7
+       },
+       "busy": {
+        "raster": null,
+        "draftPx": 2000,
+        "warmP50Ms": 1533.1,
+        "warmP95Ms": 1640.6,
+        "warmMaxMs": 1640.6,
+        "warmRuns": 15,
+        "k2MissP50Ms": 1490.8,
+        "k2MissP95Ms": 1583,
+        "k2MissRuns": 7,
+        "coldMs": 2078.6,
+        "coldStatus": "error",
+        "renderP50Ms": 30.9,
+        "renderP95Ms": 46.2,
+        "status": "error",
+        "code": "COMPLEXITY_LIMIT",
+        "maxParts": null,
+        "maxVertices": null,
+        "engineP50Ms": 1498.8
+       }
+      },
+      "longTaskMaxMs": 2021,
+      "longTasksSupported": true,
+      "pool": {
+       "mode": "pool",
+       "rung": "blob",
+       "helpers": 8
+      },
+      "deviceMemory": 32,
+      "at": "2026-10-09T19:44:28.593Z"
+     }
+    ]
+   },
+   "firefox-i7": {
+    "key": "firefox-i7",
+    "browser": "firefox 155.0.1",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:155.0) Gecko/20100101 Firefox/155.0",
+    "machine": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (16 threads, 62.5 GiB)",
+    "page": "dist/shadowbox-studio.html over http (Blob-worker rung), desktop draft cap raised to 2000 for the measurement; &draftPx=N per size",
+    "extra": null,
+    "rows": [
+     {
+      "draftPx": 720,
+      "families": {
+       "realistic": {
+        "raster": [
+         720,
+         542
+        ],
+        "draftPx": 720,
+        "warmP50Ms": 1827,
+        "warmP95Ms": 2116,
+        "warmMaxMs": 2116,
+        "warmRuns": 15,
+        "k2MissP50Ms": 2070,
+        "k2MissP95Ms": 2148,
+        "k2MissRuns": 7,
+        "coldMs": 2808,
+        "coldStatus": "done",
+        "renderP50Ms": 36,
+        "renderP95Ms": 46,
+        "status": "done",
+        "code": null,
+        "maxParts": 126,
+        "maxVertices": 9148,
+        "engineP50Ms": 1662
+       },
+       "busy": {
+        "raster": null,
+        "draftPx": 720,
+        "warmP50Ms": 472,
+        "warmP95Ms": 619,
+        "warmMaxMs": 619,
+        "warmRuns": 15,
+        "k2MissP50Ms": 440,
+        "k2MissP95Ms": 583,
+        "k2MissRuns": 7,
+        "coldMs": 1138,
+        "coldStatus": "error",
+        "renderP50Ms": 35,
+        "renderP95Ms": 50,
+        "status": "error",
+        "code": "COMPLEXITY_LIMIT",
+        "maxParts": null,
+        "maxVertices": null,
+        "engineP50Ms": 442
+       }
+      },
+      "longTaskMaxMs": 0,
+      "longTasksSupported": false,
+      "pool": {
+       "mode": "pool",
+       "rung": "blob",
+       "helpers": 8
+      },
+      "deviceMemory": null,
+      "at": "2026-10-09T19:45:41.474Z"
+     },
+     {
+      "draftPx": 1280,
+      "families": {
+       "realistic": {
+        "raster": [
+         1280,
+         964
+        ],
+        "draftPx": 1280,
+        "warmP50Ms": 3049,
+        "warmP95Ms": 3314,
+        "warmMaxMs": 3314,
+        "warmRuns": 15,
+        "k2MissP50Ms": 3258,
+        "k2MissP95Ms": 3518,
+        "k2MissRuns": 7,
+        "coldMs": 3989,
+        "coldStatus": "done",
+        "renderP50Ms": 45,
+        "renderP95Ms": 55,
+        "status": "done",
+        "code": null,
+        "maxParts": 136,
+        "maxVertices": 16410,
+        "engineP50Ms": 2800
+       },
+       "busy": {
+        "raster": null,
+        "draftPx": 1280,
+        "warmP50Ms": 849,
+        "warmP95Ms": 1020,
+        "warmMaxMs": 1020,
+        "warmRuns": 15,
+        "k2MissP50Ms": 801,
+        "k2MissP95Ms": 907,
+        "k2MissRuns": 7,
+        "coldMs": 1276,
+        "coldStatus": "error",
+        "renderP50Ms": 33,
+        "renderP95Ms": 46,
+        "status": "error",
+        "code": "COMPLEXITY_LIMIT",
+        "maxParts": null,
+        "maxVertices": null,
+        "engineP50Ms": 811
+       }
+      },
+      "longTaskMaxMs": 0,
+      "longTasksSupported": false,
+      "pool": {
+       "mode": "pool",
+       "rung": "blob",
+       "helpers": 8
+      },
+      "deviceMemory": null,
+      "at": "2026-10-09T19:47:33.019Z"
+     },
+     {
+      "draftPx": 1536,
+      "families": {
+       "realistic": {
+        "raster": [
+         1536,
+         1157
+        ],
+        "draftPx": 1536,
+        "warmP50Ms": 3440,
+        "warmP95Ms": 3692,
+        "warmMaxMs": 3692,
+        "warmRuns": 15,
+        "k2MissP50Ms": 3593,
+        "k2MissP95Ms": 4137,
+        "k2MissRuns": 7,
+        "coldMs": 4765,
+        "coldStatus": "done",
+        "renderP50Ms": 40,
+        "renderP95Ms": 54,
+        "status": "done",
+        "code": null,
+        "maxParts": 109,
+        "maxVertices": 16356,
+        "engineP50Ms": 3212
+       },
+       "busy": {
+        "raster": null,
+        "draftPx": 1536,
+        "warmP50Ms": 1044,
+        "warmP95Ms": 1078,
+        "warmMaxMs": 1078,
+        "warmRuns": 15,
+        "k2MissP50Ms": 989,
+        "k2MissP95Ms": 1071,
+        "k2MissRuns": 7,
+        "coldMs": 1478,
+        "coldStatus": "error",
+        "renderP50Ms": 32,
+        "renderP95Ms": 52,
+        "status": "error",
+        "code": "COMPLEXITY_LIMIT",
+        "maxParts": null,
+        "maxVertices": null,
+        "engineP50Ms": 999
+       }
+      },
+      "longTaskMaxMs": 0,
+      "longTasksSupported": false,
+      "pool": {
+       "mode": "pool",
+       "rung": "blob",
+       "helpers": 8
+      },
+      "deviceMemory": null,
+      "at": "2026-10-09T19:49:40.357Z"
+     },
+     {
+      "draftPx": 1792,
+      "families": {
+       "realistic": {
+        "raster": [
+         1792,
+         1349
+        ],
+        "draftPx": 1792,
+        "warmP50Ms": 3899,
+        "warmP95Ms": 4224,
+        "warmMaxMs": 4224,
+        "warmRuns": 15,
+        "k2MissP50Ms": 4110,
+        "k2MissP95Ms": 4471,
+        "k2MissRuns": 7,
+        "coldMs": 5710,
+        "coldStatus": "done",
+        "renderP50Ms": 42,
+        "renderP95Ms": 96,
+        "status": "done",
+        "code": null,
+        "maxParts": 113,
+        "maxVertices": 19852,
+        "engineP50Ms": 3654
+       },
+       "busy": {
+        "raster": null,
+        "draftPx": 1792,
+        "warmP50Ms": 1280,
+        "warmP95Ms": 1342,
+        "warmMaxMs": 1342,
+        "warmRuns": 15,
+        "k2MissP50Ms": 1285,
+        "k2MissP95Ms": 1349,
+        "k2MissRuns": 7,
+        "coldMs": 1751,
+        "coldStatus": "error",
+        "renderP50Ms": 33,
+        "renderP95Ms": 46,
+        "status": "error",
+        "code": "COMPLEXITY_LIMIT",
+        "maxParts": null,
+        "maxVertices": null,
+        "engineP50Ms": 1236
+       }
+      },
+      "longTaskMaxMs": 0,
+      "longTasksSupported": false,
+      "pool": {
+       "mode": "pool",
+       "rung": "blob",
+       "helpers": 8
+      },
+      "deviceMemory": null,
+      "at": "2026-10-09T19:52:08.180Z"
+     },
+     {
+      "draftPx": 2000,
+      "families": {
+       "realistic": {
+        "raster": [
+         2000,
+         1506
+        ],
+        "draftPx": 2000,
+        "warmP50Ms": 3994,
+        "warmP95Ms": 4447,
+        "warmMaxMs": 4447,
+        "warmRuns": 15,
+        "k2MissP50Ms": 4348,
+        "k2MissP95Ms": 4842,
+        "k2MissRuns": 7,
+        "coldMs": 5693,
+        "coldStatus": "done",
+        "renderP50Ms": 39,
+        "renderP95Ms": 50,
+        "status": "done",
+        "code": null,
+        "maxParts": 102,
+        "maxVertices": 20822,
+        "engineP50Ms": 3710
+       },
+       "busy": {
+        "raster": null,
+        "draftPx": 2000,
+        "warmP50Ms": 1463,
+        "warmP95Ms": 1604,
+        "warmMaxMs": 1604,
+        "warmRuns": 15,
+        "k2MissP50Ms": 1487,
+        "k2MissP95Ms": 1558,
+        "k2MissRuns": 7,
+        "coldMs": 2033,
+        "coldStatus": "error",
+        "renderP50Ms": 36,
+        "renderP95Ms": 60,
+        "status": "error",
+        "code": "COMPLEXITY_LIMIT",
+        "maxParts": null,
+        "maxVertices": null,
+        "engineP50Ms": 1399
+       }
+      },
+      "longTaskMaxMs": 0,
+      "longTasksSupported": false,
+      "pool": {
+       "mode": "pool",
+       "rung": "blob",
+       "helpers": 8
+      },
+      "deviceMemory": null,
+      "at": "2026-10-09T19:54:44.978Z"
+     }
+    ]
+   }
+  }
+ }
 }

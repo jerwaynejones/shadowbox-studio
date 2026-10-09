@@ -221,6 +221,11 @@
       </div>
       <button id="btn-fabcancel" class="btn" type="button" hidden>Cancel fabrication run</button>
       <p id="pool-notice" class="hint pool-notice" role="status" aria-live="polite" hidden></p>
+      <!-- speed round F17 (PO-PERF-3, Q2): a project still at the pre-F17 720 px draft is offered the new default once;
+           nothing changes until the user clicks -->
+      <p id="draft-offer" class="hint draft-offer" role="status" aria-live="polite" hidden><span id="draft-offer-text"></span>
+        <button id="btn-draft-offer" class="btn" type="button">Use the finer draft</button>
+        <button id="btn-draft-keep" class="btn" type="button">Keep 720 px</button></p>
       <!-- G2.13c (UI-04, NFR-07): diagnostics grouped by severity, icon plus text; an item with a layer is a button
            that shows its layer, parts and region in the Proof; warnings carry an Acknowledge checkbox for this result. -->
       <div id="diag-panel" class="diag" role="region" aria-labelledby="h-diag">

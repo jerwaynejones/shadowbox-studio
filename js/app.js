@@ -112,6 +112,23 @@
     const note = $("fabpreview-note");
     if (note && !fabInFlight) note.textContent = fabNote();
   }
+  /**
+   * Speed round F17 (PO-PERF-3, Q2): a project still at the pre-F17 720 px draft (SBSchema.draftPxOffer) shows a one-time
+   * offer of the new default; it is applied only on the user's click (SBSchema.applyDraftOffer), never silently.
+   */
+  function updateDraftOffer() {
+    const el = $("draft-offer");
+    if (!el) return;
+    const o = SBSchema.draftPxOffer(project, deviceClass());
+    el.hidden = !o;
+    if (o) $("draft-offer-text").textContent = `The draft preview of this project is ${o.from} px on the long side; the new default is ${o.to} px ` +
+      "(finer edges; the fabrication pitch is unchanged). Applying it regenerates, and acknowledgements and repairs of this project are redone.";
+  }
+  function answerDraftOffer(accept) {
+    project = SBSchema.applyDraftOffer(project, accept);
+    updateDraftOffer();
+    if (accept) recompute();
+  }
   /** True while runs go to the pool (also while it starts: submits wait in its outbox and fall back with POOL_UNAVAILABLE). */
   function usePool() { return !!pool && (pool.mode === "pool" || pool.mode === "starting"); }
 
@@ -250,6 +267,7 @@
   let draftToken = 0, draftRun = null, draftRerun = false;
   function regenerate() {
     syncControls();
+    updateDraftOffer();
     updateDimbar();
     renderFabReview();   // alpha.2: a fabrication review of an older revision or source is hidden (it is not current)
     const gate = SBSchema.canGenerate(project, run.sourceImage);
@@ -1059,15 +1077,15 @@
 
   /**
    * alpha.3 E6: the busy text shown while the fabrication run is generated, from the fabrication raster plan of the
-   * current revision and the measured SBSchema.limits(dc).fabMsPerMpx (E4; the offline app cannot read docs/ at runtime;
-   * F17 re-measures it for the pool and for the fallback). Speed round F15: the pooled run keeps the page responsive; the
+   * current revision and the measured SBSchema.limits(dc).fabMsPerMpx (the offline app cannot read docs/ at runtime;
+   * F17 measured it for the pool, and fabMsPerMpxFallback for the sync driver: fabBusyText(dc, true)). Speed round F15: the pooled run keeps the page responsive; the
    * fallback branch (fabFallback) says that the page is blocked until it finishes.
    */
   const FABPREVIEW_NOTE = "Shows the exact cut geometry and its fabrication review.";
-  function fabBusyText(dc) {
+  function fabBusyText(dc, fallback) {
     try {
       const g = SBEngine.rasterPlan(project, { w: run.src.w, h: run.src.h }, "fabrication", dc).geometry;
-      const est = Math.max(1, Math.round((g.rasterW * g.rasterH / 1e6) * SBSchema.limits(dc).fabMsPerMpx / 1000));
+      const est = Math.max(1, Math.round((g.rasterW * g.rasterH / 1e6) * SBSchema.limits(dc)[fallback ? "fabMsPerMpxFallback" : "fabMsPerMpx"] / 1000));
       return `Generating ${g.rasterW} × ${g.rasterH} px at ${g.mmPerPxMax.toFixed(3)} mm/px (about ${est} s)…`;
     } catch (_) {
       return "Generating the fabrication result…";
@@ -1155,7 +1173,7 @@
    * fabrication geometry does not depend on it).
    */
   async function fabFallback(gen, rev, dc) {
-    const busy = fabBusyText(dc).replace(/…$/, "; the page will not respond until it finishes…");
+    const busy = fabBusyText(dc, true).replace(/…$/, "; the page will not respond until it finishes…");
     fabBusy(true, busy + (poolNotice ? " " + poolNotice : ""), false);
     await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));   // paint the busy state first
     let res = null, t0 = 0;
@@ -1935,6 +1953,10 @@
    *   ?bench=draft  S3: the E4 method: both art families (realistic, busy), E4 workload (a); after the cold draft, warm
    *                 edits sheets 8 ↔ 7 (revision changing) through the draft path, 3 warm-up + 15 measured per family,
    *                 each timed from the edit to the painted draft. families.<f>.p95Ms is the E4/S3 rule's number.
+   *                 Speed round F17: then &k2= (default 7) K2-miss edits (smoothing radius 1.65 ↔ 1.70 mm: K1 hit, K2 miss,
+   *                 families.<f>.k2Miss); each row's renderMs is the result's receipt → painted frame (applyDraft,
+   *                 preview.setSnapshot, overlays and the paint); &draftPx=N (64–2000) sets the bench project's
+   *                 geometry.draftPx (the raster is min(draftPx, the request's draftCapPx), recorded per family).
    *   ?bench=cancel S1/NFR-02: 20 fabrication runs canceled (Cancel = cancelFab("user")) after 50–1000 ms; latency from
    *                 the cancel to the settled run, plus whether the watchdog fired and the respawn time.
    * Sources: &src=realistic|busy (default: realistic; draft runs both) is the seeded synthetic art of test/fixtures.js
@@ -2058,6 +2080,11 @@
   }
   const benchMs = (v) => +v.toFixed(1);
 
+  /** Speed round F17: &draftPx=N sets the draft bench project's geometry.draftPx (a sweep candidate). */
+  function benchDraftPx(p, kind) {
+    if (kind === "draft" && benchOpt("draftPx", null) !== null) p.geometry.draftPx = benchInt("draftPx", p.geometry.draftPx, 64, 2000);
+  }
+
   /**
    * Install the bench source (family "realistic"/"busy": the seeded synthetic art; "loaded": the source the user loaded)
    * with the bench project of kind through the app's own install path (acceptSource → one draft), and wait for that
@@ -2068,6 +2095,7 @@
     if (family === "loaded") {
       if (!run.src || !project.source) throw new Error("load a source first (the S2 photo, or node tools/alpha3_scene.js scene.png 4096 3084), then press Run");
       const next = benchProject(S, project.source, kind);
+      benchDraftPx(next, kind);
       next.revision = project.revision + 1;
       project = next;
       const t0 = performance.now(), wait = benchWaitDraft((c) => c.rev === project.revision);
@@ -2084,6 +2112,7 @@
     const px = benchRgba(g, w, h), route = { format: "png", decode: "canvas-tonal" };
     const sampleHash = await SBHash.digest(E.sampleBytes(px));
     const next = benchProject(S, Object.assign(E.sourceRecord(px, route), { sampleHash }), kind);
+    benchDraftPx(next, kind);
     next.revision = project.revision + 1;
     project = next;
     setProjectName("bench-" + kind + "-" + family);
@@ -2122,7 +2151,7 @@
 
   /** ?bench=draft (S3, E4 method): per family, the cold draft then warm edits sheets 8 ↔ 7, edit → painted draft. */
   async function benchDraft(family) {
-    const plan = BENCH_PLAN.draft, warm = benchInt("warm", plan.warm, 0, 100), runs = benchInt("runs", plan.runs, 1, 1000);
+    const plan = BENCH_PLAN.draft, warm = benchInt("warm", plan.warm, 0, 100), runs = benchInt("runs", plan.runs, 1, 1000), k2n = benchInt("k2", 7, 0, 1000);
     const fams = family === "loaded" || benchOpt("src", null) ? [family] : plan.families, all = benchLongTasks(), families = {}, every = [];
     all.start();
     for (const fam of fams) {
@@ -2139,14 +2168,37 @@
         setRunState({ type: "edit" });
         regenerate();   // the debounced recompute without its 300 ms wait
         const { res } = await wait;
+        const tr = performance.now();
         await benchPaint();
         const ms = performance.now() - t0, l = lt.stop();
-        rows.push({ warm: i < warm, sheets, ms: benchMs(ms), engineMs: run.draft ? benchMs(run.draft.ms) : null, status: res.status,
+        rows.push({ warm: i < warm, sheets, ms: benchMs(ms), engineMs: run.draft ? benchMs(run.draft.ms) : null, renderMs: benchMs(performance.now() - tr), status: res.status,
           code: res.error ? res.error.code : null, longTaskMaxMs: benchMs(l.max), longTasks: l.count });
       }
       const measured = rows.filter((r) => !r.warm).map((r) => r.ms);
       every.push(...measured);
-      families[fam] = Object.assign(benchStats(measured), { source: src, rows, raster: run.draft && run.draft.snapshot ? [run.draft.snapshot.geometry.rasterW, run.draft.snapshot.geometry.rasterH] : null });
+      // F17: K2-miss edits (smoothing radius 1.65 ↔ 1.70 mm; the resampled source stays cached, Kuwahara reruns)
+      const k2Rows = [];
+      for (let i = 0; i < k2n; i++) {
+        setStatus(`bench draft (${fam}): smoothing edit ${i + 1} of ${k2n}…`, true);
+        await benchIdle();
+        const next = JSON.parse(JSON.stringify(project));
+        next.interpretation.smoothing = Object.assign({}, next.interpretation.smoothing, { radiusMM: [1.65, 1.7][(i + 1) % 2] });
+        next.revision = project.revision + 1;
+        const t0 = performance.now();
+        project = next;
+        const rev = project.revision, wait = benchWaitDraft((c) => c.rev === rev);
+        setRunState({ type: "edit" });
+        regenerate();
+        const { res } = await wait;
+        const tr = performance.now();
+        await benchPaint();
+        k2Rows.push({ ms: benchMs(performance.now() - t0), renderMs: benchMs(performance.now() - tr), status: res.status, code: res.error ? res.error.code : null });
+      }
+      const snapNow = run.draft && run.draft.snapshot, rend = rows.filter((r) => !r.warm).map((r) => r.renderMs);
+      families[fam] = Object.assign(benchStats(measured), { source: src, rows, raster: snapNow ? [snapNow.geometry.rasterW, snapNow.geometry.rasterH] : null,
+        draftPx: project.geometry.draftPx, render: benchStats(rend), k2Miss: Object.assign(benchStats(k2Rows.map((r) => r.ms)), { rows: k2Rows }),
+        maxParts: snapNow ? Math.max(0, ...snapNow.layers.map((x) => x.parts.length)) : null,
+        maxVertices: snapNow ? Math.max(0, ...snapNow.layers.map((x) => (x.stats && x.stats.vertices) || 0)) : null });
     }
     const lts = all.stop();
     return benchRecord("draft", { workload: "E4 (a) (test/bench.js draftProject(\"a\")), warm edit sheets 8 <-> 7", warm, runs, runsMs: every, families,
@@ -2257,6 +2309,8 @@
 
     // header
     $("projname").addEventListener("input", (e) => setLegacy("projectName", e.target.value));
+    $("btn-draft-offer").addEventListener("click", () => answerDraftOffer(true));
+    $("btn-draft-keep").addEventListener("click", () => answerDraftOffer(false));
     $("meta-date").textContent = new Date().toISOString().slice(0, 10);
 
     // photo

@@ -162,13 +162,21 @@
   // The test "PO-PREVIEW-1 draft budget equals docs/perf/draft-budget.json" keeps them in step; E11 re-measures.
   // Speed round F15 (F-D5): draftPxFallback is the draft cap of the no-worker fallback (the sync driver on the page),
   // passed explicitly as the request's draftCapPx by app.js's fallback branch; the pooled draft keeps draftPxCap.
-  const DRAFT_BUDGET = { desktopDraftPx: 720, mobileDraftPx: 720, fallbackDraftPx: 720, fabMsPerMpx: 2410 };   // measured 2026-10-08 (E4)
+  // Speed round F17 (S3, PO-PERF-3): re-measured with the worker pool under the F.7 rule (warm p95 ≤ 2.5 s in Chromium and
+  // Firefox on the i7, both art families; `node test/bench.js draft-decide`): desktopDraftPx and both presets' draftPx
+  // are its decision; fabMsPerMpx is the pooled fabrication cost and fabMsPerMpxFallback the sync driver's (the
+  // fallback branch's busy estimate). Saved projects keep their draftPx; a project at 720 is offered a raised default
+  // once (draftPxOffer). The test "PO-PREVIEW-1 PO-PERF-3 draft budget equals docs/perf/draft-budget.json" keeps them in step.
+  const PRE_F17_DRAFT_PX = 720;   // the draft long side every project had before F17 (E4); F17's one-time offer replaces it
+  const DRAFT_BUDGET = { desktopDraftPx: 720, mobileDraftPx: 720, fallbackDraftPx: 720, fabMsPerMpx: 720, fabMsPerMpxFallback: 1640 };   // measured 2026-10-09 (F17)
   const LIMITS = {
     desktop: { deviceClass: "desktop", fabPxBudget: 25000000, maxPartsPerLayer: DESKTOP_CAPS.maxPartsPerLayer,
       maxVerticesPerLayer: DESKTOP_CAPS.maxVerticesPerLayer, maxVerticesTotal: DESKTOP_CAPS.maxVerticesTotal,
-      draftPxCap: DRAFT_BUDGET.desktopDraftPx, draftPxFallback: DRAFT_BUDGET.fallbackDraftPx, fabMsPerMpx: DRAFT_BUDGET.fabMsPerMpx },
+      draftPxCap: DRAFT_BUDGET.desktopDraftPx, draftPxFallback: DRAFT_BUDGET.fallbackDraftPx, fabMsPerMpx: DRAFT_BUDGET.fabMsPerMpx,
+      fabMsPerMpxFallback: DRAFT_BUDGET.fabMsPerMpxFallback },
     mobile: { deviceClass: "mobile", fabPxBudget: 1000000, maxPartsPerLayer: 100, maxVerticesPerLayer: 20000, maxVerticesTotal: 20000,
-      draftPxCap: DRAFT_BUDGET.mobileDraftPx, draftPxFallback: DRAFT_BUDGET.fallbackDraftPx, fabMsPerMpx: 4 * DRAFT_BUDGET.fabMsPerMpx },
+      draftPxCap: DRAFT_BUDGET.mobileDraftPx, draftPxFallback: DRAFT_BUDGET.fallbackDraftPx, fabMsPerMpx: 4 * DRAFT_BUDGET.fabMsPerMpx,
+      fabMsPerMpxFallback: 4 * DRAFT_BUDGET.fabMsPerMpxFallback },
   };
   // G2.14 (IMG-07, SRS §12.3): the source envelope. Over-limit input is rejected before decode, or downsampled only
   // through the explicit button (applyDownsample); never silently reduced (NFR-04). Limits are inclusive.
@@ -394,7 +402,7 @@
         minFeatureMM: 1.5, advisoryFeatureMM: 2.0, minPartMM2: 25, kerfMode: "external", calibration: null };
       p.appearance = { mode: "uniform", color: "#C8A26B", palette: "dusk" };
       p.geometry = { sizeBy: "height", targetMM: 300, widthMM: null, heightMM: null, lockAspect: true,
-        draftPx: 720, fabPitchMM: 0.1, resample: { height: "nearest", tonal: "area" } };   // E4: draftPx = decision.presets.plywood
+        draftPx: DRAFT_BUDGET.desktopDraftPx, fabPitchMM: 0.1, resample: { height: "nearest", tonal: "area" } };   // F17: = decision.presets.plywood
       return p;
     },
     // Acrylic shadowbox: the v1.1.0 connected tonal defaults (app.js state), on the new model.
@@ -412,7 +420,7 @@
         minFeatureMM: 1.2, advisoryFeatureMM: 1.2, minPartMM2: 9, kerfMode: "external", calibration: null };
       p.appearance = { mode: "palette", color: "#C8A26B", palette: "Midnight (Starry Night)" };
       p.geometry = { sizeBy: "width", targetMM: 324, widthMM: 300, heightMM: null, lockAspect: true,
-        draftPx: 720, fabPitchMM: 0.1, resample: { height: "nearest", tonal: "area" } };   // E4: draftPx = decision.presets.acrylic
+        draftPx: DRAFT_BUDGET.desktopDraftPx, fabPitchMM: 0.1, resample: { height: "nearest", tonal: "area" } };   // F17: = decision.presets.acrylic
       return p;
     },
   };
@@ -806,6 +814,33 @@
       default: throw fail("SCHEMA_LEGACY", "applyLegacy: " + key + " is not a project control key");
     }
     if (JSON.stringify(S.geometryKey(p)) !== JSON.stringify(S.geometryKey(project))) p.revision = project.revision + 1;
+    return p;
+  };
+
+  /**
+   * Speed round F17 (S3, PO-PERF-3, Q2): saved projects keep their draftPx (it is user-visible as the legacy procRes).
+   * draftPxOffer(project, deviceClass?) → {from, to} | null: a project still at the pre-F17 draft (720 px) is offered the
+   * new preset default once, when this device's draft cap (limits(deviceClass).draftPxCap, default desktop) can use it
+   * and the offer was not answered before (extras.draftOffer). applyDraftOffer(project, accept) → a new project:
+   * accept sets geometry.draftPx to the offer (revision + 1, draftPx is in the geometryKey) and records extras.history
+   * {op: "draft-default", from, to, revision}; decline keeps the geometry (and the revision). Both set
+   * extras.draftOffer ("applied" | "declined"), so the offer is shown once. No offer → the project unchanged (a copy).
+   */
+  S.draftPxOffer = function (project, deviceClass) {
+    const to = DRAFT_BUDGET.desktopDraftPx, g = project && project.geometry, ex = (project && project.extras) || {};
+    if (!g || g.draftPx !== PRE_F17_DRAFT_PX || to <= PRE_F17_DRAFT_PX || ex.draftOffer !== undefined) return null;
+    if (S.limits(deviceClass === "mobile" ? "mobile" : "desktop").draftPxCap <= PRE_F17_DRAFT_PX) return null;
+    return { from: PRE_F17_DRAFT_PX, to };
+  };
+  S.applyDraftOffer = function (project, accept) {
+    const offer = S.draftPxOffer(project, "desktop"), p = clone(project);
+    if (!offer) return p;
+    const hist = Array.isArray(p.extras.history) ? p.extras.history : [];
+    if (accept) {
+      p.geometry.draftPx = offer.to;
+      if (JSON.stringify(S.geometryKey(p)) !== JSON.stringify(S.geometryKey(project))) p.revision = project.revision + 1;
+      p.extras = Object.assign({}, p.extras, { draftOffer: "applied", history: hist.concat([{ op: "draft-default", from: offer.from, to: offer.to, revision: p.revision }]) });
+    } else p.extras = Object.assign({}, p.extras, { draftOffer: "declined" });
     return p;
   };
 
