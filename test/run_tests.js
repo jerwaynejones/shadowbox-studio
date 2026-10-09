@@ -6541,7 +6541,7 @@ suite("engine — speed round F8 cropped change overlays (NFR-05, GEO-08)", () =
     (bad.length ? " — differ: " + bad.join(", ") : ""), bad.length === 0 && withPolys >= 3);
   // run() uses the cropped path for the change overlays and the bridges (the uncropped maskPolygons stays for legacyCleanupReport)
   // speed round F9: run() is the runSteps generator; its overlays batch runs E.overlayLayer (constructLayer emits the crops)
-  const src = fs.readFileSync(path.join(__dirname, "..", "js", "engine.js"), "utf8"), at = src.indexOf("function* runSteps(req, head, step, fail, cache, overlays)");
+  const src = fs.readFileSync(path.join(__dirname, "..", "js", "engine.js"), "utf8"), at = src.indexOf("function* runSteps(req, head, step, fail, cache, overlays, par)");
   const body = at > 0 ? src.slice(at) : "", ol = src.slice(src.indexOf("E.overlayLayer = function"), src.indexOf("E.TASKS = Object.freeze"));
   check("F8 run() builds overlays and bridges with E.changePolygons / the cropped path, not the full-raster E.maskPolygons",
     at > 0 && /batch\("overlays"/.test(body) && /E\.changePolygons\(/.test(ol) && /E\.maskPolygonsCrop\(/.test(ol) && !/E\.maskPolygons\(/.test(body) && !/E\.maskPolygons\(/.test(ol));
@@ -6552,7 +6552,8 @@ suite("engine — speed round F9 generator pipeline and sync driver (NFR-05)", a
   const gold = JSON.parse(fs.readFileSync(path.join(__dirname, "golden", "pool-equality.json"), "utf8"));
   const fields = ["status", "code", "geometryHash", "layerHashes", "diagSha", "cleanupSha", "supportSha", "guidesSha", "statsSha", "wholeSha"];
   const sameGold = (fx, r) => { const d = C.digest(r), g = gold.fixtures[fx.id]; return !!g && fields.every((k) => JSON.stringify(d[k]) === JSON.stringify(g[k])); };
-  const NAMES = ["construct", "overlays", "trace", "convert", "traceConvert", "supportPair", "featureLayer", "buildPair", "validatePair", "layerHash"];
+  const NAMES = ["construct", "overlays", "trace", "convert", "traceConvert", "supportPair", "featureLayer", "buildPair", "validatePair", "layerHash",
+    "resampleRows", "kuwaharaRows"];   // F13: the row-band raster kernels
   check("F9 SBEngine.TASKS is a frozen name → kernel table (" + NAMES.join(", ") + ")",
     !!E.TASKS && Object.isFrozen(E.TASKS) && JSON.stringify(Object.keys(E.TASKS).sort()) === JSON.stringify(NAMES.slice().sort()) && NAMES.every((n) => typeof E.TASKS[n] === "function"));
   check("F9 split kernels are exported (constructLayer, traceLayer, convertLayer, supportPair, featureLayer, buildPair, validatePair) and generateAsync, BatchError",
@@ -6714,7 +6715,7 @@ suite("engine — speed round F9 generator pipeline and sync driver (NFR-05)", a
   // run() is a generator folded by drivers; kernels come only from the TASKS table
   const src = fs.readFileSync(path.join(__dirname, "..", "js", "engine.js"), "utf8");
   check("F9 engine.js: function* runSteps, both drivers resume it, and the old run() body is gone",
-    /function\* runSteps\(req, head, step, fail, cache, overlays\)/.test(src) && !/function run\(req, head, step, fail, cache, overlays\)/.test(src) &&
+    /function\* runSteps\(req, head, step, fail, cache, overlays, par\)/.test(src) && !/function run\(req, head, step, fail, cache, overlays\)/.test(src) &&
     /E\.generate = function/.test(src) && /E\.generateAsync = async function/.test(src));
 });
 
@@ -6935,6 +6936,15 @@ function makeAdvExec(E, seed, stats) {
     map: async (kind, items, o) => {
       const fn = E.TASKS[kind], n = items.length, out = new Array(n), errs = [];
       if (typeof fn !== "function") throw new Error("F12 exec: no kernel " + kind);
+      // F13: every Kuwahara slice is exactly SAT rows [max(0, y0 − r), min(h, y1 + r) + 1): the seed row s plus source
+      // (and domain) rows [s, e), from which the kernel rebuilds SAT rows s+1 … e
+      if (kind === "kuwaharaRows") items.forEach(([src, w, h, r, seed, y0, y1, dom]) => {
+        const s0 = Math.max(0, y0 - r), e = Math.min(h, y1 + r);
+        if (!seed || seed.s !== s0 || seed.sat.length !== w + 1 || seed.sat2.length !== w + 1 || src.length !== (e - s0) * w ||
+            (dom ? dom.length !== src.length || !seed.cnt || seed.cnt.length !== w + 1 : !!seed.cnt))
+          throw new Error("F13 exec: Kuwahara slice of band [" + y0 + ", " + y1 + ") is not SAT rows [" + s0 + ", " + (e + 1) + ")");
+        if (stats.kuwahara) { stats.kuwahara.items++; if (y1 - y0 < r) stats.kuwahara.thin++; if (y1 - y0 === 1) stats.kuwahara.oneRow++; if (seed.cnt) stats.kuwahara.cnt++; }
+      });
       // post: every item's args cloned now, its declared transfers detached on the generator's side (F.3 ownership)
       const args = items.map((a, i) => {
         const tr = (o && o.transfer && o.transfer[i]) || [];
@@ -6976,10 +6986,13 @@ parentPort.on("message", async (id) => {
   if (id === null) { process.exit(0); return; }
   const fx = byId.get(id), reqOf = () => E.request(fx.project, fx.source, { quality: fx.quality, deviceClass: fx.deviceClass, requestId: fx.id, draftCapPx: fx.draftCapPx });
   const sync = E.generate(reqOf(), { overlays: fx.overlays }), runs = [];
+  if (workerData.bandRows) E.TEST_HOOKS = true;   // F13: the test-only bandRows override forces many raster bands
   for (const seed of workerData.seeds) {
-    const stats = { batches: 0, reordered: 0, items: 0, transferred: 0 };
+    const stats = { batches: 0, reordered: 0, items: 0, transferred: 0, kuwahara: { items: 0, thin: 0, oneRow: 0, cnt: 0 } };
+    // bands of 1..9 rows (thinner than r, one-row tail bands), seeded per run
+    const bandRows = workerData.bandRows ? 1 + (((seed * 2654435761) ^ fnv(id)) >>> 0) % 9 : undefined;
     let r, threw = null;
-    try { r = await E.generateAsync(reqOf(), { overlays: fx.overlays, exec: makeAdvExec(E, (seed * 2654435761) ^ fnv(id), stats) }); } catch (e) { threw = String(e && e.message); }
+    try { r = await E.generateAsync(reqOf(), { overlays: fx.overlays, bandRows, exec: makeAdvExec(E, (seed * 2654435761) ^ fnv(id), stats) }); } catch (e) { threw = String(e && e.message); }
     runs.push({ seed, digest: r ? C.digest(r) : null, strict: !!r && C.deepEqualStrict(r, sync), threw, stats });
   }
   parentPort.postMessage({ id, runs, sync });
@@ -7003,14 +7016,14 @@ suite("engine — speed round F12 pool equality (NFR-05)", async () => {
   {
     const nThreads = Math.max(1, Math.min(12, require("os").cpus().length - 1)), todo = all.map((fx) => fx.id), got = [];
     await Promise.all(Array.from({ length: Math.min(nThreads, todo.length) }, () => new Promise((resolve, reject) => {
-      const w = new Worker(F12_THREAD, { eval: true, workerData: { testDir: __dirname, seeds: SEEDS } });
+      const w = new Worker(F12_THREAD, { eval: true, workerData: { testDir: __dirname, seeds: SEEDS, bandRows: true } });
       const next = () => w.postMessage(todo.length ? todo.shift() : null);
       w.on("message", (m) => { got.push(m); next(); });
       w.on("error", reject);
       w.on("exit", () => resolve());
       next();
     })));
-    const bad = [], strictBad = [], threw = [], tot = { batches: 0, reordered: 0, items: 0, transferred: 0 };
+    const bad = [], strictBad = [], threw = [], tot = { batches: 0, reordered: 0, items: 0, transferred: 0 }, kw = { items: 0, thin: 0, oneRow: 0, cnt: 0 };
     for (const m of got) {
       const fx = byId.get(m.id);
       sync.set(m.id, m.sync);
@@ -7019,6 +7032,7 @@ suite("engine — speed round F12 pool equality (NFR-05)", async () => {
         else if (!goldDigest(fx, r.digest)) bad.push(m.id + "@" + r.seed);
         else if (!r.strict) strictBad.push(m.id + "@" + r.seed);
         for (const k of Object.keys(tot)) tot[k] += r.stats[k];
+        for (const k of Object.keys(kw)) kw[k] += r.stats.kuwahara[k];
       }
     }
     const runs = got.length * SEEDS.length;
@@ -7029,6 +7043,9 @@ suite("engine — speed round F12 pool equality (NFR-05)", async () => {
       got.length === all.length && strictBad.length === 0);
     check(`F12 the executor really reorders and transfers (${tot.reordered}/${tot.batches} multi-item batches permuted, ${tot.items} items, ${tot.transferred} buffers detached)`,
       tot.reordered > tot.batches / 2 && tot.transferred > 1000);
+    check(`NFR-05 F13 the bandRows override forced Kuwahara row bands in the adversarial runs and every slice was exactly SAT rows [max(0, y0 − r), min(h, y1 + r) + 1) ` +
+      `(${kw.items} band items: ${kw.thin} thinner than r, ${kw.oneRow} one-row bands, ${kw.cnt} with domain cnt rows)`,
+      threw.length === 0 && kw.items > 1000 && kw.thin > 0 && kw.oneRow > 0 && kw.cnt > 0);
     check("F12 the sync responses from the corpus threads equal the golden (the thread loads the same modules)", all.every((fx) => sync.has(fx.id) && sameGold(fx, sync.get(fx.id))));
   }
   { // error precedence under random completion order: faults in two random construct items raise the lower index
@@ -7113,6 +7130,202 @@ suite("engine — speed round F12 pool equality (NFR-05)", async () => {
         helpersSpawned.length > 2 && helpersSpawned.some((w) => w.terminated) && st.itemsInline > 0);
       pk.terminate();
     }
+  } finally {
+    for (const p of pools) p.terminate();
+  }
+});
+
+// ------------------------------------------------ speed round F13 (S1, S2): helper pool, scheduling, memory gate, band kernels
+suite("engine/worker.js/pool.js — speed round F13 scheduling, memory gate and band kernels (NFR-04, NFR-05)", async () => {
+  const E = SBEngine, R = SBRaster, C = require("./pool_corpus.js"), Dq = C.deepEqualStrict, shim = require("./node_worker_shim.js");
+  const JS = path.join(__dirname, "..", "js"), text = (n) => fs.readFileSync(path.join(JS, n), "utf8");
+  const gold = JSON.parse(fs.readFileSync(path.join(__dirname, "golden", "pool-equality.json"), "utf8"));
+  const fields = ["status", "code", "geometryHash", "layerHashes", "diagSha", "cleanupSha", "supportSha", "guidesSha", "statsSha", "wholeSha"];
+  const sameGold = (fx, r) => { const d = C.digest(r), g = gold.fixtures[fx.id]; return !!g && fields.every((k) => JSON.stringify(d[k]) === JSON.stringify(g[k])); };
+  const APPV = (text("app.js").match(/const APP_VERSION = "([^"]+)"/) || [])[1];
+  const MiB = 1024 * 1024;
+  check("F13 SBEngine exports bandRanges, lptOrder, memoryBudget, memoryLedger, checkTransfers; SBRaster resampleSpan, resampleBand",
+    ["bandRanges", "lptOrder", "memoryBudget", "memoryLedger", "checkTransfers"].every((n) => typeof E[n] === "function") &&
+    typeof R.resampleSpan === "function" && typeof R.resampleBand === "function");
+  if (typeof E.memoryLedger !== "function" || typeof R.resampleBand !== "function") return;
+
+  // ---- pure scheduling pieces
+  check("F13 bandRanges: n near-equal bands covering [0, H) (n ≤ H); bandRows cuts fixed bands with a short tail; one band = serial",
+    JSON.stringify(E.bandRanges(10, 3)) === "[[0,3],[3,6],[6,10]]" && JSON.stringify(E.bandRanges(2, 8)) === "[[0,1],[1,2]]" &&
+    JSON.stringify(E.bandRanges(10, 1, 4)) === "[[0,4],[4,8],[8,10]]" && E.bandRanges(10, 1).length === 1 && E.bandRanges(10).length === 1);
+  check("F13 lptOrder: largest cost first, ties and missing costs by index (dispatch order only)",
+    JSON.stringify(E.lptOrder([0, 5, 9, 5, 1])) === "[2,1,3,4,0]" && JSON.stringify(E.lptOrder(null, 3)) === "[0,1,2]" && JSON.stringify(E.lptOrder([3, NaN, 3], 3)) === "[0,2,1]");
+  check("NFR-04 F13 memory budget: deviceMemory absent = 512 MiB; min(1 GiB, deviceMemory·128 MiB) otherwise (Chromium's 8 → 1 GiB); mobile 192 MiB",
+    E.memoryBudget(undefined, "desktop") === 512 * MiB && E.memoryBudget(NaN, "desktop") === 512 * MiB && E.memoryBudget(8, "desktop") === 1024 * MiB &&
+    E.memoryBudget(2, "desktop") === 256 * MiB && E.memoryBudget(16, "desktop") === 1024 * MiB && E.memoryBudget(8, "mobile") === 192 * MiB && E.memoryBudget(undefined, "mobile") === 192 * MiB);
+  {
+    const L = E.memoryLedger(64 * MiB, 10 * MiB), a1 = L.admits(40 * MiB);
+    L.take(40 * MiB);
+    const a2 = L.admits(40 * MiB), a3 = L.admits(14 * MiB);
+    L.give(40 * MiB);
+    const big = E.memoryLedger(64 * MiB, 0), b1 = big.admits(100 * MiB);
+    big.take(100 * MiB);
+    const b2 = big.admits(1), over = E.memoryLedger(64 * MiB, 80 * MiB);
+    const z = E.memoryLedger(64 * MiB, 64 * MiB);
+    z.take(0);
+    check("NFR-04 F13 memoryLedger at 64 MiB: base + in flight + item ≤ budget admits, more waits (serialises); peak tracked; an item counts ≥ 64 KiB",
+      a1 && !a2 && a3 && L.used === 10 * MiB && L.peak === 50 * MiB && L.inFlight === 0 && z.used === 64 * MiB + 64 * 1024 && !z.admits(0));
+    check("NFR-04 F13 an item larger than the budget is still admitted alone (and nothing next to it); a resident set over budget still runs one item",
+      b1 && !b2 && big.inFlight === 1 && over.admits(1) === true);
+  }
+  {
+    const owned = new Uint8Array(16), whole = new Uint8Array(8), sub = new Uint8Array(new ArrayBuffer(16), 4, 4), throwsCode = (f) => { try { f(); return null; } catch (e) { return e.code + ": " + e.message; } };
+    const tSub = throwsCode(() => E.checkTransfers("construct", [[whole], [sub]], [owned])), tOwn = throwsCode(() => E.checkTransfers("construct", [[owned]], [owned]));
+    check("F.3 F13 checkTransfers: whole unowned buffers pass; a subarray or a source/cache-owned buffer throws ENGINE_INTERNAL",
+      throwsCode(() => E.checkTransfers("k", [[whole], null, []], [owned])) === null && /^ENGINE_INTERNAL: .*non-whole/.test(tSub || "") && /construct#1/.test(tSub || "") &&
+      /^ENGINE_INTERNAL: .*keeps/.test(tOwn || "") && throwsCode(() => E.checkTransfers("k", [[owned.subarray(0, 8)]], [])) !== null);
+  }
+
+  // ---- resample band kernel: bands of only their source rows, concatenated, are byte-equal to the whole resample
+  {
+    let rs = 99173;
+    const rnd = (n) => { rs = (Math.imul(rs, 1103515245) + 12345) >>> 0; return rs % n; };
+    let cases = 0, bad = [];
+    for (let t = 0; t < 120; t++) {
+      const c = [1, 2, 3, 4][rnd(4)], w = 1 + rnd(60), h = 1 + rnd(60), method = ["area", "nearest", "none"][rnd(3)];
+      const W = method === "none" ? w : 1 + rnd(w), H = method === "none" ? h : 1 + rnd(h);
+      const px = new Uint8Array(w * h * c);
+      for (let i = 0; i < px.length; i++) px[i] = rnd(4) === 0 ? 255 : rnd(256);
+      const whole = R.resampleRows(px, c, w, h, W, H, method, 0, H), rows = 1 + rnd(5), out = new Uint8Array(W * H * c);
+      for (const [Y0, Y1] of E.bandRanges(H, 1, rows)) {
+        const sp = R.resampleSpan(w, h, W, H, method, Y0, Y1), src = px.slice(sp[0] * w * c, sp[1] * w * c), before = src.slice();
+        out.set(R.resampleBand(src, c, w, h, W, H, method, Y0, Y1, sp[0]), Y0 * W * c);
+        if (!src.every((v, i) => v === before[i])) bad.push("mutated " + t);
+        cases++;
+      }
+      if (!whole.every((v, i) => v === out[i])) bad.push(t + " " + method + " " + w + "x" + h + "→" + W + "x" + H + " c" + c);
+    }
+    let wrongRows = null;
+    try { R.resampleBand(new Uint8Array(40), 1, 10, 10, 5, 5, "area", 1, 2, 0); } catch (e) { wrongRows = e.code; }
+    check(`S2 F13 resampleBand: 120 random rasters (area, nearest, none; 1–4 channels) in bands of 1–5 rows from only their source rows equal resampleRows (${cases} bands)` +
+      (bad.length ? " — " + bad.slice(0, 5).join("; ") : ""), bad.length === 0 && cases > 300);
+    check("F13 resampleBand refuses a slice that does not start at the band's first source row", wrongRows === "RESAMPLE_SIZE");
+  }
+
+  // ---- whole responses: banded resample + Kuwahara (sync driver with bandRows, and the adversarial executor) equal the serial engine
+  const by = new Map(C.corpus().map((fx) => [fx.id, fx]));
+  // fabrication fixtures that really downsample at fabrication (the F0 corpus fabricates at source size): RGBA area,
+  // RGBA + alpha domain (area, Kuwahara with cnt), height (nearest)
+  const fabFx = [["a3-900-fabrication", 0.8], ["alpha-domain-fabrication", 0.6], ["h-bonded-fabrication", 0.8]].map(([id, pitch]) => {
+    const fx = by.get(id), p = JSON.parse(JSON.stringify(fx.project));
+    p.geometry.fabPitchMM = pitch;
+    return Object.assign({}, fx, { id: id + "@" + pitch, project: p });
+  });
+  const reqOf = (fx) => E.request(fx.project, fx.source, { quality: fx.quality, deviceClass: fx.deviceClass, requestId: fx.id, draftCapPx: fx.draftCapPx });
+  const serial = new Map();
+  const hooks0 = E.TEST_HOOKS;
+  E.TEST_HOOKS = true;
+  try {
+    const kinds = {}, bad = [];
+    for (const fx of fabFx) {
+      const g = E.rasterPlan(fx.project, { w: fx.source.w, h: fx.source.h }, "fabrication", "desktop").geometry;
+      if (!(g.rasterW < fx.source.w && g.resample !== "none")) bad.push(fx.id + " does not downsample");
+      const s = E.generate(reqOf(fx), { overlays: fx.overlays });
+      serial.set(fx.id, s);
+      for (const br of [1, 4, 13]) {
+        const r = E.generate(reqOf(fx), { overlays: fx.overlays, bandRows: br, kernelHook: (k, i, a, run) => { kinds[k] = (kinds[k] || 0) + 1; return run(); } });
+        if (s.status !== "done" || !Dq(r, s)) bad.push(fx.id + " bandRows " + br);
+      }
+    }
+    check(`NFR-05 F13 sync driver with bandRows 1/4/13: banded fabrication resample (area RGBA, area + alpha, nearest) and Kuwahara give the serial response ` +
+      `(${kinds.resampleRows || 0} resample, ${kinds.kuwaharaRows || 0} Kuwahara band items)` + (bad.length ? " — " + bad.join("; ") : ""),
+      bad.length === 0 && kinds.resampleRows > 100 && kinds.kuwaharaRows > 100);
+    const refused = E.generate(reqOf(fabFx[0]), { bandRows: 0 }), hooksOff = (() => { E.TEST_HOOKS = false; try { return E.generate(reqOf(fabFx[0]), { bandRows: 4 }); } finally { E.TEST_HOOKS = true; } })();
+    check("F13 bandRows is a test-only hook (refused unless SBEngine.TEST_HOOKS, and must be a positive integer)",
+      refused.status === "error" && refused.error.code === "ENGINE_DEBUG_DISABLED" && hooksOff.status === "error" && hooksOff.error.code === "ENGINE_DEBUG_DISABLED");
+    // the adversarial executor (seeded completion order, transfers detached, cloned results) with many bands
+    const advBad = [], st = { batches: 0, reordered: 0, items: 0, transferred: 0, kuwahara: { items: 0, thin: 0, oneRow: 0, cnt: 0 } };
+    for (const fx of fabFx) for (const seed of [1, 2, 3]) {
+      const r = await E.generateAsync(reqOf(fx), { overlays: fx.overlays, bandRows: 1 + seed * 3, exec: makeAdvExec(E, seed * 7919, st) });
+      if (!Dq(r, serial.get(fx.id))) advBad.push(fx.id + "@" + seed);
+    }
+    check(`NFR-05 F13 the adversarial executor with resample and Kuwahara bands equals the serial response (${st.kuwahara.items} Kuwahara slices checked, ${st.transferred} buffers detached)` +
+      (advBad.length ? " — " + advBad.join("; ") : ""), advBad.length === 0 && st.kuwahara.items > 100 && st.kuwahara.cnt > 0 && st.transferred > 100);
+    // an exec gets cost/estBytes/resident; LPT order changes dispatch only
+    const seen = {};
+    const lptExec = { map: async (kind, items, o) => {
+      seen[kind] = { cost: o.cost, est: o.estBytes, resident: o.resident, n: items.length };
+      const out = new Array(items.length);
+      for (const i of E.lptOrder(o.cost, items.length)) out[i] = structuredClone(E.TASKS[kind](...structuredClone(items[i])));
+      return out;
+    } };
+    const lfx = fabFx[1], lr = await E.generateAsync(reqOf(lfx), { overlays: lfx.overlays, exec: lptExec, bands: 3 });
+    const cc = seen.construct;
+    check("F13 batches carry LPT costs (construct: mask pixel counts, the base layer 0), per-item estBytes and the resident bytes; LPT dispatch gives the golden",
+      !!cc && cc.cost.length === cc.n && cc.cost[0] === 0 && cc.cost[1] > 0 && cc.cost.every((v, k) => k < 2 || v <= cc.cost[k - 1]) && cc.est.length === cc.n &&
+      cc.est.every((v) => v > 0) && cc.resident > 0 && !!seen.kuwaharaRows && seen.kuwaharaRows.n === 3 && seen.traceConvert && seen.traceConvert.cost.length === seen.traceConvert.n &&
+      !!seen.resampleRows && seen.resampleRows.n === 6 && seen.supportPair.resident > 0 &&
+      JSON.stringify(E.lptOrder(cc.cost)) !== JSON.stringify(cc.cost.map((_, i) => i)) && Dq(lr, serial.get(lfx.id)));
+  } finally { E.TEST_HOOKS = hooks0; }
+
+  // ---- the real pool (worker threads through the shim)
+  vm.runInThisContext(text("pool.js"), { filename: "pool.js" });
+  check("NFR-04 F13 SBPool.memoryBudget = SBEngine.memoryBudget", typeof SBPool.memoryBudget === "function" && SBPool.memoryBudget(undefined, "desktop") === 512 * MiB &&
+    SBPool.memoryBudget(4, "desktop") === 512 * MiB && SBPool.memoryBudget(8, "mobile") === 192 * MiB);
+  const pools = [];
+  const mk = (o) => {
+    o = o || {};
+    const pool = SBPool.create(Object.assign({
+      appVersion: APPV, helpers: 3, helloTimeoutMs: 20000,
+      loadText: async (n) => (o.patch ? o.patch(n, text(n)) : text(n)),
+      spawn: (name) => shim.spawn(path.join(JS, "worker.js"), { name, patch: o.patch || null }),
+    }, o.opts || {}));
+    pools.push(pool);
+    return pool;
+  };
+  const srcOf = (fx) => Object.assign({ sampleHash: fx.project.source.sampleHash }, fx.source);
+  const submitFx = (pool, fx, so) => { pool.setSource(srcOf(fx)); return pool.submit(reqOf(fx), Object.assign({ sampleHash: fx.project.source.sampleHash, gen: 1, overlays: fx.overlays }, so || {})); };
+  const admitted = async (p, n) => { await p.helpersReady; for (let i = 0; i < 300; i++) { const s = await p.stats(); if (s && s.helpersAdmitted.length >= n) return true; await new Promise((r) => setTimeout(r, 10)); } return false; };
+  const runAll = async (pool, list, so) => { const out = []; for (const fx of list) { try { out.push([fx, (await submitFx(pool, fx, so).done).response]); } catch (e) { out.push([fx, { status: "threw", error: { code: e.code } }]); } } return out; };
+  try {
+    const tonal = ["a3-900-draft", "a3-900-fabrication", "alpha-domain-draft", "n12-draft"].map((id) => by.get(id));
+    // bands through the pool: one band per admitted helper (3), Kuwahara and resample band items run on helpers
+    {
+      const pool = mk();
+      const up = (await pool.ready) && (await admitted(pool, 3));
+      const res = up ? await runAll(pool, fabFx.concat(tonal)) : [];
+      const st = up ? await pool.stats() : null, wrong = res.filter(([fx, r]) => !(serial.has(fx.id) ? Dq(r, serial.get(fx.id)) : sameGold(fx, r))).map(([fx]) => fx.id);
+      check("NFR-05 F13 Kuwahara and resample bands through the pool (3 helpers, 3 bands) equal the serial engine" + (wrong.length ? " — differ: " + wrong.join(", ") : ""),
+        up && res.length === fabFx.length + tonal.length && wrong.length === 0);
+      check(`F13 the band items ran on helpers (${st && JSON.stringify(st.helperKinds)}) with bands = admitted helpers`,
+        !!st && st.bands === 3 && st.helperKinds.kuwaharaRows > 0 && st.helperKinds.resampleRows > 0 && st.helperKinds.construct > 0);
+      check("F13 LPT: the coordinator dispatched construct largest mask first (the base layer 0, a copy, last)",
+        !!st && Array.isArray(st.lastOrder.construct) && st.lastOrder.construct[st.lastOrder.construct.length - 1] === 0 && st.lastOrder.construct[0] !== 0);
+      check(`NFR-04 F13 default budget (no deviceMemory in Node: 512 MiB) lets items run side by side (max in flight ${st && st.maxInFlight}, ledger peak ${st && (st.peakLedger / MiB).toFixed(1)} MiB)`,
+        !!st && st.budgetBytes === 512 * MiB && st.maxInFlight > 1 && st.peakLedger > 0 && st.peakLedger <= 512 * MiB);
+      pool.terminate();
+    }
+    // memory gate at 64 MiB: with the result on main filling the budget every batch serialises — and the output is unchanged
+    {
+      const pool = mk({ opts: { memoryBudget: 64 * MiB } });
+      const up = (await pool.ready) && (await admitted(pool, 3));
+      const res = up ? await runAll(pool, [fabFx[1]].concat(tonal), { mainBytes: 64 * MiB }) : [];
+      const st = up ? await pool.stats() : null, wrong = res.filter(([fx, r]) => !(serial.has(fx.id) ? Dq(r, serial.get(fx.id)) : sameGold(fx, r))).map(([fx]) => fx.id);
+      check(`NFR-04 F13 memory gate at 64 MiB serialises (max in flight ${st && st.maxInFlight}) and the responses stay identical` + (wrong.length ? " — differ: " + wrong.join(", ") : ""),
+        up && !!st && st.budgetBytes === 64 * MiB && st.maxInFlight === 1 && st.itemsHelper > 0 && wrong.length === 0 && res.length === 1 + tonal.length);
+      pool.terminate();
+    }
+    // F.3: transferring a subarray or a cache-owned buffer throws in the coordinator's exec (the engine-side check removed by a patch)
+    for (const [label, decl] of [["a subarray of a mask", "masks.map((m) => [m.subarray(1)])"], ["the stored source", "masks.map(() => [ns.pixels])"]]) {
+      const patch = new Function("n", "t", "return n === \"engine.js\" ? t.replace(\"E.checkTransfers(bt.kind, bt.transfer, ownedArrays(req, b.cache));\", \"\")" +
+        ".replace(\"masks.map((mask, k) => [k, { mask, W, H, px: cpx, bonded, wantChange }]), masks.map((m) => [m]),\", " +
+        JSON.stringify("masks.map((mask, k) => [k, { mask, W, H, px: cpx, bonded, wantChange }]), " + decl + ",") + ") : t;");
+      const pool = mk({ patch, opts: { helpers: 1 } }), fx = by.get("n12-draft");
+      const ok = (await pool.ready) && (await admitted(pool, 1));
+      let r = null;
+      try { r = ok ? (await submitFx(pool, fx).done).response : null; } catch (e) { r = { status: "threw", error: { code: e.code } }; }
+      check("F.3 F13 transferring " + label + " throws in exec (ENGINE_INTERNAL, never silently copied)",
+        ok && !!r && r.status === "error" && r.error.code === "ENGINE_INTERNAL" && /transfer/.test(r.error.message));
+      pool.terminate();
+    }
+    const wsrc = text("worker.js");
+    check("F13 worker.js: LPT dispatch, the estBytes ledger, transfer checks and result buffers transferred back",
+      /E\.lptOrder\(/.test(wsrc) && /E\.memoryLedger\(/.test(wsrc) && /E\.checkTransfers\(/.test(wsrc) && /postMessage\(out, tr\)/.test(wsrc) && /budgetBytes/.test(text("pool.js")));
   } finally {
     for (const p of pools) p.terminate();
   }

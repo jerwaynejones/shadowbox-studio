@@ -15,7 +15,7 @@
  *
  * Protocol (plan F11):
  *   main → coord   source {sampleHash, pixels, alpha, w, h, channels} (a transferred copy, once per sampleHash)
- *                  generate {runId, gen, sampleHash, w, h, channels, overlays, deviceClass, draftCapPx, req}
+ *                  generate {runId, gen, sampleHash, w, h, channels, overlays, deviceClass, draftCapPx, budgetBytes, mainBytes, req}
  *                    (req without pixels; pixels inline in req.normalizedSource when sampleHash is null)
  *                  cancel {runId}; ports {helperId, port}; helperDown {helperId}; stats {}
  *   coord → main   hello {role, engineVersion, appVersion, modulesHash, modules}; ack {runId} (start of work);
@@ -31,6 +31,11 @@
  * the cache slots, committed on "done"); a helper is admitted only when its hello carries the coordinator's
  * modulesHash; pool-infrastructure failures re-run the item inline and are never surfaced; errors cross postMessage as
  * {code, message, phase} and are rebuilt with .code. Workers never set SBEngine.TEST_HOOKS.
+ * Scheduling (F13): a batch's items are dispatched largest cost first (SBEngine.lptOrder; dispatch order only, results
+ * fold in item order) and admitted by one estBytes ledger (SBEngine.memoryLedger: the coordinator's resident set at the
+ * yield + mainBytes + in-flight items ≤ budgetBytes, at least one item always admitted); raster kernels run as one row
+ * band per admitted helper; helper results transfer their buffers back (the helper keeps nothing). Stats add
+ * helperKinds (helper-run items per kind), maxInFlight, peakLedger, budgetBytes, bands and lastOrder (per kind).
  *
  * Not a page script (not in index.html); precached in sw.js SHELL so page and
  * worker always come from the same cache version (R7, F-D3).
@@ -81,18 +86,35 @@ const WORKER_APP_VERSION = "2.0.0-alpha.3";
   }
 
   // ------------------------------------------------------------------ helper
+  /**
+   * The ArrayBuffers of the typed arrays inside a helper's result (F13): the helper keeps nothing, so its results'
+   * buffers are transferred instead of copied. Walks objects and arrays of objects (arrays of numbers are skipped).
+   */
+  function resultBuffers(v) {
+    const set = new Set(), stack = [v];
+    while (stack.length) {
+      const o = stack.pop();
+      if (!o || typeof o !== "object") continue;
+      if (ArrayBuffer.isView(o)) { if (o.buffer.byteLength > 0) set.add(o.buffer); continue; }
+      if (Array.isArray(o)) { if (o.length && typeof o[0] !== "object") continue; for (const x of o) if (x && typeof x === "object") stack.push(x); }
+      else for (const k of Object.keys(o)) { const x = o[k]; if (x && typeof x === "object") stack.push(x); }
+    }
+    return [...set];
+  }
+
   function helper(modulesHash) {
     const E = self.SBEngine, box = { port: null };
     function onItem(m) {
-      let out;
+      let out, tr = [];
       try {
         const fn = E.TASKS[m.kind];
         if (typeof fn !== "function") throw Object.assign(new Error("no kernel " + m.kind), { code: "ENGINE_INTERNAL" });
         out = { type: "itemResult", batchId: m.batchId, index: m.index, ok: true, value: fn.apply(null, m.args) };
+        tr = resultBuffers(out.value);
       } catch (e) {
         out = { type: "itemResult", batchId: m.batchId, index: m.index, ok: false, error: errOut(e) };
       }
-      try { box.port.postMessage(out); } catch (e) {   // DataCloneError: infrastructure, the coordinator re-runs it inline
+      try { box.port.postMessage(out, tr); } catch (e) {   // DataCloneError: infrastructure, the coordinator re-runs it inline
         box.port.postMessage({ type: "itemResult", batchId: m.batchId, index: m.index, ok: false, infra: true, error: errOut(e) });
       }
     }
@@ -110,7 +132,7 @@ const WORKER_APP_VERSION = "2.0.0-alpha.3";
   function coordinator(modulesHash) {
     const E = self.SBEngine;
     const st = { source: null, cache: { quality: "draft" }, queue: [], cur: null, helpers: new Map(), refused: [], itemsInline: 0, itemsHelper: 0,
-      batchSeq: 0, batch: null };
+      batchSeq: 0, batch: null, kinds: {}, maxInFlight: 0, peakLedger: 0, budgetBytes: null, lastOrder: {}, bands: 1 };
     post({ type: "hello", role: "coord", engineVersion: E.VERSION, appVersion: WORKER_APP_VERSION, modulesHash, modules: WORKER_MODULES.slice() });
 
     // ---- helpers (ports brokered by main; admitted on a matching hello)
@@ -147,27 +169,37 @@ const WORKER_APP_VERSION = "2.0.0-alpha.3";
       if (st.batch) st.batch.pump();
     }
 
-    // ---- exec.map for generateAsync: admitted helpers first, else inline; results by item index
-    const makeExec = () => ({
+    // ---- exec.map for generateAsync (F13): items dispatched largest cost first (LPT; dispatch order only), each admitted
+    // by the batch's estBytes ledger (resident set + result on main + in-flight items ≤ budget; one item always runs),
+    // to an admitted helper, else inline; results land by item index, the batch settles after every item.
+    const makeExec = (job, budget, mainBytes) => ({
       map: (kind, items, o) => new Promise((resolve, reject) => {
         const fn = E.TASKS[kind];
         if (typeof fn !== "function") { reject(Object.assign(new Error("no kernel " + kind), { code: "ENGINE_INTERNAL" })); return; }
-        // F.3 transfer ownership: only whole buffers may be declared transferable
-        for (const list of (o && o.transfer) || []) for (const v of list || [])
-          if (!ArrayBuffer.isView(v) || v.byteOffset !== 0 || v.byteLength !== v.buffer.byteLength) {
-            reject(Object.assign(new Error("exec: " + kind + " declares a transfer of a non-whole buffer"), { code: "ENGINE_INTERNAL" }));
-            return;
-          }
-        const n = items.length, out = new Array(n), errs = [], todo = items.map((_, i) => i), batchId = ++st.batchSeq;
+        // F.3 transfer ownership: whole buffers only, never the stored source or a K1/K2 array
+        try {
+          const s = st.source, c = job.cache || {}, owned = s ? [s.pixels, s.alpha] : [];
+          if (c.k1) owned.push(c.k1.samples, c.k1.alpha);
+          if (c.k2) owned.push(c.k2.L);
+          if (st.cache.k1) owned.push(st.cache.k1.samples, st.cache.k1.alpha);
+          if (st.cache.k2) owned.push(st.cache.k2.L);
+          E.checkTransfers(kind, o && o.transfer, owned.filter((x) => x && ArrayBuffer.isView(x)));
+        } catch (e) { reject(e); return; }
+        const n = items.length, out = new Array(n), errs = [], batchId = ++st.batchSeq;
         if (n === 0) { resolve(out); return; }
+        const todo = E.lptOrder(o && o.cost, n), est = (i) => (o && o.estBytes && Number.isFinite(o.estBytes[i]) ? o.estBytes[i] : 0);
+        st.lastOrder[kind] = todo.slice();
+        const ledger = E.memoryLedger(budget, mainBytes + ((o && o.resident) || 0));
         let left = n;
         const b = {};
         const settle = (i, ok, v, phase) => {
+          ledger.give(est(i));
           if (ok) out[i] = v; else errs.push(phase === undefined ? { index: i, error: v } : { index: i, error: v, phase });
           if (--left === 0) {
             if (st.batch === b) st.batch = null;
+            if (ledger.peak > st.peakLedger) st.peakLedger = ledger.peak;
             if (errs.length) reject(new E.BatchError(errs)); else resolve(out);
-          }
+          } else b.pump();
         };
         const inline = (i) => {
           st.itemsInline++;
@@ -177,17 +209,23 @@ const WORKER_APP_VERSION = "2.0.0-alpha.3";
             settle(i, true, v);
           });
         };
+        const take = (i) => {
+          ledger.take(est(i));
+          if (ledger.inFlight > st.maxInFlight) st.maxInFlight = ledger.inFlight;
+        };
         b.pump = () => {
-          while (todo.length) {
+          while (todo.length && ledger.admits(est(todo[0]))) {
             const ready = [...st.helpers.values()].filter((h) => h.ok);
-            if (!ready.length) { inline(todo.shift()); continue; }
+            if (!ready.length) { const i = todo.shift(); take(i); inline(i); continue; }
             const h = ready.find((x) => !x.item);
             if (!h) return;   // every admitted helper is busy: resumed by the next itemResult
             const i = todo.shift();
+            take(i);
             h.item = { batchId, index: i,
-              done: (m) => { if (m.ok) { st.itemsHelper++; settle(i, true, m.value); } else if (m.infra) inline(i); else settle(i, false, errIn(m.error), m.error.phase); },
+              done: (m) => { if (m.ok) { st.itemsHelper++; st.kinds[kind] = (st.kinds[kind] || 0) + 1; settle(i, true, m.value); } else if (m.infra) inline(i); else settle(i, false, errIn(m.error), m.error.phase); },
               lost: () => inline(i) };
-            // Arguments are cloned, not transferred: a lost helper's item re-runs inline on the coordinator's copy (F.3).
+            // Arguments are cloned, not transferred: a lost helper's item re-runs inline on the coordinator's copy (F.3,
+            // pool-infrastructure failures are never surfaced); the clone is counted in the item's estBytes.
             try { h.port.postMessage({ type: "item", batchId, index: i, kind, args: items[i] }); } catch (e) { h.item = null; inline(i); }
           }
         };
@@ -225,9 +263,18 @@ const WORKER_APP_VERSION = "2.0.0-alpha.3";
         lastF = Math.max(lastF, frac);
         post({ type: "progress", runId: m.runId, stage, frac: lastF, sub: null });
       };
+      // F13: the estBytes budget comes with the request (SBPool: SBEngine.memoryBudget(navigator.deviceMemory,
+      // deviceClass) or its memoryBudget option); raster kernels run in one row band per admitted helper (≥ 1).
+      const nav = self.navigator || {};
+      const budget = Number.isFinite(m.budgetBytes) && m.budgetBytes > 0 ? m.budgetBytes : E.memoryBudget(nav.deviceMemory, m.deviceClass);
+      const mainBytes = Number.isFinite(m.mainBytes) && m.mainBytes > 0 ? m.mainBytes : 0;
+      st.budgetBytes = budget;
+      job.cache = scratch;
+      const bands = Math.max(1, [...st.helpers.values()].filter((h) => h.ok).length);
+      st.bands = bands;
       let res;
       try {
-        res = await E.generateAsync(req, { exec: makeExec(), isCanceled: () => job.canceled, onProgress, cache: scratch, overlays: m.overlays !== false });
+        res = await E.generateAsync(req, { exec: makeExec(job, budget, mainBytes), isCanceled: () => job.canceled, onProgress, cache: scratch, overlays: m.overlays !== false, bands });
       } catch (e) {   // a caller error (CACHE_QUALITY); generateAsync itself never rejects
         return fail((e && e.code) || "ENGINE_INTERNAL", (e && e.message) || String(e));
       }
@@ -278,7 +325,9 @@ const WORKER_APP_VERSION = "2.0.0-alpha.3";
           const s = st.source, c = st.cache, len = (a) => (a && a.byteLength) || 0;
           post({ type: "stats", sourceBytes: s ? len(s.pixels) + len(s.alpha) : 0, k1Bytes: c.k1 ? len(c.k1.samples) + len(c.k1.alpha) : 0, k2Bytes: c.k2 ? len(c.k2.L) : 0,
             helpersAdmitted: [...st.helpers.values()].filter((h) => h.ok).map((h) => h.id), helpersRefused: st.refused.slice(),
-            itemsInline: st.itemsInline, itemsHelper: st.itemsHelper, running: st.cur ? st.cur.runId : null, queued: st.queue.map((q) => q.runId) });
+            itemsInline: st.itemsInline, itemsHelper: st.itemsHelper, running: st.cur ? st.cur.runId : null, queued: st.queue.map((q) => q.runId),
+            helperKinds: Object.assign({}, st.kinds), maxInFlight: st.maxInFlight, peakLedger: st.peakLedger, budgetBytes: st.budgetBytes, bands: st.bands,
+            lastOrder: Object.assign({}, st.lastOrder) });
           break;
         }
         default:

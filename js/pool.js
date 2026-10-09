@@ -11,14 +11,19 @@
  *   SBPool.helperCount(hardwareConcurrency, deviceClass) → P = clamp(hc − 1, 1, cap), cap 8 desktop / 4 mobile (PO-PERF-1)
  *   SBPool.longTasks() → {supported, start(), stop() → {supported, max, count}}: PerformanceObserver("longtask")
  *     recorder (F11 Phase B gate, reused by the F16a bench modes); unsupported (zeros) where longtask is not observable.
+ *   SBPool.memoryBudget(deviceMemory, deviceClass) → bytes (F13): min(1 GiB, deviceMemory·128 MiB) desktop when
+ *     deviceMemory is finite, else 512 MiB; mobile 192 MiB.
  *   SBPool.create({spawn?, workerUrl?, helpers?, deviceClass?, appVersion, engineVersion?, loadText?, moduleBase?,
- *                  modulesHash?, helloTimeoutMs?, onState?}) → pool
+ *                  modulesHash?, helloTimeoutMs?, onState?, memoryBudget?}) → pool
  *     pool.ready      Promise<boolean>: true once a coordinator's hello matched; false when the pool fell back
  *     pool.helpersReady  Promise: settles once every first-spawn helper said hello or failed (until then, and for a
  *                     refused helper, the coordinator runs items inline — same results)
  *     pool.mode       "starting" | "pool" | "fallback" | "closed";  pool.notice: the fallback's user-facing text
  *     pool.setSource({sampleHash, pixels, alpha, w, h, channels})  posts a transferred COPY, once per sampleHash
- *     pool.submit(req, {sampleHash, gen, overlays, onAck, onStart, onProgress}) → {runId, done}
+ *     pool.submit(req, {sampleHash, gen, overlays, mainBytes, onAck, onStart, onProgress}) → {runId, done}
+ *        F13: the generate message carries budgetBytes (the create option memoryBudget, else
+ *        SBPool.memoryBudget(navigator.deviceMemory, deviceClass)) and mainBytes (the caller's estimate of the result it
+ *        holds on main, default 0): the coordinator's estBytes ledger admits batch items within that budget.
  *        req is SBEngine.request(…); with a sampleHash its pixels stay on main and the coordinator uses the stored
  *        source (SOURCE_MISMATCH otherwise); sampleHash null sends the pixels inline. runId is a unique monotonic
  *        counter. onAck({runId}) fires on main in a microtask (NFR-02 ≤ 100 ms; the coordinator cannot answer while
@@ -38,6 +43,9 @@
 
 (function (global) {
   const P = {};
+
+  /** F13 (NFR-04, F.3): the estBytes admission budget in bytes; SBEngine.memoryBudget (512 MiB without deviceMemory). */
+  P.memoryBudget = function (deviceMemory, deviceClass) { return global.SBEngine.memoryBudget(deviceMemory, deviceClass); };
 
   P.helperCount = function (hc, deviceClass) {
     const cap = deviceClass === "mobile" ? 4 : 8, n = Number.isFinite(hc) ? Math.floor(hc) - 1 : 1;
@@ -261,6 +269,8 @@
       if (typeof so.onAck === "function") queueMicrotask(() => so.onAck({ runId }));
       if (st.runs.has(runId))
         postCoord(Object.assign({ type: "generate", w: ns.w, h: ns.h, channels: ns.channels, draftCapPx: req.draftCapPx,
+          budgetBytes: o.memoryBudget > 0 ? o.memoryBudget : P.memoryBudget(global.navigator && global.navigator.deviceMemory, echo.deviceClass),
+          mainBytes: so.mainBytes > 0 ? so.mainBytes : 0,
           req: sampleHash === null ? req : Object.assign({}, req, { normalizedSource: null }) }, echo));
       return { runId, done };
     };

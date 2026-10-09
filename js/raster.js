@@ -518,24 +518,59 @@
    * @returns {Uint8Array} (Y1−Y0)·W·channels samples
    */
   R.resampleRows = function (pixels, channels, w, h, W, H, method, Y0, Y1) {
+    resampleArgs(channels, w, h, W, H, method, Y0, Y1);
+    if (!pixels || pixels.length < w * h * channels) throw rfail("RESAMPLE_SIZE", "pixel buffer shorter than w·h·channels");
+    return resampleCore(pixels, 0, channels, w, h, W, H, method, Y0, Y1);
+  };
+
+  function resampleArgs(channels, w, h, W, H, method, Y0, Y1) {
     if (!METHODS.includes(method)) throw rfail("RESAMPLE_METHOD", "method must be none|nearest|area (got " + method + ")");
     if (![1, 2, 3, 4].includes(channels)) throw rfail("RESAMPLE_SIZE", "channels must be 1..4");
     if (![w, h, W, H].every(isPosInt)) throw rfail("RESAMPLE_SIZE", "sizes must be positive integers");
-    if (!pixels || pixels.length < w * h * channels) throw rfail("RESAMPLE_SIZE", "pixel buffer shorter than w·h·channels");
     if (W > w || H > h) throw rfail("RESAMPLE_UPSAMPLE", W + "×" + H + " is larger than the " + w + "×" + h + " source");
     if (!Number.isSafeInteger(Y0) || !Number.isSafeInteger(Y1) || Y0 < 0 || Y0 > Y1 || Y1 > H)
       throw rfail("RESAMPLE_SIZE", "row band [" + Y0 + ", " + Y1 + ") must lie within [0, " + H + "]");
-    const c = channels, Wc = W * c;
+    if ((method === "none" || (W === w && H === h)) && (W !== w || H !== h)) throw rfail("RESAMPLE_SIZE", "method none requires the source size");
+  }
+
+  /**
+   * Speed round F13 (S1/S2): the source rows [ys, ye) that output rows [Y0, Y1) of resampleRows read (none / same
+   * size: [Y0, Y1); nearest: the picked rows; area: the rows the boxes overlap). Empty band → [Y0, Y0).
+   */
+  R.resampleSpan = function (w, h, W, H, method, Y0, Y1) {
+    resampleArgs(1, w, h, W, H, method, Y0, Y1);
+    if (Y0 === Y1) return [Y0, Y0];
+    if (method === "none" || (W === w && H === h)) return [Y0, Y1];
+    if (method === "nearest") return [idiv((2 * Y0 + 1) * h, 2 * H), idiv((2 * Y1 - 1) * h, 2 * H) + 1];
+    return [idiv(Y0 * h, H), cdiv(Y1 * h, H)];
+  };
+
+  /**
+   * Speed round F13 (S1/S2): the pool's resample band item. srcRows holds ONLY the source rows [ys, ye) =
+   * R.resampleSpan(w, h, W, H, method, Y0, Y1) (a .slice() copy); the result is byte-equal to
+   * resampleRows(source, channels, w, h, W, H, method, Y0, Y1): the same code with the row index shifted by ys.
+   * Inputs are never written.
+   */
+  R.resampleBand = function (srcRows, channels, w, h, W, H, method, Y0, Y1, ys) {
+    resampleArgs(channels, w, h, W, H, method, Y0, Y1);
+    const sp = R.resampleSpan(w, h, W, H, method, Y0, Y1);
+    if (ys !== sp[0]) throw rfail("RESAMPLE_SIZE", "band [" + Y0 + ", " + Y1 + ") reads source rows from " + sp[0] + ", not " + ys);
+    if (!srcRows || srcRows.length !== (sp[1] - sp[0]) * w * channels) throw rfail("RESAMPLE_SIZE", "srcRows must hold source rows [" + sp[0] + ", " + sp[1] + ")");
+    return resampleCore(srcRows, ys, channels, w, h, W, H, method, Y0, Y1);
+  };
+
+  // resampleRows' body; source row y is read at (y − yOff)·w·c (yOff 0: the whole source).
+  function resampleCore(pixels, yOff, channels, w, h, W, H, method, Y0, Y1) {
+    const c = channels, Wc = W * c, base = yOff * w * c;
     if (method === "none" || (W === w && H === h)) {
-      if (W !== w || H !== h) throw rfail("RESAMPLE_SIZE", "method none requires the source size");
-      return Uint8Array.from(pixels.subarray ? pixels.subarray(Y0 * w * c, Y1 * w * c) : pixels.slice(Y0 * w * c, Y1 * w * c));
+      return Uint8Array.from(pixels.subarray ? pixels.subarray(Y0 * w * c - base, Y1 * w * c - base) : pixels.slice(Y0 * w * c - base, Y1 * w * c - base));
     }
     const out = new Uint8Array((Y1 - Y0) * Wc);
     if (method === "nearest") {
       const sx = new Int32Array(W);
       for (let x = 0; x < W; x++) sx[x] = idiv((2 * x + 1) * w, 2 * W);
       for (let y = Y0, o = 0; y < Y1; y++) {
-        const row = idiv((2 * y + 1) * h, 2 * H) * w;
+        const row = (idiv((2 * y + 1) * h, 2 * H) - yOff) * w;
         for (let x = 0; x < W; x++) { const s = (row + sx[x]) * c; for (let k = 0; k < c; k++) out[o++] = pixels[s + k]; }
       }
       return out;
@@ -558,13 +593,13 @@
         const y = vy.idx[s0 + j], f = vy.wt[s0 + j];
         let row;
         if (y === keepIdx) row = keep;
-        else if (j === n - 1) { hsum(pixels, y * w * c, W, hp, spare, c); const t = keep; keep = spare; spare = t; keepIdx = y; row = keep; }
-        else { hsum(pixels, y * w * c, W, hp, scratch, c); row = scratch; }
+        else if (j === n - 1) { hsum(pixels, y * w * c - base, W, hp, spare, c); const t = keep; keep = spare; spare = t; keepIdx = y; row = keep; }
+        else { hsum(pixels, y * w * c - base, W, hp, scratch, c); row = scratch; }
         o = vfold(row, f, j, n, acc, out, o, Wc, D, D2, fastRound);
       }
     }
     return out;
-  };
+  }
 
   R.resample = function (pixels, channels, w, h, W, H, method) {
     return R.resampleRows(pixels, channels, w, h, W, H, method, 0, isPosInt(H) ? H : 0);

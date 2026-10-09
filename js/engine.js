@@ -558,7 +558,93 @@
     buildPair: (k, lower, upper, P, dOpts) => global.SBGuides.buildPair(k, lower, upper, P, dOpts),
     validatePair: (k, lower, upper, paths, P, dOpts) => global.SBGuides.validatePair(k, lower, upper, paths, P, dOpts),
     layerHash: (L) => global.SBGeom.layerHashes(L).layerHash,
+    // speed round F13 (S1/S2): row-band raster kernels (source rows / seed rows sliced by the coordinator)
+    resampleRows: (srcRows, ch, w, h, W, H, method, Y0, Y1, ys) => global.SBRaster.resampleBand(srcRows, ch, w, h, W, H, method, Y0, Y1, ys),
+    kuwaharaRows: (srcRows, w, h, r, seed, y0, y1, domainRows) => global.SBRaster.kuwaharaRows(srcRows, w, h, r, seed, y0, y1, domainRows),
   });
+
+  // ------------------------------------------------ speed round F13 (S1, S2): scheduling, memory gate, row bands
+  /**
+   * bandRanges(H, bands, bandRows?) → [[y0, y1)…]: the output row bands of the raster kernels. bandRows (a positive
+   * integer, test-only override) cuts bands of that many rows (a short tail band last); otherwise min(bands, H) bands
+   * of near-equal height (y0 = ⌊i·H/n⌋). One band means the serial whole-image kernel runs unchanged.
+   */
+  E.bandRanges = function (H, bands, bandRows) {
+    if (!isPosInt(H)) return [];
+    const out = [];
+    if (isPosInt(bandRows)) { for (let y = 0; y < H; y += bandRows) out.push([y, Math.min(H, y + bandRows)]); return out; }
+    const n = Math.max(1, Math.min(isPosInt(bands) ? bands : 1, H));
+    for (let i = 0; i < n; i++) out.push([Math.floor((i * H) / n), Math.floor(((i + 1) * H) / n)]);
+    return out;
+  };
+  /**
+   * lptOrder(cost) → item indices, largest cost first (LPT), ties and missing costs by index. Dispatch order only: the
+   * results are still folded in item order, so it never reaches a response.
+   */
+  E.lptOrder = function (cost, n) {
+    const m = Number.isInteger(n) ? n : cost ? cost.length : 0, c = (i) => (cost && Number.isFinite(cost[i]) ? cost[i] : 0);
+    return Array.from({ length: m }, (_, i) => i).sort((a, b) => c(b) - c(a) || a - b);
+  };
+  const MiB = 1024 * 1024, MIN_ITEM_BYTES = 64 * 1024;
+  /**
+   * memoryBudget(deviceMemory, deviceClass) → bytes (NFR-04, F.3, F-D6): the estBytes admission budget. Desktop:
+   * min(1 GiB, deviceMemory · 128 MiB) when deviceMemory is a finite number (Chromium; capped at 8 there), else 512 MiB
+   * (Firefox, Safari); mobile: 192 MiB.
+   */
+  E.memoryBudget = function (deviceMemory, deviceClass) {
+    if (deviceClass === "mobile") return 192 * MiB;
+    return Number.isFinite(deviceMemory) && deviceMemory > 0 ? Math.min(1024 * MiB, deviceMemory * 128 * MiB) : 512 * MiB;
+  };
+  /**
+   * memoryLedger(budget, base) → the one estBytes ledger of a batch (F.3): base = the coordinator's resident set plus
+   * the result held on main; take/give bracket each in-flight item. admits(est) is true when nothing is in flight (at
+   * least one item is always admitted, even one larger than the budget: no deadlock) or base + in flight + est ≤ budget.
+   * Every item counts at least MIN_ITEM_BYTES (64 KiB): a kernel's working set is never zero.
+   */
+  E.memoryLedger = function (budget, base) {
+    const st = { used: Number.isFinite(base) && base > 0 ? base : 0, n: 0 };
+    st.peak = st.used;
+    const est = (b) => (Number.isFinite(b) && b > MIN_ITEM_BYTES ? b : MIN_ITEM_BYTES);
+    return {
+      budget,
+      admits: (b) => st.n === 0 || st.used + est(b) <= budget,
+      take: (b) => { st.used += est(b); st.n++; if (st.used > st.peak) st.peak = st.used; },
+      give: (b) => { st.used -= est(b); st.n--; },
+      get used() { return st.used; },
+      get peak() { return st.peak; },
+      get inFlight() { return st.n; },
+    };
+  };
+  /**
+   * checkTransfers(kind, transfer, owned) — F.3 transfer ownership, asserted before every exec.map: every declared
+   * transferable must be a whole buffer (byteOffset 0, byteLength = buffer.byteLength; never a subarray) and none may
+   * be a buffer in owned (the stored source, cache.k1/k2 arrays). Throws ENGINE_INTERNAL.
+   */
+  E.checkTransfers = function (kind, transfer, owned) {
+    const bad = new Set();
+    for (const v of owned || []) if (v && v.buffer) bad.add(v.buffer);
+    (transfer || []).forEach((list, i) => {
+      for (const v of list || []) {
+        if (!ArrayBuffer.isView(v) || v.byteOffset !== 0 || v.byteLength !== v.buffer.byteLength)
+          throw efail("ENGINE_INTERNAL", "exec: " + kind + "#" + i + " declares a transfer of a non-whole buffer (a subarray or not a typed array)");
+        if (bad.has(v.buffer)) throw efail("ENGINE_INTERNAL", "exec: " + kind + "#" + i + " declares a transfer of a buffer the coordinator keeps (source or stage cache)");
+      }
+    });
+  };
+  /** Bytes of the typed arrays in xs (nested arrays and null allowed). */
+  function bytesOf(...xs) {
+    let n = 0;
+    const walk = (x) => { if (!x) return; if (ArrayBuffer.isView(x)) n += x.byteLength; else if (Array.isArray(x)) for (const y of x) walk(y); };
+    for (const x of xs) walk(x);
+    return n;
+  }
+  /** The buffers a batch may never transfer: the request's source and the caller-owned stage cache (F.3). */
+  function ownedArrays(req, cache) {
+    const ns = (req && req.normalizedSource) || {}, out = [ns.pixels, ns.alpha];
+    if (cache && cache.k1) out.push(cache.k1.samples, cache.k1.alpha);
+    if (cache && cache.k2) out.push(cache.k2.L);
+    return out.filter((x) => x && ArrayBuffer.isView(x));
+  }
 
   /** The sync driver's batch: every item inline in index order, all settled, then the lowest (phase, index) error. */
   function runBatch(b, hook) {
@@ -643,6 +729,13 @@
       if (!E.TEST_HOOKS || typeof opts.kernelHook !== "function") return { res: fail("ENGINE_DEBUG_DISABLED", "opts.kernelHook is a test-only hook") };
       hook = opts.kernelHook;
     }
+    // speed round F13: row bands of the raster kernels (output-neutral). bands is the driver's choice (default 1: the
+    // serial whole-image kernels); bandRows is a test-only override (forces many bands, also in the sync driver).
+    const par = { bands: isPosInt(opts.bands) ? opts.bands : 1, bandRows: null };
+    if (opts.bandRows !== undefined && opts.bandRows !== null) {
+      if (!E.TEST_HOOKS || !isPosInt(opts.bandRows)) return { res: fail("ENGINE_DEBUG_DISABLED", "opts.bandRows is a test-only hook (a positive integer)") };
+      par.bandRows = opts.bandRows;
+    }
     const cache = opts.cache === undefined || opts.cache === null ? null : opts.cache;
     if (cache !== null) {
       if (typeof cache !== "object") throw efail("ENGINE_ARG", "opts.cache must be a plain object the caller owns");
@@ -650,7 +743,7 @@
       if (cache.quality === undefined) cache.quality = req.quality;
       if (cache.quality !== req.quality) throw efail("CACHE_QUALITY", "a " + cache.quality + " stage cache cannot feed a " + req.quality + " request");
     }
-    return { head, step, fail, cache, overlays: opts.overlays !== false, hook };
+    return { head, step, fail, cache, overlays: opts.overlays !== false, hook, par };
   }
   const settled = (head, e) => (e instanceof Canceled ? Object.assign({}, head, { status: "canceled" }) : Object.assign({}, head, { status: "error", error: codedError(e), diagnostics: [] }));
 
@@ -665,7 +758,7 @@
     if (b.res) return b.res;
     let res;
     try {
-      const it = runSteps(req, b.head, b.step, b.fail, b.cache, b.overlays);
+      const it = runSteps(req, b.head, b.step, b.fail, b.cache, b.overlays, b.par);
       let r = it.next();
       while (!r.done) {
         let out, err, bad = false;
@@ -686,6 +779,12 @@
    * rejects (BatchError). The driver raises the lowest (phase, item index) error; a result list of the wrong length is
    * ENGINE_INTERNAL. Without exec every batch runs inline (as the sync driver). The folds are the generator's, so the
    * response equals E.generate's for every exec that returns the kernels' results.
+   * Speed round F13: exec.map's options also carry cost (per-item LPT cost), estBytes (per item) and resident (the
+   * coordinator's resident bytes at the yield) for scheduling and the memory gate; every declared transfer is checked
+   * first (SBEngine.checkTransfers: whole buffers, never the source or a K1/K2 array). opts.bands (default 1) splits
+   * the raster kernels (fabrication resample, Kuwahara per pass) into that many row bands (resampleRows /
+   * kuwaharaRows batches); opts.bandRows (test-only, SBEngine.TEST_HOOKS; also accepted by E.generate) forces bands of
+   * that many rows. Bands are output-neutral: concatenated bands are byte-equal to the whole-image kernels.
    */
   E.generateAsync = async function (req, opts) {
     opts = opts || {};
@@ -694,13 +793,16 @@
     const exec = opts.exec && typeof opts.exec.map === "function" ? opts.exec : null;
     let res;
     try {
-      const it = runSteps(req, b.head, b.step, b.fail, b.cache, b.overlays);
+      const it = runSteps(req, b.head, b.step, b.fail, b.cache, b.overlays, b.par);
       let r = it.next();
       while (!r.done) {
         const bt = r.value;
         let out, err, bad = false;
         try {
-          out = exec ? await exec.map(bt.kind, bt.items, { transfer: bt.transfer }) : runBatch(bt, b.hook);
+          if (exec) {
+            E.checkTransfers(bt.kind, bt.transfer, ownedArrays(req, b.cache));
+            out = await exec.map(bt.kind, bt.items, { transfer: bt.transfer, cost: bt.cost, estBytes: bt.estBytes, resident: bt.resident });
+          } else out = runBatch(bt, b.hook);
           if (!Array.isArray(out) || out.length !== bt.items.length)
             throw efail("ENGINE_INTERNAL", "exec.map(" + bt.kind + ") returned " + (Array.isArray(out) ? out.length : typeof out) + " results for " + bt.items.length + " items");
         } catch (e) {
@@ -734,9 +836,15 @@
    * Batches: construct (per layer, incl. the draft change masks) → overlays (per layer with polygons) → traceConvert
    * (bonded; connected smoothing: trace → smoothTraced → convert) → supportPair (bonded, per adjacent pair) →
    * featureLayer (per layer) → buildPair, validatePair (guides) → layerHash (per layer). Serial: everything else.
+   * F13: with more than one row band (par.bands / par.bandRows) also resampleRows (fabrication, per band and plane,
+   * before the domain) and kuwaharaRows (tonal, per band, once per pass).
    */
-  function* runSteps(req, head, step, fail, cache, overlays) {
-    const batch = (kind, items, transfer) => ({ kind, items, transfer: transfer || null });
+  function* runSteps(req, head, step, fail, cache, overlays, par) {
+    par = par || { bands: 1, bandRows: null };
+    // F13: a batch also carries per-item LPT costs, per-item estBytes and the coordinator's resident bytes at this
+    // point (the estBytes ledger, F.3); none of them reaches a fold.
+    const batch = (kind, items, transfer, cost, estBytes, resident) => ({ kind, items, transfer: transfer || null, cost: cost || null,
+      estBytes: estBytes || null, resident: resident || 0 });
     const R = global.SBRaster, Hh = global.SBHeight, C = global.SBConstruct, M = global.SBMaterial, S = global.SBSupport, D = global.SBDiag, G = global.SBGeom;
     const p = req.config, quality = req.quality, deviceClass = req.deviceClass === undefined ? "desktop" : req.deviceClass;
     if (quality !== "draft" && quality !== "fabrication") return fail("ENGINE_ARG", "quality must be draft|fabrication (got " + quality + ")");
@@ -777,8 +885,24 @@
       const oo = E.orient({ samples: px, alpha: ns.alpha == null ? null : ns.alpha, w: ns.w, h: ns.h }, p.source.orientation);
       step("resample", 0.05);
       o = { w: oo.w, h: oo.h };
-      samples = R.resample(oo.samples, ch, oo.w, oo.h, W, H, geo.resample);   // always a fresh array (never the source)
-      alpha = oo.alpha ? R.resample(oo.alpha, 1, oo.w, oo.h, W, H, geo.resample) : null;
+      // F13: at fabrication the area/nearest resample runs as row bands (one item per band and plane); each band gets a
+      // .slice() of only the source rows it reads, so the concatenation is byte-equal to the whole-image resample.
+      const rb = quality === "fabrication" && geo.resample !== "none" && !(W === oo.w && H === oo.h) ? E.bandRanges(H, par.bands, par.bandRows) : [];
+      if (rb.length > 1) {
+        const planes = [[oo.samples, ch]].concat(oo.alpha ? [[oo.alpha, 1]] : []), items = [], tr = [], cost = [], est = [];
+        for (const [px, c] of planes) for (const [Y0, Y1] of rb) {
+          const sp = R.resampleSpan(oo.w, oo.h, W, H, geo.resample, Y0, Y1), rows = px.slice(sp[0] * oo.w * c, sp[1] * oo.w * c);
+          items.push([rows, c, oo.w, oo.h, W, H, geo.resample, Y0, Y1, sp[0]]);
+          tr.push([rows]); cost.push(rows.length); est.push(rows.byteLength + (Y1 - Y0) * W * c);
+        }
+        const res = yield batch("resampleRows", items, tr, cost, est, bytesOf(ns.pixels, ns.alpha, oo.samples !== ns.pixels ? oo.samples : null, oo.alpha !== ns.alpha ? oo.alpha : null));
+        const join = (p, c) => { const out = new Uint8Array(W * H * c); for (let b = 0; b < rb.length; b++) out.set(res[p * rb.length + b], rb[b][0] * W * c); return out; };
+        samples = join(0, ch);
+        alpha = oo.alpha ? join(1, 1) : null;
+      } else {
+        samples = R.resample(oo.samples, ch, oo.w, oo.h, W, H, geo.resample);   // always a fresh array (never the source)
+        alpha = oo.alpha ? R.resample(oo.alpha, 1, oo.w, oo.h, W, H, geo.resample) : null;
+      }
       if (useCache) { cache.k1 = { key: k1, o, samples, alpha, ch }; cache.k2 = null; }
     }
     diagnostics.push(...plan.diagnostics);
@@ -807,7 +931,28 @@
         step("interpret-cached", 0.15);
       } else {
         if (ch === 4) L = R.luminance(samples, W, H); else { L = new Float32Array(W * H); for (let i = 0; i < L.length; i++) L[i] = samples[i]; }
-        L = R.kuwahara(L, W, H, rPx, interp.smoothing.passes, domain);
+        const passes = interp.smoothing.passes, kb = rPx >= 1 && passes >= 1 ? E.bandRanges(H, par.bands, par.bandRows) : [];
+        if (kb.length > 1) {
+          // F13 (F.3): Kuwahara row bands per pass. The coordinator's rolling scan keeps the global SAT row at each band
+          // seed s = max(0, y0 − r); the item gets that seed plus .slice() copies of source (and domain) rows [s, e),
+          // e = min(H, y1 + r), and rebuilds SAT rows s+1 … e exactly as the whole-image pass (SAT rows [s, e + 1)).
+          for (let pass = 0; pass < passes; pass++) {
+            const seeds = R.kuwaharaSeeds(L, W, H, kb, rPx, domain), items = [], tr = [], cost = [], est = [];
+            kb.forEach(([y0, y1], b) => {
+              const sd = seeds[b], s0 = Math.max(0, y0 - rPx), e = Math.min(H, y1 + rPx);
+              if (sd.s !== s0 || sd.sat.length !== W + 1) throw efail("ENGINE_INTERNAL", "Kuwahara band " + b + " seed row " + sd.s + " != " + s0);
+              const rows = L.slice(s0 * W, e * W), dom = domain ? domain.slice(s0 * W, e * W) : null;
+              items.push([rows, W, H, rPx, sd, y0, y1, dom]);
+              tr.push([rows, sd.sat, sd.sat2].concat(sd.cnt ? [sd.cnt] : [], dom ? [dom] : []));
+              cost.push(y1 - y0);
+              est.push(bytesOf(rows, dom, sd.sat, sd.sat2, sd.cnt) + (e - s0 + 1) * (W + 1) * 8 * (domain ? 3 : 2) + (y1 - y0) * W * 4);
+            });
+            const res = yield batch("kuwaharaRows", items, tr, cost, est, bytesOf(ns.pixels, ns.alpha, samples, alpha, domain, L));
+            const out = new Float32Array(W * H);
+            kb.forEach(([y0], b) => out.set(res[b], y0 * W));
+            L = out;
+          }
+        } else L = R.kuwahara(L, W, H, rPx, passes, domain);
         if (useCache) cache.k2 = { key: k2, L };
       }
       const th = R.thresholds(L, N, interp.thresholdRule, { manual: interp.manual, domain });
@@ -818,6 +963,12 @@
     // 5. cumulative masks
     step("masks", 0.2);
     const masks = Hh.cumulativeMasks(added, domain, N, W, H);
+    // F13 LPT cost per layer: its mask's pixel count (one histogram pass over added; layer 0, the base, is a copy)
+    const hist = new Float64Array(Math.max(N, 1) + 1);
+    for (let i = 0; i < added.length; i++) if (!domain || domain[i]) hist[Math.min(added[i], N)]++;
+    const layerPx = new Array(N).fill(0);
+    for (let k = N - 1, acc = hist[N]; k >= 1; k--) { acc += hist[k]; layerPx[k] = acc; }
+    const kept = () => bytesOf(ns.pixels, ns.alpha, cache && cache.k1 ? [cache.k1.samples, cache.k1.alpha] : null, cache && cache.k2 ? cache.k2.L : null);
 
     // 6. construct
     step("construct", 0.25);
@@ -826,7 +977,8 @@
     // opts.overlays:false skips them (display data only). F9: constructLayer emits the change masks (SBConstruct.changeMask
     // crops), so masks[k] is read by its construct item only (transferable).
     const wantChange = quality === "draft" && overlays;
-    const cres = yield batch("construct", masks.map((mask, k) => [k, { mask, W, H, px: cpx, bonded, wantChange }]), masks.map((m) => [m]));
+    const cres = yield batch("construct", masks.map((mask, k) => [k, { mask, W, H, px: cpx, bonded, wantChange }]), masks.map((m) => [m]),
+      layerPx, masks.map((m, k) => (k === 0 ? 2 : bonded ? 5 : 7) * m.length), kept() + bytesOf(samples, alpha, domain, added, masks));
     const built = { final: cres.map((r) => r.final), bridges: cres.map((r) => r.bridges), report: cres.map((r) => r.report) };
     const pxMM2 = (geo.sxUm * geo.syUm) / 1e6;
     const page = M.page({ artWMM: geo.artWMM, artHMM: geo.artHMM, frame: con.frame });
@@ -842,7 +994,7 @@
       ovItems.push([{ added, removed, bridges: b, W, H, sxUm: geo.sxUm, syUm: geo.syUm, fUm }]);
       ovTransfer.push([added && added.mask, removed && removed.mask, b].filter(Boolean));
     });
-    const ov = ovItems.length ? yield batch("overlays", ovItems, ovTransfer) : [];
+    const ov = ovItems.length ? yield batch("overlays", ovItems, ovTransfer, null, ovTransfer.map((l) => 2 * bytesOf(l)), kept() + bytesOf(built.final)) : [];
     const cleanupReport = built.report.map((r, k) => {
       const e = { layer: k, addedMM2: r.addedPx * pxMM2, removedMM2: r.removedPx * pxMM2, holesFilled: r.filledHoles, partsRemoved: r.removedParts,
         bridged: r.bridged || 0, culled: r.culled || 0 };   // alpha.3 E2 (UI-05): SBConstruct report counts (bonded: 0)
@@ -871,12 +1023,14 @@
     // traces every layer, runs the smoothStack barrier serially, then converts every layer.
     const lctx = M.layerContext(W, H, page, fOpts), tm = gate.masks;
     let conv;
-    if (!lctx.smooth) conv = yield batch("traceConvert", tm.map((m, k) => [m, k, W, H, lctx]), tm.map((m) => [m]));
+    const tEst = tm.map((m) => 3 * m.length), tRes = kept() + bytesOf(built.final, tm);
+    if (!lctx.smooth) conv = yield batch("traceConvert", tm.map((m, k) => [m, k, W, H, lctx]), tm.map((m) => [m]), layerPx, tEst, tRes);
     else {
-      const traced = yield batch("trace", tm.map((m, k) => [m, k, W, H]), tm.map((m) => [m]));
-      conv = yield batch("convert", M.smoothTraced(traced, lctx).map((t, k) => [t, k, lctx]));
+      const traced = yield batch("trace", tm.map((m, k) => [m, k, W, H]), tm.map((m) => [m]), layerPx, tEst, tRes);
+      conv = yield batch("convert", M.smoothTraced(traced, lctx).map((t, k) => [t, k, lctx]), null, null, null, tRes);
     }
     let layers = M.assignParts(conv);
+    const late = kept() + bytesOf(built.final);   // F13: the coordinator's resident typed arrays for the polygon batches
 
     // 11b. vertex caps after fromMasks, before validation
     step("complexity", 0.6);
@@ -909,7 +1063,7 @@
       S.validateArgs(layers, con.mode, vcfg);
       const pairs = [];
       for (let k = 1; k < layers.length; k++) pairs.push([layers[k - 1], layers[k], k, vcfg]);
-      sv = S.supportFold(layers, vcfg, yield batch("supportPair", pairs));
+      sv = S.supportFold(layers, vcfg, yield batch("supportPair", pairs, null, null, null, late));
     } else sv = S.validate(layers, con.mode, vcfg);
     diagnostics.push(...sv.diagnostics);
     step("features", 0.85);
@@ -919,7 +1073,7 @@
     const fcfg = { minFeatureMM: mat.minFeatureMM, advisoryFeatureMM: mat.advisoryFeatureMM, minPartMM2: mat.minPartMM2,
       mmPerPxMax: geo.mmPerPxMax, samplingMmPerPx: fabGeo.mmPerPxMax, calibrated: mat.calibrated, revision, quality };
     const fhead = S.featureHead(layers, fcfg);   // F9: featureChecks = head + one featureLayer item per layer + one aggregate
-    diagnostics.push(...D.aggregate(fhead.concat(...(yield batch("featureLayer", layers.map((L, k) => [L, k, fcfg]))))));
+    diagnostics.push(...D.aggregate(fhead.concat(...(yield batch("featureLayer", layers.map((L, k) => [L, k, fcfg]), null, null, null, late)))));
     step("envelope", 0.95);
     diagnostics.push(...S.checkEnvelope({ wMM: page.wMM, hMM: page.hMM }, p.machine, mat, dOpts));
 
@@ -935,9 +1089,9 @@
       // F9: SBGuides.build/validate as one buildPair item per adjacent pair and one validatePair item per layer (ordered folds)
       const Gd = global.SBGuides, P = Gd.params(con.guides), gp = [];
       for (let k = 0; k + 1 < layers.length; k++) gp.push([k, layers[k], layers[k + 1], P, dOpts]);
-      const gb = Gd.buildFold(layers.length, P, dOpts, yield batch("buildPair", gp));
+      const gb = Gd.buildFold(layers.length, P, dOpts, yield batch("buildPair", gp, null, null, null, late));
       layers = layers.map((L, k) => Object.assign({}, L, { scorePaths: gb.scorePaths[k] }));
-      const gv = yield batch("validatePair", layers.map((L, k) => [k, L, layers[k + 1], gb.scorePaths[k], P, dOpts]));
+      const gv = yield batch("validatePair", layers.map((L, k) => [k, L, layers[k + 1], gb.scorePaths[k], P, dOpts]), null, null, null, late);
       diagnostics.push(...gb.diagnostics, ...[].concat(...gv));
       guides = gb.guides;
     }
@@ -963,7 +1117,7 @@
 
     // G2.10b: D4 hashes — one layerHash per index 0..N−1 (omitted layers included), then geometryHash (§3)
     for (let k = 0; k < layers.length; k++) step("hashes", 0.99);
-    const layerHashes = yield batch("layerHash", layers.map((L) => [L]));
+    const layerHashes = yield batch("layerHash", layers.map((L) => [L]), null, null, null, late);
     const geometryHash = global.SBHash.hashJSON({ key: global.SBSchema.geometryKey(p), engine: E.VERSION, quality,
       raster: [W, H], layers: layerHashes, guides: E.guideHash(guides) });
     const snapshot = {
