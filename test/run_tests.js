@@ -6455,6 +6455,71 @@ suite("trace — speed round F7 typed corner table (NFR-05)", () => {
   check("F7 T.trace uses a typed corner table (no Map, no sorted key snapshot)", body.length > 0 && !/new Map\(/.test(body) && !/\.sort\(/.test(body) && /new Uint8Array\(/.test(body));
 });
 
+// ------------------------------------------------ speed round F8 (plan Appendix F, S5/S3): cheaper draft overlays
+suite("engine — speed round F8 cropped change overlays (NFR-05, GEO-08)", () => {
+  const E = SBEngine, { oracleMaskPolygons: OM } = require("./oracle_kernels.js");
+  check("F8 SBEngine.maskPolygonsCrop and SBEngine.changePolygons exist", typeof E.maskPolygonsCrop === "function" && typeof E.changePolygons === "function");
+  if (typeof E.maskPolygonsCrop !== "function" || typeof E.changePolygons !== "function") return;
+  let seed = 0x5eed_f8;
+  const rnd = () => { seed = (seed + 0x6d2b79f5) | 0; let t = seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  // non-integer µm pitches (js/raster.js rasterPlan gives sxUm = artW·1000 / W) and integer frame offsets (Math.round)
+  const pitch = () => [rnd() < 0.15 ? ri(50, 900) : 37 + rnd() * 900, rnd() < 0.15 ? ri(50, 900) : 41 + rnd() * 900, rnd() < 0.3 ? 0 : ri(1, 20000)];
+  const blob = (m, w, x0, y0, x1, y1, d) => { for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) m[y * w + x] = rnd() < d ? 1 : 0; };
+  // 1a: random masks inside random crops; maskPolygonsCrop on the crop deep-equals the uncropped oracle on the full raster
+  let crops = 0, cropEq = 0, nonEmpty = 0;
+  for (let t = 0; t < 600; t++) {
+    const w = ri(1, t % 10 === 0 ? 4 : 90), h = ri(1, t % 13 === 0 ? 4 : 70);
+    const x0 = ri(0, w - 1), y0 = ri(0, h - 1), x1 = ri(x0 + 1, w), y1 = ri(y0 + 1, h), cw = x1 - x0, ch = y1 - y0;
+    const full = new Uint8Array(w * h), crop = new Uint8Array(cw * ch), d = [0.05, 0.3, 0.6, 0.95, 1][t % 5];
+    blob(full, w, x0, y0, x1, y1, d);
+    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) crop[y * cw + x] = full[(y + y0) * w + x + x0];
+    const [sx, sy, f] = pitch(), copy = crop.slice();
+    const want = OM(w, h, sx, sy, f, (i) => full[i]), got = E.maskPolygonsCrop(crop, x0, y0, x1, y1, sx, sy, f);
+    crops++; if (same(got, want) && Buffer.compare(Buffer.from(crop), Buffer.from(copy)) === 0) cropEq++; if (want) nonEmpty++;
+  }
+  check(`F8 maskPolygonsCrop on random crops deep-equals the uncropped oracle (non-integer sxUm/syUm; ${cropEq}/${crops}, ${nonEmpty} non-empty; crop unmutated)`,
+    cropEq === crops && nonEmpty > 400);
+  // changePolygons(a, b) = polygons of a ∧ ¬b (b null: a), bbox found in the diff pass; equals the oracle predicate path
+  let pairs = 0, pairEq = 0, pairNull = 0, unmut = 0;
+  for (let t = 0; t < 600; t++) {
+    const w = ri(1, t % 9 === 0 ? 3 : 80), h = ri(1, t % 11 === 0 ? 3 : 60), a = new Uint8Array(w * h), b = new Uint8Array(w * h);
+    const k = t % 6;
+    if (k === 0) { blob(a, w, 0, 0, w, h, rnd()); blob(b, w, 0, 0, w, h, rnd()); }
+    else if (k === 1) { blob(a, w, 0, 0, w, h, rnd()); b.set(a); }                                   // a ∧ ¬a: empty
+    else if (k === 2) { blob(a, w, 0, 0, w, h, 0.7); b.set(a); const x = ri(0, w - 1), y = ri(0, h - 1); b[y * w + x] = 0; } // one pixel, anywhere (corners incl.)
+    else if (k === 3) { const x0 = ri(0, w - 1), y0 = ri(0, h - 1); blob(a, w, x0, y0, ri(x0 + 1, w), ri(y0 + 1, h), 0.8); blob(b, w, 0, 0, w, h, 0.2); }
+    else if (k === 4) { a.fill(1); }                                                                  // full raster, b empty
+    else { blob(a, w, 0, 0, w, h, 0.5); a[0] = 1; a[w * h - 1] = 1; }                                  // touching opposite corners
+    const [sx, sy, f] = pitch(), ac = a.slice(), bc = b.slice(), useB = k !== 5;
+    const want = OM(w, h, sx, sy, f, useB ? (i) => a[i] && !b[i] : (i) => a[i]), got = E.changePolygons(a, useB ? b : null, w, h, sx, sy, f);
+    pairs++; if (same(got, want)) pairEq++; if (want === null && got === null) pairNull++;
+    if (Buffer.compare(Buffer.from(a), Buffer.from(ac)) === 0 && Buffer.compare(Buffer.from(b), Buffer.from(bc)) === 0) unmut++;
+  }
+  check(`F8 changePolygons(a, b) deep-equals the oracle a ∧ ¬b path, null when empty (${pairEq}/${pairs}, ${pairNull} empty)`, pairEq === pairs && pairNull >= 100);
+  check(`F8 changePolygons never writes its masks (${unmut}/${pairs})`, unmut === pairs);
+  check("F8 edge cases equal the oracle (1 × 1, 0-area raster, plain arrays)",
+    same(E.changePolygons([1], null, 1, 1, 12.5, 7.25, 3), OM(1, 1, 12.5, 7.25, 3, () => 1)) && E.changePolygons([0], null, 1, 1, 1, 1, 0) === null &&
+    E.changePolygons(new Uint8Array(0), null, 0, 4, 1, 1, 0) === null &&
+    same(E.changePolygons([1, 1, 0, 1], [0, 1, 0, 0], 2, 2, 100.5, 99.75, 7), OM(2, 2, 100.5, 99.75, 7, (i) => [1, 1, 0, 1][i] && ![0, 1, 0, 0][i])));
+  // Step 1: the draft cleanupReport (added/removed/bridges) of the F0 draft fixtures equals the alpha.3 golden
+  const C = require("./pool_corpus.js"), gold = JSON.parse(fs.readFileSync(path.join(__dirname, "golden", "pool-equality.json"), "utf8"));
+  const drafts = C.corpus().filter((fx) => fx.quality === "draft" && !fx.slow), bad = [];
+  let withPolys = 0;
+  for (const fx of drafts) {
+    const r = C.run(fx), d = C.digest(r);
+    if (d.cleanupSha !== gold.fixtures[fx.id].cleanupSha || d.geometryHash !== gold.fixtures[fx.id].geometryHash) bad.push(fx.id);
+    if (r.snapshot && r.snapshot.cleanupReport.some((c) => c.added || c.removed || c.bridges)) withPolys++;
+  }
+  check(`F8 draft cleanupReport (added/removed/bridges) equals the alpha.3 golden on the F0 draft fixtures (${drafts.length - bad.length}/${drafts.length}, ${withPolys} with polygons)` +
+    (bad.length ? " — differ: " + bad.join(", ") : ""), bad.length === 0 && withPolys >= 3);
+  // run() uses the cropped path for the change overlays and the bridges (the uncropped maskPolygons stays for legacyCleanupReport)
+  const src = fs.readFileSync(path.join(__dirname, "..", "js", "engine.js"), "utf8"), body = src.slice(src.indexOf("function run(req, head, step, fail, cache, overlays)"));
+  check("F8 run() builds overlays and bridges with E.changePolygons, not the full-raster E.maskPolygons",
+    /E\.changePolygons\(/.test(body) && !/E\.maskPolygons\(/.test(body));
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

@@ -128,6 +128,53 @@
   };
 
   /**
+   * Speed round F8 (S5, S3): maskPolygonsCrop(mask, x0, y0, x1, y1, sxUm, syUm, fUm) → the maskPolygons result for a
+   * raster whose set pixels all lie in the crop [x0, x1) × [y0, y1); mask is the crop's own (x1 − x0)·(y1 − y0) 0/1
+   * mask (row-major, not written). Only the crop is traced. Equal to the uncropped path bit for bit: a crop holding
+   * every set pixel has the same boundary edges, the corner scan is row-major in both, so the loops differ only by
+   * (x0, y0), which is added to the points in pixel space before scaling, so fromPixelLoops still rounds
+   * Math.round(p·sx + ox) on the same p (never fold x0·sx into ox in µm: different rounding). Oracle:
+   * test/oracle_kernels.js oracleMaskPolygons (NFR-05).
+   */
+  E.maskPolygonsCrop = function (mask, x0, y0, x1, y1, sxUm, syUm, fUm) {
+    const cw = x1 - x0, ch = y1 - y0;
+    const loops = global.SBTrace.trace(mask, cw, ch);
+    if (!loops.length) return null;
+    if (x0 || y0) for (const L of loops) for (const p of L) { p[0] += x0; p[1] += y0; }
+    const G = global.SBGeom;
+    return G.normalize(G.union(G.fromPixelLoops(loops, sxUm, syUm, fUm, fUm), []));
+  };
+
+  /**
+   * Speed round F8: changePolygons(a, b, w, h, sxUm, syUm, fUm) → maskPolygons of the pixels where a[i] ∧ ¬b[i]
+   * (b null: where a[i]), or null when there is none. The diff pass finds the bounding box, then only the crop is
+   * built and traced (maskPolygonsCrop). Neither mask is written. The draft change overlays (added = final ∧ ¬pre,
+   * removed = pre ∧ ¬final) and the connected bridges use it.
+   */
+  E.changePolygons = function (a, b, w, h, sxUm, syUm, fUm) {
+    const full = new Uint8Array(w * h);
+    let x0 = w, x1 = -1, y0 = -1, y1 = -1;
+    for (let y = 0, r = 0; y < h; y++, r += w) {
+      let any = 0;
+      if (b) for (let i = r, e = r + w; i < e; i++) any |= full[i] = !!a[i] & !b[i];
+      else for (let i = r, e = r + w; i < e; i++) any |= full[i] = +!!a[i];
+      if (!any) continue;
+      if (y0 < 0) y0 = y;
+      y1 = y;
+      let lo = 0; while (!full[r + lo]) lo++;
+      let hi = w - 1; while (!full[r + hi]) hi--;
+      if (lo < x0) x0 = lo;
+      if (hi > x1) x1 = hi;
+    }
+    if (y0 < 0) return null;
+    x1++; y1++;
+    if (x0 === 0 && y0 === 0 && x1 === w && y1 === h) return E.maskPolygonsCrop(full, 0, 0, w, h, sxUm, syUm, fUm);
+    const cw = x1 - x0, m = new Uint8Array(cw * (y1 - y0));
+    for (let y = y0, o = 0; y < y1; y++, o += cw) m.set(full.subarray(y * w + x0, y * w + x1), o);
+    return E.maskPolygonsCrop(m, x0, y0, x1, y1, sxUm, syUm, fUm);
+  };
+
+  /**
    * legacyCleanupReport(sheets, w, h, cfg) → cleanupReport-shaped [{layer, addedMM2, removedMM2, holesFilled,
    * partsRemoved, added?, removed?, bridges?}] for a legacyRun result, in the connectedLayers page frame (G2.13b).
    * added = final ∧ ¬pre, removed = pre ∧ ¬final, bridges = the islands' bridge pixels; polygons in µm, present
@@ -645,12 +692,13 @@
       const e = { layer: k, addedMM2: r.addedPx * pxMM2, removedMM2: r.removedPx * pxMM2, holesFilled: r.filledHoles, partsRemoved: r.removedParts,
         bridged: r.bridged || 0, culled: r.culled || 0 };   // alpha.3 E2 (UI-05): SBConstruct report counts (bonded: 0)
       const b = built.bridges[k];
-      if (b) { const poly = E.maskPolygons(W, H, geo.sxUm, geo.syUm, fUm, (i) => b[i]); if (poly) e.bridges = poly; }
+      // speed round F8: bridges and change overlays trace only the bounding box of their pixels (E.changePolygons)
+      if (b) { const poly = E.changePolygons(b, null, W, H, geo.sxUm, geo.syUm, fUm); if (poly) e.bridges = poly; }
       // G2.13b (GEO-08, UI-05): change overlays at draft quality only, so the fabrication budget is unchanged.
       if (quality === "draft" && overlays) {   // alpha.3 E4: opts.overlays:false skips them (display data only)
         const pre = masks[k], fin = built.final[k];
-        if (r.addedPx) e.added = E.maskPolygons(W, H, geo.sxUm, geo.syUm, fUm, (i) => fin[i] && !pre[i]);
-        if (r.removedPx) e.removed = E.maskPolygons(W, H, geo.sxUm, geo.syUm, fUm, (i) => pre[i] && !fin[i]);
+        if (r.addedPx) e.added = E.changePolygons(fin, pre, W, H, geo.sxUm, geo.syUm, fUm);
+        if (r.removedPx) e.removed = E.changePolygons(pre, fin, W, H, geo.sxUm, geo.syUm, fUm);
       }
       return e;
     });

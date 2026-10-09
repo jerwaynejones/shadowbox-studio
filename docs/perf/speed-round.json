@@ -350,5 +350,114 @@
     ]
    }
   ]
+ },
+ "phaseA": {
+  "machine": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (16 threads, 62.5 GiB), node v26.7.0",
+  "method": "serial SBEngine.generate, 3 no-cache runs per row (no warm-up), per-stage p50 from the onProgress marks (stageDurations), guides.build / guides.validate via the SBGuides probe",
+  "loadAvgStart": [
+   4.5,
+   6.37,
+   7.96
+  ],
+  "loadAvgEnd": [
+   5.38,
+   6.37,
+   7.89
+  ],
+  "fab4096": {
+   "source": "4096×3084",
+   "quality": "fabrication",
+   "raster": "3985×3000",
+   "mpx": 11.96,
+   "guides": "inset-outline",
+   "status": "done",
+   "code": null,
+   "runs": 3,
+   "p50Ms": 11996,
+   "maxMs": 12224.3,
+   "runsMs": [
+    11996,
+    12224.3,
+    10244.6
+   ],
+   "stagesP50Ms": {
+    "setup": 3.3,
+    "orient": 0.4,
+    "resample": 970.8,
+    "domain": 0.2,
+    "interpret": 3088.5,
+    "masks": 521.3,
+    "construct": 2302.9,
+    "complexity": 71.9,
+    "trace": 1442.7,
+    "repairs": 0,
+    "holes": 0.2,
+    "validate": 79.1,
+    "features": 370.4,
+    "envelope": 0.5,
+    "parts": 6.6,
+    "guides": 1372.8,
+    "accounting": 0.4,
+    "hashes": 109.5,
+    "guides.build": 569.5,
+    "guides.validate": 803
+   },
+   "maxPartsPerLayer": 31,
+   "rssMB": 588,
+   "wallS": 34.5,
+   "loadAvg": [
+    5.67,
+    6.44,
+    7.92
+   ]
+  },
+  "draft720": {
+   "source": "4096×3084",
+   "quality": "draft",
+   "raster": "720×542",
+   "mpx": 0.39,
+   "guides": "inset-outline",
+   "status": "done",
+   "code": null,
+   "runs": 3,
+   "p50Ms": 1209.9,
+   "maxMs": 1230.4,
+   "runsMs": [
+    1209.9,
+    1230.4,
+    1154.9
+   ],
+   "stagesP50Ms": {
+    "setup": 0.4,
+    "orient": 0,
+    "resample": 209,
+    "domain": 0,
+    "interpret": 107.2,
+    "masks": 18.9,
+    "construct": 208.1,
+    "complexity": 4.2,
+    "trace": 138.5,
+    "repairs": 0,
+    "holes": 0,
+    "validate": 30.7,
+    "features": 98.7,
+    "envelope": 0.1,
+    "parts": 1.6,
+    "guides": 322.9,
+    "accounting": 0.2,
+    "hashes": 30.3,
+    "guides.build": 142.6,
+    "guides.validate": 180.2
+   },
+   "maxPartsPerLayer": 59,
+   "rssMB": 387,
+   "wallS": 3.6,
+   "loadAvg": [
+    5.38,
+    6.37,
+    7.89
+   ]
+  },
+  "gate": "Phase A gate (plan F.6, after F3-F8): serial fab4096 p50 11996 ms (baseline 25306 ms; plan expectation 11-13 s), draft720 p50 1210 ms (baseline 3287 ms). F8 note: cropping the draft change overlays to the change bounding box is output-identical (oracle tests) but did not measurably speed them up on the bench art or the alpha.3 scene: the bounding boxes cover ~85 % of the raster (scattered changes) and the overlay time is dominated by fromPixelLoops/union/normalize of the many small change regions (per warm 720 run on the realistic family: ~190-200 ms both before and after; trace ~40 ms of it). The diff pass is fused (one pass, row memcpy crop). Further overlay gains need the KI-B1 normalize work (F18/G4.4)."
  }
 }

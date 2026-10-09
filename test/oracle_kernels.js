@@ -1,6 +1,6 @@
 // test/oracle_kernels.js — speed round (plan Appendix F, F.3): the pre-round kernels, moved VERBATIM from js/
 // so every optimised kernel ships with a byte-equality test against the code it replaced. Never edit these
-// bodies; only add kernels (F3 resample, F4 morphology, F5 components, F6 Kuwahara, F7 trace).
+// bodies; only add kernels (F3 resample, F4 morphology, F5 components, F6 Kuwahara, F7 trace, F8 overlays).
 "use strict";
 
 // ---- F3: R.resample as of alpha.3 (js/raster.js before F3), with its helpers, verbatim.
@@ -483,4 +483,19 @@ const oracleTrace = (() => {
   return T.trace;
 })();
 
-module.exports = { oracleResample, oracleMorph, oracleComponents, oracleConstruct, oracleKuwahara, oracleTrace };
+// ---- F8: E.maskPolygons as of alpha.3 (js/engine.js before F8), verbatim; the uncropped overlay path. It calls the
+// live SBGeom and SBTrace (T.trace itself is oracle-gated by F7), so it is the reference for the cropped path.
+const oracleMaskPolygons = ((global) => {
+  const E = {};
+  E.maskPolygons = function (w, h, sxUm, syUm, fUm, pred) {
+    const m = new Uint8Array(w * h);
+    let any = 0;
+    for (let i = 0; i < m.length; i++) if (pred(i)) { m[i] = 1; any = 1; }
+    if (!any) return null;
+    const G = global.SBGeom;
+    return G.normalize(G.union(G.fromPixelLoops(global.SBTrace.trace(m, w, h), sxUm, syUm, fUm, fUm), []));
+  };
+  return E.maskPolygons;
+})(globalThis);
+
+module.exports = { oracleResample, oracleMorph, oracleComponents, oracleConstruct, oracleKuwahara, oracleTrace, oracleMaskPolygons };

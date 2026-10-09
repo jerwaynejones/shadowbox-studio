@@ -783,7 +783,7 @@ function benchLargeAssemble() {
  * acrylic connected (smooth corners, KI-CONN-PERF). Per draftPx candidate and family: 1 cold run (empty cache), DRAFT.warm
  * warm-ups and DRAFT.runs warm runs, each with a changed `sheets` value (8 ↔ 7) so construct reruns while the K1/K2 cache
  * stays warm; cold, warm p50 and warm p95 per row, plus the share of construct spent in the draft change-overlay
- * polygons (SBEngine.maskPolygons for e.added/e.removed; bridge polygons excluded). Candidates run in ascending order and
+ * polygons (SBEngine.changePolygons for e.added/e.removed; bridge polygons excluded). Candidates run in ascending order and
  * a workload/family stops at the first candidate whose warm p95 exceeds the target (larger rasters are never faster;
  * --all disables this). Fabrication rows: workload (a) per family at the fabrication raster, no cache (as the app),
  * DRAFT.fabCold + DRAFT.fabRuns runs; fabMsPerMpx = the larger p50 ÷ raster Mpx of the families that finished.
@@ -923,9 +923,10 @@ function benchDraft(o = {}) {
   const limits = S.limits;
   S.limits = (dc) => Object.assign({}, limits(dc), { draftPxCap: 100000 });
   // overlay probe: time the draft change-overlay polygons (bridges excluded)
-  const mp = E.maskPolygons, probe = { overlayMs: 0, guidesBuild: 0, guidesValidate: 0 }, unprobe = installGuideProbe(probe);
-  E.maskPolygons = function (w, h, sx, sy, f, pred) {
-    if (!/fin\[i\]|pre\[i\]/.test(String(pred))) return mp.apply(this, arguments);
+  // (speed round F8: run() builds them with SBEngine.changePolygons(a, b, …); added/removed pass b, bridges pass null)
+  const mp = E.changePolygons, probe = { overlayMs: 0, guidesBuild: 0, guidesValidate: 0 }, unprobe = installGuideProbe(probe);
+  E.changePolygons = function (a, b) {
+    if (!b) return mp.apply(this, arguments);
     const t0 = performance.now(); try { return mp.apply(this, arguments); } finally { probe.overlayMs += performance.now() - t0; }
   };
   const report = { stage: "draft", quick: QUICK, node: process.version, v8: process.versions.v8, cpu: os.cpus()[0].model, threads: os.cpus().length,
@@ -977,7 +978,7 @@ function benchDraft(o = {}) {
       }
       delete sources[fam];
     }
-  } finally { S.limits = limits; E.maskPolygons = mp; unprobe(); }
+  } finally { S.limits = limits; E.changePolygons = mp; unprobe(); }
   report.loadAvgEnd = os.loadavg().map((x) => +x.toFixed(2));
   report.decision = decideDraft(report.rows, report.fabRows);
   report.overBudget = [];
@@ -1000,7 +1001,7 @@ function benchDraft(o = {}) {
       rule: DRAFT.rule,
       method: { candidates: DRAFT.candidates, cold: 1, warmUps: warmN, warmRuns: runsN, fabCold: DRAFT.fabCold, fabRuns: fabN, earlyStop: !all, shortened,
         warm: "E3 cache filled; construction.sheets alternates 8 ↔ 7 (5 ↔ 4 for acrylic) and the revision changes between runs, so construct reruns",
-        overlayShare: "Σ draft change-overlay polygon time (SBEngine.maskPolygons for e.added/e.removed) ÷ Σ construct-stage time over the warm runs" },
+        overlayShare: "Σ draft change-overlay polygon time (SBEngine.changePolygons for e.added/e.removed) ÷ Σ construct-stage time over the warm runs" },
       loadAvgStart: report.loadAvgStart, loadAvgEnd: report.loadAvgEnd,
       rows: report.rows, fabRows: report.fabRows, skipped: report.skipped, decision: report.decision,
       informational: { plywoodHeightDraftPx: draftPick(report.rows, "b"), note: "workload (b) under the same rule; reported, not gating (the plywood preset follows (a), the auto-tonal colour route)" },
