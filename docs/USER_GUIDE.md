@@ -24,9 +24,12 @@ a clear subject and readable tonal separation: silhouettes at dusk, a bird
 against sky, a landscape with distinct planes. The demo scene is a procedural
 night landscape you can use to explore every control instantly.
 
-**Working resolution (360–1280 px).** The size of the raster the pipeline
-runs at. Higher = finer detail and slower recompute. 720 px is a good
-default; go higher only for large artwork (400 mm+) with fine detail.
+**Fabrication pitch (mm/px).** The size of one pixel of the cut raster on the
+material (default 0.1 mm/px). The export, and the fabrication preview, run at
+this pitch, limited by the device's pixel budget and by the source's own
+pixels (the dimension bar shows the real mm/px, the raster size and any
+shortfall). The on-screen draft runs at a fixed, measured size (720 px on the
+long side) so edits stay interactive; it is labelled **Draft (approximate)**.
 
 **Cartoon smoothing (0–5 mm) and passes (1–3).** The Kuwahara filter radius.
 This flattens texture into paint-like patches while keeping edges — the
@@ -116,6 +119,26 @@ the export, one panel per glue step with every part ID; parts without a
 guide are outlined red). The same warning appears when a sheet number does
 not fit; the map names that sheet too.
 
+**Preview at fabrication resolution.** The button in the Review stage runs
+the exact fabrication generate (the same request and geometry hash as the
+export) and shows it in Proof, Section, Layers, Tilt and the diagnostics,
+together with the Fabrication review. It can take several seconds on a large
+image and the page does not respond meanwhile (a busy note says how long to
+expect). Use it to judge fine detail, the exact guides and the fabrication
+diagnostics: the draft approximates the cut, the fabrication preview is the
+cut. Any geometry edit returns the views to the draft (marked Stale until it
+updates). A source smaller than the fabrication raster is reported at load and
+in the draft's "Fabrication resolution" group (`FAB_EXCEEDS_SOURCE`, with the
+pixel shortfall), and a draft whose layers would exceed the device caps at
+fabrication shows `FAB_COMPLEXITY_LIKELY`.
+
+**Clips at fabrication.** A "Clip to lower layer" repair accepted on the draft
+is replayed at fabrication and listed in the Fabrication review as
+`REPAIR_REVIEW_FAB` with **Show** (the clipped region on the fabrication
+result), **Keep** (accept it for this fabrication result) and **Revert**. A
+clip whose settings changed afterwards is `REPAIR_STALE` and is reviewed again
+from the draft.
+
 ## Step 4 — Export
 
 One ZIP: `sheet_NN.svg` per layer (RED = cut, BLUE = score label),
@@ -123,6 +146,12 @@ One ZIP: `sheet_NN.svg` per layer (RED = cut, BLUE = score label),
 and for bonded relief `placement_map.svg` (the glue-up order with part IDs;
 print it, do not cut it).
 Import SVGs at 1:1 into LightBurn/RDWorks — they carry mm units.
+
+**Two clicks.** Download delivers only a fabrication result that is on
+screen. If the draft is shown, the first click runs (or reuses) the
+fabrication generate, shows it and opens the Fabrication review ("Review the
+fabrication result, then Download"); acknowledge its warnings and click
+Download again. Blocking issues disable Download with the reason.
 
 `ASSEMBLY.md` is written from the exported fabrication result. For bonded
 relief it lists only the exported sheets (role base, layer or top) and the
@@ -140,21 +169,40 @@ is always an acrylic connected-sheet project (a bonded relief comes back as
 connected sheets) and an info notice `LEGACY_PROJECT_BLOCK` says so. The full
 round trip will be the `.sbrproj` project file (G3.8).
 
+## Glue-up (bonded relief)
+
+1. Lay sheet 1 (the base) front face up. Its scored outlines show where the
+   parts of sheet 2 go; its scored number says it is sheet 1.
+2. Glue each next sheet onto the scored outlines of the one below, front face
+   up, never mirrored. The outline is inset under the part, so it disappears
+   once the part is in place; with *Interior mark* guides, centre the part on
+   its cross and set the rotation by eye or by the placement map.
+3. Parts listed under `GUIDE_OMITTED` have no guide: place them by
+   `placement_map.svg`, which shows every glue step with part IDs.
+4. The top sheet carries no number (it has no hidden area); the placement map
+   names it.
+
 ## Reading the preview
 
 - **Drag** the stack to tilt it; the parallax shows the physical depth.
 - **Explode** spreads sheets apart to inspect individual layers.
-- **Amber** = bridge material the tool added. Every structural fix is
-  visible before you commit acrylic to it.
-- The status bar reports islands bridged/culled and total cut length.
+- **Amber** = bridge material the tool added (connected sheets only; bonded
+  relief never has bridges). Every structural fix is visible before you
+  commit material to it.
+- The status line starts with **Draft (approximate; …)** for the draft, or
+  the short geometry hash for a fabrication result, and reports the raster,
+  sheets and time (connected sheets: islands bridged/culled and cut length).
+- Every view (Proof, Section, Layers, Tilt) comes from the same generate as
+  the cut files: the draft at the draft raster, the fabrication preview at the
+  fabrication raster.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
 | Sheets look noisy, hundreds of islands | Raise cartoon smoothing and/or cull threshold; reduce sheets |
-| Important detail disappeared | Lower min feature or cull threshold; raise working resolution |
+| Important detail disappeared | Lower min feature or cull threshold; check it in Preview at fabrication resolution (the draft is coarser) |
 | A bridge crosses an ugly spot | Nudge bridge width / cull threshold — bridges re-route on recompute |
 | Thin parts break after cutting | Raise min feature; consider thicker acrylic |
 | Holes tight on dowels | Add kerf compensation in your laser software, or bump hole diameter |
-| Slow on phone | Lower working resolution while composing; raise it for final export |
+| Slow on phone, or the page stops responding | Drafts and the fabrication preview run on the main thread until the worker pool (G4.1); mobile is limited to simpler art |

@@ -2633,7 +2633,7 @@ suite("engine.js — connected export through the canonical path (DEP-04, GEO-02
     /SBEngine\.fabricationFiles\(/.test(bad) && !/SBEngine\.connectedFiles\(/.test(bad) && !/sheetSVG|proofSVG/.test(bad) && !/SBSvg\.(sheetSVG|proofSVG)/.test(app));
   check("G1.7 → G2.12 preview badge retired: the preview is drawn from the canonical polygons (preview.setSnapshot)",
     !(app + html).includes("Draft preview: cut files come from polygons") && /preview\.setSnapshot\(/.test(app));
-  check("DEP-02 release 2.0.0-alpha.2 (APP_VERSION)", /const APP_VERSION\s*=\s*"2\.0\.0-alpha\.2"/.test(app));
+  check("DEP-02 release 2.0.0-alpha.3 (APP_VERSION)", /const APP_VERSION\s*=\s*"2\.0\.0-alpha\.3"/.test(app));
   const cl = fs.readFileSync(path.join(root, "docs/CHANGELOG.md"), "utf8"), sec = (cl.split(/^## v2\.0\.0-alpha\.1\b.*$/m)[1] || "").split(/^## /m)[0];
   check("DEP-04 CHANGELOG v2.0.0-alpha.1 lists the intentional connected-mode changes",
     /frame/i.test(sec) && /CUT/.test(sec) && /SCORE/.test(sec) && /proof/i.test(sec) && /0\.05 mm/.test(sec) && /holes/i.test(sec) && /label/i.test(sec));
@@ -6052,4 +6052,18 @@ suite("docs.js/app.js — alpha.3 E13 assembly and settings (ASM-05, EXP-06, PO-
   check("DEP-04 a plain v1.1 settings.json raises no LEGACY_PROJECT_BLOCK", !S.fromLegacySettings({ procRes: 720 }).diagnostics.some((d) => d.code === "LEGACY_PROJECT_BLOCK"));
   const ug = fs.readFileSync(path.join(__dirname, "..", "docs", "USER_GUIDE.md"), "utf8");
   check("DEP-04 USER_GUIDE says a v2 settings.json re-imports as v1.1 settings only (LEGACY_PROJECT_BLOCK)", /LEGACY_PROJECT_BLOCK/.test(ug) && /\.sbrproj/.test(ug));
+});
+
+// ------------------------------------------------ checkpoint v2.0.0-alpha.3 (real-engine preview, bonded alignment)
+suite("CHANGELOG — checkpoint v2.0.0-alpha.3 (R9, PO-PREVIEW-1..7)", () => {
+  const cl = fs.readFileSync(path.join(__dirname, "..", "docs/CHANGELOG.md"), "utf8"), sec = (cl.split(/^## v2\.0\.0-alpha\.3\b.*$/m)[1] || "").split(/^## /m)[0];
+  check("R9 CHANGELOG v2.0.0-alpha.3 has a known-gaps table (worker, draft budget, part IDs, holes, .sbrproj, manifest, layout, legacy repairs, draftPx in the key, draft approximation, lossy settings re-import)",
+    /known gaps/i.test(sec) && /^\|.*\|\s*$/m.test(sec) && /G4\.1/.test(sec) && /draft/i.test(sec) && /part ID/i.test(sec) && /registration holes/i.test(sec) &&
+    /\.sbrproj/.test(sec) && /manifest/i.test(sec) && /layout/i.test(sec) && /REPAIR_STALE/.test(sec) && /draftPx/.test(sec) && /approximat/i.test(sec) && /LEGACY_PROJECT_BLOCK/.test(sec));
+  check("R9 CHANGELOG v2.0.0-alpha.3 summarises every PO-PREVIEW requirement (1..7)",
+    [1, 2, 3, 4, 5, 6, 7].every((n) => new RegExp("PO-PREVIEW-" + n + "\\b").test(sec)));
+  check("R9 CHANGELOG has no empty-handed Unreleased section above v2.0.0-alpha.3 (items moved into the release)",
+    !/^## Unreleased\b/m.test(cl.slice(0, cl.search(/^## v2\.0\.0-alpha\.3\b/m))));
+  const sw = fs.readFileSync(path.join(__dirname, "..", "sw.js"), "utf8");
+  check("DEP-02 sw.js VERSION is 2.0.0-alpha.3 (cache name follows the release)", /const VERSION\s*=\s*"2\.0\.0-alpha\.3"/.test(sw));
 });

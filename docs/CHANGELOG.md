@@ -1,6 +1,54 @@
 # Changelog
 
-## Unreleased
+## v2.0.0-alpha.3 — 2026-10-09, real-engine preview and bonded alignment
+
+A patch round before G3 (plan Appendix E), triggered by the alpha.2 user test on the target setup (xTool S1 40 W
+diode with feeder, 1/4" basswood/poplar ply, colour illustrations about 4096 × 3084, bonded relief). It is still not
+SRS-compliant (plan R9); the known-gaps table below lists what is missing. G3.1 (stage 14 only), G3.2 (digits and the
+interior point), G3.3 (inset-outline, position-only interior-mark, sheet numbers) and G3.5 (placement map file,
+bonded assembly text) are pulled forward in part.
+
+- **PO-PREVIEW-1, the preview is the real engine (E1–E5).** Proof, Section, Layers cards, Tilt, overlays, the draft
+  diagnostics and the state badge come from `SBEngine.generate` at quality `draft` in the selected interpretation and
+  construction, so a bonded preview never shows bridges. One request builder (`SBEngine.request`) makes the draft and
+  the fabrication request from the same project; they differ only in `quality` and the raster. The source record is
+  installed on the project at intake (`SBSchema.withSource`). Smoothing and the height filter are stored in mm
+  (`radiusMM`) and converted per raster, so draft and fabrication smooth the same physical size (E3b fidelity check:
+  per-layer area within 8 %, part counts within 2×). A caller-owned draft stage cache skips orient, resample and
+  Kuwahara on a warm edit (E3). The draft size is measured, not assumed (`docs/perf/DRAFT.md`): 720 px on the long
+  side for both presets, with a per-device `draftPxCap` in `SBSchema.limits` (amends PO-LASER-4). Sliders commit on
+  release, the previous result stays visible under "Updating draft…", and the status line reads "Draft
+  (approximate; …)". The legacy v1.1 pipeline has left the app; it stays in `js/engine.js` as the DEP-04 test oracle.
+- **PO-PREVIEW-2, Preview at fabrication resolution (E6).** A Review-stage button runs the exact fabrication
+  `generate` (same request and `geometryHash` as the export) and shows it in every view, with a busy note and an
+  estimate before the page blocks. Download delivers files only from a fabrication result that is on screen: with
+  the draft shown, the first click shows the fabrication result and opens the review, the second downloads.
+  `preview.png` renders the exported fabrication result without overlays or focus. The review header, `settings.json`
+  and `ASSEMBLY.md` carry the short geometry hash.
+- **PO-PREVIEW-3, presets and colour images (E7).** A Preset select (Plywood (bonded), Acrylic (connected)) with a
+  review dialog of every replaced value; the app starts on Plywood, whose guides are `inset-outline`. A colour source
+  under a height preset (JPEG, colour palette PNG, colour truecolour PNG) switches to Tonal (light-front, 1.65 mm
+  smoothing) with the `SOURCE_COLOR_TONAL` notice; gray and RGB-equal PNGs stay Height.
+- **PO-PREVIEW-4, source diagnostics up front (E8).** Every preflight warning (`FAB_EXCEEDS_SOURCE` with its px
+  shortfall, `FAB_PITCH_CAPPED`, `EXIF_AMBIGUOUS`) is shown at load and in a non-ackable "Fabrication resolution"
+  group of the draft panel, with `FAB_COMPLEXITY_LIKELY` when the draft predicts the fabrication run will exceed a
+  device cap.
+- **PO-PREVIEW-5, concealed alignment for bonded relief (E9–E11).** Stage 14 of every bonded `generate` scores the
+  guides of layer k+1 on layer k inside the concealed region (Appendix B defaults: conceal inset 0.5 mm, score width
+  0.2 mm, allowance 0.5 mm, sheet number 3 mm) and a stroke-font sheet number in a hidden area of every sheet but the
+  top one (`SBFont`, `SBGeom.placeBox`, `SBGuides.build`/`validate` with `GUIDE_UNCONTAINED`). Parts without a hidden
+  area get one aggregated `GUIDE_OMITTED` warning per layer. Guides draw in blue on the Layers cards ("approximate at
+  draft") and never on the Proof; guide controls sit under Construction. Bonded bundles add `placement_map.svg` (not a
+  cut file) at the ZIP root with part IDs.
+- **PO-PREVIEW-6, draft clips re-reviewed at fabrication (E1, E12).** A clip accepted on the draft now replays at
+  fabrication as the `REPAIR_REVIEW_FAB` warning instead of hard-blocking as `REPAIR_STALE` (the root cause was the
+  missing source record, E1). The Fabrication review offers Show, Keep (acknowledge for that fabrication result) and
+  Revert.
+- **PO-PREVIEW-7, bonded-aware export extras (E6, E13).** `SBDocs.assembly` writes ASSEMBLY.md from the fabrication
+  snapshot: exported sheets and omitted layers, stack height, glue-up order (front face up, never mirrored), guides
+  and sheet numbers, `placement_map.svg`, machine and the external kerf note, no speed or power. `settings.json` keeps
+  the 19 v1.1 keys and adds a `project` block (modes, thickness, pitch, raster, hash, engine version).
+- **Version** `2.0.0-alpha.3` (`APP_VERSION`, service-worker cache). Also in this release:
 
 - **Desktop source images up to 25 megapixels (IMG-07, product-owner decision 2026-10-08).** The desktop
   source cap is raised from 16 MP to 25 MP, the measured desktop fabrication pixel budget, so a large photo or
@@ -14,6 +62,27 @@
   to simpler art and suggests simplifying it or opening the project on a desktop.
 - **Plan bookkeeping:** G2.0, G2.1 and G2.1b checkboxes ticked; Result notes for G2.0–G2.7; G2.2b
   cross-references point at G2.7b; the stale G2.1b mobile test name is corrected (1 Mpx: 1223 × 816 at 368 µm).
+
+### Known gaps (alpha.3)
+
+| Area | Gap in alpha.3 | Arrives in |
+|---|---|---|
+| Main thread | No worker: every draft and the fabrication preview block the page while they run (the fabrication preview shows a busy note and an estimate first) | G4.1 |
+| Draft size | The draft is 720 px on the long side, far below the requested 2–4 Mpx: drafts of 1.8–3.1 Mpx measured 6–10 s per edit on the main thread, and 1024 px already missed the 3.0 s warm p95 (`docs/perf/DRAFT.md`). With stage-14 guides the plywood draft is about 3.8 s warm p95 at 720 px, above that target. Exact detail is in Preview at fabrication resolution | G4.1, G4.4 |
+| Connected drafts | Connected mode with smooth corners is slower still (KI-CONN-PERF; acrylic 720 px warm p95 8.9 s realistic, 28.5 s busy) | G4.1 |
+| Draft fidelity | The draft approximates the cut geometry: same physical filter radii, within the E3b tolerance, but a coarser raster; guides on draft cards are approximate. Only the fabrication preview is exact | — (by design) |
+| Labels | No part-ID labels on parts (they are on `placement_map.svg`); digits only in the stroke font; the connected sheet keeps the v1.1 `<text>` label | G3.2, G3.3 |
+| Interior mark | Position-only cross, no rotation tick | G3.3 |
+| Registration holes | No registration holes for bonded relief (holes off, the guides align the stack) | G3.4 |
+| Project file | No `.sbrproj` save or load and no undo; acknowledgements and repairs are runtime only | G3.6–G3.8 |
+| Manifest and layout | No `manifest.json` or `validation.json`; legacy flat layout, not the §9.4 `cuts/` + `proof/` layout (`placement_map.svg` sits at the ZIP root) | G3.9 |
+| Repairs from alpha.2 | Clip repairs reviewed under alpha.2 go `REPAIR_STALE` once and draft acknowledgements reset once (rescoped to `geometryHash`); runtime only, no saved projects are affected | — (one-time) |
+| `draftPx` in the key | `geometry.draftPx` is part of `geometryKey`, so a draft-budget change resets fabrication acknowledgements and makes clips `REPAIR_STALE` once although the fabrication geometry is identical | G3.6/G3.8 |
+| Fabrication preview | The on-screen raster of the fabrication preview is capped at 1600 px; its value is exact geometry and diagnostics, not a sharper picture | — |
+| Settings re-import | A v2 `settings.json` re-imports as a v1.1 connected project (lossy; the `project` block raises `LEGACY_PROJECT_BLOCK`); smoothing radii in older settings are converted from pixels at the v1.1 720 px pitch | G3.8 (`.sbrproj`) |
+| Presets | No Paper/card preset (needs thickness, minimum feature and kerf values from the product owner) | open |
+| Calibration | Plywood profile uncalibrated (`MAT_UNCALIBRATED`); feature widths provisional | G5.1 |
+| Fabrication guide cost | The fabrication-run share of stage 14 (E-R4, `node test/bench.js large`) has not been measured | G4.4 |
 
 ## v2.0.0-alpha.2 — 2026-10-08, experimental bonded relief
 
