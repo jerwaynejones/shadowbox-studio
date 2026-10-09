@@ -5040,7 +5040,7 @@ suite("support.js/engine.js/proof.js/preview.js/app.js — G2.13d clip dialog an
   check("SUP-04 app.js: Clip to lower layer opens proposeClip, Accept calls applyClip, Revert calls removeRepair; the shown result replays repairs (snapshot.repairsApplied, alpha.3 E5)",
     /Clip to lower layer/.test(appSrc) && /SBSupport\.proposeClip\(/.test(appSrc) && /SBSupport\.applyClip\(/.test(appSrc) &&
     /SBSupport\.removeRepair\(/.test(appSrc) && /snapshot\.repairsApplied/.test(appSrc) && /preview\.drawClipCard\(/.test(appSrc) && /Revert/.test(appSrc));
-  check("SUP-04 app.js: REPAIR_STALE and REPAIR_REVIEW_FAB items link back to the clip dialog; the export passes the project (alpha.2: generate replays construction.repairs at fabrication; alpha.3 E1: through SBEngine.request)",
+  check("SUP-04 app.js: REPAIR_STALE items link back to the clip dialog (alpha.3 E12: REPAIR_REVIEW_FAB is re-reviewed in the Fabrication review); the export passes the project (alpha.2: generate replays construction.repairs at fabrication; alpha.3 E1: through SBEngine.request)",
     /REPAIR_STALE/.test(appSrc) && /REPAIR_REVIEW_FAB/.test(appSrc) && /SBProof\.repairForDiagnostic\(/.test(appSrc) &&
     /SBEngine\.request\(project, run\.src, \{ quality: "fabrication"/.test(appSrc) && /SBEngine\.fabricationFiles\([^)]*project/.test(appSrc));
 });
@@ -5953,3 +5953,30 @@ suite("engine.js/svgout.js/app.js — alpha.3 E11 guides in generate (G3.1 stage
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();
+
+// ------------------------------------------------ alpha.3 E12 (re-review draft repairs in the Fabrication review)
+suite("app.js/support.js — alpha.3 E12 repair re-review at fabrication (SUP-04, PO-PREVIEW-6, EXP-07)", () => {
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8");
+  const fn = (name) => { const i = appSrc.indexOf("function " + name + "("); return i < 0 ? "" : appSrc.slice(i, appSrc.indexOf("\n  }\n", i)); };
+  check("PO-PREVIEW-6 REPAIR_REVIEW_FAB items offer Show, Keep and Revert in the Fabrication review",
+    /REPAIR_REVIEW_FAB/.test(appSrc) && /Keep this clip at fabrication resolution/.test(appSrc) && /SBSupport\.removeRepair\(/.test(appSrc) && /showFab\(\)/.test(appSrc));
+  check("UI-04 Show focuses the diagnostic on the fabrication result", /focusDiagnostic\(/.test(appSrc) && /run\.shown === run\.fab/.test(appSrc));
+  const act = fn("fabRepairActions"), item = fn("diagItem"), clip = fn("clipAction");
+  check("PO-PREVIEW-6 fabRepairActions: Show (showFab then focusDiagnostic), Revert (revertRepair of the entry the fab run replayed)",
+    /showFab\(\)/.test(act) && /focusDiagnostic\(/.test(act) && /revertRepair\(/.test(act) &&
+    /SBProof\.repairForDiagnostic\(d, [^)]*run\.fab\.snapshot\.repairsApplied/.test(act) && act.indexOf("showFab()") < act.indexOf("focusDiagnostic("));
+  check("PO-PREVIEW-6 diagItem gives a fabrication REPAIR_REVIEW_FAB its actions in every panel (also while the draft is shown) and the Keep label",
+    /r === run\.fab && d\.code === "REPAIR_REVIEW_FAB"/.test(item) && /fabRepairActions\(/.test(item) && /Keep this clip at fabrication resolution/.test(item));
+  check("SUP-04 REPAIR_STALE keeps its \"Review clip N…\" link; REPAIR_REVIEW_FAB no longer opens the draft clip dialog",
+    /d\.code === "REPAIR_STALE"/.test(clip) && /Review clip /.test(clip) && !/REPAIR_REVIEW_FAB/.test(clip));
+  check("UI-06 a Revert (a geometry edit) returns the view to the draft", /showDraft\(\)/.test(fn("recompute")) && /recompute\(\)/.test(fn("commitProject")) &&
+    /commitProject\(next, "repair"\)/.test(fn("revertRepair")));
+  const S = SBSchema, P = SBSupport, p = S.defaults("plywood"); p.source = S.sourceTemplate();
+  const q = Object.assign(JSON.parse(JSON.stringify(p)), { revision: 3 }); q.construction.repairs = [{ op: "clip-to-lower", layer: 1, sourceRevision: 2, resultRevision: 3, keyHash: "0".repeat(64),
+    reviewed: { quality: "draft", beforeHash: "0".repeat(64), afterHash: "0".repeat(64), removedAreaMM2: 1, partCountBefore: 1, partCountAfter: 1 } }];
+  const r = P.removeRepair(q, 0);
+  check("SUP-04 Revert in the fabrication review bumps the revision (the fab result becomes stale)", r.revision === 4 && r.construction.repairs.length === 0);
+  const dg = SBDiag.make("REPAIR_REVIEW_FAB", { layer: 1, areaMM2: 2.5, measured: { value: 2.5, unit: "mm2" }, detail: "clip-to-lower 1 was reviewed at draft quality; at this resolution it removes 2.5 mm² and parts 3 → 2" });
+  check("EXP-07 the REPAIR_REVIEW_FAB item shows its fabrication mm² and part counts", /2\.5 mm²/.test(SBDiag.describe(dg).message) && /parts 3 → 2/.test(SBDiag.describe(dg).message));
+  check("PO-PREVIEW-6 the replayed entry is the one Revert removes", SBProof.repairForDiagnostic(dg, q.construction.repairs, [0]) === 0);
+});

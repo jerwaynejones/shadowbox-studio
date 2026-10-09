@@ -10042,6 +10042,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   function diagItem(d, it, r, onScreen) {
     const li = document.createElement("li");
     li.className = "diag-item";
+    li.dataset.diagId = d.id || "";
     const go = it.navigable ? document.createElement("button") : document.createElement("div");
     go.className = "diag-go";
     if (it.navigable) {
@@ -10059,7 +10060,10 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     fix.className = "diag-fix";
     fix.textContent = "Fix: " + it.fix;
     li.appendChild(fix);
-    const act = onScreen ? clipAction(d) : null;
+    // alpha.3 E12 (PO-PREVIEW-6): a draft clip replayed on the fabrication result is re-reviewed there (Show, Keep, Revert)
+    // in every panel that lists run.fab, also while the draft is on screen; other repair actions only on the shown result
+    const fabRepair = !!(r && r.snapshot) && r === run.fab && d.code === "REPAIR_REVIEW_FAB";
+    const act = fabRepair ? fabRepairActions(d, it) : onScreen ? clipAction(d) : null;
     if (act) li.appendChild(act);
     if (it.severity === "warning" && r && r.snapshot) {
       const key = SBDiag.ackKey(d, r.snapshot.geometryHash);
@@ -10077,7 +10081,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       });
       cb.dataset.key = key;
       lab.appendChild(cb);
-      lab.appendChild(document.createTextNode(r === run.fab ? "Acknowledge for this fabrication result" : "Acknowledge for this result"));
+      lab.appendChild(document.createTextNode(fabRepair ? "Keep this clip at fabrication resolution"
+        : r === run.fab ? "Acknowledge for this fabrication result" : "Acknowledge for this result"));
       li.appendChild(lab);
     }
     if (run.focus && it.focus && run.focus.key === d.id) li.setAttribute("aria-current", "true");
@@ -10114,14 +10119,15 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
 
   /**
    * The repair action of one diagnostic item: BOND_UNSUPPORTED (bonded, layer ≥ 1) offers "Clip to lower layer…";
-   * REPAIR_STALE and REPAIR_REVIEW_FAB link back to the clip dialog for the repair entry they refer to.
+   * REPAIR_STALE links back to the clip dialog for the repair entry it refers to. alpha.3 E12: REPAIR_REVIEW_FAB is
+   * re-reviewed on the fabrication result instead (fabRepairActions: Show, Keep, Revert).
    */
   function clipAction(d) {
     const repairs = project.construction.repairs;
     let label = null, ri = -1;
     const shownMode = run.shown && run.shown.snapshot ? run.shown.snapshot.construction.mode : null;   // the shown result's own mode
     if (d.code === "BOND_UNSUPPORTED" && Number.isInteger(d.layer) && d.layer >= 1 && shownMode === "bonded-relief") label = "Clip to lower layer…";
-    else if (d.code === "REPAIR_STALE" || d.code === "REPAIR_REVIEW_FAB") {
+    else if (d.code === "REPAIR_STALE") {
       ri = SBProof.repairForDiagnostic(d, repairs, shownApplied());
       if (ri >= 0) label = "Review clip " + (ri + 1) + "…";
     }
@@ -10132,6 +10138,45 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     b.type = "button"; b.className = "btn"; b.textContent = label;
     b.addEventListener("click", () => openClipDialog(d.layer, ri, b));
     box.appendChild(b);
+    return box;
+  }
+
+  /**
+   * alpha.3 E12 (PO-PREVIEW-6, SUP-04, EXP-07; Appendix E Q10): the actions of a REPAIR_REVIEW_FAB item of the current
+   * fabrication result (a clip reviewed on the draft and replayed at fabrication; the item's text carries the removed
+   * mm² and part counts at fabrication resolution). Show: showFab() (the views switch to the fabrication result), then
+   * focusDiagnostic on the clipped layer and region there. Keep is the item's acknowledgement, labelled "Keep this clip
+   * at fabrication resolution" in diagItem (scoped to the fabrication geometryHash; the stored draft review is not
+   * promoted). Revert: revertRepair of the entry the fabrication run replayed (SBSupport.removeRepair via
+   * commitProject), so the fabrication run goes stale and the view returns to the draft.
+   */
+  function fabRepairActions(d, it) {
+    if (!fabCurrent()) return null;
+    const ri = SBProof.repairForDiagnostic(d, project.construction.repairs, run.fab.snapshot.repairsApplied);
+    const box = document.createElement("div");
+    box.className = "diag-actions";
+    const sb = document.createElement("button");
+    sb.type = "button"; sb.className = "btn"; sb.textContent = "Show";
+    sb.setAttribute("aria-label", "Show " + it.where + " on the fabrication result");
+    sb.addEventListener("click", () => {
+      const home = sb.closest(".diag-list"), homeId = home ? home.id : "fab-list";
+      showFab();
+      if (!it.focus) return;
+      const list = $(homeId) || $("fab-list");
+      const li = (list ? Array.from(list.querySelectorAll(".diag-item")).find((x) => x.dataset.diagId === (d.id || "")) : null)
+        || document.createElement("li");
+      focusDiagnostic(d, it, li);
+    });
+    box.appendChild(sb);
+    if (ri >= 0) {
+      const rb = document.createElement("button");
+      rb.type = "button"; rb.className = "btn";
+      const later = project.construction.repairs.length - 1 - ri;
+      rb.textContent = later ? "Revert (and the " + later + " later)" : "Revert";
+      rb.setAttribute("aria-label", "Revert clip " + (ri + 1) + (later ? " and the " + later + " later repairs" : ""));
+      rb.addEventListener("click", () => revertRepair(ri));
+      box.appendChild(rb);
+    }
     return box;
   }
 
@@ -10213,7 +10258,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       const row = SBProof.repairRows(repairs, { applied })[ri];
       why = "Repair " + (ri + 1) + ": " + row.text;
       if (stale && !replaceable) why += " Later repairs depend on it: revert it first (the later ones are reverted with it), then review the clip again.";
-      else if (!stale) why += " It is applied on this draft; its fabrication review happens in the export review.";
+      else if (!stale) why += " It is applied on this draft; it is re-reviewed (Keep or Revert) in the Fabrication review.";
     }
     if (review.empty && !fromRepair) why = "Nothing to accept.";
     note.textContent = why; note.hidden = !why;
@@ -10597,7 +10642,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    * renderer (renderDiagnostics at scope "fabrication": header with the raster, time and short geometryHash, the items
    * grouped by severity, each warning with "Acknowledge for this fabrication result" keyed by SBDiag.ackKey on the fab
    * snapshot's geometryHash). alpha.3 E6: its items are navigable while run.shown === run.fab (the Proof then shows the
-   * fabrication geometry). Hidden while there is no current fabrication run.
+   * fabrication geometry). alpha.3 E12 (PO-PREVIEW-6): a REPAIR_REVIEW_FAB item (a draft-reviewed clip replayed here)
+   * shows its fabrication mm² and part counts with Show, Keep and Revert (fabRepairActions, diagItem). Hidden while
+   * there is no current fabrication run.
    */
   function renderFabReview() {
     const box = $("fab-review"), list = $("fab-list");
