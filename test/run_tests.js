@@ -6288,6 +6288,125 @@ suite("morph — speed round F5 run-based hole filling and speck removal (NFR-05
   check(`F5 construct morph == all-oracle chain (open/close F4, removeSpecks/fillHoles F5) (${meq}/${mc})`, meq === mc);
 });
 
+// ------------------------------------------------ speed round F6 (plan Appendix F, S5/S2): Kuwahara fast path and band kernel
+suite("raster — speed round F6 Kuwahara fast path and band kernel (NFR-05)", () => {
+  const R = SBRaster, { oracleKuwahara: OK } = require("./oracle_kernels.js");
+  check("F6 SBRaster.kuwaharaSeeds and SBRaster.kuwaharaRows exist", typeof R.kuwaharaSeeds === "function" && typeof R.kuwaharaRows === "function");
+  if (typeof R.kuwaharaSeeds !== "function" || typeof R.kuwaharaRows !== "function") return;
+  let seed = 0x5eed_f6;
+  const rnd = () => { seed = (seed + 0x6d2b79f5) | 0; let t = seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
+  const bytes = (a) => Buffer.from(a.buffer, a.byteOffset, a.byteLength);
+  const same = (a, b) => a && b && a.constructor === b.constructor && a.length === b.length && Buffer.compare(bytes(a), bytes(b)) === 0;
+  const codeOf = (f) => { try { f(); return null; } catch (e) { return e.code || "?"; } };
+  // the global SAT rows, built with alpha.3's recurrence (sat[i] = sat[i − W] + row), as the reference for the seeds
+  const globalSat = (src, w, h, dom) => {
+    const W = w + 1, sat = new Float64Array(W * (h + 1)), sat2 = new Float64Array(W * (h + 1)), cnt = new Float64Array(W * (h + 1));
+    for (let y = 0; y < h; y++) {
+      let row = 0, row2 = 0, rowN = 0;
+      for (let x = 0; x < w; x++) {
+        if (!dom || dom[y * w + x]) { const v = src[y * w + x]; row += v; row2 += v * v; rowN++; }
+        const i = (y + 1) * W + (x + 1);
+        sat[i] = sat[i - W] + row; sat2[i] = sat2[i - W] + row2; cnt[i] = cnt[i - W] + rowN;
+      }
+    }
+    const rowOf = (T, s) => T.slice(s * W, (s + 1) * W);
+    return { row: (s) => ({ sat: rowOf(sat, s), sat2: rowOf(sat2, s), cnt: rowOf(cnt, s) }) };
+  };
+  const RADII = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 17, 25, 50];
+  const makeSrc = (w, h, kind) => {
+    const a = new Float32Array(w * h);
+    if (kind === 0) for (let i = 0; i < a.length; i++) a[i] = ri(0, 255);                      // integer
+    else if (kind === 1) for (let i = 0; i < a.length; i++) a[i] = rnd() * 255;                // non-integer
+    else if (kind === 2) for (let i = 0; i < a.length; i++) a[i] = 0.2126 * ri(0, 255) + 0.7152 * ri(0, 255) + 0.0722 * ri(0, 255); // luminance-like
+    else if (kind === 3) { const c = rnd() * 255; for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) a[y * w + x] = x < w / 2 && y < h / 2 ? c : (x + y) % 3 === 0 ? c : Math.floor(c / 2) + 0.5; } // ties
+    else for (let i = 0; i < a.length; i++) a[i] = rnd() * 255 * 2 ** -ri(0, 40);            // wide dynamic range: Float64 SAT sums round, so operand order shows
+    return a;
+  };
+  const makeDom = (w, h, kind) => {
+    if (kind === 0) return null;
+    const d = new Uint8Array(w * h).fill(1);
+    if (kind === 1) { for (let i = 0; i < d.length; i++) if (rnd() < 0.25) d[i] = 0; }            // holes
+    else if (kind === 2) { const k = ri(1, 3); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (x < k || y < k || x >= w - k || y >= h - k) d[y * w + x] = 0; } // edge strips
+    else { const cx = ri(0, w - 1), cy = ri(0, h - 1), rr = ri(1, Math.max(1, Math.min(w, h))); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if ((x - cx) ** 2 + (y - cy) ** 2 < rr * rr) d[y * w + x] = 0; } // a big hole
+    return d;
+  };
+  const cutsFor = (h, nb, t) => {
+    if (nb === 1) return [0, h];
+    const set = new Set();
+    if (t % 4 === 0) set.add(h - 1);                                   // a one-row tail band
+    if (t % 4 === 1) for (let b = 1; b < nb; b++) set.add(Math.floor((b * h) / nb)); // even bands
+    while (set.size < nb - 1) set.add(ri(1, h - 1));                   // random (often thinner than r)
+    return [0, ...[...set].sort((a, b) => a - b).slice(0, nb - 1), h];
+  };
+  let cases = 0, wholeEq = 0, bandCases = 0, bandEq = 0, seedCases = 0, seedEq = 0, thin = 0, nonInt = 0, domCases = 0, bigR = 0, unmut = 0;
+  const radiiSeen = new Set(), nbSeen = new Set(), passSeen = new Set();
+  for (let t = 0; t < 480; t++) {
+    const r = RADII[t % RADII.length], w = ri(1, t % 7 === 0 ? 12 : 64), h = ri(1, t % 5 === 0 ? 10 : 56), passes = 1 + (t % 3);
+    const src = makeSrc(w, h, t % 5), dom = makeDom(w, h, (t >> 2) % 4);
+    cases++; radiiSeen.add(r); passSeen.add(passes);
+    if (t % 5 === 1 || t % 5 === 4) nonInt++;
+    if (dom) domCases++;
+    if (r >= 16) bigR++;
+    const want = OK.kuwahara(src, w, h, r, passes, dom), got = R.kuwahara(src, w, h, r, passes, dom);
+    if (same(got, want)) wholeEq++;
+    // per pass: band kernel over random band splits == the oracle pass, and the seeds == the global SAT rows
+    let cur = src;
+    for (let p = 0; p < passes; p++) {
+      const once = dom ? OK.kuwaharaDomainOnce(cur, w, h, r, dom) : OK.kuwaharaOnce(cur, w, h, r);
+      const nb = Math.min(h, 1 + ((t + p) % 9)), cuts = cutsFor(h, nb, t + p);
+      nbSeen.add(nb);
+      const bands = []; for (let b = 0; b < cuts.length - 1; b++) bands.push([cuts[b], cuts[b + 1]]);
+      const curCopy = cur.slice(), domCopy = dom && dom.slice();
+      const seeds = R.kuwaharaSeeds(cur, w, h, bands, r, dom), G = globalSat(cur, w, h, dom);
+      const out = new Float32Array(w * h);
+      let ok = seeds.length === bands.length;
+      bands.forEach(([y0, y1], b) => {
+        const sd = seeds[b], s = Math.max(0, y0 - r), e = Math.min(h, y1 + r), g = G.row(s);
+        seedCases++;
+        if (sd && sd.s === s && same(sd.sat, g.sat) && same(sd.sat2, g.sat2) && (dom ? same(sd.cnt, g.cnt) : sd.cnt === undefined)) seedEq++;
+        if (y1 - y0 < r) thin++;
+        const part = R.kuwaharaRows(cur.slice(s * w, e * w), w, h, r, sd, y0, y1, dom ? dom.slice(s * w, e * w) : undefined);
+        if (!(part instanceof Float32Array) || part.length !== (y1 - y0) * w) ok = false; else out.set(part, y0 * w);
+      });
+      bandCases++;
+      if (ok && same(out, once)) bandEq++;
+      if (same(cur, curCopy) && (!dom || same(dom, domCopy))) unmut++;
+      cur = once;
+    }
+  }
+  check(`F6 kuwahara == alpha.3 oracle byte-for-byte (${wholeEq}/${cases}; r 1..12,16,17,25,50; passes 1..3; ${nonInt} non-integer, ${domCases} with a domain, ${bigR} with r ≥ 16)`,
+    wholeEq === cases && nonInt > 50 && domCases > 200 && bigR > 80 && radiiSeen.size === RADII.length && passSeen.size === 3);
+  check(`F6 band kernel: concatenated kuwaharaRows bands == the oracle pass (${bandEq}/${bandCases}; band counts ${[...nbSeen].sort((a, b) => a - b).join(",")}; ${thin} bands thinner than r)`,
+    bandEq === bandCases && nbSeen.size === 9 && thin > 200);
+  check(`F6 kuwaharaSeeds rows byte-equal the global SAT/SAT2/cnt rows at s = max(0, y0 − r) (${seedEq}/${seedCases})`, seedEq === seedCases && seedCases > 1000);
+  check(`F6 kuwaharaSeeds/kuwaharaRows never write their inputs (${unmut}/${bandCases})`, unmut === bandCases);
+  // the seed at s = 0 is all zero; seed rows are plain Float64 copies (byteOffset 0, own buffer, transferable)
+  { const src = makeSrc(9, 7, 1), sd = R.kuwaharaSeeds(src, 9, 7, [[0, 3], [3, 7]], 2, makeDom(9, 7, 1));
+    check("F6 seed for s = 0 is all zero; seeds own their buffers (transferable)", sd[0].s === 0 && [sd[0].sat, sd[0].sat2, sd[0].cnt].every((a) => a instanceof Float64Array && a.length === 10 && a.every((v) => v === 0)) &&
+      sd.every((x) => [x.sat, x.sat2, x.cnt].every((a) => a.byteOffset === 0 && a.byteLength === a.buffer.byteLength))); }
+  // a single band [0, h) with the zero seed is kuwaharaOnce
+  { const w = 23, h = 19, src = makeSrc(w, h, 1), sd = R.kuwaharaSeeds(src, w, h, [[0, h]], 4)[0];
+    check("F6 one band [0, h) with seed 0 == kuwaharaOnce", same(R.kuwaharaRows(src, w, h, 4, sd, 0, h), OK.kuwaharaOnce(src, w, h, 4))); }
+  // argument checks
+  { const w = 8, h = 6, src = makeSrc(w, h, 0), sd = R.kuwaharaSeeds(src, w, h, [[2, 4]], 1)[0];
+    check("F6 kuwaharaRows rejects a seed for the wrong row, a short srcRows, a bad band and a missing cnt with RASTER_ARG",
+      codeOf(() => R.kuwaharaRows(src.slice(0, 5 * w), w, h, 1, { ...sd, s: 0 }, 2, 4)) === "RASTER_ARG" &&
+      codeOf(() => R.kuwaharaRows(src.slice(w, 3 * w), w, h, 1, sd, 2, 4)) === "RASTER_ARG" &&
+      codeOf(() => R.kuwaharaRows(src.slice(w, 5 * w), w, h, 1, sd, 4, 2)) === "RASTER_ARG" &&
+      codeOf(() => R.kuwaharaRows(src.slice(w, 5 * w), w, h, 1, sd, 2, 7)) === "RASTER_ARG" &&
+      codeOf(() => R.kuwaharaRows(src.slice(w, 5 * w), w, h, 1, sd, 2, 4, new Uint8Array(4 * w).fill(1))) === "RASTER_ARG" &&
+      codeOf(() => R.kuwaharaRows(src.slice(w, 5 * w), w, h, 1, sd, 2, 4)) === null);
+    check("F6 kuwaharaSeeds rejects a bad band and r < 1 with RASTER_ARG",
+      codeOf(() => R.kuwaharaSeeds(src, w, h, [[3, 2]], 1)) === "RASTER_ARG" && codeOf(() => R.kuwaharaSeeds(src, w, h, [[0, 7]], 1)) === "RASTER_ARG" &&
+      codeOf(() => R.kuwaharaSeeds(src, w, h, [[0, 6]], 0)) === "RASTER_ARG"); }
+  // r < 1 / passes < 1 keep returning a copy; a non-integer radius (legacy v1 path) still matches the oracle
+  { const w = 11, h = 9, src = makeSrc(w, h, 1);
+    check("F6 r < 1 or passes < 1 returns a copy; a non-integer radius matches the oracle bit-for-bit",
+      same(R.kuwahara(src, w, h, 0, 2), src) && R.kuwahara(src, w, h, 0, 2) !== src && same(R.kuwahara(src, w, h, 2, 0), src) &&
+      [1.5, 2.25].every((rr) => { const a = R.kuwahara(src, w, h, rr, 2), b = OK.kuwahara(src, w, h, rr, 2); return Buffer.compare(bytes(a), bytes(b)) === 0; })); }
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

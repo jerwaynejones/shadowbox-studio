@@ -4656,81 +4656,230 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   // pixels are copied unchanged and never influence an in-domain result. An
   // in-domain pixel is in all four of its own windows, so every n ≥ 1. With an
   // all-ones domain the arithmetic is the same as kuwaharaOnce, value for value.
+  //
+  // Speed round F6 (plan Appendix F, S5/S2): both passes are one band [0, h)
+  // of the band kernel with the all-zero seed (SAT row 0). Outputs are
+  // byte-identical to alpha.3 (test/oracle_kernels.js oracleKuwahara).
   function kuwaharaDomainOnce(src, w, h, r, domain) {
-    const W = w + 1, H = h + 1;
-    const sat = new Float64Array(W * H), sat2 = new Float64Array(W * H), cnt = new Float64Array(W * H);
-    for (let y = 0; y < h; y++) {
-      let row = 0, row2 = 0, rowN = 0;
-      for (let x = 0; x < w; x++) {
-        if (domain[y * w + x]) { const v = src[y * w + x]; row += v; row2 += v * v; rowN++; }
-        const i = (y + 1) * W + (x + 1);
-        sat[i] = sat[i - W] + row; sat2[i] = sat2[i - W] + row2; cnt[i] = cnt[i - W] + rowN;
-      }
-    }
-    const boxSum = (T, x0, y0, x1, y1) =>
-      T[y1 * W + x1] - T[y0 * W + x1] - T[y1 * W + x0] + T[y0 * W + x0];
-    const out = new Float32Array(w * h);
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const idx = y * w + x;
-        if (!domain[idx]) { out[idx] = src[idx]; continue; }
-        let bestVar = Infinity, bestMean = src[idx];
-        for (let q = 0; q < 4; q++) {
-          const x0 = SBUtilClampI(q & 1 ? x : x - r, 0, w);
-          const x1 = SBUtilClampI((q & 1 ? x + r : x) + 1, 0, w);
-          const y0 = SBUtilClampI(q & 2 ? y : y - r, 0, h);
-          const y1 = SBUtilClampI((q & 2 ? y + r : y) + 1, 0, h);
-          const n = boxSum(cnt, x0, y0, x1, y1);
-          if (n <= 0) continue;
-          const mean = boxSum(sat, x0, y0, x1, y1) / n;
-          const variance = boxSum(sat2, x0, y0, x1, y1) / n - mean * mean;
-          if (variance < bestVar) { bestVar = variance; bestMean = mean; }
-        }
-        out[idx] = bestMean;
-      }
-    }
-    return out;
+    return kuwaharaBand(src, w, h, r, zeroSeed(w, true), 0, h, domain);
   }
 
   function kuwaharaOnce(src, w, h, r) {
-    const W = w + 1, H = h + 1;
-    // Summed-area tables of value and value² (Float64 to avoid precision drift).
-    const sat = new Float64Array(W * H);
-    const sat2 = new Float64Array(W * H);
-    for (let y = 0; y < h; y++) {
-      let row = 0, row2 = 0;
-      for (let x = 0; x < w; x++) {
-        const v = src[y * w + x];
-        row += v; row2 += v * v;
-        const i = (y + 1) * W + (x + 1);
-        sat[i] = sat[i - W] + row;
-        sat2[i] = sat2[i - W] + row2;
+    return kuwaharaBand(src, w, h, r, zeroSeed(w, false), 0, h, null);
+  }
+
+  function zeroSeed(w, withCnt) {
+    const W = w + 1, s = { s: 0, sat: new Float64Array(W), sat2: new Float64Array(W) };
+    if (withCnt) s.cnt = new Float64Array(W);
+    return s;
+  }
+
+  function kfail(msg) { const e = new Error("RASTER_ARG: " + msg); e.code = "RASTER_ARG"; return e; }
+  const isNonNegInt = (v) => Number.isSafeInteger(v) && v >= 0;
+
+  /**
+   * Speed round F6 (plan Appendix F, F.3): seed rows for Kuwahara row bands.
+   * One rolling (w+1)-wide scan of the source with alpha.3's per-row
+   * operations (sat[i] = sat[i − W] + row, in place on the rolling row) keeps
+   * only the global SAT/SAT2 (and, with a domain, cnt) row at each band seed
+   * s = max(0, y0 − r); a full SAT is never allocated. Seed rows are therefore
+   * byte-equal to the rows of the global SAT, so a band rebuilt from its seed
+   * computes exactly the operands the whole-image pass computes.
+   * @param {Float32Array} src  w·h values
+   * @param {Array<[number, number]>} bands  output row ranges [y0, y1), 0 ≤ y0 < y1 ≤ h
+   * @param {number} r  window radius ≥ 1
+   * @param {Uint8Array|null} [domain]  w·h in-domain flags (adds `cnt`)
+   * @returns {Array<{s, sat: Float64Array, sat2: Float64Array, cnt?: Float64Array}>} one per band, in band order;
+   *   every row owns its buffer (transferable).
+   */
+  R.kuwaharaSeeds = function (src, w, h, bands, r, domain) {
+    if (!isNonNegInt(w) || !isNonNegInt(h) || !src || src.length < w * h) throw kfail("kuwaharaSeeds needs w·h source values");
+    if (!(r >= 1)) throw kfail("kuwaharaSeeds needs r ≥ 1");
+    if (!Array.isArray(bands)) throw kfail("kuwaharaSeeds needs an array of [y0, y1) bands");
+    const dom = domain || null;
+    if (dom && dom.length < w * h) throw kfail("domain shorter than w·h");
+    const ss = bands.map((b) => {
+      const y0 = b && b[0], y1 = b && b[1];
+      if (!isNonNegInt(y0) || !isNonNegInt(y1) || y0 >= y1 || y1 > h) throw kfail("band [" + y0 + ", " + y1 + ") outside [0, " + h + ")");
+      return Math.max(0, y0 - r);
+    });
+    const W = w + 1, sat = new Float64Array(W), sat2 = new Float64Array(W), cnt = dom ? new Float64Array(W) : null;
+    const want = new Map();                       // seed row → indices of the bands that start there
+    ss.forEach((s, b) => { if (!want.has(s)) want.set(s, []); want.get(s).push(b); });
+    const out = new Array(bands.length);
+    const take = (s) => {
+      const list = want.get(s);
+      if (!list) return;
+      for (const b of list) {
+        const o = { s, sat: sat.slice(), sat2: sat2.slice() };
+        if (dom) o.cnt = cnt.slice();
+        out[b] = o;
+      }
+    };
+    take(0);
+    const last = ss.length ? Math.max(...ss) : 0;
+    for (let y = 0; y < last; y++) {
+      let row = 0, row2 = 0, rowN = 0;
+      const o = y * w;
+      if (dom) {
+        for (let x = 0; x < w; x++) {
+          if (dom[o + x]) { const v = src[o + x]; row += v; row2 += v * v; rowN++; }
+          sat[x + 1] = sat[x + 1] + row; sat2[x + 1] = sat2[x + 1] + row2; cnt[x + 1] = cnt[x + 1] + rowN;
+        }
+      } else {
+        for (let x = 0; x < w; x++) {
+          const v = src[o + x];
+          row += v; row2 += v * v;
+          sat[x + 1] = sat[x + 1] + row;
+          sat2[x + 1] = sat2[x + 1] + row2;
+        }
+      }
+      take(y + 1);
+    }
+    return out;
+  };
+
+  /**
+   * Speed round F6 (plan Appendix F, F.3): the Kuwahara band kernel. Output
+   * rows [y0, y1) of one Kuwahara pass, from the source rows [s, e) with
+   * s = max(0, y0 − r), e = min(h, y1 + r) and the global SAT row s (`seed`,
+   * from kuwaharaSeeds). SAT rows s+1 … e are rebuilt from the seed with the
+   * same operations in the same order as the whole-image pass, so they are
+   * byte-equal to the global SAT rows and the output is byte-equal to the
+   * same rows of kuwaharaOnce / kuwaharaDomainOnce. Inputs are never written.
+   * @param {Float32Array} srcRows  (e − s)·w values: source rows [s, e)
+   * @param {{s, sat, sat2, cnt?}} seed
+   * @param {Uint8Array} [domainRows]  (e − s)·w in-domain flags (needs seed.cnt)
+   * @returns {Float32Array} (y1 − y0)·w
+   */
+  R.kuwaharaRows = function (srcRows, w, h, r, seed, y0, y1, domainRows) {
+    if (!isNonNegInt(w) || !isNonNegInt(h)) throw kfail("kuwaharaRows needs integer w, h");
+    if (!(r >= 1)) throw kfail("kuwaharaRows needs r ≥ 1");
+    if (!isNonNegInt(y0) || !isNonNegInt(y1) || y0 >= y1 || y1 > h) throw kfail("band [" + y0 + ", " + y1 + ") outside [0, " + h + ")");
+    const s = Math.max(0, y0 - r), e = Math.min(h, y1 + r), W = w + 1;
+    if (!seed || seed.s !== s) throw kfail("seed row " + (seed && seed.s) + " != max(0, y0 − r) = " + s);
+    if (!seed.sat || seed.sat.length !== W || !seed.sat2 || seed.sat2.length !== W) throw kfail("seed rows must have w + 1 values");
+    if (!srcRows || srcRows.length !== (e - s) * w) throw kfail("srcRows must hold source rows [" + s + ", " + e + ")");
+    const dom = domainRows || null;
+    if (dom && (dom.length !== (e - s) * w || !seed.cnt || seed.cnt.length !== W)) throw kfail("domainRows must hold rows [" + s + ", " + e + ") and the seed needs cnt");
+    return kuwaharaBand(srcRows, w, h, r, seed, y0, y1, dom);
+  };
+
+  // The band kernel shared by the whole-image pass (one band [0, h), zero
+  // seed) and R.kuwaharaRows. `src` and `domain` hold rows [s, e) only.
+  //
+  // Bit-identity with alpha.3 (F.3): the SAT recurrence, boxSum's operand
+  // order T[y1·W+x1] − T[y0·W+x1] − T[y1·W+x0] + T[y0·W+x0], s/n,
+  // s2/n − mean·mean, the strict `<` and the quadrant order q = 0..3 are
+  // unchanged. The interior block (r ≤ x < w − r, r ≤ y < h − r, integer r)
+  // needs no clamps and, without a domain, has the constant area n = (r+1)²,
+  // the same integer value the clamped path computes there.
+  function kuwaharaBand(src, w, h, r, seed, y0, y1, domain) {
+    const W = w + 1, s = Math.max(0, y0 - r), e = Math.min(h, y1 + r), rows = e - s;
+    const sat = new Float64Array(W * (rows + 1)), sat2 = new Float64Array(W * (rows + 1));
+    const cnt = domain ? new Float64Array(W * (rows + 1)) : null;
+    sat.set(seed.sat); sat2.set(seed.sat2);
+    if (domain) cnt.set(seed.cnt);
+    for (let y = 0; y < rows; y++) {
+      let row = 0, row2 = 0, rowN = 0;
+      const o = y * w;
+      if (domain) {
+        for (let x = 0; x < w; x++) {
+          if (domain[o + x]) { const v = src[o + x]; row += v; row2 += v * v; rowN++; }
+          const i = (y + 1) * W + (x + 1);
+          sat[i] = sat[i - W] + row; sat2[i] = sat2[i - W] + row2; cnt[i] = cnt[i - W] + rowN;
+        }
+      } else {
+        for (let x = 0; x < w; x++) {
+          const v = src[o + x];
+          row += v; row2 += v * v;
+          const i = (y + 1) * W + (x + 1);
+          sat[i] = sat[i - W] + row;
+          sat2[i] = sat2[i - W] + row2;
+        }
       }
     }
-    // Window sum in [x0,x1) x [y0,y1) via inclusion–exclusion.
-    const boxSum = (T, x0, y0, x1, y1) =>
-      T[y1 * W + x1] - T[y0 * W + x1] - T[y1 * W + x0] + T[y0 * W + x0];
 
-    const out = new Float32Array(w * h);
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        let bestVar = Infinity, bestMean = src[y * w + x];
-        // Four quadrant windows anchored at (x,y).
-        for (let q = 0; q < 4; q++) {
-          const x0 = SBUtilClampI(q & 1 ? x : x - r, 0, w);
-          const x1 = SBUtilClampI((q & 1 ? x + r : x) + 1, 0, w);
-          const y0 = SBUtilClampI(q & 2 ? y : y - r, 0, h);
-          const y1 = SBUtilClampI((q & 2 ? y + r : y) + 1, 0, h);
-          const n = (x1 - x0) * (y1 - y0);
-          if (n <= 0) continue;
-          const s = boxSum(sat, x0, y0, x1, y1);
-          const s2 = boxSum(sat2, x0, y0, x1, y1);
-          const mean = s / n;
-          const variance = s2 / n - mean * mean;
+    const out = new Float32Array((y1 - y0) * w);
+    // interior columns [xa, xb) and rows [ya, yb); empty for a non-integer r (legacy path: all clamped)
+    const intR = Number.isInteger(r);
+    const xa = intR ? Math.min(r, w) : w, xb = intR ? Math.max(xa, w - r) : w;
+    const ya = intR ? Math.max(y0, r) : y1, yb = intR ? Math.max(ya, Math.min(y1, h - r)) : y1;
+    const nInt = (r + 1) * (r + 1), nFull = (2 * r + 1) * (2 * r + 1);
+
+    // the clamped path (border strips): alpha.3's per-pixel code, SAT rows shifted by s
+    const clamped = (x, y) => {
+      const li = (y - s) * w + x;
+      if (domain && !domain[li]) return src[li];
+      let bestVar = Infinity, bestMean = src[li];
+      for (let q = 0; q < 4; q++) {
+        const qx0 = SBUtilClampI(q & 1 ? x : x - r, 0, w);
+        const qx1 = SBUtilClampI((q & 1 ? x + r : x) + 1, 0, w);
+        const qy0 = SBUtilClampI(q & 2 ? y : y - r, 0, h);
+        const qy1 = SBUtilClampI((q & 2 ? y + r : y) + 1, 0, h);
+        const b0 = (qy0 - s) * W, b1 = (qy1 - s) * W;
+        let n;
+        if (domain) n = cnt[b1 + qx1] - cnt[b0 + qx1] - cnt[b1 + qx0] + cnt[b0 + qx0];
+        else n = (qx1 - qx0) * (qy1 - qy0);
+        if (n <= 0) continue;
+        const sm = sat[b1 + qx1] - sat[b0 + qx1] - sat[b1 + qx0] + sat[b0 + qx0];
+        const sm2 = sat2[b1 + qx1] - sat2[b0 + qx1] - sat2[b1 + qx0] + sat2[b0 + qx0];
+        const mean = sm / n;
+        const variance = sm2 / n - mean * mean;
+        if (variance < bestVar) { bestVar = variance; bestMean = mean; }
+      }
+      return bestMean;
+    };
+
+    for (let y = y0; y < y1; y++) {
+      const oo = (y - y0) * w;
+      if (y < ya || y >= yb) { for (let x = 0; x < w; x++) out[oo + x] = clamped(x, y); continue; }
+      for (let x = 0; x < xa; x++) out[oo + x] = clamped(x, y);
+      // interior: rows A = y − r, B = y, C = y + 1, D = y + r + 1 (SAT rows, shifted by s)
+      const A = (y - r - s) * W, B = (y - s) * W, Cr = (y + 1 - s) * W, Dr = (y + r + 1 - s) * W;
+      const li = (y - s) * w;
+      for (let x = xa; x < xb; x++) {
+        if (domain && !domain[li + x]) { out[oo + x] = src[li + x]; continue; }
+        const xl = x - r, xm = x, xm1 = x + 1, xr = x + r + 1;
+        let bestVar = Infinity, bestMean = src[li + x], n, sm, sm2, mean, variance;
+        // With a domain: when the whole (2r+1)² neighbourhood is in-domain (one exact integer count), every
+        // quadrant's count is (r+1)² — the same value cnt gives — so the per-quadrant count lookups are skipped.
+        const full = !domain || cnt[Dr + xr] - cnt[A + xr] - cnt[Dr + xl] + cnt[A + xl] === nFull;
+        // q = 0: [x − r, x + 1) × [y − r, y + 1)
+        n = full ? nInt : cnt[Cr + xm1] - cnt[A + xm1] - cnt[Cr + xl] + cnt[A + xl];
+        if (n > 0) {
+          sm = sat[Cr + xm1] - sat[A + xm1] - sat[Cr + xl] + sat[A + xl];
+          sm2 = sat2[Cr + xm1] - sat2[A + xm1] - sat2[Cr + xl] + sat2[A + xl];
+          mean = sm / n; variance = sm2 / n - mean * mean;
           if (variance < bestVar) { bestVar = variance; bestMean = mean; }
         }
-        out[y * w + x] = bestMean;
+        // q = 1: [x, x + r + 1) × [y − r, y + 1)
+        n = full ? nInt : cnt[Cr + xr] - cnt[A + xr] - cnt[Cr + xm] + cnt[A + xm];
+        if (n > 0) {
+          sm = sat[Cr + xr] - sat[A + xr] - sat[Cr + xm] + sat[A + xm];
+          sm2 = sat2[Cr + xr] - sat2[A + xr] - sat2[Cr + xm] + sat2[A + xm];
+          mean = sm / n; variance = sm2 / n - mean * mean;
+          if (variance < bestVar) { bestVar = variance; bestMean = mean; }
+        }
+        // q = 2: [x − r, x + 1) × [y, y + r + 1)
+        n = full ? nInt : cnt[Dr + xm1] - cnt[B + xm1] - cnt[Dr + xl] + cnt[B + xl];
+        if (n > 0) {
+          sm = sat[Dr + xm1] - sat[B + xm1] - sat[Dr + xl] + sat[B + xl];
+          sm2 = sat2[Dr + xm1] - sat2[B + xm1] - sat2[Dr + xl] + sat2[B + xl];
+          mean = sm / n; variance = sm2 / n - mean * mean;
+          if (variance < bestVar) { bestVar = variance; bestMean = mean; }
+        }
+        // q = 3: [x, x + r + 1) × [y, y + r + 1)
+        n = full ? nInt : cnt[Dr + xr] - cnt[B + xr] - cnt[Dr + xm] + cnt[B + xm];
+        if (n > 0) {
+          sm = sat[Dr + xr] - sat[B + xr] - sat[Dr + xm] + sat[B + xm];
+          sm2 = sat2[Dr + xr] - sat2[B + xr] - sat2[Dr + xm] + sat2[B + xm];
+          mean = sm / n; variance = sm2 / n - mean * mean;
+          if (variance < bestVar) { bestVar = variance; bestMean = mean; }
+        }
+        out[oo + x] = bestMean;
       }
+      for (let x = xb; x < w; x++) out[oo + x] = clamped(x, y);
     }
     return out;
   }

@@ -1,6 +1,6 @@
 // test/oracle_kernels.js — speed round (plan Appendix F, F.3): the pre-round kernels, moved VERBATIM from js/
 // so every optimised kernel ships with a byte-equality test against the code it replaced. Never edit these
-// bodies; only add kernels (F3 resample, F4 morphology; later F5–F7).
+// bodies; only add kernels (F3 resample, F4 morphology, F5 components, F6 Kuwahara; later F7).
 "use strict";
 
 // ---- F3: R.resample as of alpha.3 (js/raster.js before F3), with its helpers, verbatim.
@@ -287,4 +287,104 @@ const oracleConstruct = (() => {
   return C;
 })();
 
-module.exports = { oracleResample, oracleMorph, oracleComponents, oracleConstruct };
+// ---- F6: R.kuwahara / kuwaharaOnce / kuwaharaDomainOnce as of alpha.3 (js/raster.js before F6), verbatim.
+const oracleKuwahara = (() => {
+  const R = {};
+  R.kuwahara = function (src, w, h, r, passes = 1, domain = null) {
+    if (r < 1 || passes < 1) return src.slice();
+    let cur = src;
+    for (let p = 0; p < passes; p++) cur = domain ? kuwaharaDomainOnce(cur, w, h, r, domain) : kuwaharaOnce(cur, w, h, r);
+    return cur;
+  };
+
+  // G2.4 (IMG-04): the domain-aware variant. Window statistics use only
+  // in-domain samples (count table instead of the window area); out-of-domain
+  // pixels are copied unchanged and never influence an in-domain result. An
+  // in-domain pixel is in all four of its own windows, so every n ≥ 1. With an
+  // all-ones domain the arithmetic is the same as kuwaharaOnce, value for value.
+  function kuwaharaDomainOnce(src, w, h, r, domain) {
+    const W = w + 1, H = h + 1;
+    const sat = new Float64Array(W * H), sat2 = new Float64Array(W * H), cnt = new Float64Array(W * H);
+    for (let y = 0; y < h; y++) {
+      let row = 0, row2 = 0, rowN = 0;
+      for (let x = 0; x < w; x++) {
+        if (domain[y * w + x]) { const v = src[y * w + x]; row += v; row2 += v * v; rowN++; }
+        const i = (y + 1) * W + (x + 1);
+        sat[i] = sat[i - W] + row; sat2[i] = sat2[i - W] + row2; cnt[i] = cnt[i - W] + rowN;
+      }
+    }
+    const boxSum = (T, x0, y0, x1, y1) =>
+      T[y1 * W + x1] - T[y0 * W + x1] - T[y1 * W + x0] + T[y0 * W + x0];
+    const out = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = y * w + x;
+        if (!domain[idx]) { out[idx] = src[idx]; continue; }
+        let bestVar = Infinity, bestMean = src[idx];
+        for (let q = 0; q < 4; q++) {
+          const x0 = SBUtilClampI(q & 1 ? x : x - r, 0, w);
+          const x1 = SBUtilClampI((q & 1 ? x + r : x) + 1, 0, w);
+          const y0 = SBUtilClampI(q & 2 ? y : y - r, 0, h);
+          const y1 = SBUtilClampI((q & 2 ? y + r : y) + 1, 0, h);
+          const n = boxSum(cnt, x0, y0, x1, y1);
+          if (n <= 0) continue;
+          const mean = boxSum(sat, x0, y0, x1, y1) / n;
+          const variance = boxSum(sat2, x0, y0, x1, y1) / n - mean * mean;
+          if (variance < bestVar) { bestVar = variance; bestMean = mean; }
+        }
+        out[idx] = bestMean;
+      }
+    }
+    return out;
+  }
+
+  function kuwaharaOnce(src, w, h, r) {
+    const W = w + 1, H = h + 1;
+    // Summed-area tables of value and value² (Float64 to avoid precision drift).
+    const sat = new Float64Array(W * H);
+    const sat2 = new Float64Array(W * H);
+    for (let y = 0; y < h; y++) {
+      let row = 0, row2 = 0;
+      for (let x = 0; x < w; x++) {
+        const v = src[y * w + x];
+        row += v; row2 += v * v;
+        const i = (y + 1) * W + (x + 1);
+        sat[i] = sat[i - W] + row;
+        sat2[i] = sat2[i - W] + row2;
+      }
+    }
+    // Window sum in [x0,x1) x [y0,y1) via inclusion–exclusion.
+    const boxSum = (T, x0, y0, x1, y1) =>
+      T[y1 * W + x1] - T[y0 * W + x1] - T[y1 * W + x0] + T[y0 * W + x0];
+
+    const out = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let bestVar = Infinity, bestMean = src[y * w + x];
+        // Four quadrant windows anchored at (x,y).
+        for (let q = 0; q < 4; q++) {
+          const x0 = SBUtilClampI(q & 1 ? x : x - r, 0, w);
+          const x1 = SBUtilClampI((q & 1 ? x + r : x) + 1, 0, w);
+          const y0 = SBUtilClampI(q & 2 ? y : y - r, 0, h);
+          const y1 = SBUtilClampI((q & 2 ? y + r : y) + 1, 0, h);
+          const n = (x1 - x0) * (y1 - y0);
+          if (n <= 0) continue;
+          const s = boxSum(sat, x0, y0, x1, y1);
+          const s2 = boxSum(sat2, x0, y0, x1, y1);
+          const mean = s / n;
+          const variance = s2 / n - mean * mean;
+          if (variance < bestVar) { bestVar = variance; bestMean = mean; }
+        }
+        out[y * w + x] = bestMean;
+      }
+    }
+    return out;
+  }
+
+  function SBUtilClampI(x, lo, hi) { return x < lo ? lo : x > hi ? hi : x; }
+  R.kuwaharaOnce = kuwaharaOnce;
+  R.kuwaharaDomainOnce = kuwaharaDomainOnce;
+  return R;
+})();
+
+module.exports = { oracleResample, oracleMorph, oracleComponents, oracleConstruct, oracleKuwahara };
