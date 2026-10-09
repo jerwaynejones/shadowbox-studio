@@ -9049,7 +9049,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     src: null,
     draftCache: { quality: "draft" },   // alpha.3: the caller-owned draft stage cache (E3); reset with every new source
     // alpha.3 E5 (PO-PREVIEW-1): the draft run of SBEngine.generate at quality "draft" in the selected mode, {status,
-    // snapshot, diagnostics, error, revision, gen, ms, acks, overlays}. Its acks are keyed on its snapshot's geometryHash.
+    // snapshot, diagnostics, error, revision, gen, ms, acks, overlays, lastGood}. Its acks are keyed on its snapshot's geometryHash;
+    // a failed draft (no snapshot) keeps the last draft that had one as lastGood, so its acks carry over to the same hash.
     draft: null,
     // alpha.3 E5 (UI-05): the one result every view reads (Proof, Section, Layers, Tilt, overlays, diagnostics, badge,
     // clip dialog), through shown.snapshot only: run.draft (or, from E6, run.fab). null before the first run.
@@ -9087,9 +9088,15 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    */
   function setRunState(event) {
     if (run.state === null && event.type !== "start") return;
-    run.state = SBDiag.nextState(run.state || "draft", event);
+    showRunState(SBDiag.nextState(run.state || "draft", event));
+  }
+
+  /** Set run.state and its badge directly (a canceled draft restores the state it started from; null hides the badge). */
+  function showRunState(state) {
+    run.state = state;
     const el = $("state-badge");
     if (!el) return;
+    if (state === null) { el.hidden = true; return; }
     const b = SBDiag.stateBadge(run.state);
     el.textContent = b.label;
     el.title = b.text;
@@ -9146,7 +9153,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     }
     // alpha.3 E1: the pixels and the record they run under always belong together
     if (!run.src || !project.source || run.src.sampleHash !== project.source.sampleHash) return;
-    const token = ++draftToken, gen = run.src.gen, rev = project.revision;
+    const token = ++draftToken, gen = run.src.gen, rev = project.revision, stateBefore = run.state;
     setRunState({ type: "start" });
     setVeil(true);
     setStatus("Updating draft…");
@@ -9165,12 +9172,14 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
         res = { status: "error", error: { code: (err && err.code) || "ENGINE_ARG", message: (err && err.message) || String(err) }, diagnostics: [] };
       }
       setVeil(false);
-      if (res.status === "canceled") { setRunState({ type: "fail" }); showResult(run.shown); return; }   // keep the previous result
-      const prev = run.draft, snap = res.snapshot || null;
-      const acks = prev && prev.snapshot && snap && prev.snapshot.geometryHash === snap.geometryHash ? prev.acks : new Set();
+      // a canceled run keeps the previous result and the state it started from (it did not fail)
+      if (res.status === "canceled") { showRunState(stateBefore); showResult(run.shown); return; }
+      // acks carry over from the last draft that had a snapshot (a failed draft in between keeps them, lastGood)
+      const prev = run.draft, snap = res.snapshot || null, base = prev && prev.snapshot ? prev : (prev && prev.lastGood) || null;
+      const acks = base && snap && base.snapshot.geometryHash === snap.geometryHash ? base.acks : new Set();
       if (!snap || !prev || !prev.snapshot || prev.snapshot.geometryHash !== snap.geometryHash) run.focus = null;
       run.draft = { status: res.status, snapshot: snap, diagnostics: (snap ? snap.diagnostics : res.diagnostics) || [], error: res.error || null,
-        revision: rev, gen, ms: performance.now() - t0, acks, overlays: withOverlays };
+        revision: rev, gen, ms: performance.now() - t0, acks, overlays: withOverlays, lastGood: snap ? null : base };
       if (res.status === "done") setRunState({ type: "done", quality: "draft", diagnostics: snap.diagnostics });
       else setRunState({ type: "fail" });
       run.shown = run.draft;
@@ -9419,7 +9428,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   function clipAction(d) {
     const repairs = project.construction.repairs;
     let label = null, ri = -1;
-    if (d.code === "BOND_UNSUPPORTED" && Number.isInteger(d.layer) && d.layer >= 1 && project.construction.mode === "bonded-relief") label = "Clip to lower layer…";
+    const shownMode = run.shown && run.shown.snapshot ? run.shown.snapshot.construction.mode : null;   // the shown result's own mode
+    if (d.code === "BOND_UNSUPPORTED" && Number.isInteger(d.layer) && d.layer >= 1 && shownMode === "bonded-relief") label = "Clip to lower layer…";
     else if (d.code === "REPAIR_STALE" || d.code === "REPAIR_REVIEW_FAB") {
       ri = SBProof.repairForDiagnostic(d, repairs, shownApplied());
       if (ri >= 0) label = "Review clip " + (ri + 1) + "…";
@@ -9551,7 +9561,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   function renderSheetGrid(r, colors) {
     const grid = $("sheetgrid");
     grid.innerHTML = "";
-    const snap = r.snapshot, bonded = snap.construction.mode === "bonded-relief", n = snap.layers.length;
+    const snap = r.snapshot, bonded = snap.construction.mode === "bonded-relief";
+    // bonded "top" is the front-most exported layer, not an omitted (empty) trailing one
+    const top = snap.layers.reduce((m, l) => (l.status !== "omitted-trailing" && l.index > m ? l.index : m), 0);
     const cards = SBProof.cards(snap.layers, snap.page);
     for (const st of cards) {
       const k = st.layerIndex, L = snap.layers.find((l) => l.index === k), rep = snap.cleanupReport[k] || {};
@@ -9561,7 +9573,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       if (!preview.drawCard(cvs, k)) { cvs.width = 4; cvs.height = 3; SBPreview.drawWasteHatch(cvs.getContext("2d"), 4, 3); }   // hatch only
       cvs.setAttribute("role", "img");
       cvs.setAttribute("aria-label", `Sheet ${k + 1}: ${SBUtil.fmt(st.retainedPct, 0)}% retained material, ${SBUtil.fmt(100 - st.retainedPct, 0)}% waste (hatched)`);
-      const role = bonded ? (k === 0 ? "base" : k === n - 1 ? "top" : "layer " + (k + 1)) : st.role;
+      const role = bonded ? (k === 0 ? "base" : k === top ? "top" : "layer " + (k + 1)) : st.role;
       const rings = L ? L.material.reduce((a, p) => a + 1 + (p.holes ? p.holes.length : 0), 0) : 0;
       const cutMM = L && L.stats ? L.stats.cutMM : 0;
       const label = document.createElement("div");
@@ -9860,7 +9872,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   }
 
   async function buildAndDeliver() {
-    const colors = sheetColors();
+    // the colours are indexed by layer index over every layer of the fabrication snapshot, as in showResult
+    const colors = sheetColors(run.fab.snapshot.layers.length);
     // alpha.2: cut files and proof come from the reviewed fabrication snapshot (SBEngine.generate at fabrication
     // quality, gated by exportGate in exportBundle), in the legacy flat layout (sheet_NN.svg, proof.svg) until G3.9.
     const state = cfg();

@@ -5545,6 +5545,30 @@ suite("app.js — alpha.3 E5 real-engine draft (PO-PREVIEW-1, LYR-06, UI-05)", (
     SBProof.overlays({ cleanupReport: s.cleanupReport, diagnostics: s.diagnostics, mode: "bonded-relief" }).every((o) => o.bridges === null));
   check("UI-05 the bonded draft snapshot carries its own construction (mode, t, g = 0) for showResult",
     s.construction.mode === "bonded-relief" && s.construction.gMM === 0 && s.construction.tMM === p.material.thicknessMM);
+  // E5 review fix: the export path passes a layer count to sheetColors(n); with none the palette was [] and
+  // SBSvg.assemblySVG threw COLOR on every export. Static: every sheetColors( call passes a count.
+  const scCalls = appSrc.match(/sheetColors\(([^)]*)\)/g) || [];
+  check("EXP-07 every sheetColors( call in app.js passes a layer count (no empty call)",
+    scCalls.length >= 3 && scCalls.every((c) => !/sheetColors\(\s*\)/.test(c)));
+  // Behavioural: run buildAndDeliver's own sheetColors(...) argument and the real sheetColors on a fabrication snapshot,
+  // then SBEngine.fabricationFiles (proof.svg = SBSvg.assemblySVG) in both appearance modes.
+  const palSrc = appSrc.slice(appSrc.indexOf("const PALETTES = {"), appSrc.indexOf("};", appSrc.indexOf("const PALETTES = {")) + 2);
+  const bad = fn("buildAndDeliver"), argM = /sheetColors\(([^)]*)\)/.exec(bad);
+  const fq = E.generate(E.fabricationRequest(p, px, { requestId: "e5-export", deviceClass: "desktop", format: "png", decode: "canvas-tonal" })), fs5 = fq.snapshot;
+  for (const mode of ["uniform", "palette"]) {
+    const proj = JSON.parse(JSON.stringify(p));
+    proj.appearance.mode = mode;
+    let out = null, err = null;
+    try {
+      const colorsOf = new Function("project", "SBUtil", palSrc + "\n" + fn("sheetColors") + "\n  }\nreturn sheetColors;")(proj, SBUtil);
+      const n = new Function("run", "project", "return (" + (argM ? argM[1] : "") + ");")({ fab: { snapshot: fs5 } }, proj);
+      const colors = colorsOf(n);
+      out = { colors, files: E.fabricationFiles(fs5, proj, colors) };
+    } catch (e) { err = e; }
+    check("EXP-07 export (" + mode + "): buildAndDeliver's sheetColors(...) gives one #colour per fabrication layer and fabricationFiles builds proof.svg",
+      fq.status === "done" && !err && out.colors.length === fs5.layers.length && out.colors.every((c) => /^#[0-9a-fA-F]{3,6}$/.test(c)) &&
+      out.files.some((f) => f.name === "proof.svg" && /<path /.test(f.data)));
+  }
 });
 
 // ------------------------------------------------------------------ report
