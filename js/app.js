@@ -864,6 +864,8 @@
     // alpha.3 E6 (PO-PREVIEW-2): the short geometryHash of the delivered fabrication result, as in the review header,
     // so the files can be matched to the screen. alpha.3 E13 (EXP-06): a v2 project block from the fabrication snapshot.
     // Re-import is lossy: SBSchema.fromLegacySettings reads only the v1.1 keys and raises LEGACY_PROJECT_BLOCK (info).
+    // geometryKey, interpretationMode and fabPitchMM are not in the snapshot and are read from the project; they match it
+    // because export is gated on fabCurrent() (the snapshot's geometryHash covers the geometryKey).
     const fsnap = run.fab.snapshot;
     o.geometryHash = fsnap.geometryHash.slice(0, 12);
     o.project = {

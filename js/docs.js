@@ -198,7 +198,12 @@
       (mat.thicknessState === "nominal" ? " (measure your stock and enter it if it differs)" : "") + ".");
     const nE = sheets.length;
     const maxZ = Number.isFinite(st.maxZMM) ? st.maxZMM : nE * t;
-    out.push("- Stack height: " + L(maxZ) + " for the " + nE + " exported sheet" + (nE === 1 ? "" : "s") + " (" + nE + " × " + L(t) +", relief above the base " + L(Math.max(0, maxZ - t)) + ")" +
+    // bonded: maxZ = nE·t; connected: maxZ = nE·t + (nE − 1)·g (the gaps are in the stack, there is no "relief above the base")
+    const gStack = bonded ? 0 : (snap.construction ? snap.construction.gMM : project.construction.gapMM);
+    const how = bonded
+      ? nE + " × " + L(t) + ", relief above the base " + L(Math.max(0, maxZ - t))
+      : nE + " × " + L(t) + " sheets" + (nE > 1 ? " + " + (nE - 1) + " × " + L(gStack) + " gaps" : "");
+    out.push("- Stack height: " + L(maxZ) + " for the " + nE + " exported sheet" + (nE === 1 ? "" : "s") + " (" + how + ")" +
       (nE !== st.requested ? "; if all " + st.requested + " requested layers were cut: stock " + L(st.stockMM) + ", relief " + L(st.reliefMM) : "") + ".");
     out.push("- " + D.COPY.MAT01, "");
 
@@ -227,7 +232,9 @@
       const gcfg = project.construction.guides || {}, g = snap.guides || { mode: gcfg.mode || "none", labels: [], omitted: [] };
       out.push("## Glue-up order", "");
       out.push("1. Lay " + (nE ? file(sheets[0]) : "sheet 1") + " (the base) on a flat surface, front face up.");
-      out.push("2. Glue each next sheet in file order onto the scored outlines on the sheet below it, front face up. " +
+      const onto = g.mode === "inset-outline" ? "onto the scored outlines on the sheet below it"
+        : g.mode === "interior-mark" ? "onto the scored crosses on the sheet below it" : "in the positions shown in placement_map.svg";
+      out.push("2. Glue each next sheet in file order " + onto + ", front face up. " +
         "Do not mirror or flip any part: every file is drawn as seen from the front.");
       out.push("3. Finish with " + (nE ? file(sheets[nE - 1]) : "the top sheet") + " (the top). Press the stack flat until the glue sets.", "");
 
@@ -241,12 +248,17 @@
           ? "The scored outlines on a sheet show where the parts of the next sheet go. They sit inside each part's footprint by the concealment inset, so they are hidden once the next sheet is glued on."
           : "The scored cross on a sheet marks where each part of the next sheet goes (position only: take its rotation from placement_map.svg). It sits inside the part's footprint by the concealment inset, so it is hidden once the next sheet is glued on.");
       }
-      out.push("The scored number on a sheet is that sheet's own number (sheet_NN). The top sheet has no concealed area and carries no number; placement_map.svg names it.");
-      const om = Array.isArray(g.omitted) ? g.omitted : [];
-      out.push("", om.length
-        ? "Omitted guides (" + om.length + "), place these parts from placement_map.svg:"
-        : "No guides were omitted. placement_map.svg (not a cut file) shows every sheet's parts in place.");
-      om.forEach((o) => out.push("- layer " + o.layer + (o.part ? ", part " + o.part : "") + (o.reason ? ": " + o.reason : "")));
+      if (g.mode === "none") {
+        // no guides, no scored sheet numbers (labels are built with the guides, engine stage 14)
+        out.push("The sheets carry no scored numbers: keep each cut sheet with its file name. placement_map.svg (not a cut file) shows every sheet's parts in place.");
+      } else {
+        out.push("The scored number on a sheet is that sheet's own number (sheet_NN). The top sheet has no concealed area and carries no number; placement_map.svg names it.");
+        const om = Array.isArray(g.omitted) ? g.omitted : [];
+        out.push("", om.length
+          ? "Omitted guides (" + om.length + "), place these parts from placement_map.svg:"
+          : "No guides were omitted. placement_map.svg (not a cut file) shows every sheet's parts in place.");
+        om.forEach((o) => out.push("- layer " + o.layer + (o.part ? ", part " + o.part : "") + (o.reason ? ": " + o.reason : "")));
+      }
       out.push("");
     } else {
       const reg = project.construction.registration || {}, holes = snap.layers.some((x) => Array.isArray(x.holes) && x.holes.length > 0);

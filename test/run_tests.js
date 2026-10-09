@@ -5989,7 +5989,25 @@ suite("docs.js/app.js — alpha.3 E13 assembly and settings (ASM-05, EXP-06, PO-
   check("ASM-05 bonded ASSEMBLY names the glue-up order, thickness, guides and the placement map; no bridge or spacer text",
     /glue/i.test(md) && /6\.35/.test(md) && /placement_map\.svg/.test(md) && /concealment/i.test(md) && !/bridge|dowel|spacer/i.test(md));
   check("D-4.7 ASSEMBLY rows are the exported sheets only; omitted layers are listed",
-    (md.match(/^\| sheet_\d\d\.svg/gm) || []).length === s.stats.exported && /omitted/i.test(md));
+    (md.match(/^\| sheet_\d\d\.svg/gm) || []).length === s.stats.exported &&
+    md.includes("Omitted layers (empty at the top of the stack, not exported): " + s.layers.filter((x) => x.status === "omitted-trailing").map((x) => x.index + 1).join(", ") + ".") &&
+    s.layers.some((x) => x.status === "omitted-trailing"));
+  check("D-4.7 with nothing omitted ASSEMBLY says no layers were omitted",
+    /No layers were omitted\./.test(SBDocs.assembly(p, Object.assign({}, s, { layers: s.layers.map((x) => Object.assign({}, x, { status: x.status === "omitted-trailing" ? "ok" : x.status })) }), {})));
+  // bonded guide branches: interior-mark wording, guide mode none, the omitted-guides list
+  const gen = (mode) => { const q = JSON.parse(JSON.stringify(p)); q.construction.guides.mode = mode; return [q, E.generate(E.request(q, px, { quality: "fabrication" })).snapshot]; };
+  const [pm, sm] = gen("interior-mark"), mdm = SBDocs.assembly(pm, sm, {});
+  check("ASM-05 interior-mark ASSEMBLY describes the scored cross (position only, rotation from placement_map.svg)",
+    /Guide mode: interior-mark\./.test(mdm) && /scored cross/.test(mdm) && /rotation from placement_map\.svg/.test(mdm) && !/scored outlines/.test(mdm) && /onto the scored crosses on the sheet below it/.test(mdm));
+  const [pn, sn] = gen("none"), mdn = SBDocs.assembly(pn, sn, {});
+  check("ASM-05 guide mode none: guides are off, place parts from placement_map.svg; no guide-mode line",
+    /Guides are off for this project/.test(mdn) && !/Guide mode:/.test(mdn) && !/scored cross|scored outlines/.test(mdn) && /Glue each next sheet in file order in the positions shown in placement_map\.svg/.test(mdn) &&
+    /carry no scored numbers/.test(mdn) && !/scored number on a sheet|guides were omitted|Omitted guides/.test(mdn));
+  const so = Object.assign({}, s, { guides: Object.assign({}, s.guides, { omitted: [{ layer: 3, part: 2, reason: "part too small" }, { layer: 4 }] }) });
+  const mdo = SBDocs.assembly(p, so, {});
+  check("ASM-05 omitted guides are listed with layer, part and reason",
+    mdo.includes("Omitted guides (2), place these parts from placement_map.svg:") && mdo.includes("- layer 3, part 2: part too small") && /^- layer 4$/m.test(mdo) &&
+    !/No guides were omitted/.test(mdo) && /No guides were omitted/.test(md) === !(s.guides && s.guides.omitted && s.guides.omitted.length));
   check("PO-LASER-7/MAT-05 ASSEMBLY states the machine and the external kerf in the G3.5 wording", /xTool S1/.test(md) && /0\.15/.test(md) && md.includes("no kerf offset applied (kerfMode=external)"));
   check("NFR-12/EXP-09 no speed/power values; the downstream-edit warning is present",
     !/\b\d+(\.\d+)?\s*(%|mm\/s|mm\/min|k?W)(?!\w)/i.test(md) && /edit/i.test(md) && /laser software/i.test(md));
@@ -6004,6 +6022,15 @@ suite("docs.js/app.js — alpha.3 E13 assembly and settings (ASM-05, EXP-06, PO-
   check("ASM-05 connected ASSEMBLY keeps the frame, holes, bridges and spacer wording with the snapshot's gap",
     /frame/i.test(cmd) && /registration holes/i.test(cmd) && /bridge/i.test(cmd) && /spacer/i.test(cmd) && cmd.includes(String(cs.construction.gMM)) &&
     (cmd.match(/^\| sheet_\d\d\.svg/gm) || []).length === cs.stats.exported && cmd.includes("no kerf offset applied (kerfMode=external)"));
+  const nC = cs.stats.exported, tC = cs.construction.tMM, gC = cs.construction.gMM, fmt = (v) => String(Number(Number(v).toFixed(3)));
+  const zC = Math.round((nC * tC + (nC - 1) * gC) * 1000) / 1000;
+  const shC = (cmd.match(/^- Stack height: .*$/m) || [""])[0];
+  check("LYR-01 connected stack height line adds the gaps (nE·t + (nE−1)·g) and has no relief above the base",
+    nC > 1 && gC > 0 && Math.abs(cs.stats.maxZMM - zC) < 1e-9 && shC.startsWith("- Stack height: " + fmt(zC) + " mm for the " + nC + " exported sheets (") &&
+    shC.includes(nC + " × " + fmt(tC) + " mm sheets + " + (nC - 1) + " × " + fmt(gC) + " mm gaps") && !/relief above the base/.test(shC));
+  const shB = (md.match(/^- Stack height: .*$/m) || [""])[0];
+  check("LYR-01 bonded stack height line is nE × t with the relief above the base",
+    shB.includes(s.stats.exported + " × " + fmt(s.construction.tMM) + " mm, relief above the base ") && !/gaps/.test(shB));
   const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8");
   check("PO-PREVIEW-7 buildAndDeliver writes SBDocs.assembly from run.fab.snapshot; buildAssemblyMD is gone",
     /SBDocs\.assembly\(project, run\.fab\.snapshot/.test(appSrc) && !/function buildAssemblyMD\(/.test(appSrc) && !/run\.sheets\b|run\.procW/.test(appSrc));
@@ -6016,6 +6043,12 @@ suite("docs.js/app.js — alpha.3 E13 assembly and settings (ASM-05, EXP-06, PO-
   check("DEP-04 a settings.json with a project block re-imports as the documented lossy v1.1 mapping and says so",
     back && back.project && S.validate(back.project).ok === true && back.project.construction.mode === "connected-sheet" &&
     back.project.extras.legacy && back.project.extras.legacy.project && back.diagnostics.some((d) => d.code === "LEGACY_PROJECT_BLOCK" && SBDiag.CODES.LEGACY_PROJECT_BLOCK.severity === "info"));
+  const lpb = back.diagnostics.find((d) => d.code === "LEGACY_PROJECT_BLOCK"), lpbText = SBDiag.describe(lpb);
+  const both = S.fromLegacySettings({ procRes: 720, project: { constructionMode: "bonded-relief", interpretationMode: "tonal" } }).diagnostics.find((d) => d.code === "LEGACY_PROJECT_BLOCK");
+  check("DEP-04 LEGACY_PROJECT_BLOCK detail carries only the modes; the title and the .sbrproj sentence are not repeated",
+    lpb.message === SBDiag.CODES.LEGACY_PROJECT_BLOCK.title + ": modes: bonded-relief" &&
+    both.message === SBDiag.CODES.LEGACY_PROJECT_BLOCK.title + ": modes: bonded-relief, tonal" &&
+    ((lpbText.text + " " + lpbText.fix).match(/came from a v2 project/g) || []).length === 1 && ((lpbText.text + " " + lpbText.fix).match(/\.sbrproj/g) || []).length === 1);
   check("DEP-04 a plain v1.1 settings.json raises no LEGACY_PROJECT_BLOCK", !S.fromLegacySettings({ procRes: 720 }).diagnostics.some((d) => d.code === "LEGACY_PROJECT_BLOCK"));
   const ug = fs.readFileSync(path.join(__dirname, "..", "docs", "USER_GUIDE.md"), "utf8");
   check("DEP-04 USER_GUIDE says a v2 settings.json re-imports as v1.1 settings only (LEGACY_PROJECT_BLOCK)", /LEGACY_PROJECT_BLOCK/.test(ug) && /\.sbrproj/.test(ug));

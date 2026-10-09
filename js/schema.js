@@ -702,10 +702,7 @@
     // stays the v1.1 mapping (acrylic connected sheets): the block is kept in extras.legacy and the loss is reported.
     if (isObj(json.project)) {
       const pb = json.project, modes = [pb.constructionMode, pb.interpretationMode].filter((v) => typeof v === "string");
-      diagnostics.push(global.SBDiag.make("LEGACY_PROJECT_BLOCK", {
-        detail: "This settings.json came from a v2 project" + (modes.length ? " (" + modes.join(", ") + ")" : "") +
-          "; only the v1.1 settings were imported. Open the .sbrproj (G3.8) for a full round trip.",
-      }));
+      diagnostics.push(global.SBDiag.make("LEGACY_PROJECT_BLOCK", modes.length ? { detail: "modes: " + modes.join(", ") } : {}));
     }
     return { project: p, diagnostics };
   };
