@@ -160,13 +160,15 @@
   // device): desktop = the larger preset decision, mobile 720 (≈ 4× slower, k provisional as in D.8). fabMsPerMpx is the
   // measured fabrication cost for the busy text's estimate (E6; the offline app cannot read docs/): mobile = 4 × desktop.
   // The test "PO-PREVIEW-1 draft budget equals docs/perf/draft-budget.json" keeps them in step; E11 re-measures.
-  const DRAFT_BUDGET = { desktopDraftPx: 720, mobileDraftPx: 720, fabMsPerMpx: 2410 };   // measured 2026-10-08 (E4)
+  // Speed round F15 (F-D5): draftPxFallback is the draft cap of the no-worker fallback (the sync driver on the page),
+  // passed explicitly as the request's draftCapPx by app.js's fallback branch; the pooled draft keeps draftPxCap.
+  const DRAFT_BUDGET = { desktopDraftPx: 720, mobileDraftPx: 720, fallbackDraftPx: 720, fabMsPerMpx: 2410 };   // measured 2026-10-08 (E4)
   const LIMITS = {
     desktop: { deviceClass: "desktop", fabPxBudget: 25000000, maxPartsPerLayer: DESKTOP_CAPS.maxPartsPerLayer,
       maxVerticesPerLayer: DESKTOP_CAPS.maxVerticesPerLayer, maxVerticesTotal: DESKTOP_CAPS.maxVerticesTotal,
-      draftPxCap: DRAFT_BUDGET.desktopDraftPx, fabMsPerMpx: DRAFT_BUDGET.fabMsPerMpx },
+      draftPxCap: DRAFT_BUDGET.desktopDraftPx, draftPxFallback: DRAFT_BUDGET.fallbackDraftPx, fabMsPerMpx: DRAFT_BUDGET.fabMsPerMpx },
     mobile: { deviceClass: "mobile", fabPxBudget: 1000000, maxPartsPerLayer: 100, maxVerticesPerLayer: 20000, maxVerticesTotal: 20000,
-      draftPxCap: DRAFT_BUDGET.mobileDraftPx, fabMsPerMpx: 4 * DRAFT_BUDGET.fabMsPerMpx },
+      draftPxCap: DRAFT_BUDGET.mobileDraftPx, draftPxFallback: DRAFT_BUDGET.fallbackDraftPx, fabMsPerMpx: 4 * DRAFT_BUDGET.fabMsPerMpx },
   };
   // G2.14 (IMG-07, SRS §12.3): the source envelope. Over-limit input is rejected before decode, or downsampled only
   // through the explicit button (applyDownsample); never silently reduced (NFR-04). Limits are inclusive.

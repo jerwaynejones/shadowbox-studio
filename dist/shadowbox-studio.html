@@ -333,6 +333,11 @@ button.diag-go:hover .diag-msg { text-decoration: underline; }
 .filebtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 
 .hint { font-size: 12px; color: var(--ink-soft); margin: 0 0 10px; }
+/* speed round F15 (UI-05): progress of a pooled run (bar + stage label) and the no-pool notice */
+.runprogress { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 12px; color: var(--ink-soft); }
+.runprogress progress { flex: 1 1 auto; min-width: 0; height: 8px; }
+.runprogress-label { flex: 0 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
+.pool-notice { color: var(--ink); }
 .chips { display: flex; gap: 4px; margin-top: 8px; }
 .chip {
   width: 24px; height: 14px;
@@ -701,7 +706,15 @@ button.diag-go:hover .diag-msg { text-decoration: underline; }
       <p id="why-generate" class="why" role="status">Choose a source</p>
       <!-- alpha.3 E6 (PO-PREVIEW-2): the exact fabrication run (same request and hash as the export) shown in every view -->
       <button id="btn-fabpreview" class="btn" type="button" disabled aria-describedby="fabpreview-note">Preview at fabrication resolution</button>
-      <p id="fabpreview-note" class="hint" role="status" aria-live="polite">Shows the exact cut geometry and its fabrication review. The page does not respond while it is generated.</p>
+      <p id="fabpreview-note" class="hint" role="status" aria-live="polite">Shows the exact cut geometry and its fabrication review.</p>
+      <!-- speed round F15 (PO-PERF-1, NFR-02, UI-05): progress of the run in the worker pool, Cancel for a pooled fabrication
+           run, and the notice when there is no pool (the preview then runs on the page) -->
+      <div id="run-progress" class="runprogress" hidden>
+        <progress id="run-progress-bar" max="1" value="0" aria-labelledby="run-progress-label"></progress>
+        <span id="run-progress-label" class="runprogress-label"></span>
+      </div>
+      <button id="btn-fabcancel" class="btn" type="button" hidden>Cancel fabrication run</button>
+      <p id="pool-notice" class="hint pool-notice" role="status" aria-live="polite" hidden></p>
       <!-- G2.13c (UI-04, NFR-07): diagnostics grouped by severity, icon plus text; an item with a layer is a button
            that shows its layer, parts and region in the Proof; warnings carry an Acknowledge checkbox for this result. -->
       <div id="diag-panel" class="diag" role="region" aria-labelledby="h-diag">
@@ -2875,13 +2888,15 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   // device): desktop = the larger preset decision, mobile 720 (≈ 4× slower, k provisional as in D.8). fabMsPerMpx is the
   // measured fabrication cost for the busy text's estimate (E6; the offline app cannot read docs/): mobile = 4 × desktop.
   // The test "PO-PREVIEW-1 draft budget equals docs/perf/draft-budget.json" keeps them in step; E11 re-measures.
-  const DRAFT_BUDGET = { desktopDraftPx: 720, mobileDraftPx: 720, fabMsPerMpx: 2410 };   // measured 2026-10-08 (E4)
+  // Speed round F15 (F-D5): draftPxFallback is the draft cap of the no-worker fallback (the sync driver on the page),
+  // passed explicitly as the request's draftCapPx by app.js's fallback branch; the pooled draft keeps draftPxCap.
+  const DRAFT_BUDGET = { desktopDraftPx: 720, mobileDraftPx: 720, fallbackDraftPx: 720, fabMsPerMpx: 2410 };   // measured 2026-10-08 (E4)
   const LIMITS = {
     desktop: { deviceClass: "desktop", fabPxBudget: 25000000, maxPartsPerLayer: DESKTOP_CAPS.maxPartsPerLayer,
       maxVerticesPerLayer: DESKTOP_CAPS.maxVerticesPerLayer, maxVerticesTotal: DESKTOP_CAPS.maxVerticesTotal,
-      draftPxCap: DRAFT_BUDGET.desktopDraftPx, fabMsPerMpx: DRAFT_BUDGET.fabMsPerMpx },
+      draftPxCap: DRAFT_BUDGET.desktopDraftPx, draftPxFallback: DRAFT_BUDGET.fallbackDraftPx, fabMsPerMpx: DRAFT_BUDGET.fabMsPerMpx },
     mobile: { deviceClass: "mobile", fabPxBudget: 1000000, maxPartsPerLayer: 100, maxVerticesPerLayer: 20000, maxVerticesTotal: 20000,
-      draftPxCap: DRAFT_BUDGET.mobileDraftPx, fabMsPerMpx: 4 * DRAFT_BUDGET.fabMsPerMpx },
+      draftPxCap: DRAFT_BUDGET.mobileDraftPx, draftPxFallback: DRAFT_BUDGET.fallbackDraftPx, fabMsPerMpx: 4 * DRAFT_BUDGET.fabMsPerMpx },
   };
   // G2.14 (IMG-07, SRS §12.3): the source envelope. Over-limit input is rejected before decode, or downsampled only
   // through the explicit button (applyDownsample); never silently reduced (NFR-04). Limits are inclusive.
@@ -11249,13 +11264,69 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   let preview = null;
   const $ = (id) => document.getElementById(id);
 
+  // ------------------------------------------------------------- worker pool (speed round F15, PO-PERF-1, NFR-02)
+  /**
+   * SBPool runs SBEngine.generate off the page: a coordinator worker plus helpers, engine/app version and module-hash
+   * handshake, cooperative cancel and a watchdog (F11–F14). The page only submits, shows progress and paints. Without a
+   * pool (no Worker, file:// index.html, a refused or version-skewed worker; pool.mode "fallback") the fallback branch
+   * (regenerateFallback, fabFallback) runs the sync driver on the page with the pool's "reduced responsiveness" notice.
+   */
+  let pool = null, poolNotice = null;
+  const POOL_FALLBACK_NOTICE = "Background processing is unavailable; the preview runs on the page (reduced responsiveness).";
+  function startPool() {
+    try {
+      if (typeof SBPool === "undefined" || typeof Worker !== "function") throw new Error("no Worker");
+      pool = SBPool.create({ deviceClass: deviceClass(), appVersion: APP_VERSION, onState: poolState });
+    } catch (_) {
+      pool = null;
+      poolState({ mode: "fallback", notice: POOL_FALLBACK_NOTICE });
+    }
+  }
+  /** The pool's mode changed: show its fallback notice (#pool-notice and the fabrication note) or clear it. */
+  function poolState(st) {
+    poolNotice = st && st.mode === "fallback" ? st.notice || POOL_FALLBACK_NOTICE : null;
+    const el = $("pool-notice");
+    if (el) { el.textContent = poolNotice || ""; el.hidden = !poolNotice; }
+    const note = $("fabpreview-note");
+    if (note && !fabInFlight) note.textContent = fabNote();
+  }
+  /** True while runs go to the pool (also while it starts: submits wait in its outbox and fall back with POOL_UNAVAILABLE). */
+  function usePool() { return !!pool && (pool.mode === "pool" || pool.mode === "starting"); }
+
+  /**
+   * UI-05/NFR-02: the progress bar and stage label of the pooled run ({title, stage, frac} from the pool's progress
+   * messages, ≤ 10 Hz), painted at most once per animation frame; null hides it.
+   */
+  const progress = { want: null, raf: 0 };
+  const STAGE_LABELS = { orient: "Preparing the source", domain: "Preparing the source", envelope: "Checking the stock envelope",
+    resample: "Resampling", "resample-cached": "Resampling (cached)", interpret: "Interpreting", "interpret-cached": "Interpreting (cached)",
+    masks: "Layer masks", construct: "Constructing layers", complexity: "Checking complexity", holes: "Registration holes",
+    repairs: "Replaying repairs", parts: "Numbering parts", trace: "Tracing outlines", validate: "Checking support", features: "Checking features",
+    guides: "Placement guides", accounting: "Accounting", hashes: "Hashing", done: "Finishing" };
+  function showProgress(p) {
+    progress.want = p;
+    if (!progress.raf) progress.raf = requestAnimationFrame(paintProgress);
+  }
+  function paintProgress() {
+    progress.raf = 0;
+    const box = $("run-progress"), bar = $("run-progress-bar"), label = $("run-progress-label"), p = progress.want;
+    if (!box) return;
+    if (!p) { box.hidden = true; return; }
+    const f = Number.isFinite(p.frac) ? Math.max(0, Math.min(1, p.frac)) : null;
+    if (bar) { if (f === null) bar.removeAttribute("value"); else bar.value = f; }
+    if (label) label.textContent = p.title + ": " + (STAGE_LABELS[p.stage] || p.stage || "starting") + (f === null ? "" : " · " + Math.round(100 * f) + " %");
+    box.hidden = false;
+  }
+
   // ------------------------------------------------------------- pipeline
   const regenerateSoon = SBUtil.debounce(regenerate, 300);   // alpha.3 E5: sliders commit on release, so 300 ms
   /**
    * A geometry edit: the shown result is stale at once (UI-05), then the pipeline reruns debounced. alpha.3 E6 (UI-06):
    * a fabrication result on screen belongs to the previous revision, so the view returns to the (Stale) draft at once.
+   * Speed round F15: a fabrication run still in flight is canceled; it restarts on the edited revision after its draft.
    */
   function recompute() {
+    cancelFab("restart");   // speed round F15 (UI-06): an edit cancels an in-flight fabrication run ("fabrication restarted")
     setRunState({ type: "edit" });
     if (run.shown === run.fab) showDraft();
     regenerateSoon();
@@ -11345,14 +11416,16 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   }
 
   /**
-   * alpha.3 E5 (PO-PREVIEW-1, LYR-06, UI-05): the draft is SBEngine.generate at quality "draft" in the selected
-   * interpretation and construction, on the installed source record and its own pixels (SBEngine.request, the same
-   * builder as the fabrication run), with the caller-owned draft stage cache. The Stale/Processing state and the
-   * "Updating draft…" veil are painted over the still-visible previous result first (a frame, then a task), because the
-   * run blocks the page until the G4.1 worker. A run superseded meanwhile (new source, new revision, newer call) is
-   * dropped. Draft acks survive only when the new snapshot has the same geometryHash (§9.5).
+   * alpha.3 E5 (PO-PREVIEW-1, LYR-06, UI-05): the draft is SBEngine.request at quality "draft" in the selected
+   * interpretation and construction, on the installed source record and its own pixels (the same builder as the
+   * fabrication run). Speed round F15 (PO-PERF-1, NFR-02): it runs in the worker pool (pool.submit; the coordinator keeps
+   * the draft stage cache), with the Stale/Processing state, the "Updating draft…" veil and the progress bar on the
+   * still-visible previous result; the page stays responsive. A result is shown only when SBDiag.acceptResult matches the
+   * run this call submitted (AT-15) and the revision and source are still current; a newer submit supersedes (cancels)
+   * the older run. Without a pool (pool.mode "fallback", or POOL_UNAVAILABLE) the fallback branch runs the sync driver
+   * (regenerateFallback). Draft acks survive only when the new snapshot has the same geometryHash (§9.5, applyDraft).
    */
-  let draftToken = 0;
+  let draftToken = 0, draftRun = null, draftRerun = false;
   function regenerate() {
     syncControls();
     updateDimbar();
@@ -11360,6 +11433,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const gate = SBSchema.canGenerate(project, run.sourceImage);
     if (!gate.ok) {
       draftToken++;   // a pending draft of the previous settings is dropped
+      cancelDraft();
+      showProgress(null);
       setVeil(false);
       updateGate(gate);
       setStatus(gate.reason === "Choose a source" ? "Choose a source: load a photo or the Demo scene" : gate.reason);
@@ -11371,6 +11446,45 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     setRunState({ type: "start" });
     setVeil(true);
     setStatus("Updating draft…");
+    if (!usePool()) { regenerateFallback(token, gen, rev, stateBefore, gate); return; }
+    // one run at a time in the coordinator (F.3): a fabrication run in flight is canceled and restarted after this draft
+    cancelFab("restart");
+    const dc = deviceClass(), withOverlays = wantOverlays(), t0 = performance.now(), sampleHash = run.src.sampleHash;
+    const ctx = { gen, rev, stateBefore, gate, withOverlays, t0 };
+    let sub;
+    try {
+      pool.setSource(run.src);   // posted once per sampleHash
+      // F-D5: the pooled draft keeps the request's default draftCapPx (limits(dc).draftPxCap, the pooled decision)
+      sub = pool.submit(SBEngine.request(project, run.src, { quality: "draft", requestId: "draft-" + rev, deviceClass: dc }),
+        { sampleHash, gen, overlays: withOverlays, onProgress: (p) => { if (token === draftToken && !fabInFlight) showProgress(Object.assign({ title: "Draft" }, p)); } });
+    } catch (err) {   // a caller error (ENGINE_ARG from SBEngine.request)
+      applyDraft(errorResponse(err, "ENGINE_ARG"), ctx);
+      return;
+    }
+    const active = draftRun = { runId: sub.runId, gen, sampleHash, overlays: withOverlays, deviceClass: dc };
+    sub.done.then((result) => {
+      if (draftRun === active) draftRun = null;
+      if (token !== draftToken || !SBDiag.acceptResult(active, result)) return;   // AT-15: stale or superseded, never shown
+      // superseded by a fabrication submit: the fabrication run owns the veil; this draft reruns after it
+      if (result.status === "canceled" && fabInFlight) { draftRerun = true; return; }
+      applyDraft(result.status === "canceled" ? { status: "canceled" } : result.response, ctx);
+    }, (err) => {
+      if (draftRun === active) draftRun = null;
+      if (token !== draftToken) return;
+      // the pool fell back (no worker, a refused or version-skewed worker): the serial fallback runs this draft
+      if (err && err.code === "POOL_UNAVAILABLE") { regenerateFallback(token, gen, rev, stateBefore, gate); return; }
+      applyDraft(errorResponse(err, "ENGINE_INTERNAL"), ctx);
+    });
+  }
+
+  /**
+   * Speed round F15 fallback branch (no pool: file:// index.html, a refused or version-skewed worker): the sync driver
+   * SBEngine.generate on the page with the caller-owned draft stage cache, at limits(dc).draftPxFallback (F-D5). The
+   * Stale/Processing state and the veil are painted first (a frame, then a task), because the run blocks the page. A run
+   * superseded meanwhile (new source, new revision, newer call) is dropped.
+   */
+  function regenerateFallback(token, gen, rev, stateBefore, gate) {
+    if (poolNotice) setStatus("Updating draft… (" + poolNotice + ")");
     requestAnimationFrame(() => setTimeout(() => {
       if (token !== draftToken) return;   // a newer call owns the veil and the run
       if (!run.src || gen !== run.src.gen || rev !== project.revision || !project.source || run.src.sampleHash !== project.source.sampleHash) {
@@ -11380,30 +11494,55 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       const dc = deviceClass(), withOverlays = wantOverlays(), t0 = performance.now();
       let res;
       try {
-        res = SBEngine.generate(SBEngine.request(project, run.src, { quality: "draft", requestId: "draft-" + rev, deviceClass: dc }),
-          { cache: run.draftCache, overlays: withOverlays });
+        res = SBEngine.generate(SBEngine.request(project, run.src, { quality: "draft", requestId: "draft-" + rev, deviceClass: dc,
+          draftCapPx: SBSchema.limits(dc).draftPxFallback }), { cache: run.draftCache, overlays: withOverlays });
       } catch (err) {   // a caller error (SOURCE_MISMATCH, CACHE_QUALITY); generate itself never throws
-        res = { status: "error", error: { code: (err && err.code) || "ENGINE_ARG", message: (err && err.message) || String(err) }, diagnostics: [] };
+        res = errorResponse(err, "ENGINE_ARG");
       }
-      setVeil(false);
-      // a canceled run keeps the previous result and the state it started from (it did not fail)
-      if (res.status === "canceled") { showRunState(stateBefore); showResult(run.shown); return; }
-      // alpha.3 E6 (UI-06): the current fabrication result of this revision stays on screen when a draft of the same
-      // revision finishes after it (an edit's debounced draft overtaken by a "Preview at fabrication resolution" click)
-      const keepFab = run.shown === run.fab && fabCurrent();
-      // acks carry over from the last draft that had a snapshot (a failed draft in between keeps them, lastGood)
-      const prev = run.draft, snap = res.snapshot || null, base = prev && prev.snapshot ? prev : (prev && prev.lastGood) || null;
-      const acks = base && snap && base.snapshot.geometryHash === snap.geometryHash ? base.acks : new Set();
-      if (!keepFab && (!snap || !prev || !prev.snapshot || prev.snapshot.geometryHash !== snap.geometryHash)) run.focus = null;
-      run.draft = { status: res.status, snapshot: snap, diagnostics: (snap ? snap.diagnostics : res.diagnostics) || [], error: res.error || null,
-        revision: rev, gen, ms: performance.now() - t0, acks, overlays: withOverlays, lastGood: snap ? null : base };
-      if (keepFab) { showRunState(stateBefore); setStatus(run.report); updateGate(gate); return; }
+      applyDraft(res, { gen, rev, stateBefore, gate, withOverlays, t0 });
+    }, 0));
+  }
+
+  /** A thrown caller or pool error as an engine response ({status: "error", error: {code, message}, diagnostics: []}). */
+  function errorResponse(err, code) {
+    return { status: "error", error: { code: (err && err.code) || code, message: (err && err.message) || String(err) }, diagnostics: [] };
+  }
+
+  /**
+   * Speed round F15: the one draft result path of both drivers. A result of a revision or source that changed meanwhile
+   * is dropped (the edit's own regenerate follows); a canceled run keeps the previous result and the state it started
+   * from (it did not fail). Draft acks carry over only to the same geometryHash. A fabrication run canceled by an edit
+   * ("fabrication restarted") runs again once this draft of the new revision is in.
+   */
+  function applyDraft(res, c) {
+    showProgress(null);
+    setVeil(false);
+    if (!run.src || c.gen !== run.src.gen || c.rev !== project.revision) return;
+    if (res.status === "canceled") { showRunState(c.stateBefore); showResult(run.shown); return; }
+    // alpha.3 E6 (UI-06): the current fabrication result of this revision stays on screen when a draft of the same
+    // revision finishes after it (an edit's debounced draft overtaken by a "Preview at fabrication resolution" click)
+    const keepFab = run.shown === run.fab && fabCurrent();
+    // acks carry over from the last draft that had a snapshot (a failed draft in between keeps them, lastGood)
+    const prev = run.draft, snap = res.snapshot || null, base = prev && prev.snapshot ? prev : (prev && prev.lastGood) || null;
+    const acks = base && snap && base.snapshot.geometryHash === snap.geometryHash ? base.acks : new Set();
+    if (!keepFab && (!snap || !prev || !prev.snapshot || prev.snapshot.geometryHash !== snap.geometryHash)) run.focus = null;
+    run.draft = { status: res.status, snapshot: snap, diagnostics: (snap ? snap.diagnostics : res.diagnostics) || [], error: res.error || null,
+      revision: c.rev, gen: c.gen, ms: performance.now() - c.t0, acks, overlays: c.withOverlays, lastGood: snap ? null : base };
+    if (keepFab) { showRunState(c.stateBefore); setStatus(run.report); updateGate(c.gate); }
+    else {
       if (res.status === "done") setRunState({ type: "done", quality: "draft", diagnostics: snap.diagnostics });
       else setRunState({ type: "fail" });
       run.shown = run.draft;
       showResult(run.shown);
-      updateGate(gate);
-    }, 0));
+      updateGate(c.gate);
+    }
+    if (fabRestart) { fabRestart = false; previewFabrication(); }   // UI-06: "fabrication restarted" on the edited revision
+  }
+
+  /** Cancel the pooled draft in flight, if any (its canceled result is dropped by draftToken). */
+  function cancelDraft() {
+    if (draftRun && pool) pool.cancel(draftRun.runId);
+    draftRun = null;
   }
 
   /** The draft change-overlay polygons are built only while the Changes overlay (#in-overlays) is on (E4: ≥ 15 % of construct). */
@@ -12058,7 +12197,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       // delivers what the user saw. After delivery the fabrication result stays shown.
       const ready = run.shown === run.fab && fabCurrent();
       const ok = await fabReview();
-      if (!ok) { setStatus("the project changed during the fabrication run; export again", true); return; }
+      if (!ok) { fabStopped("export again"); return; }
       if (!ready) {
         showFab();
         openFabReview("Review the fabrication result, then Download");
@@ -12096,68 +12235,156 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   }
 
   /**
-   * alpha.3 E6 (NFR-02 deviation until G4.1): the busy text shown before the blocking fabrication run, from the
-   * fabrication raster plan of the current revision and the measured SBSchema.limits(dc).fabMsPerMpx (E4; the offline
-   * app cannot read docs/ at runtime).
+   * alpha.3 E6: the busy text shown while the fabrication run is generated, from the fabrication raster plan of the
+   * current revision and the measured SBSchema.limits(dc).fabMsPerMpx (E4; the offline app cannot read docs/ at runtime;
+   * F17 re-measures it for the pool and for the fallback). Speed round F15: the pooled run keeps the page responsive; the
+   * fallback branch (fabFallback) says that the page is blocked until it finishes.
    */
-  const FABPREVIEW_NOTE = "Shows the exact cut geometry and its fabrication review. The page does not respond while it is generated.";
+  const FABPREVIEW_NOTE = "Shows the exact cut geometry and its fabrication review.";
   function fabBusyText(dc) {
     try {
       const g = SBEngine.rasterPlan(project, { w: run.src.w, h: run.src.h }, "fabrication", dc).geometry;
       const est = Math.max(1, Math.round((g.rasterW * g.rasterH / 1e6) * SBSchema.limits(dc).fabMsPerMpx / 1000));
-      return `Generating ${g.rasterW} × ${g.rasterH} px at ${g.mmPerPxMax.toFixed(3)} mm/px (about ${est} s; the page will not respond until it finishes)…`;
+      return `Generating ${g.rasterW} × ${g.rasterH} px at ${g.mmPerPxMax.toFixed(3)} mm/px (about ${est} s)…`;
     } catch (_) {
-      return "Generating the fabrication result (the page will not respond until it finishes)…";
+      return "Generating the fabrication result…";
     }
+  }
+  /** The note under "Preview at fabrication resolution": the pool's fallback notice is appended while there is no pool. */
+  function fabNote() { return FABPREVIEW_NOTE + (poolNotice ? " " + poolNotice : ""); }
+
+  /** The busy state of a fabrication run: button text, note, Processing badge and veil; Cancel only for a pooled run. */
+  function fabBusy(on, text, cancelable) {
+    const fb = $("btn-fabpreview"), note = $("fabpreview-note"), cancel = $("btn-fabcancel");
+    if (on) {
+      if (fb) { fb.dataset.busy = "1"; fb.disabled = true; fb.textContent = text; }
+      if (note) note.textContent = text;
+      if (cancel) { cancel.hidden = !cancelable; cancel.disabled = false; }
+      setRunState({ type: "start" });
+      setVeil(true);
+      setStatus(text);
+      return;
+    }
+    if (!draftRun) { setVeil(false); showProgress(null); }   // a draft submitted meanwhile keeps its veil and progress
+    if (fb) { fb.dataset.busy = "0"; fb.textContent = "Preview at fabrication resolution"; }
+    if (note) note.textContent = fabNote();
+    if (cancel) cancel.hidden = true;
   }
 
   /**
    * alpha.2 (LYR-06): make run.fab the fabrication run of the current revision. Reused while current (fabCurrent(): so
-   * the user can acknowledge warnings and download what is on screen); otherwise SBEngine.generate runs at quality
-   * "fabrication" on the installed source record and its own full-size pixels, on the main thread (the G4.1 worker moves
-   * it off), with no stage cache (E-R7). alpha.3 E6: the busy text (raster, pitch, estimate), the Processing badge and the
-   * veil are painted first (a frame, then a task). Acks carry over only to the same geometryHash. Resolves true when
-   * run.fab is current, false when the project or source changed meanwhile. The caller shows it (showFab).
+   * the user can acknowledge warnings and download what is on screen); otherwise SBEngine.request at quality
+   * "fabrication" on the installed source record and its own full-size pixels, with no stage cache (E-R7). Speed round
+   * F15 (PO-PERF-1, NFR-02): it runs in the worker pool with a progress bar and a Cancel button; the result is taken only
+   * when SBDiag.acceptResult matches this submit (AT-15). An edit cancels it (recompute → cancelFab("restart")), the
+   * Cancel button too (cancelFab("user")); fabCancelReason says which. Without a pool, fabFallback runs the sync driver.
+   * Acks carry over only to the same geometryHash. Resolves true when run.fab is current, false when the project or
+   * source changed meanwhile or the run was canceled. The caller shows it (showFab).
    */
-  let fabInFlight = null;   // one fabrication run at a time (a second click during the paint wait joins it)
+  let fabInFlight = null, fabRun = null, fabCancelReason = null, fabRestart = false;   // one fabrication run at a time
   async function fabReview() {
     if (fabCurrent()) { renderFabReview(); return true; }
-    if (fabInFlight) return fabInFlight;
+    if (fabInFlight) return fabInFlight;   // a second click (or Export) joins the run in flight
+    fabCancelReason = null;
     fabInFlight = (async () => {
       if (!run.src || !project.source) return false;
       const gen = sourceGen, rev = project.revision, dc = deviceClass();
-      const busy = fabBusyText(dc), fb = $("btn-fabpreview"), note = $("fabpreview-note");
-      if (fb) { fb.dataset.busy = "1"; fb.disabled = true; fb.textContent = busy; }
-      if (note) note.textContent = busy;
-      setRunState({ type: "start" });
-      setVeil(true);
-      setStatus(busy);
-      await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));   // paint the busy state first
-      let res = null, t0 = 0;
+      if (!usePool()) return fabFallback(gen, rev, dc);
+      if (!(run.sourceImage && run.src.sampleHash === project.source.sampleHash)) return false;
+      const sampleHash = run.src.sampleHash, t0 = performance.now(), stateBefore = run.state;
+      cancelDraft();   // one run at a time: the fabrication run supersedes a draft in flight (it reruns afterwards)
+      fabBusy(true, fabBusyText(dc), true);
+      let res = null;
       try {
+        pool.setSource(run.src);
         // alpha.3 E1 (LYR-06): the same request builder as the draft, on the installed source record and its own pixels
-        if (gen === sourceGen && rev === project.revision && run.sourceImage && run.src && project.source && run.src.sampleHash === project.source.sampleHash) {
-          t0 = performance.now();
-          try {
-            res = SBEngine.generate(SBEngine.request(project, run.src, { quality: "fabrication", requestId: "fab-" + rev, deviceClass: dc }));
-          } catch (err) {   // a caller error (SOURCE_MISMATCH); generate itself never throws
-            res = { status: "error", error: { code: (err && err.code) || "ENGINE_ARG", message: (err && err.message) || String(err) }, diagnostics: [] };
-          }
-        }
+        const sub = pool.submit(SBEngine.request(project, run.src, { quality: "fabrication", requestId: "fab-" + rev, deviceClass: dc }),
+          { sampleHash, gen, overlays: true, onProgress: (p) => showProgress(Object.assign({ title: "Fabrication" }, p)) });
+        const active = fabRun = { runId: sub.runId, gen, sampleHash, overlays: true, deviceClass: dc };
+        const result = await sub.done.catch((err) => err);
+        if (result instanceof Error && result.code === "POOL_UNAVAILABLE") { fabRun = null; fabBusy(false); return fabFallback(gen, rev, dc); }
+        if (result instanceof Error) res = errorResponse(result, "ENGINE_INTERNAL");
+        else if (SBDiag.acceptResult(active, result) && result.status !== "canceled") res = result.response;   // AT-15
+      } catch (err) {   // a caller error (ENGINE_ARG from SBEngine.request)
+        res = errorResponse(err, "ENGINE_ARG");
       } finally {
-        setVeil(false);
-        if (fb) { fb.dataset.busy = "0"; fb.textContent = "Preview at fabrication resolution"; }
-        if (note) note.textContent = FABPREVIEW_NOTE;
+        fabRun = null;
+        fabBusy(false);
       }
-      if (!res) { setStatus(run.report); return false; }   // superseded: the edit or new source set the state and reruns the draft
-      const snap = res.snapshot || null;
-      const acks = run.fab && run.fab.snapshot && snap && run.fab.snapshot.geometryHash === snap.geometryHash ? run.fab.acks : new Set();
-      run.fab = { kind: "fabrication", status: res.status, snapshot: snap, diagnostics: (snap ? snap.diagnostics : res.diagnostics) || [], error: res.error || null,
-        revision: rev, gen, deviceClass: dc, acks, ms: performance.now() - t0 };
-      renderFabReview();
-      return true;
+      if (!res || gen !== sourceGen || rev !== project.revision) {   // canceled or superseded (an edit set its own state)
+        if (fabCancelReason === "user") showRunState(stateBefore);   // a canceled run did not fail
+        if (!draftRun) setStatus(run.report);
+        return false;
+      }
+      return storeFab(res, gen, rev, dc, t0);
     })();
-    try { return await fabInFlight; } finally { fabInFlight = null; }
+    try { return await fabInFlight; }
+    finally {
+      fabInFlight = null;
+      if (draftRerun) { draftRerun = false; regenerate(); }   // a draft superseded by this run runs now
+    }
+  }
+
+  /**
+   * Speed round F15 fallback branch of fabReview (no pool): the sync driver SBEngine.generate on the page. The busy text
+   * (raster, pitch, estimate, and that the page is blocked), the Processing badge and the veil are painted first (a
+   * frame, then a task). The request carries draftCapPx: limits(dc).draftPxFallback, as every fallback request (F-D5;
+   * fabrication geometry does not depend on it).
+   */
+  async function fabFallback(gen, rev, dc) {
+    const busy = fabBusyText(dc).replace(/…$/, "; the page will not respond until it finishes…");
+    fabBusy(true, busy + (poolNotice ? " " + poolNotice : ""), false);
+    await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));   // paint the busy state first
+    let res = null, t0 = 0;
+    try {
+      if (gen === sourceGen && rev === project.revision && run.sourceImage && run.src && project.source && run.src.sampleHash === project.source.sampleHash) {
+        t0 = performance.now();
+        try {
+          res = SBEngine.generate(SBEngine.request(project, run.src, { quality: "fabrication", requestId: "fab-" + rev, deviceClass: dc,
+            draftCapPx: SBSchema.limits(dc).draftPxFallback }));
+        } catch (err) {   // a caller error (SOURCE_MISMATCH); generate itself never throws
+          res = errorResponse(err, "ENGINE_ARG");
+        }
+      }
+    } finally {
+      fabBusy(false);
+    }
+    if (!res) { setStatus(run.report); return false; }   // superseded: the edit or new source set the state and reruns the draft
+    return storeFab(res, gen, rev, dc, t0);
+  }
+
+  /** Store a fabrication response as run.fab (acks carry over only to the same geometryHash) and render its review. */
+  function storeFab(res, gen, rev, dc, t0) {
+    const snap = res.snapshot || null;
+    const acks = run.fab && run.fab.snapshot && snap && run.fab.snapshot.geometryHash === snap.geometryHash ? run.fab.acks : new Set();
+    run.fab = { kind: "fabrication", status: res.status, snapshot: snap, diagnostics: (snap ? snap.diagnostics : res.diagnostics) || [], error: res.error || null,
+      revision: rev, gen, deviceClass: dc, acks, ms: performance.now() - t0 };
+    renderFabReview();
+    return true;
+  }
+
+  /**
+   * Speed round F15 (UI-06, NFR-02): cancel the pooled fabrication run in flight. reason "user" (the Cancel button) or
+   * "restart" (an edit or a new draft: "fabrication restarted", it runs again once the draft of the new revision is in).
+   * The fallback run cannot be canceled (it blocks the page). Returns whether a run was canceled.
+   */
+  function cancelFab(reason) {
+    if (!fabRun || !pool) return false;
+    fabCancelReason = reason;
+    pool.cancel(fabRun.runId);
+    fabRun = null;
+    const cancel = $("btn-fabcancel");
+    if (cancel) cancel.disabled = true;
+    return true;
+  }
+
+  /** The status after fabReview returned false: canceled by the user, restarted by an edit, or superseded. */
+  function fabStopped(again) {
+    if (fabCancelReason === "user") setStatus("fabrication run canceled", true);
+    else if (fabCancelReason === "restart") {
+      fabRestart = true;
+      setStatus("fabrication restarted: it runs again on the edited settings once the draft is updated", true);
+    } else setStatus("the project changed during the fabrication run; " + again, true);
   }
 
   /** alpha.3 E6 (PO-PREVIEW-2): "Preview at fabrication resolution": run (or reuse) the fabrication result and show it. */
@@ -12165,7 +12392,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const fp = $("btn-fabpreview");
     if (fp && fp.dataset.busy === "1") return;
     try {
-      if (!(await fabReview())) { setStatus("the project changed during the fabrication run; preview again", true); return; }
+      if (!(await fabReview())) { fabStopped("preview again"); return; }
       showFab();
     } catch (err) {
       setStatus(`fabrication preview failed: ${err.message || err}`, true);
@@ -12954,6 +13181,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     $("btn-export").addEventListener("click", exportBundle);
     // alpha.3 E6 (PO-PREVIEW-2): the exact fabrication run, shown in every view (reused while current)
     $("btn-fabpreview").addEventListener("click", previewFabrication);
+    // speed round F15 (NFR-02): the pooled fabrication run can be canceled (the fallback run blocks the page)
+    $("btn-fabcancel").addEventListener("click", () => cancelFab("user"));
     // an explicit Generate returns the views to the draft (UI-06)
     $("btn-generate").addEventListener("click", showDraft);
 
@@ -12969,6 +13198,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const verEl = $("meta-version");
     if (verEl) verEl.textContent = "v" + APP_VERSION;
 
+    // speed round F15 (PO-PERF-1): the worker pool, before the first run (a fallback notice shows at once)
+    startPool();
     // PRJ-01: open empty. Export stays disabled with "Choose a source" until a photo or the Demo scene is chosen.
     regenerate();
 

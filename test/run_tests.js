@@ -5531,10 +5531,11 @@ suite("app.js — alpha.3 E5 real-engine draft (PO-PREVIEW-1, LYR-06, UI-05)", (
   const pvSrc = fs.readFileSync(path.join(__dirname, "..", "js", "preview.js"), "utf8");
   const fn = (name) => { const i = appSrc.indexOf("function " + name + "("); return i < 0 ? "" : appSrc.slice(i, appSrc.indexOf("\n  }\n", i)); };
   check("PO-PREVIEW-1 app.js calls no SBEngine.legacy* (legacyRun, legacyView, legacyDiagnostics, legacySnapshotHash, legacyCleanupReport)", !/SBEngine\.legacy\w*\(/.test(appSrc));
-  check("PO-PREVIEW-1 regenerate calls SBEngine.generate on SBEngine.request(…, {quality: \"draft\"}) with the draft cache",
-    /SBEngine\.generate\(\s*SBEngine\.request\([^)]*quality:\s*"draft"/.test(fn("regenerate")) && /run\.draftCache/.test(fn("regenerate")));
-  check("LYR-06 regenerate no longer downsamples on a canvas (no drawImage)", fn("regenerate").length > 0 && !/drawImage\(/.test(fn("regenerate")));
-  check("UI-05 regenerate paints the Stale state before the blocking run (rAF + task)", /requestAnimationFrame\(/.test(fn("regenerate")) || /paintThen\(/.test(fn("regenerate")));
+  check("PO-PREVIEW-1 the draft is SBEngine.request(…, {quality: \"draft\"}) through the pool (regenerate) or SBEngine.generate with the draft cache (regenerateFallback, F15)",
+    /pool\.submit\(\s*SBEngine\.request\([^)]*quality:\s*"draft"/.test(fn("regenerate")) &&
+    /SBEngine\.generate\(\s*SBEngine\.request\([^)]*quality:\s*"draft"/.test(fn("regenerateFallback")) && /run\.draftCache/.test(fn("regenerateFallback")));
+  check("LYR-06 regenerate no longer downsamples on a canvas (no drawImage)", fn("regenerate").length > 0 && !/drawImage\(/.test(fn("regenerate") + fn("regenerateFallback")));
+  check("UI-05 the fallback draft paints the Stale state before the blocking run (rAF + task, regenerateFallback, F15)", /requestAnimationFrame\(\(\) => setTimeout\(/.test(fn("regenerateFallback")));
   check("UI-04 the diagnostics panel lists res.diagnostics when generate fails with no layers (COMPLEXITY_LIMIT)",
     /\.status === "error"/.test(appSrc) && /renderDiagnostics\(/.test(fn("regenerate") + fn("showResult")) && /No layers/.test(fn("renderDiagnostics")));
   check("alpha.3 no run.sheets / procW / viewToken left in app.js", !/run\.sheets\b|run\.procW|run\.viewToken/.test(appSrc));
@@ -5555,7 +5556,7 @@ suite("app.js — alpha.3 E5 real-engine draft (PO-PREVIEW-1, LYR-06, UI-05)", (
   check("SUP-04 the clip dialog proposes on run.shown.snapshot at its own quality; applied = snapshot.repairsApplied",
     /SBSupport\.proposeClip\(\{[^}]*layers:\s*\w+\.layers[^}]*quality:\s*\w+\.quality/.test(fn("openClipDialog")) && /repairsApplied/.test(appSrc) &&
     /run\.shown\.revision === project\.revision/.test(appSrc) && !/run\.applied\b/.test(appSrc));
-  check("UI-05 draft acks are kept only for the same geometryHash", /geometryHash === [^;]*geometryHash[^;]*\.acks/.test(fn("regenerate")));
+  check("UI-05 draft acks are kept only for the same geometryHash (applyDraft, both drivers)", /geometryHash === [^;]*geometryHash[^;]*\.acks/.test(fn("applyDraft")));
   check("UI-01 geometry range inputs commit on change (input only updates the number); debounce 300 ms",
     /SBUtil\.debounce\(regenerate, 300\)/.test(appSrc) && /type === "range"[\s\S]{0,400}"change"/.test(fn("bindControls")));
   check("PO-PREVIEW-1 the overlay polygons are built only while the Changes overlay is on (generate opts.overlays)",
@@ -5607,15 +5608,15 @@ suite("index.html/app.js — alpha.3 E6 fabrication preview (PO-PREVIEW-2, LYR-0
   check("PO-PREVIEW-2 #btn-fabpreview and #fabpreview-note sit in the Review stage",
     (() => { const m = /<section class="step" id="stage-review"[\s\S]*?<\/section>/.exec(html); return !!m && /id="btn-fabpreview"/.test(m[0]) && /id="fabpreview-note"/.test(m[0]); })());
   check("PO-PREVIEW-2 the button runs fabReview and shows run.fab in every view", /btn-fabpreview/.test(appSrc) && /run\.shown = run\.fab/.test(appSrc));
-  check("NFR-02 (deviation) the busy text is painted before the blocking fabrication run", /will not respond/.test(appSrc) && /requestAnimationFrame\(/.test(fn("fabReview")));
-  check("NFR-02 the busy estimate uses SBSchema.limits(…).fabMsPerMpx (the app cannot read docs/ at runtime)", /fabMsPerMpx/.test(fn("fabReview") + fn("fabBusyText")));
+  check("NFR-02 (deviation, fallback only) the busy text is painted before the blocking fabrication run", /will not respond/.test(fn("fabFallback")) && /requestAnimationFrame\(\(\) => setTimeout\(/.test(fn("fabFallback")));
+  check("NFR-02 the busy estimate uses SBSchema.limits(…).fabMsPerMpx (the app cannot read docs/ at runtime)", /fabMsPerMpx/.test(fn("fabBusyText")) && /fabBusyText\(/.test(fn("fabReview")) && /fabBusyText\(/.test(fn("fabFallback")));
   check("LYR-06 exportBundle does not regenerate while fabCurrent()", /fabCurrent\(\)/.test(fn("fabReview")) && fn("exportBundle").indexOf("SBEngine.generate(") < 0);
   check("UI-06 fab preview of revision r is not shown for r+1 (fabCurrent checks the revision; an edit shows the draft)",
     /run\.fab\.revision === project\.revision/.test(fn("fabCurrent")) && /run\.shown = run\.draft/.test(appSrc));
   check("UI-06 an edit (recompute) leaves the fabrication result for the Stale draft at once",
     /showDraft\(\)/.test(fn("recompute")) && /run\.shown = run\.draft/.test(fn("showDraft")));
   check("UI-06 a draft finishing while the current fabrication result is shown does not replace it",
-    /run\.shown === run\.fab && fabCurrent\(\)/.test(fn("regenerate")));
+    /run\.shown === run\.fab && fabCurrent\(\)/.test(fn("applyDraft")));
   const bd = fn("buildAndDeliver"), ex = fn("exportBundle");
   check("PO-PREVIEW-2 delivery requires the shown, current fabrication result; otherwise export shows it and stops",
     /run\.shown === run\.fab/.test(ex) && /fabCurrent\(\)/.test(ex) && /showFab\(\)/.test(ex) && ex.indexOf("showFab()") < ex.indexOf("buildAndDeliver("));
@@ -5623,7 +5624,7 @@ suite("index.html/app.js — alpha.3 E6 fabrication preview (PO-PREVIEW-2, LYR-0
     /SBEngine\.fabricationFiles\(run\.fab\.snapshot/.test(bd) && /run\.fab\.snapshot/.test(fn("settingsJSON")) && !/run\.shown = (back|run\.draft)/.test(bd) && !/showResult\(back\)/.test(bd));
   check("PO-PREVIEW-7 preview.png is captured with overlays off and focus cleared",
     /setOverlays\(null\)/.test(bd) && /setFocus\(null\)/.test(bd) && bd.indexOf("setOverlays(null)") < bd.indexOf("preview.snapshot("));
-  check("LYR-06 fabReview passes no stage cache (E-R7) and checks the sample hash", !/cache:/.test(fn("fabReview")) && /sampleHash/.test(fn("fabReview")));
+  check("LYR-06 fabReview passes no stage cache (E-R7) and checks the sample hash", !/cache:/.test(fn("fabReview") + fn("fabFallback")) && /sampleHash/.test(fn("fabReview")) && /sampleHash/.test(fn("fabFallback")));
   check("UI-04 one renderer: the fabrication review is renderDiagnostics(run.fab, {scope: \"fabrication\"}), its header names the short geometryHash",
     /renderDiagnostics\(run\.fab, \{ scope: "fabrication" \}\)/.test(fn("renderFabReview")) && /geometryHash\.slice\(0, 12\)/.test(fn("renderDiagnostics")) &&
     /Acknowledge for this fabrication result/.test(appSrc));
@@ -7598,6 +7599,71 @@ suite("engine/worker.js/pool.js — speed round F14 cancellation (AT-15) and wat
   } finally {
     for (const p of pools) p.terminate();
   }
+});
+
+// ------------------------------------------------ speed round F15 (app wiring, progress UI, serial fallback)
+suite("app.js/index.html/schema.js — speed round F15 app wiring, progress UI and the serial fallback (PO-PERF-1, NFR-02, UI-05, UI-06, AT-15, F-D5)", () => {
+  const root = path.join(__dirname, ".."), E = SBEngine, S = SBSchema, F = require("./fixtures.js");
+  const appSrc = fs.readFileSync(path.join(root, "js", "app.js"), "utf8"), html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(root, "css", "style.css"), "utf8");
+  const fn = (name) => { const i = appSrc.indexOf("function " + name + "("); return i < 0 ? "" : appSrc.slice(i, appSrc.indexOf("\n  }\n", i)); };
+  const span = (name) => { const i = appSrc.indexOf("function " + name + "("); return i < 0 ? [-1, -1] : [i, appSrc.indexOf("\n  }\n", i)]; };
+  const all = (re) => { const out = []; let m; const g = new RegExp(re.source, "g"); while ((m = g.exec(appSrc))) out.push(m.index); return out; };
+  const inside = (idx, names) => names.some((n) => { const [a, b] = span(n); return a >= 0 && idx > a && idx < b; });
+  const rg = fn("regenerate"), fr = fn("fabReview"), rf = fn("regenerateFallback"), ff = fn("fabFallback");
+  const FALLBACK = ["regenerateFallback", "fabFallback"];
+
+  check("PO-PERF-1 regenerate and fabReview submit to the worker pool (pool.submit) and show a result only through SBDiag.acceptResult (AT-15)",
+    /\bpool\.submit\(\s*SBEngine\.request\([^)]*quality:\s*"draft"/.test(rg) && /\bpool\.submit\(\s*SBEngine\.request\([^)]*quality:\s*"fabrication"/.test(fr) &&
+    /SBDiag\.acceptResult\(/.test(rg) && /SBDiag\.acceptResult\(/.test(fr) && /sampleHash/.test(rg) && /sampleHash/.test(fr));
+  check("PO-PERF-1 app.js creates one pool (SBPool.create with appVersion: APP_VERSION and onState) and posts the installed source (pool.setSource)",
+    /SBPool\.create\(\{[^}]*appVersion: APP_VERSION[^}]*onState/.test(appSrc) && /pool\.setSource\(run\.src\)/.test(rg) && /pool\.setSource\(run\.src\)/.test(fr) &&
+    /startPool\(\)/.test(fn("init")) && fn("init").indexOf("startPool()") < fn("init").lastIndexOf("regenerate()"));
+  check("F15 the sync driver is the only fallback driver: the literal SBEngine.generate( appears only in regenerateFallback and fabFallback; no third driver",
+    rf.length > 0 && ff.length > 0 && all(/SBEngine\.generate\(/).length === 2 && all(/SBEngine\.generate\(/).every((i) => inside(i, FALLBACK)) &&
+    !/SBEngine\.generateAsync\(|runSteps/.test(appSrc));
+  check("F15 rAF + setTimeout and the \"will not respond\" text exist only in the fallback branch",
+    all(/requestAnimationFrame\(\(\) => setTimeout\(/).length === 2 && all(/requestAnimationFrame\(\(\) => setTimeout\(/).every((i) => inside(i, FALLBACK)) &&
+    all(/will not respond/).length > 0 && all(/will not respond/).every((i) => inside(i, ["fabFallback"])) &&
+    !/requestAnimationFrame|setTimeout|will not respond/.test(rg + fr));
+  check("F-D5 the fallback branch passes draftCapPx: SBSchema.limits(dc).draftPxFallback (the pooled path keeps the request default)",
+    /SBEngine\.request\([^;]*draftCapPx: SBSchema\.limits\(dc\)\.draftPxFallback/.test(rf) && /SBEngine\.request\([^;]*draftCapPx: SBSchema\.limits\(dc\)\.draftPxFallback/.test(ff) &&
+    !/draftCapPx:/.test(rg + fr));
+  check("F15 the pool ladders to the serial fallback: POOL_UNAVAILABLE reruns the draft in regenerateFallback and the fabrication run in fabFallback",
+    /POOL_UNAVAILABLE[\s\S]{0,200}regenerateFallback\(/.test(rg) && /POOL_UNAVAILABLE[\s\S]{0,200}fabFallback\(/.test(fr) && /!usePool\(\)/.test(rg) && /!usePool\(\)/.test(fr));
+  check("F15 the fallback shows the pool's \"reduced responsiveness\" notice (#pool-notice, onState)",
+    /reduced responsiveness/.test(appSrc) && /id="pool-notice"/.test(html) && /pool-notice/.test(fn("poolState")) && /notice/.test(fn("poolState")));
+  check("UI-06 an edit cancels an in-flight fabrication run (\"fabrication restarted\"); the run restarts after the draft",
+    /cancelFab\("restart"\)/.test(fn("recompute")) && /fabrication restarted/.test(appSrc) && /pool\.cancel\(/.test(fn("cancelFab")) &&
+    /fabRestart/.test(fn("applyDraft")) && /previewFabrication\(\)/.test(fn("applyDraft")));
+  check("NFR-02 the fabrication Cancel button (#btn-fabcancel in the Review stage) cancels the pooled run",
+    (() => { const m = /<section class="step" id="stage-review"[\s\S]*?<\/section>/.exec(html); return !!m && /id="btn-fabcancel"[^>]*hidden/.test(m[0]); })() &&
+    /\$\("btn-fabcancel"\)\.addEventListener\("click", \(\) => cancelFab\("user"\)\)/.test(appSrc) && /fabrication run canceled/.test(appSrc));
+  check("UI-05 progress bar and stage label from the pool's progress, painted at most once per animation frame",
+    /id="run-progress"/.test(html) && /<progress id="run-progress-bar"/.test(html) && /id="run-progress-label"/.test(html) && /\.runprogress\b/.test(css) &&
+    /onProgress:[^\n]*showProgress\(/.test(rg) && /onProgress:[^\n]*showProgress\(/.test(fr) &&
+    /if \(!progress\.raf\) progress\.raf = requestAnimationFrame\(paintProgress\)/.test(fn("showProgress")) && /run-progress-bar/.test(fn("paintProgress")));
+  check("UI-05 one result path: applyDraft (pool and fallback) keeps acks for the same geometryHash and drops a superseded revision",
+    /applyDraft\(/.test(rg) && /applyDraft\(/.test(rf) && /geometryHash === [^;]*geometryHash[^;]*\.acks/.test(fn("applyDraft")) &&
+    /rev !== project\.revision/.test(fn("applyDraft")));
+  check("NFR-02 the busy estimate stays SBSchema.limits(…).fabMsPerMpx in both branches", /fabMsPerMpx/.test(fn("fabBusyText")) && /fabBusyText\(/.test(fr) && /fabBusyText\(/.test(ff));
+  check("F15 index.html no longer says the page does not respond (the pool keeps it responsive)", !/does not respond/.test(html));
+
+  const L = (dc) => S.limits(dc);
+  check("F-D5 SBSchema.limits(dc).draftPxFallback is 720 on desktop and mobile", L("desktop").draftPxFallback === 720 && L("mobile").draftPxFallback === 720);
+  const w = 1600, h = 1200, px = { pixels: F.heightMap(15, w, h), channels: 1, w, h, alpha: null };
+  const p = S.withSource(S.defaults("plywood"), E.sourceRecord(px, { format: "png", decode: "raw-gray8" })); p.geometry.targetMM = 40; p.geometry.draftPx = 1600;
+  const fb = E.request(p, px, { quality: "draft", deviceClass: "desktop", draftCapPx: L("desktop").draftPxFallback });
+  const plan = E.rasterPlan(p, { w, h }, "draft", "desktop", fb.draftCapPx).geometry;
+  check("F-D5 the fallback request copies draftPxFallback and its draft raster's long side is ≤ 720",
+    fb.draftCapPx === 720 && Math.max(plan.rasterW, plan.rasterH) <= 720);
+  const q = JSON.parse(JSON.stringify(p)); q.geometry.targetMM = 12;
+  const sm = { pixels: F.heightMap(16, 160, 120), channels: 1, w: 160, h: 120, alpha: null };
+  const q2 = S.withSource(q, E.sourceRecord(sm, { format: "png", decode: "raw-gray8" }));
+  const a = E.generate(E.request(q2, sm, { quality: "fabrication", deviceClass: "desktop", draftCapPx: 64 })),
+    b = E.generate(E.request(q2, sm, { quality: "fabrication", deviceClass: "desktop" }));
+  check("F-D5 fabrication is unaffected by draftCapPx (fallback and pooled fabrication give the same geometryHash)",
+    a.status === "done" && b.status === "done" && a.snapshot.geometryHash === b.snapshot.geometryHash);
 });
 
 // ------------------------------------------------------------------ report

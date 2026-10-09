@@ -269,6 +269,11 @@ button.diag-go:hover .diag-msg { text-decoration: underline; }
 .filebtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 
 .hint { font-size: 12px; color: var(--ink-soft); margin: 0 0 10px; }
+/* speed round F15 (UI-05): progress of a pooled run (bar + stage label) and the no-pool notice */
+.runprogress { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 12px; color: var(--ink-soft); }
+.runprogress progress { flex: 1 1 auto; min-width: 0; height: 8px; }
+.runprogress-label { flex: 0 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
+.pool-notice { color: var(--ink); }
 .chips { display: flex; gap: 4px; margin-top: 8px; }
 .chip {
   width: 24px; height: 14px;

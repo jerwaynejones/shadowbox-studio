@@ -212,7 +212,15 @@
       <p id="why-generate" class="why" role="status">Choose a source</p>
       <!-- alpha.3 E6 (PO-PREVIEW-2): the exact fabrication run (same request and hash as the export) shown in every view -->
       <button id="btn-fabpreview" class="btn" type="button" disabled aria-describedby="fabpreview-note">Preview at fabrication resolution</button>
-      <p id="fabpreview-note" class="hint" role="status" aria-live="polite">Shows the exact cut geometry and its fabrication review. The page does not respond while it is generated.</p>
+      <p id="fabpreview-note" class="hint" role="status" aria-live="polite">Shows the exact cut geometry and its fabrication review.</p>
+      <!-- speed round F15 (PO-PERF-1, NFR-02, UI-05): progress of the run in the worker pool, Cancel for a pooled fabrication
+           run, and the notice when there is no pool (the preview then runs on the page) -->
+      <div id="run-progress" class="runprogress" hidden>
+        <progress id="run-progress-bar" max="1" value="0" aria-labelledby="run-progress-label"></progress>
+        <span id="run-progress-label" class="runprogress-label"></span>
+      </div>
+      <button id="btn-fabcancel" class="btn" type="button" hidden>Cancel fabrication run</button>
+      <p id="pool-notice" class="hint pool-notice" role="status" aria-live="polite" hidden></p>
       <!-- G2.13c (UI-04, NFR-07): diagnostics grouped by severity, icon plus text; an item with a layer is a button
            that shows its layer, parts and region in the Proof; warnings carry an Acknowledge checkbox for this result. -->
       <div id="diag-panel" class="diag" role="region" aria-labelledby="h-diag">
