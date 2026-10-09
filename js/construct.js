@@ -126,41 +126,11 @@
   }
 
   /**
-   * 4-connected components of the nonzero pixels by row runs and union-find. Returns {count, root(i), runs} where runs is
-   * {y, x0, x1} as parallel Int32Arrays (half-open [x0, x1)) and root maps a run index to its component representative.
+   * 4-connected components of the nonzero pixels by row runs and union-find. Returns {count, n, find, Y, X0, X1}: runs
+   * {y, x0, x1} as parallel Int32Arrays (half-open [x0, x1)) and find maps a run index to its component representative.
+   * Speed round F5: the labelling lives in SBMorph.runComponents (value 1 = nonzero), shared with fillHoles/removeSpecks.
    */
-  function runComponents(mask, w, h) {
-    let cap = 1024, Y = new Int32Array(cap), X0 = new Int32Array(cap), X1 = new Int32Array(cap), P = new Int32Array(cap), n = 0, unions = 0;
-    const grow = () => { cap *= 2; const g = (a) => { const b = new Int32Array(cap); b.set(a); return b; }; Y = g(Y); X0 = g(X0); X1 = g(X1); P = g(P); };
-    const find = (i) => { while (P[i] !== i) { P[i] = P[P[i]]; i = P[i]; } return i; };
-    // zero bytes are skipped a 32-bit word at a time when the buffer is aligned; a run of 1s ends at the native indexOf(0)
-    const words = mask.byteOffset % 4 === 0 ? new Uint32Array(mask.buffer, mask.byteOffset, mask.length >> 2) : null;
-    const ones = (o, x, end) => { let e = x; if (mask[o + x] === 1 && end - x > 16) { const z = mask.subarray(o + x, o + end).indexOf(0); e = z < 0 ? end : x + z; }
-      while (e < end && mask[o + e]) e++; return e; };
-    let prevStart = 0, prevEnd = 0;
-    for (let y = 0; y < h; y++) {
-      const rowStart = n, o = y * w;
-      let j = prevStart;
-      for (let x = 0; x < w;) {
-        if (!mask[o + x]) {
-          x++;
-          if (words) { let i = o + x; while (i & 3 && i < o + w && !mask[i]) i++;
-            if (!(i & 3)) { let q = i >> 2; const qe = (o + w) >> 2; while (q < qe && words[q] === 0) q++; i = Math.max(i, Math.min(q << 2, o + w)); }
-            x = i - o; }
-          continue;
-        }
-        const x0 = x; x = ones(o, x, w);
-        if (n === cap) grow();
-        Y[n] = y; X0[n] = x0; X1[n] = x; P[n] = n;
-        // runs of the previous row that overlap [x0, x) (4-connectivity: shared column)
-        while (j < prevEnd && X1[j] <= x0) j++;
-        for (let q = j; q < prevEnd && X0[q] < x; q++) { const a = find(q), b = find(n); if (a !== b) { if (a < b) P[b] = a; else P[a] = b; unions++; } }
-        n++;
-      }
-      prevStart = rowStart; prevEnd = n;
-    }
-    return { count: n - unions, n, find, Y, X0, X1 };
-  }
+  const runComponents = (mask, w, h) => global.SBMorph.runComponents(mask, w, h, 1);
 
   C.estimateComplexity = function (masks, w, h) {
     checkMasks(masks, w, h);

@@ -6221,6 +6221,73 @@ suite("morph — speed round F4 windowAny, erode/dilate, fused dilations (NFR-05
   check(`F4 construct morph (fused erode → dilate(r + r') → erode(r')) == oracle chain, featR 0..9 (${meq}/${mc})`, meq === mc);
 });
 
+// ------------------------------------------------ speed round F5 (plan Appendix F, S5): run-based fillHoles / removeSpecks
+suite("morph — speed round F5 run-based hole filling and speck removal (NFR-05)", () => {
+  const M = SBMorph, C = SBConstruct, { oracleComponents: OC, oracleConstruct: OK, oracleMorph: O } = require("./oracle_kernels.js");
+  const same = (a, b) => a instanceof Uint8Array && b instanceof Uint8Array && a.length === b.length && Buffer.compare(Buffer.from(a.buffer, a.byteOffset, a.length), Buffer.from(b.buffer, b.byteOffset, b.length)) === 0;
+  check("F5 SBMorph.runComponents exists", typeof M.runComponents === "function");
+  let seed = 0x5eed_f5;
+  const rnd = () => { seed = (seed + 0x6d2b79f5) | 0; let t = seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
+  // blobby masks (a coarse random field upsampled) give real holes and specks of many sizes, not just salt-and-pepper
+  const randMask = (w, h, dens, val, blob) => {
+    const m = new Uint8Array(w * h), cs = blob ? ri(2, 6) : 1, cw = Math.ceil(w / cs) + 1, f = new Float64Array(cw * (Math.ceil(h / cs) + 1));
+    for (let i = 0; i < f.length; i++) f[i] = rnd();
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = (blob ? f[((y / cs) | 0) * cw + ((x / cs) | 0)] * 0.8 + rnd() * 0.2 : rnd()) < dens ? val : 0;
+    return m;
+  };
+  const view = (m0, off) => { if (!off) return m0; const b = new Uint8Array(m0.length + off); b.set(m0, off); return b.subarray(off); };
+  // 200 seeded masks, 1 × 1 to 120 × 90, densities 0.05–0.95, all-0 and all-1, some with value 255 and unaligned views;
+  // removeSpecks and fillHoles at several limits: return counts and the mutated masks byte-equal to the oracle
+  let total = 0, eq = 0, rcTotal = 0, rcEq = 0;
+  for (let t = 0; t < 200; t++) {
+    const w = t < 8 ? [1, 1, 2, 3, 120, 7, 1, 90][t] : ri(1, 120), h = t < 8 ? [1, 5, 1, 3, 90, 1, 9, 2][t] : ri(1, 90);
+    const dens = t % 11 === 0 ? 0 : t % 11 === 1 ? 1.01 : 0.05 + 0.9 * rnd();
+    const m0 = randMask(w, h, dens, t % 13 === 5 ? 255 : 1, t % 2 === 0);
+    for (const lim of [0, 1, 2, 3, 5, ri(6, 40), ri(41, 400), w * h + 1]) for (const op of ["removeSpecks", "fillHoles"]) {
+      total++;
+      const a = view(m0.slice(), t % 4), b = m0.slice();
+      const ra = M[op](a, w, h, lim), rb = OC[op](b, w, h, lim);
+      if (ra === rb && same(a, b)) eq++;
+    }
+    if (typeof M.runComponents === "function") for (const v of [0, 1]) {
+      rcTotal++;
+      const bin = m0.map((x) => (x ? 1 : 0)), r = M.runComponents(view(bin, t % 3), w, h, v);
+      if (r.count === OC.components(bin, w, h, v).count) rcEq++;
+    }
+  }
+  check(`F5 removeSpecks/fillHoles == oracle: counts and masks (200 masks × 8 limits × 2 ops, ${eq}/${total})`, eq === total);
+  check(`F5 SBMorph.runComponents(value 0/1).count == oracle components count (${rcEq}/${rcTotal})`, rcTotal === 400 && rcEq === rcTotal);
+  // value 1 is "nonzero" (construct's runComponents contract): counts equal the pre-F5 construct runComponents on 0/255 masks
+  if (typeof M.runComponents === "function") {
+    let n = 0, ok = 0;
+    for (let t = 0; t < 60; t++) { const w = ri(1, 80), h = ri(1, 60), m = randMask(w, h, rnd(), t % 2 ? 255 : 1, true); n++; if (M.runComponents(m, w, h, 1).count === OK.runComponents(m, w, h).count) ok++; }
+    check(`F5 SBMorph.runComponents(…, 1) counts nonzero components as construct's runComponents did (${ok}/${n})`, ok === n);
+  }
+  // construct: estimateComplexity, simplifyBusy and complexityGate unchanged (runComponents delegated to SBMorph)
+  let ce = 0, cn = 0;
+  for (let t = 0; t < 40; t++) {
+    const w = ri(8, 110), h = ri(8, 80), N = ri(2, 6), masks = [];
+    for (let k = 0; k < N; k++) masks.push(randMask(w, h, 0.2 + 0.6 * rnd(), 1, t % 3 !== 0));
+    const est = C.estimateComplexity(masks, w, h), parts = masks.map((m) => OK.runComponents(m, w, h).count);
+    cn++; if (JSON.stringify(est) === JSON.stringify({ partsPerLayer: parts, maxPartsPerLayer: Math.max(...parts) })) ce++;
+    const opts = { minFeatureMM: [0, 0.3, 1.5][t % 3], minPartMM2: [0, 0.5, 4][t % 3], sxUm: 100 + t, syUm: 120 };
+    const sb = C.simplifyBusy(masks, w, h, opts), ob = OK.simplifyBusyBody(C._paddedClose, masks, w, h, sb.closeR, sb.minPartUm2, opts.sxUm * opts.syUm);
+    cn++; if (sb.masks.every((m, k) => same(m, ob.masks[k])) && JSON.stringify([sb.before, sb.after]) === JSON.stringify([ob.before, ob.after])) ce++;
+  }
+  check(`F5 construct estimateComplexity and simplifyBusy == pre-F5 runComponents (${ce}/${cn})`, ce === cn);
+  // the whole construct morph chain against the all-oracle chain (F4 oracle open/close, F5 oracle removeSpecks/fillHoles)
+  let mc = 0, meq = 0;
+  for (let t = 0; t < 120; t++) {
+    const w = ri(1, 90), h = ri(1, 70), featR = t % 6, cull = t % 2 === 0;
+    const m = randMask(w, h, 0.15 + 0.7 * rnd(), t % 5 === 0 ? 255 : 1, true), keep = m.slice();
+    const px = { featR, speckPx: ri(0, 40), holePx: ri(0, 80) };
+    const a = C._morph(m, w, h, px, cull), b = O.morph(OC, m, w, h, px, cull);
+    mc++; if (same(a.m, b.m) && a.specks === b.specks && a.holes === b.holes && same(m, keep)) meq++;
+  }
+  check(`F5 construct morph == all-oracle chain (open/close F4, removeSpecks/fillHoles F5) (${meq}/${mc})`, meq === mc);
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

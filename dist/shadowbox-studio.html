@@ -5171,6 +5171,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  * the row pass, word-skipping scan; fused column sweep), and SBMorph.openClose
  * fuses the dilations of open(r) → close(r2) into one dilate_{r+r2}; outputs
  * are byte-identical (test/oracle_kernels.js keeps the pre-F4 kernels).
+ *
+ * Speed round F5 (NFR-05): fillHoles/removeSpecks label row runs with union-find (SBMorph.runComponents, shared with
+ * construct.js) instead of a per-pixel BFS with Int32 label and queue planes; outputs byte-identical (oracle kept).
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -5364,38 +5367,100 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   };
 
   /**
+   * 4-connected components of the `value` pixels by row runs and union-find (speed round F5; moved from construct.js).
+   * value 0: pixels === 0; value 1: nonzero pixels (construct's contract). Returns {count, n, find, Y, X0, X1}: n runs as
+   * parallel Int32Arrays (row y, half-open [x0, x1)), find(run) → the component's representative run (the lowest run
+   * index of the component), count = number of components. Runs are found with the word-skipping scanTo.
+   */
+  M.runComponents = function (mask, w, h, value) {
+    const nz = value !== 0;
+    let cap = 1024, Y = new Int32Array(cap), X0 = new Int32Array(cap), X1 = new Int32Array(cap), P = new Int32Array(cap), n = 0, unions = 0;
+    const grow = () => { cap *= 2; const g = (a) => { const b = new Int32Array(cap); b.set(a); return b; }; Y = g(Y); X0 = g(X0); X1 = g(X1); P = g(P); };
+    const find = (i) => { while (P[i] !== i) { P[i] = P[P[i]]; i = P[i]; } return i; };
+    const w32 = mask.byteOffset % 4 === 0 ? new Uint32Array(mask.buffer, mask.byteOffset, mask.length >> 2) : null;
+    let prevStart = 0, prevEnd = 0;
+    for (let y = 0, o = 0; y < h; y++, o += w) {
+      const rowStart = n, end = o + w;
+      let j = prevStart, i = o;
+      while (i < end) {
+        i = scanTo(mask, w32, i, end, nz);                   // start of a run
+        if (i >= end) break;
+        const x0 = i - o;
+        i = scanTo(mask, w32, i, end, !nz);                  // its end
+        const x1 = i - o;
+        if (n === cap) grow();
+        Y[n] = y; X0[n] = x0; X1[n] = x1; P[n] = n;
+        // runs of the previous row that overlap [x0, x1) (4-connectivity: shared column)
+        while (j < prevEnd && X1[j] <= x0) j++;
+        for (let q = j; q < prevEnd && X0[q] < x1; q++) { const a = find(q), b = find(n); if (a !== b) { if (a < b) P[b] = a; else P[a] = b; unions++; } }
+        n++;
+      }
+      prevStart = rowStart; prevEnd = n;
+    }
+    return { count: n - unions, n, find, Y, X0, X1 };
+  };
+
+  // true iff every byte is 0 or 1 (whole aligned words tested at once)
+  function isBinary(mask) {
+    let i = 0;
+    const n = mask.length;
+    if (mask.byteOffset % 4 === 0) {
+      const w32 = new Uint32Array(mask.buffer, mask.byteOffset, n >> 2);
+      for (let q = 0; q < w32.length; q++) if (w32[q] & 0xfefefefe) return false;
+      i = w32.length << 2;
+    }
+    for (; i < n; i++) if (mask[i] > 1) return false;
+    return true;
+  }
+
+  /**
+   * Per component of rc: area (Σ run lengths, at the root run) and whether a run touches the image border (row 0 or
+   * h − 1, x0 = 0 or x1 = w). Each component with pick(area, touch) is selected; its runs are filled
+   * with `fillValue`. Returns the number of selected components.
+   */
+  function selectRuns(mask, w, h, rc, pick, fillValue) {
+    const { n, find, Y, X0, X1 } = rc, area = new Float64Array(n), touch = new Uint8Array(n), root = new Int32Array(n);
+    for (let i = 0; i < n; i++) {
+      const r = find(i);
+      root[i] = r; area[r] += X1[i] - X0[i];
+      if (Y[i] === 0 || Y[i] === h - 1 || X0[i] === 0 || X1[i] === w) touch[r] = 1;
+    }
+    const sel = new Uint8Array(n);
+    let count = 0;
+    for (let i = 0; i < n; i++) if (root[i] === i && pick(area[i], touch[i])) { sel[i] = 1; count++; }
+    if (count) for (let i = 0; i < n; i++) if (sel[root[i]]) mask.fill(fillValue, Y[i] * w + X0[i], Y[i] * w + X1[i]);
+    return count;
+  }
+
+  /**
    * Remove filled components with area < minArea px². Returns removed count.
-   * Mutates the mask in place.
+   * Mutates the mask in place. Speed round F5: by row runs (SBMorph.runComponents), no per-pixel label plane. The
+   * labelled pixels are those === 1; a mask holding other nonzero bytes takes the pixel-labelling path (M.components).
    */
   M.removeSpecks = function (mask, w, h, minArea) {
     if (minArea <= 1) return 0;
-    const { labels, count, areas } = M.components(mask, w, h, 1);
-    const kill = new Uint8Array(count + 1);
-    let removed = 0;
-    for (let c = 1; c <= count; c++)
-      if (areas[c - 1] < minArea) { kill[c] = 1; removed++; }
-    if (removed)
-      for (let i = 0; i < mask.length; i++)
-        if (mask[i] && kill[labels[i]]) mask[i] = 0;
-    return removed;
+    if (!isBinary(mask)) {
+      const { labels, count, areas } = M.components(mask, w, h, 1);
+      const kill = new Uint8Array(count + 1);
+      let removed = 0;
+      for (let c = 1; c <= count; c++)
+        if (areas[c - 1] < minArea) { kill[c] = 1; removed++; }
+      if (removed)
+        for (let i = 0; i < mask.length; i++)
+          if (mask[i] && kill[labels[i]]) mask[i] = 0;
+      return removed;
+    }
+    return selectRuns(mask, w, h, M.runComponents(mask, w, h, 1), (area) => area < minArea, 0);
   };
 
   /**
    * Fill enclosed empty regions (holes) with area < minArea px².
    * Holes are empty components that do NOT touch the image border.
-   * Mutates in place. Returns filled count.
+   * Mutates in place. Returns filled count. Speed round F5: by row runs of 0 (SBMorph.runComponents).
    */
   M.fillHoles = function (mask, w, h, minArea) {
     if (minArea <= 1) return 0;
-    const { labels, count, areas, touchesBorder } = M.components(mask, w, h, 0);
-    const fill = new Uint8Array(count + 1);
-    let filled = 0;
-    for (let c = 1; c <= count; c++)
-      if (!touchesBorder[c - 1] && areas[c - 1] < minArea) { fill[c] = 1; filled++; }
-    if (filled)
-      for (let i = 0; i < mask.length; i++)
-        if (!mask[i] && fill[labels[i]]) mask[i] = 1;
-    return filled;
+    return selectRuns(mask, w, h, M.runComponents(mask, w, h, 0), (area, touch) => !touch && area < minArea, 1);
   };
 
   global.SBMorph = M;
@@ -6006,41 +6071,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   }
 
   /**
-   * 4-connected components of the nonzero pixels by row runs and union-find. Returns {count, root(i), runs} where runs is
-   * {y, x0, x1} as parallel Int32Arrays (half-open [x0, x1)) and root maps a run index to its component representative.
+   * 4-connected components of the nonzero pixels by row runs and union-find. Returns {count, n, find, Y, X0, X1}: runs
+   * {y, x0, x1} as parallel Int32Arrays (half-open [x0, x1)) and find maps a run index to its component representative.
+   * Speed round F5: the labelling lives in SBMorph.runComponents (value 1 = nonzero), shared with fillHoles/removeSpecks.
    */
-  function runComponents(mask, w, h) {
-    let cap = 1024, Y = new Int32Array(cap), X0 = new Int32Array(cap), X1 = new Int32Array(cap), P = new Int32Array(cap), n = 0, unions = 0;
-    const grow = () => { cap *= 2; const g = (a) => { const b = new Int32Array(cap); b.set(a); return b; }; Y = g(Y); X0 = g(X0); X1 = g(X1); P = g(P); };
-    const find = (i) => { while (P[i] !== i) { P[i] = P[P[i]]; i = P[i]; } return i; };
-    // zero bytes are skipped a 32-bit word at a time when the buffer is aligned; a run of 1s ends at the native indexOf(0)
-    const words = mask.byteOffset % 4 === 0 ? new Uint32Array(mask.buffer, mask.byteOffset, mask.length >> 2) : null;
-    const ones = (o, x, end) => { let e = x; if (mask[o + x] === 1 && end - x > 16) { const z = mask.subarray(o + x, o + end).indexOf(0); e = z < 0 ? end : x + z; }
-      while (e < end && mask[o + e]) e++; return e; };
-    let prevStart = 0, prevEnd = 0;
-    for (let y = 0; y < h; y++) {
-      const rowStart = n, o = y * w;
-      let j = prevStart;
-      for (let x = 0; x < w;) {
-        if (!mask[o + x]) {
-          x++;
-          if (words) { let i = o + x; while (i & 3 && i < o + w && !mask[i]) i++;
-            if (!(i & 3)) { let q = i >> 2; const qe = (o + w) >> 2; while (q < qe && words[q] === 0) q++; i = Math.max(i, Math.min(q << 2, o + w)); }
-            x = i - o; }
-          continue;
-        }
-        const x0 = x; x = ones(o, x, w);
-        if (n === cap) grow();
-        Y[n] = y; X0[n] = x0; X1[n] = x; P[n] = n;
-        // runs of the previous row that overlap [x0, x) (4-connectivity: shared column)
-        while (j < prevEnd && X1[j] <= x0) j++;
-        for (let q = j; q < prevEnd && X0[q] < x; q++) { const a = find(q), b = find(n); if (a !== b) { if (a < b) P[b] = a; else P[a] = b; unions++; } }
-        n++;
-      }
-      prevStart = rowStart; prevEnd = n;
-    }
-    return { count: n - unions, n, find, Y, X0, X1 };
-  }
+  const runComponents = (mask, w, h) => global.SBMorph.runComponents(mask, w, h, 1);
 
   C.estimateComplexity = function (masks, w, h) {
     checkMasks(masks, w, h);
