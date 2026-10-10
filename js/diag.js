@@ -112,8 +112,6 @@
       "Reduce the guide allowance or label height, or switch the guide mode."],
     ["NECK_KERF", B, F, "Neck is narrower than the laser kerf",
       "The kerf cuts through it and the part falls apart: widen the neck, raise the minimum feature size so cleanup removes it, or clip it."],
-    ["PART_POINT_CONTACT", B, F, "Parts touch only at a point",
-      "The laser separates parts that touch at a point; widen the contact to at least the minimum feature, or move them apart by more than the kerf."],
     // ---- blocking: import (SBPng.CODES, SBJpeg.CODES, preflight)
     ["PNG_16BIT", B, P, "16-bit PNG is not supported",
       "Re-save the image as an 8-bit PNG."],
@@ -165,6 +163,9 @@
       "Increase speck removal or the minimum part area, or accept the small parts."],
     ["PART_THIN", W, F, "Part is thinner than the minimum feature size",
       "Increase the minimum feature size or cleanup, or accept the thin parts."],
+    // Appendix G G2 decision (product owner, 2026-10-10): a warning, not blocking (NECK_KERF stays blocking).
+    ["PART_POINT_CONTACT", W, F, "Parts touch only at a corner",
+      "The two pieces touch at a corner and will separate when cut; both remain supported in bonded mode."],
     ["NECK_NARROW", W, F, "Narrow neck may break during cutting or handling",
       "Increase the minimum feature size or add bridges, or accept the risk."],
     ["SUPPORT_NARROW", W, F, "Part rests on a narrow support",
@@ -226,7 +227,7 @@
   Object.freeze(CODES);
 
   const QUALITIES = ["draft", "fabrication"];
-  const AGGREGATED = new Set(["PART_SMALL", "PART_THIN", "NECK_NARROW", "NECK_KERF", "FEATURE_MARGINAL", "GUIDE_OMITTED"]);   // G2: PART_POINT_CONTACT is not aggregated (G-D2)
+  const AGGREGATED = new Set(["PART_SMALL", "PART_THIN", "NECK_NARROW", "NECK_KERF", "FEATURE_MARGINAL", "GUIDE_OMITTED"]);   // G2: PART_POINT_CONTACT (a warning since 2026-10-10) is not aggregated (G-D2)
   // G2.8 (GEO-05): small-part, thin-part and neck warnings (and FEATURE_MARGINAL of kind part|neck) are labelled.
   const GEO05 = new Set(["PART_SMALL", "PART_THIN", "NECK_NARROW", "FEATURE_MARGINAL"]);
   const GEO05_NOTE = "Conservative fabrication warning — not a structural simulation";

@@ -67,8 +67,9 @@
  *         T odd: the part ×2, delta −T half-µm). No kerf (kerfMM absent, null or 0), no pass; hole-free convex parts are
  *         skipped (they cannot split). A NECK_KERF part gets no NECK_NARROW and no neck FEATURE_MARGINAL; a part that
  *         vanishes under the kerf erosion gets PART_THIN only. NECK_KERF is aggregated like NECK_NARROW.
- *       · PART_POINT_CONTACT (blocking, cfg.pointContacts, the engine sets it in bonded mode): two parts of one layer share
- *         a ring vertex (after normalize every inter-part point contact is one, D3 2.1–2.3); one diagnostic per contact
+ *       · PART_POINT_CONTACT (warning, product owner 2026-10-10; cfg.pointContacts, the engine sets it in bonded mode):
+ *         two parts of one layer share a ring vertex (after normalize every inter-part point contact is one, D3 2.1–2.3);
+ *         the pieces separate when cut but both stay supported in bonded mode. One diagnostic per contact
  *         with parts [a, b] and a 1 mm box around it, not aggregated. A bbox sweep limits the vertex map to parts whose
  *         bboxes touch. A part touching its own hole at a point is not a contact (D3 4).
  *     Appendix C (offsets are the slowest primitive): ONE offset per layer and width, on the union of the parts that

@@ -1786,10 +1786,10 @@ suite("diag.js — SBDiag registry, make() and aggregate() (§9.1, §9.5, UI-04;
   const PLAN = {
     blocking: ["BOND_UNSUPPORTED", "BOND_EMPTY_UNDER", "GEO_SELF_INTERSECT", "GEO_ZERO_AREA", "GEO_DUPLICATE", "GEO_OPEN",
       "SAMPLING_LOW", "NONFINITE", "REG_HOLE_INVALID", "PAGE_OVERFLOW", "CONNECTED_SPLIT", "STALE",
-      "REPAIR_STALE", "COMPLEXITY_LIMIT", "LEGACY_NEEDS_SOURCE", "GUIDE_UNCONTAINED", "NECK_KERF", "PART_POINT_CONTACT"],
+      "REPAIR_STALE", "COMPLEXITY_LIMIT", "LEGACY_NEEDS_SOURCE", "GUIDE_UNCONTAINED", "NECK_KERF"],
     warning: ["MAT_UNCALIBRATED", "PART_SMALL", "PART_THIN", "NECK_NARROW", "SUPPORT_NARROW",
       "GUIDE_OMITTED", "CLEANUP_ALTERED", "SMOOTH_FALLBACK", "TRAILING_OMITTED",
-      "ALIGN_CLEARANCE_ZERO", "REPAIR_REVIEW_FAB", "FAB_EXCEEDS_SOURCE"],
+      "ALIGN_CLEARANCE_ZERO", "REPAIR_REVIEW_FAB", "FAB_EXCEEDS_SOURCE", "PART_POINT_CONTACT"],
     info: ["KERF_EXTERNAL", "PALETTE_ONLY", "IDENTICAL_LAYERS", "EMPTY_BAND", "DISPLAY_ONLY_IGNORED", "HEIGHT_FILTERED", "RESAMPLED", "DRAFT_COARSER"],
   };
   for (const sev of Object.keys(PLAN)) {
@@ -6100,14 +6100,22 @@ suite("engine — speed round F0 golden corpus (NFR-05)", () => {
     !!gold && gold.engineVersion === E.VERSION && JSON.stringify(Object.keys(gold.fixtures).sort()) === JSON.stringify(ids.slice().sort()) &&
     all.every((fx) => gold.fixtures[fx.id].slow === fx.slow));
   if (!gold) return;
-  const run = all.filter((fx) => SLOW || !fx.slow), bad = [], noBranch = [], live = new Map();
+  const run = all.filter((fx) => SLOW || !fx.slow), bad = [], noBranch = [], live = new Map(), pcBlocking = [], pcStillBlocked = [];
+  // G2 blocked these only on PART_POINT_CONTACT (the other G2 ids block on SAMPLING_LOW, or on NECK_KERF: fine-pitch-fabrication)
+  const PC_ONLY = ["a3-900-draft", "a3-900-fabrication", "a3-900-nooverlay-draft", "a3-1800-draft", "a3-1800-fabrication", "alpha-domain-draft", "alpha-domain-fabrication"];
   const fields = ["status", "code", "geometryHash", "layerHashes", "diagSha", "cleanupSha", "supportSha", "guidesSha", "statsSha", "wholeSha"];
   for (const fx of run) {
     const r = C.run(fx), d = C.digest(r), g = gold.fixtures[fx.id];
     if (!g || fields.some((k) => JSON.stringify(d[k]) !== JSON.stringify(g[k]))) bad.push(fx.id + (g ? " [" + fields.filter((k) => JSON.stringify(d[k]) !== JSON.stringify(g[k])).join(",") + "]" : ""));
     if (!fx.expect(r)) noBranch.push(fx.id);
     if (live.size < 3 && !fx.slow && fx.source.w * fx.source.h <= 60000) live.set(fx.id, r);
+    const ds = r.diagnostics || [];   // G2 decision 2026-10-10: PART_POINT_CONTACT is a warning
+    if (ds.some((x) => x.code === "PART_POINT_CONTACT" && x.severity !== "warning")) pcBlocking.push(fx.id);
+    if (PC_ONLY.includes(fx.id) && (!ds.some((x) => x.code === "PART_POINT_CONTACT") || ds.some((x) => x.severity === "blocking"))) pcStillBlocked.push(fx.id);
   }
+  check("G2 decision 2026-10-10: no corpus fixture reports PART_POINT_CONTACT as blocking" + (pcBlocking.length ? " — " + pcBlocking.join(", ") : ""), pcBlocking.length === 0);
+  check("G2 decision 2026-10-10: the fixtures that blocked only on PART_POINT_CONTACT keep it as a warning and no longer block" +
+    (pcStillBlocked.length ? " — " + pcStillBlocked.join(", ") : ""), pcStillBlocked.length === 0 && run.some((fx) => PC_ONLY.includes(fx.id)));
   check("NFR-05 F0 every corpus response digest equals test/golden/pool-equality.json" + (SLOW ? " (incl. slow)" : " (" + run.length + " of " + all.length + "; --slow runs all)") +
     (bad.length ? " — differ: " + bad.join("; ") : ""), bad.length === 0 && run.length > 0);
   check("F0 every fixture still exercises its branch (expect predicate)" + (noBranch.length ? " — not: " + noBranch.join(", ") : ""), noBranch.length === 0);
@@ -8247,7 +8255,11 @@ suite("morph/construct — Appendix G G1 bonded disc morphology (PO-FIX-1, GEO-0
 suite("support.js — Appendix G G2 kerf necks and point contacts (PO-FIX-2, D3, GEO-02/05)", () => {
   const mk = (layers, w, h) => SBMaterial.assignParts(SBMaterial.fromMasks(layers.length === w * h ? [new Uint8Array(w * h).fill(1), layers] : layers, w, h, { artWMM: w * 0.1, artHMM: h * 0.1, frameMM: 0 }, {}));   // a single mask = the upper layer over a full base
   const codes = (ds) => ds.map((d) => d.code), base = { minFeatureMM: 1.5, advisoryFeatureMM: 2, minPartMM2: 0, mmPerPxMax: 0.1, calibrated: true };
-  check("G2 codes registered as blocking", ["NECK_KERF", "PART_POINT_CONTACT"].every((c) => SBDiag.CODES[c] && SBDiag.CODES[c].severity === "blocking"));
+  check("G2 NECK_KERF registered as blocking", SBDiag.CODES.NECK_KERF && SBDiag.CODES.NECK_KERF.severity === "blocking");
+  check("G2 decision 2026-10-10: PART_POINT_CONTACT is a warning (pieces separate when cut, both stay supported in bonded mode)",
+    SBDiag.CODES.PART_POINT_CONTACT && SBDiag.CODES.PART_POINT_CONTACT.severity === "warning" &&
+    /touch at a corner/.test(SBDiag.CODES.PART_POINT_CONTACT.fix) && /separate when cut/.test(SBDiag.CODES.PART_POINT_CONTACT.fix) &&
+    /remain supported in bonded mode/.test(SBDiag.CODES.PART_POINT_CONTACT.fix));
   // two 6 mm blocks joined by an axis neck of n px (0.1 mm/px)
   const neck = (n) => { const w = 160, h = 80, m = new Uint8Array(w * h);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = (x >= 10 && x < 70 && y >= 10 && y < 70) || (x >= 90 && x < 150 && y >= 10 && y < 70) || (x >= 70 && x < 90 && y >= 40 && y < 40 + n) ? 1 : 0;
@@ -8287,6 +8299,9 @@ suite("support.js — Appendix G G2 kerf necks and point contacts (PO-FIX-2, D3,
     return !codes(run(mk([new Uint8Array(w * h).fill(1), m], w, h), { kerfMM: 0.15, pointContacts: true })).includes("PART_POINT_CONTACT"); })());
   check("G2 featureHead refuses a negative or non-finite kerfMM", ["x", -1, NaN].every((k) => { try { run(neck(2), { kerfMM: k }); return false; } catch (e) { return /kerfMM/.test(e.message); } }));
   check("EXP-07 NECK_KERF blocks the export gate", SBDiag.exportGate([nk], new Set(), { quality: "draft", geometryHash: "x" }, "draft").reason === "BLOCKING");   // cfg quality defaults to draft
+  { const g = SBDiag.exportGate(pc, new Set(), { quality: "draft", geometryHash: "x" }, "draft");
+    check("G2 decision 2026-10-10: PART_POINT_CONTACT does not block the export gate (unacked warning only, ackState unacked)",
+      pc.length === 1 && pc[0].severity === "warning" && pc[0].ackState === "unacked" && g.reason === "UNACKED" && g.blocking.length === 0); }
   // engine wiring: bonded plywood request passes the machine kerf and pointContacts
   const src = fs.readFileSync(path.join(__dirname, "..", "js", "engine.js"), "utf8");
   check("G2 engine passes kerfMM and pointContacts to both featureChecks calls", /kerfMM:\s*[^,]*machine/.test(src) && (src.match(/pointContacts:/g) || []).length >= 2);
@@ -8300,6 +8315,17 @@ suite("support.js — Appendix G G2 kerf necks and point contacts (PO-FIX-2, D3,
       g2.previous[id].diagSha === after(id).diagSha) : ["(no G2 recapture record)"];
     check("G-D6 G2 re-captured ids differ from their previous digests only in diagSha/wholeSha" + (off.length ? " — " + off.join(", ") : ""),
       !!g2 && g2.ids.length > 0 && off.length === 0 && Object.keys(g2.previous).sort().join() === g2.ids.slice().sort().join()); }
+  // G2 decision 2026-10-10 (PART_POINT_CONTACT a warning): the G2-PPC recapture changed diagnostics only, for exactly the
+  // fixtures that report PART_POINT_CONTACT (chain-aware like G2)
+  { const gold = JSON.parse(fs.readFileSync(path.join(__dirname, "golden", "pool-equality.json"), "utf8")), recs = gold.recaptured || [];
+    const gp = recs.find((r) => r.task === "G2-PPC"), ip = recs.indexOf(gp), g2 = recs.find((r) => r.task === "G2");
+    const after = (id) => { const later = recs.slice(ip + 1).find((r) => r.ids.includes(id)); return later ? later.previous[id] : gold.fixtures[id]; };
+    const keep = ["slow", "status", "code", "geometryHash", "layerHashes", "cleanupSha", "supportSha", "guidesSha", "statsSha"];
+    const off = gp ? gp.ids.filter((id) => !gp.previous || !gp.previous[id] || keep.some((k) => JSON.stringify(gp.previous[id][k]) !== JSON.stringify(after(id)[k])) ||
+      gp.previous[id].diagSha === after(id).diagSha) : ["(no G2-PPC recapture record)"];
+    const expected = g2 ? g2.ids.filter((id) => id !== "fine-pitch-fabrication").sort().join() : null;
+    check("G-D6 G2-PPC re-captured exactly the G2 point-contact fixtures, diagSha/wholeSha only" + (off.length ? " — " + off.join(", ") : ""),
+      !!gp && off.length === 0 && gp.ids.slice().sort().join() === expected && Object.keys(gp.previous).sort().join() === expected); }
 });
 
 // ------------------------------------------------------------------ report
