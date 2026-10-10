@@ -47,6 +47,10 @@
  *     Diagnostics are in layer order and pass through SBDiag.aggregate.
  *     Speed round F9 (S1): bonded validate = supportPair(layers[k − 1], layers[k], k, cfg) per adjacent pair (the pool's
  *     item) folded by supportFold (BOND_EMPTY_UNDER, reach, edges, one aggregate); validateArgs is its argument check.
+ *   neckRegions(poly, residual, halfUnits, scale) → [[x0, y0, x1, y1] mm, …] (Appendix G G3): one bbox per component of
+ *     poly − offset(residual, +halfUnits, "square") that intersects at least two pads (each residual piece offset by
+ *     halfUnits + 2·scale), sorted by (y0, x0), at most 8; [] when none is isolated. Work-bounded (bbox prefilter, one
+ *     intersection per pad).
  *   annotate(layers, supportGraph) → layers' with Part.supports[] rewritten to part IDs (§3).
  *   featureChecks(layers, cfg) → Diagnostic[] (plan G2.8; GEO-05/06, MAT-03, AT-10, PO-LASER-6), aggregated per
  *     (code, layer[, kind]) through SBDiag.aggregate:
@@ -56,9 +60,10 @@
  *         the FABRICATION raster plan at both qualities, so a draft-only shortfall never blocks; it is reported as
  *         DRAFT_COARSER (info, measured = draft samples, limit 3) when quality is "draft" and minFeatureMM / mmPerPxMax < 3
  *         ≤ the fabrication samples. Without samplingMmPerPx the evaluated raster's mmPerPxMax is judged (unchanged).
- *       · Per part, the miter erosion by the INTEGER halfUm = Math.floor(minFeatureUm / 2), minFeatureUm =
- *         Math.round(minFeatureMM·1000) (D3: SBGeom.offset refuses non-integer deltas; on integer-µm geometry a width
- *         w ≤ 2·halfUm vanishes): empty → PART_THIN, more than one component → NECK_NARROW (warnings).
+ *       · Per part, the octagonal ("square" join, Appendix G G3, G-D3) erosion by the INTEGER halfUm =
+ *         Math.floor(minFeatureUm / 2), minFeatureUm = Math.round(minFeatureMM·1000) (D3: SBGeom.offset refuses
+ *         non-integer deltas; on integer-µm geometry a width w ≤ 2·halfUm vanishes, at 45° as on axis): empty →
+ *         PART_THIN, more than one component → NECK_NARROW (warnings).
  *       · Advisory tier (PO-LASER-6): a part that passes both at minFeatureMM but vanishes or splits under the same
  *         erosion at advisoryFeatureMM → FEATURE_MARGINAL (warning, detail.kind "part" | "neck").
  *       · PART_SMALL (warning) when a part's area < minPartMM2; MAT_UNCALIBRATED (warning) when !calibrated.
@@ -74,8 +79,14 @@
  *         bboxes touch. A part touching its own hole at a point is not a contact (D3 4).
  *     Appendix C (offsets are the slowest primitive): ONE offset per layer and width, on the union of the parts that
  *     still need it (never per part); a part whose bbox is ≤ 2·halfUm in some direction vanishes without an offset.
- *     On orthogonal layers (bonded, unsmoothed, D1) the advisory erosion is the first residual eroded by the
- *     difference of the half-widths (square erosions compose exactly); other layers are eroded directly.
+ *     Appendix G G3: both feature erosions run directly on the part polygons (octagon erosions do not compose; the
+ *     former composition from the first residual on orthogonal layers is gone).
+ *     Neck regions (Appendix G G3, PO-FIX-3, UI-04): NECK_NARROW, NECK_KERF and neck FEATURE_MARGINAL are emitted once
+ *     per region of neckRegions on the residual of the erosion that split the part (part = the part id, region = the
+ *     neck bbox); none located → one diagnostic with the part bbox and "(neck location approximate)". The part area is
+ *     carried by the first of a part's diagnostics only. SBDiag.aggregate is unchanged, so an aggregate counts necks
+ *     and lists a part once per neck (parts[] and region[] stay index-aligned). PART_THIN and part FEATURE_MARGINAL
+ *     keep the part bbox.
  *     The residual components are attributed to their parts by the same bbox sweep as the support graph (witness: a
  *     residual vertex, halfUm inside its part). The GEO-05 messages carry SBDiag's conservative-warning note.
  *     cfg = {minFeatureMM > 0, advisoryFeatureMM? (≥ minFeatureMM; absent = no advisory tier), minPartMM2 ≥ 0 (absent
@@ -351,8 +362,8 @@
 
   /**
    * Erosion by halfUnits (an integer, in the units of opts.scale) of src(i) for each part i in idx: {count: Map(i →
-   * residual components), residual: Map(i → PolygonWithHoles[])}. src(i) is the part polygon, or (composition,
-   * orthogonal layers) its earlier residual, at opts.scale (1 = µm, 2 = half-µm; Appendix G G2). opts.join is the
+   * residual components), residual: Map(i → PolygonWithHoles[])}. src(i) is the part polygon (every caller since
+   * Appendix G G3, which removed the composition from an earlier residual) at opts.scale (1 = µm, 2 = half-µm; Appendix G G2). opts.join is the
    * SBGeom.offset join ("miter" default; "square" = the octagon). One offset on the union of every src that can survive
    * (Appendix C); a src whose bbox is ≤ 2·halfUnits in some direction vanishes without it. Residual components are
    * attributed to their parts (bboxes and polygons at the same scale) by the bbox sweep.
@@ -390,13 +401,50 @@
     return true;
   }
 
-  /** True when every edge of every part is axis-parallel (bonded, unsmoothed D1 geometry). */
-  function orthogonal(parts) {
-    const ringOk = (r) => { const n = r.length / 2;
-      for (let i = 0, j = n - 1; i < n; j = i++) if (r[2 * i] !== r[2 * j] && r[2 * i + 1] !== r[2 * j + 1]) return false;
-      return true; };
-    return parts.every((p) => ringOk(p.polygon.outer) && (p.polygon.holes || []).every(ringOk));
-  }
+  /**
+   * Appendix G G3 (PO-FIX-3, UI-04): where a part splits. poly is the part polygon (µm), residual the components it
+   * eroded into by half (an integer in the units of scale s: 1 = µm, 2 = half-µm), at that scale. The lost material
+   * poly − offset(residual, +half, "square") is split into components; a component that intersects (in area) at least
+   * two pads (pad i = residual piece i offset by half + 2·s) is a neck. → [[x0, y0, x1, y1] mm, …] sorted by (y0, x0),
+   * at most 8; [] when nothing is isolated.
+   * Work-bounded (the lost material holds every chamfered corner and stair tooth of the part): a component whose bbox
+   * overlaps fewer than two pad bboxes (corner chips, stair teeth) is dropped without a Clipper call; each pad is then
+   * intersected ONCE with the remaining candidates whose bbox overlaps it (one Clipper call per pad, not per component
+   * and pad, so a large pad is swept once), and every resulting fragment is attributed to the candidate it lies in by
+   * bbox, with an exact intersection only when two candidate bboxes overlap the fragment's.
+   */
+  S.neckRegions = function (poly, residual, half, s) {
+    const G = global.SBGeom, ov = (a, b) => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
+    if (!residual || residual.length < 2) return [];
+    const P = s === 1 ? [poly] : scaled([poly], s), grow = half + 2 * s;
+    const opened = G.offset(residual, half, "square");
+    // a Clipper result is already assembled (normalized, point contacts rechained): its polygons are the components
+    const lost = G.difference(P, opened).map((q) => [q]);
+    // a bound on each pad's bbox without offsetting it: a "square" join cuts a corner at d along its bisector, and the
+    // cut's ends lie within √2·d of the vertex on either axis, so the pad lies inside the piece's bbox grown by 2·d
+    const padBox = residual.map((r) => { const b = G.bbox(r), e = 2 * grow; return [b[0] - e, b[1] - e, b[2] + e, b[3] + e]; });
+    const cands = [];                                   // {c, b, pads: candidate pad indices, touched: Set}
+    for (const c of lost) {
+      const b = G.bbox(c[0]), pads = [];
+      for (let i = 0; i < padBox.length; i++) if (ov(b, padBox[i])) pads.push(i);
+      if (pads.length >= 2) cands.push({ c, b, pads, touched: new Set() });   // a chip or tooth overlaps at most one pad bbox
+    }
+    if (!cands.length) return [];
+    for (let i = 0; i < residual.length; i++) {
+      const mine = cands.filter((q) => q.pads.includes(i));
+      if (!mine.length) continue;
+      const pad = G.offset([residual[i]], grow, "square");
+      const frags = G.components(G.intersection([].concat(...mine.map((q) => q.c)), pad));
+      for (const f of frags) {
+        if (G.isEmpty(f)) continue;
+        const fb = bboxOf(f), owners = mine.filter((q) => ov(q.b, fb));
+        if (owners.length === 1) owners[0].touched.add(i);
+        else for (const q of owners) { const I = G.intersection(q.c, f); if (I.length && !G.isEmpty(I)) q.touched.add(i); }
+      }
+    }
+    const out = cands.filter((q) => q.touched.size >= 2).map((q) => q.b.map((v) => v / s / 1000));
+    return out.sort((a, b) => a[1] - b[1] || a[0] - b[0]).slice(0, 8);
+  };
 
   /**
    * Speed round F9 (S1): featureChecks = featureHead (argument checks, MAT_UNCALIBRATED, SAMPLING_LOW / DRAFT_COARSER)
@@ -453,30 +501,42 @@
     // Appendix G G2 (G-D2): a part that splits under the octagonal erosion by half the kerf T has a neck the kerf cuts
     // through (NECK_KERF, blocking). No kerf, no pass. T even: scale 1, delta −T/2 µm; T odd: scale 2, delta −T half-µm.
     const kerfUm = cfg.kerfMM === undefined || cfg.kerfMM === null ? 0 : Math.round(cfg.kerfMM * 1000);
-    let kerfNeck = new Set();
-    if (kerfUm > 0) { const T = kerfUm, Sc = T % 2 ? 2 : 1;
+    let kerfNeck = new Set(), ek = null, kHalf = 0, kSc = 1;
+    if (kerfUm > 0) { const T = kerfUm; kSc = T % 2 ? 2 : 1; kHalf = (T * kSc) / 2;
       const splittable = all.filter((i) => !convexNoHoles(parts[i].polygon));   // an erosion of a convex part stays one piece
-      const ek = erode(parts, splittable, (T * Sc) / 2, (i) => scaled([parts[i].polygon], Sc), { join: "square", scale: Sc });
+      ek = erode(parts, splittable, kHalf, (i) => scaled([parts[i].polygon], kSc), { join: "square", scale: kSc });
       kerfNeck = new Set(splittable.filter((i) => ek.count.get(i) > 1)); }
-    const e1 = erode(parts, all, halfMin, (i) => [parts[i].polygon]), c1 = e1.count;
+    // Appendix G G3 (G-D3, PO-FIX-3): both feature erosions are octagonal ("square" join) and direct on the part
+    // polygon; the octagon does not compose, so the advisory erosion is no longer taken from the first residual.
+    const sq = { join: "square" };
+    const e1 = erode(parts, all, halfMin, (i) => [parts[i].polygon], sq), c1 = e1.count;
     const pass = all.filter((i) => c1.get(i) === 1);
-    // Square (miter) erosions compose exactly on orthogonal lattice geometry: erode the first residual by the
-    // difference (smaller input, Appendix C). Any other geometry is eroded directly.
-    const c2 = halfAdv <= halfMin ? null : orthogonal(parts) ? erode(parts, pass, halfAdv - halfMin, (i) => e1.residual.get(i)).count
-      : erode(parts, pass, halfAdv, (i) => [parts[i].polygon]).count;
+    const e2 = halfAdv <= halfMin ? null : erode(parts, pass, halfAdv, (i) => [parts[i].polygon], sq), c2 = e2 && e2.count;
+    // one raw diagnostic per neck region (part id, neck bbox); none located → the part bbox, "(neck location approximate)".
+    // The part area is carried by the first only, so the aggregate's areaMM2 stays the affected-part area.
+    const perNeck = (code, base, f, regions) => {
+      if (!regions.length) {
+        const d = f.detail, approx = " (neck location approximate)";
+        diags.push(make(code, Object.assign({}, base, f, { detail: typeof d === "string" ? d + approx : Object.assign({}, d, { text: d.text + approx }) })));
+        return;
+      }
+      regions.forEach((r, j) => diags.push(make(code, Object.assign({}, base, j ? { areaMM2: undefined } : {}, f, { region: r }))));
+    };
     parts.forEach((p, i) => {
       const region = regionMM(p.bbox || G.bbox(p.polygon)), areaMM2 = G.area([p.polygon]) / 1e6, base = { layer: k, part: p.id, areaMM2, region };
       if (areaMM2 < minPart) diags.push(make("PART_SMALL", Object.assign({}, base, { measured: { value: areaMM2, unit: "mm2" }, limit: { value: minPart, unit: "mm2" },
         detail: "area " + Math.round(areaMM2 * 100) / 100 + " mm² is below " + minPart + " mm²" })));
       const lim = { value: mfUm / 1000, unit: "mm" }, n1 = c1.get(i), kn = kerfNeck.has(i);
-      if (kn) diags.push(make("NECK_KERF", Object.assign({}, base, { measured: null, limit: { value: kerfUm / 1000, unit: "mm" },
-        detail: "the part splits into pieces at the " + kerfUm / 1000 + " mm kerf" })));
+      if (kn) perNeck("NECK_KERF", base, { measured: null, limit: { value: kerfUm / 1000, unit: "mm" },
+        detail: "the part splits into pieces at the " + kerfUm / 1000 + " mm kerf" }, S.neckRegions(p.polygon, ek.residual.get(i), kHalf, kSc));
       if (n1 === 0) diags.push(make("PART_THIN", Object.assign({}, base, { limit: lim, detail: "the part disappears when eroded by half of " + mfUm / 1000 + " mm" })));
-      else if (n1 > 1) { if (!kn) diags.push(make("NECK_NARROW", Object.assign({}, base, { limit: lim, detail: "the part splits into " + n1 + " pieces when eroded by half of " + mfUm / 1000 + " mm" }))); }
+      else if (n1 > 1) { if (!kn) perNeck("NECK_NARROW", base, { limit: lim, detail: "the part splits into " + n1 + " pieces when eroded by half of " + mfUm / 1000 + " mm" },
+        S.neckRegions(p.polygon, e1.residual.get(i), halfMin, 1)); }
       else if (c2) {
         const n2 = c2.get(i), alim = { value: advUm / 1000, unit: "mm" };
         if (n2 === 0) diags.push(make("FEATURE_MARGINAL", Object.assign({}, base, { limit: alim, detail: { kind: "part", text: "the part is narrower than the advisory " + advUm / 1000 + " mm" } })));
-        else if (n2 > 1 && !kn) diags.push(make("FEATURE_MARGINAL", Object.assign({}, base, { limit: alim, detail: { kind: "neck", text: "a neck is narrower than the advisory " + advUm / 1000 + " mm" } })));
+        else if (n2 > 1 && !kn) perNeck("FEATURE_MARGINAL", base, { limit: alim, detail: { kind: "neck", text: "a neck is narrower than the advisory " + advUm / 1000 + " mm" } },
+          S.neckRegions(p.polygon, e2.residual.get(i), halfAdv, 1));
       }
     });
     // Appendix G G2 (G-D2, bonded only): every inter-part point contact is a vertex shared by two parts' rings after

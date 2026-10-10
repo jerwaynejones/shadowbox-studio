@@ -741,6 +741,119 @@
     }
    },
    "benchFix": "benchUser12Final compared geometryHash across runs, but every run has its own sampleHash (part of geometryHash), so the check failed on every multi-run row, before G1 too; runs are now compared on the hash of their layer hashes"
+  },
+  "g3": {
+   "task": "G3",
+   "date": "2026-10-10",
+   "machine": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (16 threads), node v26.7.0",
+   "note": "G3 octagonal (square-join) feature erosions run directly on the part polygon (no composition from the first residual) plus the neck locator; trees run back to back on the same machine (load 3-7). Pooled stage times are the stage the coordinator is in, so one pre-round run did not attribute a features stage at all; the gate below is the absolute one.",
+   "gates": {
+    "fab4096Pool8": {
+     "command": "node test/bench.js large --only user12 --pool 8 --rows fab4096 --runs 5",
+     "budget": "p95 <= 10000 ms (S2) and <= phaseB.fab4096.pooledWallMs 8794 + 1200 ms",
+     "pass": true,
+     "runs": [
+      {
+       "runsMs": [
+        6713.5,
+        6711.1,
+        6087.3,
+        5696,
+        5698.6
+       ],
+       "p50Ms": 6087.3,
+       "p95Ms": 6713.5,
+       "featuresP50Ms": 703.6,
+       "constructP50Ms": 1371.4,
+       "loadAvg": [
+        4.78,
+        9.08,
+        9.45
+       ]
+      },
+      {
+       "runsMs": [
+        6567.4,
+        7052.4,
+        6134.9,
+        5437.8,
+        5481.4
+       ],
+       "p50Ms": 6134.9,
+       "p95Ms": 7052.4,
+       "featuresP50Ms": 607.7,
+       "constructP50Ms": 1380.2,
+       "loadAvg": [
+        5.65,
+        7.66,
+        8.85
+       ]
+      }
+     ]
+    },
+    "fab4096Pool8G2": {
+     "note": "the same command on the G2 tree (70c8628), back to back",
+     "runsMs": [
+      6194.9,
+      6921.4,
+      5743,
+      5355.5,
+      5403.4
+     ],
+     "p50Ms": 5743,
+     "p95Ms": 6921.4,
+     "featuresP50Ms": 371
+    },
+    "fab4096Pool8PreRound": {
+     "note": "the same command on the pre-round tree (18c0307 with the G1 bench fix), back to back; three runs",
+     "runs": [
+      {
+       "p50Ms": 5229.2,
+       "p95Ms": 5981.8,
+       "featuresP50Ms": 250.1
+      },
+      {
+       "p50Ms": 5443.4,
+       "p95Ms": 5924.7,
+       "featuresP50Ms": null
+      },
+      {
+       "p50Ms": 5264.6,
+       "p95Ms": 6093.3,
+       "featuresP50Ms": null
+      }
+     ]
+    },
+    "fab4096Pool0": {
+     "command": "node test/bench.js large --only user12 --pool 0 --rows fab4096 --runs 5",
+     "note": "recorded, no gate (phaseB.fab4096.serialMs 12879; G1 11998 / 12195, G2 12144 / 12603 with features 1041 ms)",
+     "runsMs": [
+      13231.1,
+      12925.6,
+      13455.7,
+      12995.2,
+      13293.9
+     ],
+     "p50Ms": 13231.1,
+     "p95Ms": 13455.7,
+     "featuresP50Ms": 2033,
+     "constructP50Ms": 2805.8,
+     "loadAvg": [
+      3.67,
+      6.48,
+      8.29
+     ]
+    },
+    "featuresStage": {
+     "allowance": "<= 1.7 x the pre-round features stage (G.7), exceeded",
+     "ratios": {
+      "vsPooledPreRound250": "2.4-2.8 x (607.7-703.6 ms)",
+      "vsSpeedRoundBaseline": "1.51-1.75 x fab4096 402.1 ms, 1.66-1.92 x fab3600 365.6 ms",
+      "vsG2Pooled": "1.6-1.9 x"
+     },
+     "decision": "product owner 2026-10-10, G.9 #11 option (a): accept the features-stage cost because the absolute gates pass; the stage allowance after G3 is replaced by the absolute cumulative gates (pooled p95 <= 10 s and <= 9994 ms), which are not loosened"
+    }
+   }
   }
  }
 }

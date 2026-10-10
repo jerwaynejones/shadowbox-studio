@@ -611,25 +611,26 @@ suite("support.js — G2.8 feature and sampling checks (GEO-05/06, MAT-03, AT-10
     const got = new Set(); for (const d of SBSupport.featureChecks(S, cfg)) for (const p of d.parts || [d.part]) got.add(d.code + (d.detail ? ":" + d.detail.kind : "") + "|" + p);
     const want = new Set();
     for (const L of S) for (const p of L.parts) {
-      const n = (h) => SBGeom.components(SBGeom.offset([p.polygon], -h, "miter")).length, a = n(200), b = n(350);
+      const n = (h) => SBGeom.components(SBGeom.offset([p.polygon], -h, "square")).length, a = n(200), b = n(350);   // Appendix G G3: octagon, direct
       if (a === 0) want.add("PART_THIN|" + p.id); else if (a > 1) want.add("NECK_NARROW|" + p.id);
       else if (b === 0) want.add("FEATURE_MARGINAL:part|" + p.id); else if (b > 1) want.add("FEATURE_MARGINAL:neck|" + p.id);
     }
     if ([...got].sort().join() !== [...want].sort().join()) agree = false;
   }
   check("Appendix C layer-level erosion == per-part offset oracle (10 seeds)", agree);
-  // Appendix C: on orthogonal (bonded, unsmoothed D1) layers the advisory erosion is composed from the first residual
-  // (square erosions compose exactly on the lattice); a layer with a diagonal edge is eroded directly
-  const deltas = (Ls, cfg) => { const o = SBGeom.offset, seen = []; SBGeom.offset = (p, d, j) => (seen.push(d), o(p, d, j));
+  // Appendix G G3 (G-D3): every feature erosion is octagonal ("square" join) and direct on the part polygon; the
+  // octagon does not compose, so orthogonal layers no longer erode the first residual. deltas records "d:join" of the
+  // erosions (negative deltas) only, so the neck locator's dilations are ignored; base has no kerf, so no kerf pass runs.
+  const deltas = (Ls, cfg) => { const o = SBGeom.offset, seen = []; SBGeom.offset = (p, d, j) => (d < 0 && seen.push(d + ":" + j), o(p, d, j));
     try { SBSupport.featureChecks(Ls, { ...base, ...cfg }); } finally { SBGeom.offset = o; } return seen; };
-  check("Appendix C orthogonal layer: advisory erosion composed from the first residual (−750 then −250 µm)",
-    deltas([mk(F.MASKS.dumbbell(25))[1]], ply).join() === "-750,-250");
+  check("Appendix G G3 orthogonal layer: both erosions direct (−750 and −1000 µm, square join), no composition",
+    deltas([mk(F.MASKS.dumbbell(25))[1]], ply).join() === "-750:square,-1000:square");
   const diamond = { outer: [10000, 2000, 18000, 10000, 10000, 18000, 2000, 10000], holes: [] };
   const neckDiag = SBGeom.union([diamond, { outer: [30000, 2000, 38000, 10000, 30000, 18000, 22000, 10000], holes: [] },
     { outer: [17000, 9100, 23000, 9100, 23000, 10900, 17000, 10900], holes: [] }], []);
   const diagL = [{ index: 0, material: neckDiag, parts: [{ id: "L00-P001", polygon: neckDiag[0], bbox: SBGeom.bbox(neckDiag[0]) }] }];
-  check("Appendix C non-orthogonal layer: both erosions direct (−750 and −1000 µm); 1.8 mm diagonal-shouldered neck → FEATURE_MARGINAL neck",
-    neckDiag.length === 1 && deltas(diagL, ply).join() === "-750,-1000" &&
+  check("Appendix C non-orthogonal layer: both erosions direct (−750 and −1000 µm, square join); 1.8 mm diagonal-shouldered neck → FEATURE_MARGINAL neck",
+    neckDiag.length === 1 && deltas(diagL, ply).join() === "-750:square,-1000:square" &&
     (() => { const r = SBSupport.featureChecks(diagL, { ...base, ...ply }); return only(r, "FEATURE_MARGINAL") && r[0].detail.kind === "neck"; })());
   // determinism, purity, arguments
   const L = mk(F.MASKS.dumbbell(18)), before = JSON.stringify(L);
@@ -8326,6 +8327,75 @@ suite("support.js — Appendix G G2 kerf necks and point contacts (PO-FIX-2, D3,
     const expected = g2 ? g2.ids.filter((id) => id !== "fine-pitch-fabrication").sort().join() : null;
     check("G-D6 G2-PPC re-captured exactly the G2 point-contact fixtures, diagSha/wholeSha only" + (off.length ? " — " + off.join(", ") : ""),
       !!gp && off.length === 0 && gp.ids.slice().sort().join() === expected && Object.keys(gp.previous).sort().join() === expected); }
+});
+// ------------------------------------------------ Appendix G G3: octagonal feature erosion and neck regions
+suite("support.js — Appendix G G3 octagonal erosion and neck regions (PO-FIX-3, GEO-05, UI-04)", () => {
+  const mk = (m, w, h) => SBMaterial.assignParts(SBMaterial.fromMasks([new Uint8Array(w * h).fill(1), m], w, h, { artWMM: w * 0.1, artHMM: h * 0.1, frameMM: 0 }, {}));
+  const cfg = { minFeatureMM: 1.5, advisoryFeatureMM: 2, minPartMM2: 0, mmPerPxMax: 0.1, calibrated: true, kerfMM: 0.15 };
+  const diag = (wpx) => { const w = 220, h = 220, m = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const A = x >= 20 && x < 80 && y >= 20 && y < 80, B = x >= 140 && x < 200 && y >= 140 && y < 200,
+      S = Math.abs(x - y) / Math.SQRT2 <= wpx / 2 && x >= 50 && x <= 170; m[y * w + x] = A || B || S ? 1 : 0; } return mk(m, w, h); };
+  const ds = (L) => SBSupport.featureChecks(L, cfg), has = (L, c) => ds(L).some((d) => d.code === c);
+  check("PO-FIX-3 a 1.8 mm 45° neck is not NECK_NARROW at 1.5 mm (square erosion flagged anything < 2.12 mm)", !has(diag(18), "NECK_NARROW"));
+  check("PO-FIX-3 a 1.8 mm 45° neck is FEATURE_MARGINAL (neck) at the 2.0 mm advisory", ds(diag(18)).some((d) => d.code === "FEATURE_MARGINAL" && d.detail && d.detail.kind === "neck"));
+  const nn = ds(diag(10)).find((d) => d.code === "NECK_NARROW");
+  const reg = nn && (Array.isArray(nn.region[0]) ? nn.region : [nn.region]);
+  check("PO-FIX-3 a 1.0 mm 45° neck → NECK_NARROW whose region is the neck (inside x, y ∈ [5, 17] mm, < 8 mm wide), not the part bbox (2–20 mm)",
+    !!reg && reg.length >= 1 && reg.every((b) => b[0] >= 5 && b[2] <= 17 && b[1] >= 5 && b[3] <= 17 && b[2] - b[0] < 8));
+  // two necks in one part → two regions (G.4 #4)
+  { const w = 300, h = 100, m = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = (x < 80 && y > 20 && y < 80) || (x >= 110 && x < 190 && y > 20 && y < 80) || (x >= 220 && y > 20 && y < 80) || (y >= 45 && y < 55) ? 1 : 0;
+    const n = ds(mk(m, w, h)).filter((d) => d.code === "NECK_NARROW"), regs = n.flatMap((d) => (Array.isArray(d.region[0]) ? d.region : [d.region]));
+    check("G.4 #4 a part with two 1.0 mm necks gets two neck regions, one per neck", regs.length === 2 && regs[0][2] <= 12 && regs[1][0] >= 18); }
+  check("G3 neckRegions returns [] (no throw) when nothing is isolated", Array.isArray(SBSupport.neckRegions({ outer: [0, 0, 1000, 0, 1000, 1000, 0, 1000], holes: [] }, [], 100, 1)));
+  // self-consistency with construction (review 2026-10-09, G-D1 tie rule): what the disc cleanup keeps is not flagged as too narrow
+  { const C = SBConstruct, PX = { featR: 8, discR2: 64, bridgeR: 9, cullPx: 1000, maxBridgePx: 400, speckPx: 1000, holePx: 450, frameAnchored: false, cullEnabled: false };
+    const kept = (wpx) => { const w = 220, h = 220, m = new Uint8Array(w * h);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const A = x >= 20 && x < 80 && y >= 20 && y < 80, B = x >= 140 && x < 200 && y >= 140 && y < 200,
+        S = Math.abs(x - y) / Math.SQRT2 <= wpx / 2 && x >= 50 && x <= 170; m[y * w + x] = A || B || S ? 1 : 0; }
+      return mk(C.bonded([new Uint8Array(w * h).fill(1), m], w, h, PX).final[1], w, h); };
+    for (const wpx of [16, 17, 18, 22]) { const L = kept(wpx), c = ds(L).map((d) => d.code);
+      check(`G1/G3 tie rule: a ${wpx / 10} mm 45° neck that construction keeps (one part) is not NECK_NARROW or PART_THIN`, L[1].parts.length === 1 && !c.includes("NECK_NARROW") && !c.includes("PART_THIN")); } }   // measured: 16 px and wider keep one part and pass the octagon
+  // cost bound: a part with many lost chips but one real neck calls Clipper O(candidates), not O(lost × pads)
+  { const w = 600, h = 200, m = new Uint8Array(w * h);   // two blocks, a 1.0 mm neck, and a staircase edge that makes the octagon opening chip every step
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = (x < 250 && y > 20 && y < 180 && (x < 200 || ((x + y) >> 2) % 2 === 0)) || (x >= 350 && y > 20 && y < 180) || (y >= 95 && y < 105) ? 1 : 0;
+    const G = SBGeom, o = G.intersection; let n = 0; G.intersection = (a, b) => (n++, o(a, b));
+    let regs; try { regs = ds(mk(m, w, h)).filter((d) => d.code === "NECK_NARROW"); } finally { G.intersection = o; }
+    check("G3 neckRegions finds the neck and bounds its Clipper work (intersection calls ≤ 64 on a chip-heavy part)", regs.length >= 1 && n <= 64); }
+  // NECK_KERF is located too (G2 kerf erosion residual, scale 1 for an even kerf, scale 2 for an odd one); it stays blocking
+  { const w = 200, h = 100, m = new Uint8Array(w * h);   // two 7 × 6 mm blocks joined by a 0.1 mm (1 px) neck at y = 5 mm
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = (x >= 10 && x < 80 && y >= 20 && y < 80) || (x >= 120 && x < 190 && y >= 20 && y < 80) || y === 50 ? 1 : 0;
+    const L = mk(m, w, h), inNeck = (b) => b[0] >= 7.5 && b[2] <= 12.5 && b[1] >= 4.5 && b[3] <= 5.5;
+    const kOf = (c) => SBSupport.featureChecks(L, { ...cfg, ...c }).filter((d) => d.code === "NECK_KERF");
+    const k2 = kOf({}), k3 = kOf({ kerfMM: 0.151 });
+    check("G3 NECK_KERF (0.15 mm kerf, scale 1) stays blocking and its region is the 0.1 mm neck, not the part bbox (1–19 mm)",
+      L[1].parts.length === 1 && k2.length === 1 && k2[0].severity === "blocking" && k2[0].region.length === 1 && inNeck(k2[0].region[0]));
+    check("G3 NECK_KERF at an odd kerf (0.151 mm, half-µm scale 2) is located at the same neck", k3.length === 1 && k3[0].region.length === 1 && inNeck(k3[0].region[0]));
+    // no neck isolated → one raw diagnostic with the part bbox and "(neck location approximate)"
+    const o = SBSupport.neckRegions; let raw; SBSupport.neckRegions = () => [];
+    try { raw = SBSupport.featureLayer(L[1], 1, cfg).filter((d) => d.code === "NECK_KERF"); } finally { SBSupport.neckRegions = o; }
+    const pb = L[1].parts[0].bbox.map((v) => v / 1000);
+    check("G3 when neckRegions isolates nothing: one NECK_KERF with the part bbox and \"(neck location approximate)\"",
+      raw.length === 1 && raw[0].part === L[1].parts[0].id && raw[0].region.join() === pb.join() && raw[0].message.includes("(neck location approximate)")); }
+  // counts are per neck (review 2026-10-09): one part with two necks → count 2, parts[] lists it twice, index-aligned with
+  // region[]; the part area is carried once (by the first raw diagnostic), so areaMM2 stays the affected-part area
+  { const w = 300, h = 100, m = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = (x < 80 && y > 20 && y < 80) || (x >= 110 && x < 190 && y > 20 && y < 80) || (x >= 220 && y > 20 && y < 80) || (y >= 45 && y < 55) ? 1 : 0;
+    const L = mk(m, w, h), p = L[1].parts[0], a = SBSupport.featureChecks(L, cfg).filter((d) => d.code === "NECK_NARROW");
+    const raw = SBSupport.featureLayer(L[1], 1, cfg).filter((d) => d.code === "NECK_NARROW");
+    check("G3 two necks in one part: aggregate count 2, parts [id, id] aligned with 2 regions, areaMM2 = the part area once",
+      a.length === 1 && a[0].count === 2 && a[0].parts.join() === [p.id, p.id].join() && a[0].region.length === 2 &&
+      Math.abs(a[0].areaMM2 - SBGeom.area([p.polygon]) / 1e6) < 1e-9 && raw.length === 2 && raw[1].areaMM2 === null); }
+  // G-D6: the G3 recapture changed diagnostics only (chain-aware like G2); connected ids appear (their feature checks run
+  // the octagon too), with geometryHash and layerHashes unchanged as for every other id
+  { const gold = JSON.parse(fs.readFileSync(path.join(__dirname, "golden", "pool-equality.json"), "utf8")), recs = gold.recaptured || [];
+    const g3 = recs.find((r) => r.task === "G3"), i3 = recs.indexOf(g3);
+    const after = (id) => { const later = recs.slice(i3 + 1).find((r) => r.ids.includes(id)); return later ? later.previous[id] : gold.fixtures[id]; };
+    const keep = ["slow", "status", "code", "geometryHash", "layerHashes", "cleanupSha", "supportSha", "guidesSha", "statsSha"];
+    const off = g3 ? g3.ids.filter((id) => !g3.previous || !g3.previous[id] || keep.some((k) => JSON.stringify(g3.previous[id][k]) !== JSON.stringify(after(id)[k])) ||
+      g3.previous[id].diagSha === after(id).diagSha) : ["(no G3 recapture record)"];
+    check("G-D6 G3 re-captured ids differ from their previous digests only in diagSha/wholeSha" + (off.length ? " — " + off.join(", ") : ""),
+      !!g3 && g3.ids.length > 0 && off.length === 0 && Object.keys(g3.previous).sort().join() === g3.ids.slice().sort().join()); }
 });
 
 // ------------------------------------------------------------------ report
