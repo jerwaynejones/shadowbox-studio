@@ -272,5 +272,39 @@
     return { groups };
   };
 
+  /**
+   * Appendix G G5 (PO-FIX-5): diagRows(diags) groups diagnostics with the same (code, layer) (layer null groups by code),
+   * in order of first occurrence: {key, code, layer, severity, title, members, count, partCount, focus: [{label, layer,
+   * parts, regions}]}. count sums member.count (necks after G3); focus has one entry per (part, region) pair.
+   */
+  P.diagRows = function (diags) {
+    const D = global.SBDiag, rows = [], byKey = new Map();
+    for (const d of diags || []) {
+      const layer = Number.isInteger(d.layer) ? d.layer : null, key = d.code + "|" + (layer === null ? "-" : layer);
+      let r = byKey.get(key);
+      if (!r) { const it = D.describe(d); r = { key, code: d.code, layer, severity: it.severity, title: it.title, members: [], count: 0, focus: [] }; byKey.set(key, r); rows.push(r); }
+      r.members.push(d); r.count += d.count || 1;
+      const add = (id, region) => {
+        const n = r.focus.filter((f) => f.parts[0] === id).length;
+        r.focus.push({ label: "part " + id + (n ? " (" + (n + 1) + ")" : ""), layer, parts: [id], regions: region ? [region] : [] });
+      };
+      if (Array.isArray(d.parts) && Array.isArray(d.region) && d.region.every(Array.isArray) && d.parts.length === d.region.length && layer !== null) d.parts.forEach((id, i) => add(id, d.region[i]));
+      else if (d.part !== null && d.part !== undefined && layer !== null) add(d.part, d.region || null);
+      else { const it = D.describe(d); if (it.focus) r.focus.push({ label: it.where, layer: it.focus.layer, parts: it.focus.parts, regions: it.focus.regions }); }
+    }
+    for (const r of rows) r.partCount = new Set([].concat(...r.focus.map((f) => f.parts))).size;
+    return rows;
+  };
+
+  /** ackAllPlan(diags, code, hash, acks) → {code, hash, keys, count}: ack keys of every unacknowledged warning of code; [] for other severities. */
+  P.ackAllPlan = function (diags, code, hash, acks) {
+    const D = global.SBDiag, keys = [];
+    for (const d of diags || []) if (d.code === code && D.describe(d).severity === "warning") { const k = D.ackKey(d, hash); if (!acks.has(k)) keys.push(k); }
+    return { code, hash, keys, count: keys.length };
+  };
+
+  /** fabListedIn({shownIsFab, fabReviewVisible}) → "fab-review" | "panel": where the fabrication diagnostics are listed (once). */
+  P.fabListedIn = (o) => (o && o.shownIsFab && o.fabReviewVisible ? "fab-review" : "panel");
+
   global.SBProof = P;
 })(typeof window !== "undefined" ? window : globalThis);

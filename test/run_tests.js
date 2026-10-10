@@ -8443,6 +8443,38 @@ suite("guides.js — Appendix G G4 no score stubs (PO-FIX-4, ASM-01/02)", () => 
       !!g4 && g4.ids.length > 0 && off.length === 0 && Object.keys(g4.previous).sort().join() === g4.ids.slice().sort().join()); }
 });
 
+// ------------------------------------------------ Appendix G G5 (PO-FIX-5): merged review rows, acknowledge all, one listing
+suite("proof.js/app.js — Appendix G G5 review rows and acknowledge all (PO-FIX-5, UI-04/05, §9.5)", () => {
+  const P = SBProof, D = SBDiag, mk = (code, f) => D.make(code, Object.assign({ revision: 0, quality: "fabrication" }, f));
+  const ds = [mk("SUPPORT_NARROW", { layer: 2, part: "2-1", region: [0, 0, 1, 1] }), mk("SUPPORT_NARROW", { layer: 2, part: "2-4", region: [5, 5, 6, 6] }),
+    mk("SUPPORT_NARROW", { layer: 3, part: "3-1", region: [1, 1, 2, 2] }), mk("BOND_UNSUPPORTED", { layer: 2, part: "2-2", areaMM2: 1, region: [2, 2, 3, 3] }),
+    ...D.aggregate([mk("NECK_NARROW", { layer: 4, part: "4-1", region: [0, 0, 1, 1] }), mk("NECK_NARROW", { layer: 4, part: "4-1", region: [3, 3, 4, 4] })])];
+  check("G5 API present", ["diagRows", "ackAllPlan", "fabListedIn"].every((f) => typeof P[f] === "function"));
+  if (typeof P.diagRows !== "function") return;
+  const rows = P.diagRows(ds);
+  check("PO-FIX-5 same code + layer → one row with count and members (first-occurrence order)",
+    rows.map((r) => r.key).join() === "SUPPORT_NARROW|2,SUPPORT_NARROW|3,BOND_UNSUPPORTED|2,NECK_NARROW|4" && rows[0].count === 2 && rows[0].members.length === 2);
+  check("PO-FIX-5 the row's focus list has one entry per part with its own region", rows[0].focus.length === 2 && rows[0].focus[1].parts[0] === "2-4" &&
+    rows[0].focus[1].regions[0].join() === "5,5,6,6" && rows[0].focus.every((f) => f.layer === 2));
+  check("G3/G5 an aggregated member with two necks of one part gives two focus entries (part 4-1, part 4-1 (2))",
+    rows[3].focus.length === 2 && rows[3].focus[1].label === "part 4-1 (2)" && rows[3].focus[1].regions[0].join() === "3,3,4,4");
+  check("G3/G5 the neck row counts necks and parts separately (2 items, 1 part)", rows[3].count === 2 && rows[3].partCount === 1 && rows[0].partCount === 2);
+  const acks = new Set([D.ackKey(ds[0], "h1")]), plan = P.ackAllPlan(ds, "SUPPORT_NARROW", "h1", acks);
+  check("PO-FIX-5 ackAllPlan lists the unacked warnings of the code across layers, bound to the hash", plan.hash === "h1" && plan.count === 2 &&
+    plan.keys.join() === [D.ackKey(ds[1], "h1"), D.ackKey(ds[2], "h1")].join());
+  check("§9.5 ackAllPlan never lists blocking codes", P.ackAllPlan(ds, "BOND_UNSUPPORTED", "h1", new Set()).keys.length === 0);
+  check("PO-FIX-5 fabrication diagnostics are listed once: in the review when it is visible and the fab result is shown",
+    P.fabListedIn({ shownIsFab: true, fabReviewVisible: true }) === "fab-review" && P.fabListedIn({ shownIsFab: true, fabReviewVisible: false }) === "panel" &&
+    P.fabListedIn({ shownIsFab: false, fabReviewVisible: true }) === "panel");
+  const app = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8");
+  const ackAll = (app.match(/function ackAllControl\([\s\S]*?\n  }\n/) || [""])[0];   // app.js keeps window.confirm only as dialog fallbacks elsewhere
+  check("UI-04 renderDiagnostics renders SBProof.diagRows and an Acknowledge all control with an inline confirm (no window.confirm)",
+    /SBProof\.diagRows\(/.test(app) && /SBProof\.ackAllPlan\(/.test(ackAll) && /Acknowledge all/.test(ackAll) && /"Confirm"/.test(ackAll) && !/confirm\(/.test(ackAll));
+  check("G.4 #5 the confirm re-checks the hash before adding keys", /plan\.hash\s*===\s*r\.snapshot\.geometryHash|r\.snapshot\.geometryHash\s*===\s*plan\.hash/.test(ackAll));
+  check("PO-FIX-5 the panel defers to the Fabrication review via SBProof.fabListedIn", /SBProof\.fabListedIn\(/.test(app));
+  check("UI-04 the deferring panel keeps a way there: counts of blocking issues and warnings plus a jump control to #fab-review", /id="btn-goto-fab"|"btn-goto-fab"/.test(app) && /scrollIntoView/.test(app));
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {

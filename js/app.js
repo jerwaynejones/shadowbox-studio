@@ -527,6 +527,27 @@
     list.textContent = "";
     if (!fabScope) $("diag-clear").hidden = !run.focus;
     if (!r) { sum.textContent = "Generate to check the layers"; return; }
+    // Appendix G G5 (PO-FIX-5): the fabrication result is listed once; while the Fabrication review shows it, the panel
+    // keeps only the counts and a jump control (the Proof and the review sit in different sections)
+    if (!fabScope && r.snapshot && SBProof.fabListedIn({ shownIsFab: r === run.fab, fabReviewVisible: fabCurrent() }) === "fab-review") {
+      const sm = SBDiag.summarize(r.snapshot.diagnostics || []), cnt = (sev) => (sm.find((x) => x.severity === sev) || { count: 0 }).count;
+      sum.textContent = "This fabrication result is listed in the Fabrication review in the Export step: " + cnt("blocking") + " blocking, " + cnt("warning") + " warning(s).";
+      const li = document.createElement("li");
+      const b = document.createElement("button");
+      b.type = "button";
+      b.id = "btn-goto-fab";
+      b.className = "btn";
+      b.textContent = "Go to the Fabrication review";
+      b.addEventListener("click", () => {
+        const box = $("fab-review");
+        if (box) box.scrollIntoView({ block: "start" });
+        const h = $("h-fab");
+        if (h) { h.tabIndex = -1; h.focus(); }
+      });
+      li.appendChild(b);
+      list.appendChild(li);
+      return;
+    }
     // alpha.3 E8 (PO-PREVIEW-4, NFR-04): a draft lists the fabrication plan's diagnostics and the predicted complexity
     // overflow first, in a "Fabrication resolution" group that is not acknowledged here (only in the Fabrication review)
     const planGroup = fabScope ? null : SBProof.panelModel(r, run.outlook && run.outlook.plan ? run.outlook.plan.diagnostics : [],
@@ -557,15 +578,131 @@
       gh.appendChild(badge(g.severity, g.icon, g.label));
       gh.appendChild(document.createTextNode(String(g.count)));
       li.appendChild(gh);
+      if (g.severity === "warning" && !failed && r.snapshot) li.appendChild(ackAllControl(gh, r, diags, hash));
       const ul = document.createElement("ul");
       li.appendChild(ul);
-      diags.forEach((d) => {
-        const it = SBDiag.describe(d);
-        if (it.severity !== g.severity) return;
-        ul.appendChild(diagItem(d, onScreen ? it : Object.assign({}, it, { navigable: false }), failed ? null : r, onScreen));
+      SBProof.diagRows(diags).filter((row) => row.severity === g.severity).forEach((row) => {
+        if (row.members.length === 1) {
+          const d = row.members[0], it = SBDiag.describe(d);
+          ul.appendChild(diagItem(d, onScreen ? it : Object.assign({}, it, { navigable: false }), failed ? null : r, onScreen));
+        } else ul.appendChild(diagRow(row, failed ? null : r, onScreen));
       });
       list.appendChild(li);
     }
+  }
+
+  /**
+   * Appendix G G5 (PO-FIX-5): a merged row (several diagnostics of one code and layer): badge, title, layer and item count,
+   * the first member's fix line, a focus list (one button per part/region) and, for warnings, one checkbox that
+   * acknowledges or releases every member (indeterminate when some are acknowledged).
+   */
+  function diagRow(row, r, onScreen) {
+    const li = document.createElement("li");
+    li.className = "diag-item diag-row";
+    li.dataset.diagRow = row.key;
+    const it = SBDiag.describe(row.members[0]), navigable = onScreen && it.navigable;
+    const head = document.createElement("div");
+    head.className = "diag-go";
+    head.appendChild(badge(it.severity, it.icon, it.severityLabel));
+    const add = (cls, text) => { if (!text) return; const s2 = document.createElement("span"); s2.className = cls; s2.textContent = text; head.appendChild(s2); };
+    const unit = /^NECK_/.test(row.code) ? "necks" : "items";
+    add("diag-where", row.layer === null ? "" : "Layer " + (row.layer + 1));
+    add("diag-msg", row.title + ": " + row.count + " " + unit + (row.partCount && row.partCount !== row.count ? " (" + row.partCount + " parts)" : ""));
+    li.appendChild(head);
+    const fix = document.createElement("p");
+    fix.className = "diag-fix";
+    fix.textContent = "Fix: " + it.fix;
+    li.appendChild(fix);
+    if (row.focus.length) {
+      const ul = document.createElement("ul");
+      ul.className = "diag-row-focus";
+      row.focus.forEach((entry) => {
+        const fli = document.createElement("li"), b = document.createElement("button");
+        b.type = "button";
+        b.textContent = entry.label;
+        b.disabled = !navigable;
+        if (navigable) {
+          b.title = "Show " + entry.label + " in the Proof";
+          const member = row.members[0];
+          b.addEventListener("click", () => focusDiagnostic(member, Object.assign({}, it, { where: "Layer " + (entry.layer + 1) + ", " + entry.label, focus: entry }), li));
+        }
+        fli.appendChild(b);
+        ul.appendChild(fli);
+      });
+      li.appendChild(ul);
+    }
+    if (it.severity === "warning" && r && r.snapshot) {
+      const hash = r.snapshot.geometryHash, keys = row.members.map((m) => SBDiag.ackKey(m, hash));
+      const n = keys.filter((k) => r.acks.has(k)).length;
+      const lab = document.createElement("label");
+      lab.className = "diag-ack";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = n === keys.length;
+      cb.indeterminate = n > 0 && n < keys.length;
+      cb.dataset.key = row.key;
+      cb.addEventListener("change", () => {
+        const home = li.closest(".diag-list");
+        keys.forEach((k) => { if (cb.checked) r.acks.add(k); else r.acks.delete(k); });
+        refreshDiagnostics(r);
+        const again = home && home.isConnected ? Array.from(home.querySelectorAll(".diag-ack input")).find((x) => x.dataset.key === row.key) : null;
+        if (again) again.focus();
+      });
+      lab.appendChild(cb);
+      lab.appendChild(document.createTextNode("Acknowledge all " + row.count + " for this " + (r === run.fab ? "fabrication " : "") + "result"));
+      li.appendChild(lab);
+    }
+    return li;
+  }
+
+  /**
+   * Appendix G G5 (PO-FIX-5): in the warning group, for each warning code with at least two unacknowledged members an
+   * "Acknowledge all n <title>" button. A click swaps it for an inline confirm (Confirm, Cancel). Confirm adds the keys
+   * planned at click time only while the shown result still has the planned geometry hash; a stale confirm adds nothing.
+   */
+  function ackAllControl(g, r, diags, hash) {
+    const box = document.createElement("div");
+    box.className = "diag-ackall";
+    const codes = [];
+    for (const d of diags) if (SBDiag.describe(d).severity === "warning" && !codes.includes(d.code)) codes.push(d.code);
+    for (const code of codes) {
+      const plan = SBProof.ackAllPlan(diags, code, hash, r.acks);
+      if (plan.count < 2) continue;
+      const title = SBDiag.describe(diags.find((d) => d.code === code)).title, holder = document.createElement("span");
+      const show = () => {
+        holder.textContent = "";
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "btn";
+        btn.textContent = "Acknowledge all " + plan.count + " " + title;
+        btn.addEventListener("click", () => {
+          holder.textContent = "";
+          const c = document.createElement("span");
+          c.className = "diag-confirm";
+          c.appendChild(document.createTextNode("Acknowledge " + plan.count + " warnings for this " + r.snapshot.quality + " result? "));
+          const ok = document.createElement("button"), no = document.createElement("button");
+          ok.type = no.type = "button";
+          ok.className = no.className = "btn";
+          ok.textContent = "Confirm";
+          no.textContent = "Cancel";
+          ok.addEventListener("click", () => {
+            if (r.snapshot && plan.hash === r.snapshot.geometryHash) plan.keys.forEach((k) => r.acks.add(k));
+            refreshDiagnostics(r);
+            const home = document.querySelector(r === run.fab && $("fab-list") && $("fab-list").children.length ? "#fab-list .diag-head" : "#diag-list .diag-head");
+            if (home) { home.tabIndex = -1; home.focus(); }
+          });
+          no.addEventListener("click", () => { show(); holder.firstChild.focus(); });
+          c.appendChild(ok);
+          c.appendChild(no);
+          holder.appendChild(c);
+          ok.focus();
+        });
+        holder.appendChild(btn);
+      };
+      show();
+      box.appendChild(holder);
+    }
+    return box;
   }
 
   /**
@@ -1263,9 +1400,14 @@
   function renderFabReview() {
     const box = $("fab-review"), list = $("fab-list");
     if (!box || !list) return;
-    if (!fabCurrent()) { list.textContent = ""; box.hidden = true; updateGate(SBSchema.canGenerate(project, run.sourceImage)); return; }
+    if (!fabCurrent()) {
+      list.textContent = ""; box.hidden = true;
+      if (run.shown) renderDiagnostics(run.shown);   // G5: the panel lists the result again once the review is hidden
+      updateGate(SBSchema.canGenerate(project, run.sourceImage)); return;
+    }
     box.hidden = false;
     renderDiagnostics(run.fab, { scope: "fabrication" });
+    if (run.shown) renderDiagnostics(run.shown);   // G5: the panel defers to this review while it shows the same result
     updateGate(SBSchema.canGenerate(project, run.sourceImage));
   }
 

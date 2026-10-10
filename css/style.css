@@ -247,6 +247,11 @@ button.diag-go:hover .diag-msg { text-decoration: underline; }
 .diag-measure { display: block; font-family: var(--mono); color: var(--ink-soft); }
 .diag-fix { margin: 4px 0 0; color: var(--ink-soft); }
 .diag-ack { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+/* Appendix G G5 (PO-FIX-5): merged rows, focus list, acknowledge all */
+.diag-row-focus { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; margin: 6px 0 0; padding: 0; }
+.diag-row-focus button { font: inherit; font-size: 0.85em; padding: 2px 8px; cursor: pointer; }
+.diag-ackall { margin: 4px 0; }
+.diag-confirm { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0; padding: 4px 8px; border: 1px dashed var(--amber); border-left-style: solid; color: var(--ink); }
 #diag-clear { margin-top: 6px; }
 #diag-clear[hidden] { display: none; }
 #fab-review[hidden] { display: none; }
