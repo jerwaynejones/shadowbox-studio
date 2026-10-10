@@ -206,6 +206,9 @@ select {
 .btn.primary { background: var(--cut); border-color: var(--cut); color: #fff; }
 .btn.primary:hover { background: #b92c1f; }
 .btn.wide { width: 100%; }
+/* Appendix G G6 (PO-FIX-6): "Match pitch to source" under the fabrication pitch input */
+.btn.match-pitch { display: block; margin-top: 6px; width: 100%; white-space: normal; text-align: left; }
+.btn.match-pitch[hidden] { display: none; }
 .btn:disabled, .btn:disabled:hover { opacity: 0.5; cursor: not-allowed; background: var(--film); border-color: var(--film); color: inherit; }
 .why { margin: 6px 0 0; font-size: 12px; opacity: 0.75; }
 .why[hidden] { display: none; }

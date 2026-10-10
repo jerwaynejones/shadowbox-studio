@@ -656,6 +656,26 @@
     };
   };
 
+  /**
+   * Appendix G G-D5 (PO-FIX-6): the largest integer pitch p (µm) whose uncapped raster covers the source on both axes
+   * (⌈A/p⌉ ≥ S per axis), so fabRaster clamps to exactly the source. null when the target raster already equals the
+   * source, when no p in [minPitchUm, maxPitchUm] gives W = srcW and H = srcH, when the budget would cap it, or when
+   * |p − target| > 15 % of the target.
+   */
+  R.matchSourcePitch = function (o) {
+    const { artWUm, artHUm, srcW, srcH, pxBudget, targetPitchUm, minPitchUm, maxPitchUm } = o || {};
+    for (const [k, v] of Object.entries({ artWUm, artHUm, srcW, srcH, pxBudget, targetPitchUm, minPitchUm, maxPitchUm }))
+      if (!isPosInt(v)) throw rfail("RASTER_ARG", "matchSourcePitch: " + k + " must be a positive integer (got " + v + ")");
+    const here = R.fabRaster({ artWUm, artHUm, srcW, srcH, targetPitchUm, pxBudget });
+    if (here.W === srcW && here.H === srcH && here.pitchUm === targetPitchUm) return null;   // already equal
+    const top = (A, S) => (S <= 1 ? maxPitchUm : cdiv(A, S - 1) - 1);                          // largest p with ⌈A/p⌉ ≥ S
+    const p = Math.min(top(artWUm, srcW), top(artHUm, srcH), maxPitchUm);
+    if (p < minPitchUm || Math.abs(p - targetPitchUm) * 100 > 15 * targetPitchUm) return null;
+    const f = R.fabRaster({ artWUm, artHUm, srcW, srcH, targetPitchUm: p, pxBudget });
+    if (f.pitchUm !== p || f.W !== srcW || f.H !== srcH) return null;                           // budget-capped or not exact
+    return { pitchUm: p, W: f.W, H: f.H };
+  };
+
   /** Real per-axis scales of a raster (G1.1): sxUm = artWUm/W, syUm = artHUm/H; mmPerPxMax = max/1000. */
   R.scaleUm = function (artWUm, artHUm, W, H) {
     const sxUm = artWUm / W, syUm = artHUm / H;
@@ -665,10 +685,11 @@
   /**
    * Resampling policy (IMG-02/03): height mode is "none" when the source fits
    * and "nearest" otherwise; "area" only as an explicit, recorded filter
-   * (opts.heightArea, HEIGHT_FILTERED). Tonal mode is always "area".
+   * (opts.heightArea, HEIGHT_FILTERED). Tonal mode is "area", or "none" when the raster equals the source
+   * (Appendix G G-D5: resampleCore copies at equal size, so the bytes are identical).
    */
   R.resamplePolicy = function (mode, srcW, srcH, W, H, opts) {
-    if (mode === "tonal") return "area";
+    if (mode === "tonal") return W === srcW && H === srcH ? "none" : "area";   // G-D5: equal size is an identity copy
     if (mode !== "height") throw rfail("RESAMPLE_METHOD", "mode must be height|tonal (got " + mode + ")");
     if (W === srcW && H === srcH) return "none";
     return opts && opts.heightArea ? "area" : "nearest";
@@ -701,6 +722,8 @@
    *                                  pitch. measured/limit are source px / target px on the MOST-SHORT axis (largest
    *                                  target/source ratio; ties → width), so measured < limit whenever it warns;
    *                                  shortPx carries both axes.
+   *   FAB_MATCHES_SOURCE (info)    — Appendix G G-D5: instead of FAB_EXCEEDS_SOURCE when the raster equals the source and
+   *                                  the shortfall is within one 1 µm pitch step and ≤ 2 % on each axis.
    * ctx: {artWUm, artHUm, srcW, srcH, targetPitchUm, pxBudget, deviceClass, quality, revision}.
    */
   R.fabDiagnostics = function (fab, ctx) {
@@ -708,6 +731,12 @@
     const realUm = Math.round(R.scaleUm(ctx.artWUm, ctx.artHUm, fab.W, fab.H).mmPerPxMax * 1000);
     const W1 = cdiv(ctx.artWUm, fab.pitchUm), H1 = cdiv(ctx.artHUm, fab.pitchUm);
     const budget = fab.capped === "budget" || fab.capped === "budget+source", source = !!fab.shortPx;
+    // Appendix G G-D5: a raster clamped to exactly the source, where the next coarser 1 µm pitch would not exceed the
+    // source on either axis and the shortfall is ≤ 2 % per axis, is the 1 µm pitch grid, not lost detail → info.
+    const shortW = W1 - ctx.srcW, shortH = H1 - ctx.srcH;
+    const oneStep = source && fab.W === ctx.srcW && fab.H === ctx.srcH &&
+      cdiv(ctx.artWUm, fab.pitchUm + 1) <= ctx.srcW && cdiv(ctx.artHUm, fab.pitchUm + 1) <= ctx.srcH &&
+      shortW * 50 <= ctx.srcW && shortH * 50 <= ctx.srcH;
     if (budget) {
       const budgetUm = Math.round(R.scaleUm(ctx.artWUm, ctx.artHUm, W1, H1).mmPerPxMax * 1000);
       out.push(global.SBDiag.make("FAB_PITCH_CAPPED", Object.assign({}, base, {
@@ -715,10 +744,14 @@
         detail: "the " + (ctx.deviceClass || "device") + " pixel budget of " + ctx.pxBudget + " px coarsened the pitch to " + umText(budgetUm) +
           " mm/px instead of the " + umText(ctx.targetPitchUm) + " mm/px target (pitch " + fab.pitchUm + " µm, " + W1 + " × " + H1 + " px)" +
           (source ? "; the source (" + ctx.srcW + " × " + ctx.srcH + " px) then limits the raster to " + fab.W + " × " + fab.H + " px at " +
-            umText(realUm) + " mm/px (see FAB_EXCEEDS_SOURCE)" : ""),
+            umText(realUm) + " mm/px" + (oneStep ? " (see FAB_MATCHES_SOURCE)" : " (see FAB_EXCEEDS_SOURCE)") : ""),
       })));
     }
-    if (source) {
+    if (oneStep) out.push(global.SBDiag.make("FAB_MATCHES_SOURCE", Object.assign({}, base, {
+      detail: "the raster equals the source (" + ctx.srcW + " × " + ctx.srcH + " px) at " + umText(realUm) + " mm/px; requested pitch " + umText(fab.pitchUm) +
+        " mm/px (shortfall " + shortW + " × " + shortH + " px, within one 1 µm pitch step)",
+    })));
+    else if (source) {
       const byH = H1 * ctx.srcW > W1 * ctx.srcH;   // H1/srcH > W1/srcW, exact in integers; ties → width
       const axis = byH ? "height" : "width", sPx = byH ? ctx.srcH : ctx.srcW, tPx = byH ? H1 : W1;
       out.push(global.SBDiag.make("FAB_EXCEEDS_SOURCE", Object.assign({}, base, {

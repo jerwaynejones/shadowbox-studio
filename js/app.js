@@ -780,6 +780,8 @@
     const fabRepair = !!(r && r.snapshot) && r === run.fab && d.code === "REPAIR_REVIEW_FAB";
     const act = fabRepair ? fabRepairActions(d, it) : onScreen ? clipAction(d) : null;
     if (act) li.appendChild(act);
+    const match = d.code === "RESAMPLED" ? pitchMatchAction(d) : null;   // Appendix G G6 (PO-FIX-6)
+    if (match) li.appendChild(match);
     if (it.severity === "warning" && r && r.snapshot) {
       const key = SBDiag.ackKey(d, r.snapshot.geometryHash);
       const lab = document.createElement("label");
@@ -1556,6 +1558,8 @@
       if (project.revision !== before) recompute();
     });
     el.addEventListener("change", () => { el.value = project.geometry.fabPitchMM; show(); });
+    const mb = $("btn-match-pitch");
+    if (mb) mb.addEventListener("click", applyPitchMatch);
   }
 
   /**
@@ -1567,6 +1571,43 @@
     const el = $("in-res"), out = $("out-res");
     if (el && document.activeElement !== el) el.value = project.geometry.fabPitchMM;
     if (out) out.textContent = SBUtil.fmt(project.geometry.fabPitchMM, 3) + " mm/px";
+    const b = $("btn-match-pitch"), m = pitchMatch();
+    if (b) { b.hidden = !m; b.textContent = m ? pitchMatchLabel(m) : ""; }
+  }
+
+  /**
+   * Appendix G G6 (PO-FIX-6, G-D5): the fabrication pitch at which the raster equals the loaded source
+   * (SBEngine.matchSourcePitch on the source size the dimbar uses), or null (no source, no near match, budget-capped).
+   */
+  function pitchMatch() {
+    if (!run.sourceImage) return null;
+    try { return SBEngine.matchSourcePitch(project, { w: run.sourceW, h: run.sourceH }, deviceClass()); }
+    catch (e) { return null; }
+  }
+  function pitchMatchLabel(m) {
+    return "Match pitch to source (" + SBUtil.fmt(m.fabPitchMM, 3) + " mm/px, " + m.W + " × " + m.H + " px, no resampling)";
+  }
+  /** The one handler of #btn-match-pitch and the RESAMPLED item's button: record the matched pitch and regenerate. */
+  function applyPitchMatch() {
+    const m = pitchMatch();
+    if (!m) return;
+    const before = project.revision;
+    project = SBSchema.applyFabPitch(project, m.fabPitchMM);
+    syncControls();
+    if (project.revision !== before) { updateDimbar(); recompute(); }
+  }
+  /** G6: the RESAMPLED item offers the same match as the pitch row (the item's fix text is unchanged). */
+  function pitchMatchAction(d) {
+    if (d.code !== "RESAMPLED") return null;
+    const m = pitchMatch();
+    if (!m) return null;
+    const box = document.createElement("div");
+    box.className = "diag-actions";
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "btn"; b.textContent = pitchMatchLabel(m);
+    b.addEventListener("click", applyPitchMatch);
+    box.appendChild(b);
+    return box;
   }
 
   // ------------------------------------------------------- G2.11c control groups

@@ -270,6 +270,9 @@ select {
 .btn.primary { background: var(--cut); border-color: var(--cut); color: #fff; }
 .btn.primary:hover { background: #b92c1f; }
 .btn.wide { width: 100%; }
+/* Appendix G G6 (PO-FIX-6): "Match pitch to source" under the fabrication pitch input */
+.btn.match-pitch { display: block; margin-top: 6px; width: 100%; white-space: normal; text-align: left; }
+.btn.match-pitch[hidden] { display: none; }
 .btn:disabled, .btn:disabled:hover { opacity: 0.5; cursor: not-allowed; background: var(--film); border-color: var(--film); color: inherit; }
 .why { margin: 6px 0 0; font-size: 12px; opacity: 0.75; }
 .why[hidden] { display: none; }
@@ -646,7 +649,8 @@ button.diag-go:hover .diag-msg { text-decoration: underline; }
       <fieldset class="group"><legend>Fabrication</legend>
       <!-- PO-LASER-4: physical fabrication pitch; the 720 px draft is not a control. -->
       <div class="row"><label for="in-res">Fabrication pitch (mm/px) <output id="out-res"></output></label>
-        <input id="in-res" type="number" min="0.05" max="2" step="0.01" value="0.1" inputmode="decimal"></div>
+        <input id="in-res" type="number" min="0.05" max="2" step="0.01" value="0.1" inputmode="decimal">
+        <button id="btn-match-pitch" type="button" class="btn match-pitch" hidden></button></div>
       <div class="row"><label for="in-feature">Min feature <output id="out-feature"></output></label>
         <input id="in-feature" type="range" min="0.6" max="3" step="0.1"></div>
       <div class="row"><label for="in-bridge">Bridge width <output id="out-bridge"></output></label>
@@ -2451,6 +2455,9 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       "The recorded filter is applied deterministically; remove it to slice raw heights."],
     ["RESAMPLED", I, P, "Source was resampled to the working resolution",
       "No action needed; use a matching source size to avoid resampling."],
+    // Appendix G G-D5 (PO-FIX-6): the raster is clamped to the source within one 1 µm pitch step (SBRaster.fabDiagnostics)
+    ["FAB_MATCHES_SOURCE", I, P, "Fabrication raster equals the source",
+      "No action needed; the source is used 1:1 without resampling."],
     // speed round F1 (S4, PO-PERF-4, F-D1): SAMPLING_LOW is judged on the fabrication plan; a draft-only shortfall is info
     ["DRAFT_COARSER", I, P, "Draft sampling is below 3 samples per minimum feature",
       "No action needed; the minimum feature is checked at the fabrication pitch. Preview at fabrication resolution to see the full detail."],
@@ -5348,6 +5355,26 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     };
   };
 
+  /**
+   * Appendix G G-D5 (PO-FIX-6): the largest integer pitch p (µm) whose uncapped raster covers the source on both axes
+   * (⌈A/p⌉ ≥ S per axis), so fabRaster clamps to exactly the source. null when the target raster already equals the
+   * source, when no p in [minPitchUm, maxPitchUm] gives W = srcW and H = srcH, when the budget would cap it, or when
+   * |p − target| > 15 % of the target.
+   */
+  R.matchSourcePitch = function (o) {
+    const { artWUm, artHUm, srcW, srcH, pxBudget, targetPitchUm, minPitchUm, maxPitchUm } = o || {};
+    for (const [k, v] of Object.entries({ artWUm, artHUm, srcW, srcH, pxBudget, targetPitchUm, minPitchUm, maxPitchUm }))
+      if (!isPosInt(v)) throw rfail("RASTER_ARG", "matchSourcePitch: " + k + " must be a positive integer (got " + v + ")");
+    const here = R.fabRaster({ artWUm, artHUm, srcW, srcH, targetPitchUm, pxBudget });
+    if (here.W === srcW && here.H === srcH && here.pitchUm === targetPitchUm) return null;   // already equal
+    const top = (A, S) => (S <= 1 ? maxPitchUm : cdiv(A, S - 1) - 1);                          // largest p with ⌈A/p⌉ ≥ S
+    const p = Math.min(top(artWUm, srcW), top(artHUm, srcH), maxPitchUm);
+    if (p < minPitchUm || Math.abs(p - targetPitchUm) * 100 > 15 * targetPitchUm) return null;
+    const f = R.fabRaster({ artWUm, artHUm, srcW, srcH, targetPitchUm: p, pxBudget });
+    if (f.pitchUm !== p || f.W !== srcW || f.H !== srcH) return null;                           // budget-capped or not exact
+    return { pitchUm: p, W: f.W, H: f.H };
+  };
+
   /** Real per-axis scales of a raster (G1.1): sxUm = artWUm/W, syUm = artHUm/H; mmPerPxMax = max/1000. */
   R.scaleUm = function (artWUm, artHUm, W, H) {
     const sxUm = artWUm / W, syUm = artHUm / H;
@@ -5357,10 +5384,11 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   /**
    * Resampling policy (IMG-02/03): height mode is "none" when the source fits
    * and "nearest" otherwise; "area" only as an explicit, recorded filter
-   * (opts.heightArea, HEIGHT_FILTERED). Tonal mode is always "area".
+   * (opts.heightArea, HEIGHT_FILTERED). Tonal mode is "area", or "none" when the raster equals the source
+   * (Appendix G G-D5: resampleCore copies at equal size, so the bytes are identical).
    */
   R.resamplePolicy = function (mode, srcW, srcH, W, H, opts) {
-    if (mode === "tonal") return "area";
+    if (mode === "tonal") return W === srcW && H === srcH ? "none" : "area";   // G-D5: equal size is an identity copy
     if (mode !== "height") throw rfail("RESAMPLE_METHOD", "mode must be height|tonal (got " + mode + ")");
     if (W === srcW && H === srcH) return "none";
     return opts && opts.heightArea ? "area" : "nearest";
@@ -5393,6 +5421,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
    *                                  pitch. measured/limit are source px / target px on the MOST-SHORT axis (largest
    *                                  target/source ratio; ties → width), so measured < limit whenever it warns;
    *                                  shortPx carries both axes.
+   *   FAB_MATCHES_SOURCE (info)    — Appendix G G-D5: instead of FAB_EXCEEDS_SOURCE when the raster equals the source and
+   *                                  the shortfall is within one 1 µm pitch step and ≤ 2 % on each axis.
    * ctx: {artWUm, artHUm, srcW, srcH, targetPitchUm, pxBudget, deviceClass, quality, revision}.
    */
   R.fabDiagnostics = function (fab, ctx) {
@@ -5400,6 +5430,12 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const realUm = Math.round(R.scaleUm(ctx.artWUm, ctx.artHUm, fab.W, fab.H).mmPerPxMax * 1000);
     const W1 = cdiv(ctx.artWUm, fab.pitchUm), H1 = cdiv(ctx.artHUm, fab.pitchUm);
     const budget = fab.capped === "budget" || fab.capped === "budget+source", source = !!fab.shortPx;
+    // Appendix G G-D5: a raster clamped to exactly the source, where the next coarser 1 µm pitch would not exceed the
+    // source on either axis and the shortfall is ≤ 2 % per axis, is the 1 µm pitch grid, not lost detail → info.
+    const shortW = W1 - ctx.srcW, shortH = H1 - ctx.srcH;
+    const oneStep = source && fab.W === ctx.srcW && fab.H === ctx.srcH &&
+      cdiv(ctx.artWUm, fab.pitchUm + 1) <= ctx.srcW && cdiv(ctx.artHUm, fab.pitchUm + 1) <= ctx.srcH &&
+      shortW * 50 <= ctx.srcW && shortH * 50 <= ctx.srcH;
     if (budget) {
       const budgetUm = Math.round(R.scaleUm(ctx.artWUm, ctx.artHUm, W1, H1).mmPerPxMax * 1000);
       out.push(global.SBDiag.make("FAB_PITCH_CAPPED", Object.assign({}, base, {
@@ -5407,10 +5443,14 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
         detail: "the " + (ctx.deviceClass || "device") + " pixel budget of " + ctx.pxBudget + " px coarsened the pitch to " + umText(budgetUm) +
           " mm/px instead of the " + umText(ctx.targetPitchUm) + " mm/px target (pitch " + fab.pitchUm + " µm, " + W1 + " × " + H1 + " px)" +
           (source ? "; the source (" + ctx.srcW + " × " + ctx.srcH + " px) then limits the raster to " + fab.W + " × " + fab.H + " px at " +
-            umText(realUm) + " mm/px (see FAB_EXCEEDS_SOURCE)" : ""),
+            umText(realUm) + " mm/px" + (oneStep ? " (see FAB_MATCHES_SOURCE)" : " (see FAB_EXCEEDS_SOURCE)") : ""),
       })));
     }
-    if (source) {
+    if (oneStep) out.push(global.SBDiag.make("FAB_MATCHES_SOURCE", Object.assign({}, base, {
+      detail: "the raster equals the source (" + ctx.srcW + " × " + ctx.srcH + " px) at " + umText(realUm) + " mm/px; requested pitch " + umText(fab.pitchUm) +
+        " mm/px (shortfall " + shortW + " × " + shortH + " px, within one 1 µm pitch step)",
+    })));
+    else if (source) {
       const byH = H1 * ctx.srcW > W1 * ctx.srcH;   // H1/srcH > W1/srcW, exact in integers; ties → width
       const axis = byH ? "height" : "width", sPx = byH ? ctx.srcH : ctx.srcW, tPx = byH ? H1 : W1;
       out.push(global.SBDiag.make("FAB_EXCEEDS_SOURCE", Object.assign({}, base, {
@@ -9790,6 +9830,18 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     });
   };
 
+  /**
+   * matchSourcePitch(project, {w, h}, deviceClass) → {fabPitchMM, W, H} | null (Appendix G G-D5, PO-FIX-6): the fabrication
+   * pitch at which the raster equals the oriented source, from SBRaster.matchSourcePitch with the SBSchema.FAB_PITCH limits.
+   */
+  E.matchSourcePitch = function (project, source, deviceClass) {
+    if (!source || !isPosInt(source.w) || !isPosInt(source.h)) throw efail("ENGINE_ARG", "source size must be positive integers");
+    const Sch = global.SBSchema, [srcW, srcH] = orientedSize(project, source.w, source.h), sz = Sch.resolveSize(project, srcW, srcH);
+    const m = global.SBRaster.matchSourcePitch({ artWUm: sz.artWUm, artHUm: sz.artHUm, srcW, srcH, pxBudget: Sch.limits(deviceClass).fabPxBudget,
+      targetPitchUm: Math.round(project.geometry.fabPitchMM * 1000), minPitchUm: Math.round(Sch.FAB_PITCH.min * 1000), maxPitchUm: Math.round(Sch.FAB_PITCH.max * 1000) });
+    return m ? Object.freeze({ fabPitchMM: m.pitchUm / 1000, W: m.W, H: m.H }) : null;
+  };
+
   /** qualityPair(project, {w, h}, deviceClass) → {draft, fabrication}: both plans, for display before generation. */
   E.qualityPair = function (project, source, deviceClass) {
     return Object.freeze({ draft: E.rasterPlan(project, source, "draft", deviceClass), fabrication: E.rasterPlan(project, source, "fabrication", deviceClass) });
@@ -12414,6 +12466,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const fabRepair = !!(r && r.snapshot) && r === run.fab && d.code === "REPAIR_REVIEW_FAB";
     const act = fabRepair ? fabRepairActions(d, it) : onScreen ? clipAction(d) : null;
     if (act) li.appendChild(act);
+    const match = d.code === "RESAMPLED" ? pitchMatchAction(d) : null;   // Appendix G G6 (PO-FIX-6)
+    if (match) li.appendChild(match);
     if (it.severity === "warning" && r && r.snapshot) {
       const key = SBDiag.ackKey(d, r.snapshot.geometryHash);
       const lab = document.createElement("label");
@@ -13190,6 +13244,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       if (project.revision !== before) recompute();
     });
     el.addEventListener("change", () => { el.value = project.geometry.fabPitchMM; show(); });
+    const mb = $("btn-match-pitch");
+    if (mb) mb.addEventListener("click", applyPitchMatch);
   }
 
   /**
@@ -13201,6 +13257,43 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const el = $("in-res"), out = $("out-res");
     if (el && document.activeElement !== el) el.value = project.geometry.fabPitchMM;
     if (out) out.textContent = SBUtil.fmt(project.geometry.fabPitchMM, 3) + " mm/px";
+    const b = $("btn-match-pitch"), m = pitchMatch();
+    if (b) { b.hidden = !m; b.textContent = m ? pitchMatchLabel(m) : ""; }
+  }
+
+  /**
+   * Appendix G G6 (PO-FIX-6, G-D5): the fabrication pitch at which the raster equals the loaded source
+   * (SBEngine.matchSourcePitch on the source size the dimbar uses), or null (no source, no near match, budget-capped).
+   */
+  function pitchMatch() {
+    if (!run.sourceImage) return null;
+    try { return SBEngine.matchSourcePitch(project, { w: run.sourceW, h: run.sourceH }, deviceClass()); }
+    catch (e) { return null; }
+  }
+  function pitchMatchLabel(m) {
+    return "Match pitch to source (" + SBUtil.fmt(m.fabPitchMM, 3) + " mm/px, " + m.W + " × " + m.H + " px, no resampling)";
+  }
+  /** The one handler of #btn-match-pitch and the RESAMPLED item's button: record the matched pitch and regenerate. */
+  function applyPitchMatch() {
+    const m = pitchMatch();
+    if (!m) return;
+    const before = project.revision;
+    project = SBSchema.applyFabPitch(project, m.fabPitchMM);
+    syncControls();
+    if (project.revision !== before) { updateDimbar(); recompute(); }
+  }
+  /** G6: the RESAMPLED item offers the same match as the pitch row (the item's fix text is unchanged). */
+  function pitchMatchAction(d) {
+    if (d.code !== "RESAMPLED") return null;
+    const m = pitchMatch();
+    if (!m) return null;
+    const box = document.createElement("div");
+    box.className = "diag-actions";
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "btn"; b.textContent = pitchMatchLabel(m);
+    b.addEventListener("click", applyPitchMatch);
+    box.appendChild(b);
+    return box;
   }
 
   // ------------------------------------------------------- G2.11c control groups

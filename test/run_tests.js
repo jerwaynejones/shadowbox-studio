@@ -1791,7 +1791,7 @@ suite("diag.js — SBDiag registry, make() and aggregate() (§9.1, §9.5, UI-04;
     warning: ["MAT_UNCALIBRATED", "PART_SMALL", "PART_THIN", "NECK_NARROW", "SUPPORT_NARROW",
       "GUIDE_OMITTED", "CLEANUP_ALTERED", "SMOOTH_FALLBACK", "TRAILING_OMITTED",
       "ALIGN_CLEARANCE_ZERO", "REPAIR_REVIEW_FAB", "FAB_EXCEEDS_SOURCE", "PART_POINT_CONTACT"],
-    info: ["KERF_EXTERNAL", "PALETTE_ONLY", "IDENTICAL_LAYERS", "EMPTY_BAND", "DISPLAY_ONLY_IGNORED", "HEIGHT_FILTERED", "RESAMPLED", "DRAFT_COARSER"],
+    info: ["KERF_EXTERNAL", "PALETTE_ONLY", "IDENTICAL_LAYERS", "EMPTY_BAND", "DISPLAY_ONLY_IGNORED", "HEIGHT_FILTERED", "RESAMPLED", "DRAFT_COARSER", "FAB_MATCHES_SOURCE"],
   };
   for (const sev of Object.keys(PLAN)) {
     const wrong = PLAN[sev].filter((c) => !C[c] || C[c].severity !== sev);
@@ -2871,10 +2871,10 @@ suite("raster.js — G2.0 deterministic resampling and the raster contract, fabR
     [R.resample, R.rasterSize, R.fabRaster].every((f) => !/Math\.(cbrt|sin|cos|exp|log|pow|hypot|atan|tan)/.test(f.toString())));
 
   // ---- policy and cache key
-  check("IMG-03 policy: height none when the source fits, else nearest; area only as an explicit filter; tonal area",
+  check("IMG-03 policy: height none when the source fits, else nearest; area only as an explicit filter; tonal area (none at equal size, Appendix G G-D5)",
     R.resamplePolicy("height", 200, 150, 200, 150) === "none" && R.resamplePolicy("height", 400, 300, 200, 150) === "nearest" &&
     R.resamplePolicy("height", 400, 300, 200, 150, { heightArea: true }) === "area" && R.resamplePolicy("tonal", 400, 300, 200, 150) === "area" &&
-    R.resamplePolicy("tonal", 200, 150, 200, 150) === "area" && codeOf(() => R.resamplePolicy("bogus", 1, 1, 1, 1)) === "RESAMPLE_METHOD");
+    R.resamplePolicy("tonal", 200, 150, 200, 150) === "none" && codeOf(() => R.resamplePolicy("bogus", 1, 1, 1, 1)) === "RESAMPLE_METHOD");
   check("Appendix C S4: raster cache key covers (w, h, channels, W, H, method, sampleHash), never sampleHash alone",
     R.cacheKey({ w: 5, h: 1, channels: 1, W: 5, H: 1, method: "none", sampleHash: "ab" }) !== R.cacheKey({ w: 1, h: 5, channels: 1, W: 1, H: 5, method: "none", sampleHash: "ab" }) &&
     R.cacheKey({ w: 4, h: 4, channels: 1, W: 2, H: 2, method: "area", sampleHash: "ab" }) !== R.cacheKey({ w: 4, h: 4, channels: 1, W: 2, H: 2, method: "nearest", sampleHash: "ab" }) &&
@@ -8478,6 +8478,53 @@ suite("proof.js/app.js — Appendix G G5 review rows and acknowledge all (PO-FIX
   check("G.4 #5 the confirm re-checks the hash before adding keys", /plan\.hash\s*===\s*r\.snapshot\.geometryHash|r\.snapshot\.geometryHash\s*===\s*plan\.hash/.test(ackAll));
   check("PO-FIX-5 the panel defers to the Fabrication review via SBProof.fabListedIn", /SBProof\.fabListedIn\(/.test(app));
   check("UI-04 the deferring panel keeps a way there: counts of blocking issues and warnings plus a jump control to #fab-review", /id="btn-goto-fab"|"btn-goto-fab"/.test(app) && /scrollIntoView/.test(app));
+});
+
+// ------------------------------------------------ Appendix G G6 (PO-FIX-6): match pitch to source, one-step FAB_MATCHES_SOURCE
+suite("raster/engine/app — Appendix G G6 match pitch to source (PO-FIX-6, IMG-02, PO-LASER-4/5)", () => {
+  const R = SBRaster, E = SBEngine, S = SBSchema;
+  check("G6 API present", typeof R.matchSourcePitch === "function" && typeof E.matchSourcePitch === "function" && !!SBDiag.CODES.FAB_MATCHES_SOURCE);
+  if (typeof E.matchSourcePitch !== "function") return;
+  // identity first: an area resample at equal size returns the input bytes (G-D5 precondition for policy "none")
+  { const w = 37, h = 23, px = new Uint8Array(w * h * 4); for (let i = 0; i < px.length; i++) px[i] = (i * 131) % 256;
+    check("G-D5 area resample at equal size is byte-identical to the input", R.resample(px, 4, w, h, w, h, "area").join() === px.join()); }
+  const p = S.defaults("plywood"); p.geometry.sizeBy = "height"; p.geometry.targetMM = 300; p.source = S.sourceTemplate();
+  const m = E.matchSourcePitch(p, { w: 4096, h: 3084 }, "desktop");
+  check("PO-FIX-6 4096 × 3084 at 300 mm (raster 3985 × 3000 at 0.1) → a match near 0.097 mm/px", !!m && m.fabPitchMM > 0.09 && m.fabPitchMM < 0.1 && m.W === 4096 && m.H === 3084);
+  if (!m) return;
+  const q = S.applyFabPitch(p, m.fabPitchMM), plan = E.rasterPlan(q, { w: 4096, h: 3084 }, "fabrication", "desktop");
+  check("PO-FIX-6 at the matched pitch the fabrication raster equals the source", plan.geometry.rasterW === 4096 && plan.geometry.rasterH === 3084);
+  check("G-D5 no FAB_EXCEEDS_SOURCE warning; FAB_MATCHES_SOURCE info instead", !plan.diagnostics.some((d) => d.code === "FAB_EXCEEDS_SOURCE") &&
+    plan.diagnostics.some((d) => d.code === "FAB_MATCHES_SOURCE" && d.severity === "info"));
+  const qt = S.applyModeChange(q, { interpretation: { mode: "tonal" } }, true);
+  check("G-D5 tonal at the matched pitch does not resample (policy none)", E.rasterPlan(qt, { w: 4096, h: 3084 }, "fabrication", "desktop").geometry.resample === "none");
+  check("PO-FIX-6 a source far from the raster (8000 px vs 3985) gets no offer", E.matchSourcePitch(p, { w: 8000, h: 6023 }, "desktop") === null);
+  check("PO-FIX-6 a source already equal to the raster gets no offer", E.matchSourcePitch(S.applyFabPitch(p, 0.1), { w: 3985, h: 3000 }, "desktop") === null);
+  check("PO-LASER-5 a real shortfall still warns (2000 px source at 0.1 mm/px)",
+    E.rasterPlan(p, { w: 2000, h: 1506 }, "fabrication", "desktop").diagnostics.some((d) => d.code === "FAB_EXCEEDS_SOURCE"));
+  check("IMG-02 RESAMPLED keeps its suggestion", /matching source size/.test(SBDiag.CODES.RESAMPLED.fix));
+  { const fm = plan.diagnostics.find((d) => d.code === "FAB_MATCHES_SOURCE");
+    check("G-D5 FAB_MATCHES_SOURCE states the shortfall in px (tolerance: one 1 µm step, ≤ 2 % per axis)",
+      !!fm && fm.message.includes("shortfall") && /\d+ × \d+ px, within one 1 µm pitch step/.test(fm.message)); }
+  { // tolerance: a clamped raster whose next coarser µm step still exceeds the source keeps the warning
+    const ctx = { artWUm: 398443, artHUm: 300000, srcW: 4096, srcH: 3084, targetPitchUm: 90, pxBudget: 1e9, deviceClass: "desktop", quality: "fabrication", revision: 0 };
+    const codes = R.fabDiagnostics(R.fabRaster(ctx), ctx).map((d) => d.code).join();
+    check("G-D5 a clamp more than one 1 µm step away keeps FAB_EXCEEDS_SOURCE (90 µm vs the 97 µm match)", codes === "FAB_EXCEEDS_SOURCE"); }
+  { const rs = fs.readFileSync(path.join(__dirname, "..", "js", "raster.js"), "utf8");
+    check("G-D5 the FAB_PITCH_CAPPED detail names FAB_MATCHES_SOURCE in the match case (no dangling FAB_EXCEEDS_SOURCE pointer)", /see FAB_MATCHES_SOURCE/.test(rs)); }
+  // G-D6: the G6 recapture changed diagnostics only (RESAMPLED gone at equal size, FAB_MATCHES_SOURCE): geometryHash and
+  // layerHashes unchanged, so the equal-size "none" policy is the identity copy (chain-aware like G3/G4)
+  { const gold = JSON.parse(fs.readFileSync(path.join(__dirname, "golden", "pool-equality.json"), "utf8")), recs = gold.recaptured || [];
+    const g6 = recs.find((r) => r.task === "G6"), i6 = recs.indexOf(g6);
+    const after = (id) => { const later = recs.slice(i6 + 1).find((r) => r.ids.includes(id)); return later ? later.previous[id] : gold.fixtures[id]; };
+    const keep = ["slow", "status", "code", "geometryHash", "layerHashes", "cleanupSha", "supportSha", "statsSha", "guidesSha"];
+    const off = g6 ? g6.ids.filter((id) => !g6.previous || !g6.previous[id] || keep.some((k) => JSON.stringify(g6.previous[id][k]) !== JSON.stringify(after(id)[k])) ||
+      g6.previous[id].diagSha === after(id).diagSha) : ["(no G6 recapture record)"];
+    check("G-D6 G6 re-captured ids differ from their previous digests only in diagSha/wholeSha (geometryHash and layerHashes unchanged)" + (off.length ? " — " + off.join(", ") : ""),
+      !!g6 && g6.ids.length > 0 && off.length === 0 && Object.keys(g6.previous).sort().join() === g6.ids.slice().sort().join()); }
+  const app = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8"), html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+  check("PO-FIX-6 the pitch row and the RESAMPLED item offer Match pitch to source through SBEngine.matchSourcePitch + applyFabPitch",
+    /id="btn-match-pitch"/.test(html) && /SBEngine\.matchSourcePitch\(/.test(app) && /applyFabPitch\(project,\s*m\.fabPitchMM\)/.test(app) && /"RESAMPLED"/.test(app));
 });
 
 // ------------------------------------------------------------------ report

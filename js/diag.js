@@ -209,6 +209,9 @@
       "The recorded filter is applied deterministically; remove it to slice raw heights."],
     ["RESAMPLED", I, P, "Source was resampled to the working resolution",
       "No action needed; use a matching source size to avoid resampling."],
+    // Appendix G G-D5 (PO-FIX-6): the raster is clamped to the source within one 1 µm pitch step (SBRaster.fabDiagnostics)
+    ["FAB_MATCHES_SOURCE", I, P, "Fabrication raster equals the source",
+      "No action needed; the source is used 1:1 without resampling."],
     // speed round F1 (S4, PO-PERF-4, F-D1): SAMPLING_LOW is judged on the fabrication plan; a draft-only shortfall is info
     ["DRAFT_COARSER", I, P, "Draft sampling is below 3 samples per minimum feature",
       "No action needed; the minimum feature is checked at the fabrication pitch. Preview at fabrication resolution to see the full detail."],

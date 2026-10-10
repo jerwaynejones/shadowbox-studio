@@ -449,6 +449,18 @@
     });
   };
 
+  /**
+   * matchSourcePitch(project, {w, h}, deviceClass) → {fabPitchMM, W, H} | null (Appendix G G-D5, PO-FIX-6): the fabrication
+   * pitch at which the raster equals the oriented source, from SBRaster.matchSourcePitch with the SBSchema.FAB_PITCH limits.
+   */
+  E.matchSourcePitch = function (project, source, deviceClass) {
+    if (!source || !isPosInt(source.w) || !isPosInt(source.h)) throw efail("ENGINE_ARG", "source size must be positive integers");
+    const Sch = global.SBSchema, [srcW, srcH] = orientedSize(project, source.w, source.h), sz = Sch.resolveSize(project, srcW, srcH);
+    const m = global.SBRaster.matchSourcePitch({ artWUm: sz.artWUm, artHUm: sz.artHUm, srcW, srcH, pxBudget: Sch.limits(deviceClass).fabPxBudget,
+      targetPitchUm: Math.round(project.geometry.fabPitchMM * 1000), minPitchUm: Math.round(Sch.FAB_PITCH.min * 1000), maxPitchUm: Math.round(Sch.FAB_PITCH.max * 1000) });
+    return m ? Object.freeze({ fabPitchMM: m.pitchUm / 1000, W: m.W, H: m.H }) : null;
+  };
+
   /** qualityPair(project, {w, h}, deviceClass) → {draft, fabrication}: both plans, for display before generation. */
   E.qualityPair = function (project, source, deviceClass) {
     return Object.freeze({ draft: E.rasterPlan(project, source, "draft", deviceClass), fabrication: E.rasterPlan(project, source, "fabrication", deviceClass) });

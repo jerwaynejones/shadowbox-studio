@@ -147,7 +147,8 @@
       <fieldset class="group"><legend>Fabrication</legend>
       <!-- PO-LASER-4: physical fabrication pitch; the 720 px draft is not a control. -->
       <div class="row"><label for="in-res">Fabrication pitch (mm/px) <output id="out-res"></output></label>
-        <input id="in-res" type="number" min="0.05" max="2" step="0.01" value="0.1" inputmode="decimal"></div>
+        <input id="in-res" type="number" min="0.05" max="2" step="0.01" value="0.1" inputmode="decimal">
+        <button id="btn-match-pitch" type="button" class="btn match-pitch" hidden></button></div>
       <div class="row"><label for="in-feature">Min feature <output id="out-feature"></output></label>
         <input id="in-feature" type="range" min="0.6" max="3" step="0.1"></div>
       <div class="row"><label for="in-bridge">Bridge width <output id="out-bridge"></output></label>
