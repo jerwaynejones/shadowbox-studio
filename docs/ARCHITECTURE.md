@@ -316,6 +316,19 @@ Contract notes recorded with this decision:
   - Orphan holes are dropped by `normalize` as before (D4 amendment C makes `canonicalBytes` throw on them); `GEO_RING_TOUCH`/`GEO_SELF_TOUCH` are not added to `validate()`.
 - **Evidence:** `docs/spikes/S5.md` (F1 mechanism and sweeps, F2 frame union, F4 Clipper2 sub-µm offsets, F6 certified test, Recommendation); ported checks in `test/run_tests.js`, suites "spike S5 — …" (oracle `test/oracle_raster.js`; reduced sweeps by default, spike sizes with `node test/run_tests.js --only "spike S5" --s5-full`: 7 sweeps, 148,791 multi-part saddle cycles, 0 oracle failures; split-only rule fails 983 masks, all caught by `interiorConnected`; finite-width families 0 wrong certified verdicts, 2,398 parallelograms with 196 undecided, all truly failing).
 - Unchanged: `SBTrace.trace` keeps diagonal-only contact as separate loops (suite "spike S5 — trace saddles & frame contact (GEO-02/03, AT-06)").
+- **Extension: in-layer blocking rules (product owner, 2026-10-09; plan Appendix G, G-D2, task G2).** D3 above covers contact *between* layers (support) and how point contact is split during normalization. Two in-layer cases were split but never measured. Both are now **blocking**:
+  1. **Necks narrower than the kerf.** A part whose material narrows to at most T = max(machine kerf, 0.5 µm) somewhere is cut through by the laser and falls apart. Here kerf = `round(machine.kerfMM·1000)` µm, 150 µm for the default xTool S1, and 0 when `project.machine` is `null` or the kerf is 0.
+     - **Test:** an octagonal erosion of half T (Clipper2 `"square"` join, see the feature-check note below) splits the part into more than one component. The erosion runs on the layer scaled ×4, so the 0.25 µm half of the floor is an integer offset delta (−round(2·T) in ×4 units). `SBGeom.offset` still refuses sub-µm deltas.
+     - **Ties:** a neck exactly T wide counts as narrow, the same tie convention as `NECK_NARROW` ("w ≤ 2·halfUm vanishes").
+     - **Diagnostic:** `NECK_KERF` (blocking, aggregated per layer). A part that has it gets no `NECK_NARROW` and no neck `FEATURE_MARGINAL`.
+     - Necks between T and `minFeatureMM` stay `NECK_NARROW` warnings, as before.
+  2. **Point contacts between parts of one layer (bonded mode).** After normalization every inter-part point contact is a shared vertex of two parts' rings, T-contacts included (steps 2.1–2.3 above). Such parts are cut apart at that point, so a contact the artwork shows as joined is a separate, unsupported-looking piece in the cut.
+     - **Test:** an exact integer scan for vertices shared by two distinct parts.
+     - **Diagnostic:** `PART_POINT_CONTACT` (blocking), one per contact point, carrying both part ids and a 1 mm box around the point.
+     - Connected mode already blocks multi-part layers with `CONNECTED_SPLIT`, so the scan runs in bonded mode only.
+  - **Not covered:** a part touching *its own* hole at a point (outer–hole or hole–hole ring contact, allowed by item 4 above). It stays legal (Appendix G, G.9 #2).
+  - **Feature-check erosion (G-D3).** The feature checks use the `"square"` (chamfered) join. On lattice geometry that is erosion by an octagon, so a 45° neck is measured like an axis-aligned one. The former `"miter"` (Chebyshev square) erosion flagged 45° necks narrower than √2 times the limit. Neck diagnostics carry the neck's own bbox (`SBSupport.neckRegions`), not the part's.
+  - Status: decided. Implemented by plan Appendix G tasks G2 and G3.
 
 ### D4 — Hash scope
 
