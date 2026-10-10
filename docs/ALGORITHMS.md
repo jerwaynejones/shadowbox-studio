@@ -44,6 +44,43 @@ Real acrylic can't hold arbitrarily fine features, so each sheet mask gets:
 mm→px conversion is `pxPerMM = workingWidthPx / artworkWidthMM`, so every
 threshold is a real bench dimension independent of preview resolution.
 
+### 3.1 Bonded mode: exact digital-disc open/close (Appendix G, G1)
+
+Connected mode keeps the v1.1 square chain above (open with the (2r+1)²
+window, r = `featR`, then close with r − 1). Bonded mode uses an exact
+**digital disc** instead (`SBMorph.discOpenClose`, called by
+`SBConstruct.constructLayer`):
+
+- **Radius.** p = the coarser axis pitch, F = minFeature / p in px (rounded to
+  1e-9 so binary noise cannot move a tie), m = ⌊(⌊F⌋ + 1)/2⌋ and
+  **R² = m²** when F ≥ 3. Erosion keeps a pixel iff every background pixel
+  is at squared distance > R²; dilation sets a pixel iff some material pixel
+  is at squared distance ≤ R². The closing uses the same R² (v1.1's
+  "close = r − 1" compensated the square window and is not carried over).
+- **Tie rule.** A strip of w px has centre-line distance ⌊(w + 1)/2⌋ to the
+  background, so the disc cannot tell 2m − 1 from 2m px. R² = m² removes
+  both: at 1.5 mm and 0.1 mm/px (F = 15, m = 8, R² = 64) strips and necks of
+  ≤ 16 px are removed and 17 px survive; waste channels of ≤ 16 px close and
+  17 px stay open. The feature checks flag widths at or below the minimum
+  feature, so cleanup never keeps a width the checks flag. Unlike the square
+  window, a 45° neck or channel is judged by its true perpendicular width.
+- **Fallback.** F < 3 (drafts only; at fabrication it is the blocking
+  `SAMPLING_LOW` condition) gives R² = 0 and keeps the square `featR` chain.
+- **Image border (behaviour change).** Pixels outside the image are neither
+  material nor background: erosion never erodes from outside and dilation
+  never adds from outside. The square kernels never touched the 1-px border
+  ring; the disc erodes a border pixel when interior background lies within
+  R² of it, so art touching the image edge is cleaned like interior art (an
+  edge strip of ≤ 16 px at the default disappears completely).
+- **Kernel.** Per window: the vertical distance g to the nearest indicator
+  pixel in each column (a down and an up sweep, capped at ⌊√R²⌋ + 1), then
+  per row a left and a right "reach" sweep with hw[t] = ⌊√(R² − t²)⌋: a pixel
+  is hit iff some q in its row has |x − q| ≤ hw[g[q]]. O(w·h) for any R²,
+  integer arithmetic only (NFR-05), in 4-byte words when ⌊√R²⌋ + 1 ≤ 126.
+  Four windows (erode, dilate, dilate, erode) with no fusion, since a
+  digital disc ⊕ disc is not a disc. Erosion and dilation are increasing,
+  so nested layers stay nested (D-4.5).
+
 ## 4. Island resolution (`islands.js`) — the core
 
 **Problem.** Any kept region not connected to the rest of the sheet falls

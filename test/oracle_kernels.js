@@ -498,4 +498,19 @@ const oracleMaskPolygons = ((global) => {
   return E.maskPolygons;
 })(globalThis);
 
-module.exports = { oracleResample, oracleMorph, oracleComponents, oracleConstruct, oracleKuwahara, oracleTrace, oracleMaskPolygons };
+// ---- Appendix G G1: brute-force exact digital-disc erode/dilate (the definition, O(w·h·R2)); outside the image: no pixel.
+const oracleDisc = (() => {
+  function any(m, w, h, x, y, R2, want) {
+    const A = Math.floor(Math.sqrt(R2)) + 1;   // over-cover; the dx² + dy² ≤ R2 test decides
+    for (let dy = Math.max(-A, -y); dy <= Math.min(A, h - 1 - y); dy++) for (let dx = Math.max(-A, -x); dx <= Math.min(A, w - 1 - x); dx++) {
+      if (dx * dx + dy * dy > R2) continue;
+      if ((m[(y + dy) * w + x + dx] !== 0) === want) return true;
+    }
+    return false;
+  }
+  const erode = (m, w, h, R2) => { const o = new Uint8Array(w * h); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = y * w + x; o[i] = m[i] && !any(m, w, h, x, y, R2, false) ? 1 : 0; } return o; };
+  const dilate = (m, w, h, R2) => { const o = new Uint8Array(w * h); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) o[y * w + x] = any(m, w, h, x, y, R2, true) ? 1 : 0; return o; };
+  return { erode, dilate, openClose: (m, w, h, a, b) => erode(dilate(dilate(erode(m, w, h, a), w, h, a), w, h, b), w, h, b) };
+})();
+
+module.exports = { oracleResample, oracleMorph, oracleComponents, oracleConstruct, oracleKuwahara, oracleTrace, oracleMaskPolygons, oracleDisc };

@@ -5480,6 +5480,8 @@ suite("schema.js/engine.js — alpha.3 E3b physical filter radii and draft fidel
   // Recorded tolerance; never loosened without a plan note. Measured 2026-10-08 (E3b): worst area deviation 2.28 % (layer 7),
   // worst part-count ratio 1.75 (8 vs 14, layer 3). With the old pixel radius (r4 on both rasters) the same fixture gives
   // 7.68 % and part ratios up to 11 (3 vs 33), so the part-count check fails on pixel radii.
+  // Appendix G G1 (2026-10-09): the fabrication raster (0.25 mm/px, F = 6) now runs the disc R² 9 instead of the square r 3;
+  // re-measured worst area deviation 3.03 % (layer 7), worst part-count ratio 1.70 (10 vs 17, layer 5). Thresholds unchanged.
   const pageMM2 = f.page.wMM * f.page.hMM, TOL = 0.08, PARTS = 2;
   const big = f.layers.map((L, k) => k).filter((k) => f.layers[k].stats.areaMM2 > 0.05 * pageMM2);
   check("LYR-06 draft vs fabrication: per-layer area within 8 % on every layer above 5 % of the page", big.length > 0 &&
@@ -6186,8 +6188,11 @@ suite("support/engine — speed round F1 sampling on the fabrication plan (GEO-0
   const gold = JSON.parse(fs.readFileSync(path.join(__dirname, "golden", "pool-equality.json"), "utf8"));
   const f1 = (gold.recaptured || []).find((r) => r.task === "F1");
   const keep = ["status", "code", "geometryHash", "layerHashes", "cleanupSha", "supportSha", "guidesSha", "statsSha"];
-  const off = f1 ? f1.ids.filter((id) => !f1.previous || !f1.previous[id] || keep.some((k) => JSON.stringify(f1.previous[id][k]) !== JSON.stringify(gold.fixtures[id][k])) ||
-    f1.previous[id].diagSha === gold.fixtures[id].diagSha) : ["(no F1 recapture record)"];
+  // Appendix G G-D6: F1's ids may be re-captured again later; compare F1's previous digest with what F1 produced
+  const after = (task, id) => { const recs = gold.recaptured || [], i = recs.findIndex((r) => r.task === task);
+    const later = recs.slice(i + 1).find((r) => r.ids.includes(id)); return later ? later.previous[id] : gold.fixtures[id]; };
+  const off = f1 ? f1.ids.filter((id) => !f1.previous || !f1.previous[id] || keep.some((k) => JSON.stringify(f1.previous[id][k]) !== JSON.stringify(after("F1", id)[k])) ||
+    f1.previous[id].diagSha === after("F1", id).diagSha) : ["(no F1 recapture record)"];
   check("F-D1 F1 re-captured golden ids differ from their previous digests only in diagSha/wholeSha" + (off.length ? " — " + off.join(", ") : ""),
     !!f1 && f1.ids.length > 0 && off.length === 0 && Object.keys(f1.previous).sort().join() === f1.ids.slice().sort().join());
 });
@@ -8105,6 +8110,137 @@ suite("checkpoint v2.0.0-alpha.4 — speed round F18 final measurement, records 
       : F.status === "pending" && /large --only user12 --pool 0,1,8/.test(F.command) && F.interim && F.interim.length >= 2 && typeof F.reason === "string"));
   check("F18 speed-round.json final records the KI-B1 B1 re-run (p95 against the 2 s budget, still tracked) and KI-CONN-PERF as reported-only",
     !!F && F.kiB1 && F.kiB1.p95Ms > 0 && F.kiB1.budgetMs === 2000 && typeof F.kiB1.tracked === "boolean" && F.kiConnPerf && /report/i.test(F.kiConnPerf.status));
+});
+
+// ------------------------------------------------ Appendix G G1 (PO-FIX-1): exact Euclidean-disc open/close for bonded construction
+suite("morph/construct — Appendix G G1 bonded disc morphology (PO-FIX-1, GEO-05, D-4.5, NFR-05)", () => {
+  const F = require("./fixtures.js"), O = require("./oracle_kernels.js").oracleDisc, M = SBMorph, C = SBConstruct;
+  const has = typeof M.discErode === "function" && typeof M.discDilate === "function" && typeof M.discOpenClose === "function";
+  check("G1 SBMorph.discErode/discDilate/discOpenClose exist", has);
+  if (!has) return;
+  // exactness against the brute-force definition: random masks, sizes 1–41, R2 in {0, 1, 2, 4, 5, 8, 13, 49, 52, 56}
+  { const rng = F.lcg(4711); let bad = 0, n = 0;
+    for (let t = 0; t < 160; t++) { const w = 1 + Math.floor(rng() * 41), h = 1 + Math.floor(rng() * 41), R2 = [0, 1, 2, 4, 5, 8, 13, 49, 52, 56][t % 10], dens = 0.2 + 0.6 * rng();
+      const m = new Uint8Array(w * h); for (let i = 0; i < m.length; i++) m[i] = rng() < dens ? 1 : 0;
+      const e = M.discErode(m, w, h, R2), d = M.discDilate(m, w, h, R2); n++;
+      if (e.join() !== O.erode(m, w, h, R2).join() || d.join() !== O.dilate(m, w, h, R2).join() || e === m || d === m) bad++; }
+    check(`G1 disc erode/dilate equal the brute-force definition (${n - bad}/${n})`, bad === 0); }
+  { const w = 7, h = 5, m = new Uint8Array(w * h).fill(1); m[17] = 0;
+    check("G1 R2 = 0: erode and dilate are the identity", M.discErode(m, w, h, 0).join() === m.join() && M.discDilate(m, w, h, 0).join() === m.join()); }
+  { const w = 300, h = 3, m = new Uint8Array(w * h); m.fill(1, w, w + 1); const R2 = 70000;   // ρ ≈ 264.6: distance plane must be Uint16
+    check("G1 R2 > 65025 uses a wide distance plane and equals brute force on a long strip",
+      M.discDilate(m, w, h, R2).join() === O.dilate(m, w, h, R2).join()); }
+  { const w = 520, h = 4, m = new Uint8Array(w * h), rng = F.lcg(65025); for (let i = 0; i < m.length; i++) m[i] = rng() < 0.97 ? 1 : 0;
+    check("G1 the Uint8/Uint16 distance-plane boundary (R2 65024/65025/65026) equals brute force (erode and dilate)",
+      [65024, 65025, 65026].every((R2) => M.discErode(m, w, h, R2).join() === O.erode(m, w, h, R2).join() && M.discDilate(m.map((v) => 1 - v), w, h, R2).join() === O.dilate(m.map((v) => 1 - v), w, h, R2).join())); }
+  { const w = 270, h = 5, m = new Uint8Array(w * h), rng = F.lcg(15876); for (let i = 0; i < m.length; i++) m[i] = rng() < 0.97 ? 1 : 0;
+    check("G1 the word-sweep / scalar kernel boundary (R2 15875 → C 126, R2 15876 → C 127) equals brute force (erode and dilate)",
+      [15624, 15875, 15876].every((R2) => M.discErode(m, w, h, R2).join() === O.erode(m, w, h, R2).join() && M.discDilate(m.map((v) => 1 - v), w, h, R2).join() === O.dilate(m.map((v) => 1 - v), w, h, R2).join())); }
+  { const rng = F.lcg(64); let bad = 0;
+    for (let t = 0; t < 40; t++) { const w = 1 + Math.floor(rng() * 45), h = 1 + Math.floor(rng() * 45), a = [1, 2, 9, 49, 64][t % 5], b = [64, 9, 1, 2, 49][t % 5];
+      const m = new Uint8Array(w * h); for (let i = 0; i < m.length; i++) m[i] = rng() < 0.55 ? 1 : 0;
+      if (M.discOpenClose(m, w, h, a, b).join() !== O.openClose(m, w, h, a, b).join()) bad++; }
+    check("G1 discOpenClose (one shared scratch for its four windows) equals the brute-force open/close (40 random masks)", bad === 0); }
+  // border (G.4 #1): outside the image is no pixel
+  { const w = 40, h = 30, m = new Uint8Array(w * h); m.fill(1, 0, 20 * w);   // material rows 0..19 at the top edge
+    const e = M.discErode(m, w, h, 49);
+    check("G1 border: material at the image edge is not eroded from outside (row 0 kept, rows ≥ 13 removed)",
+      e.subarray(0, w).every((v) => v === 1) && e.subarray(13 * w, 20 * w).every((v) => v === 0)); }
+  // thresholds at 1.5 mm, 0.1 mm/px: F = 15, m = 8, R2 = 64 (G-D1 tie rule: widths ≤ 16 px are removed, 17 px survive)
+  const PX = { featR: 8, discR2: 64, bridgeR: 9, cullPx: 1000, maxBridgePx: 400, speckPx: 1000, holePx: 450, frameAnchored: false, cullEnabled: false };
+  const full = (w, h) => new Uint8Array(w * h).fill(1), comps = (m, w, h) => M.runComponents(m, w, h, 1).count;
+  const bonded1 = (m, w, h, px) => C.bonded([full(w, h), m], w, h, px || PX).final[1];
+  const axisNeck = (wd) => { const w = 220, h = 100, m = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = (x < 80 && y > 20 && y < 80) || (x >= 140 && y > 20 && y < 80) || (y >= 40 && y < 40 + wd) ? 1 : 0;
+    return { m, w, h }; };
+  for (const [wd, keep] of [[14, false], [15, false], [16, false], [17, true], [19, true]]) { const { m, w, h } = axisNeck(wd), f = bonded1(m, w, h);
+    check(`G1 axis neck ${wd / 10} mm (min 1.5, tie: ≤ 1.6 removed) ${keep ? "kept (one part)" : "removed (two parts)"}`, comps(f, w, h) === (keep ? 1 : 2)); }
+  const waste = (c) => { const w = 220, h = 60, m = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = x < 100 || x >= 100 + c ? 1 : 0; return { m, w, h }; };
+  for (const [c, filled] of [[14, true], [15, true], [16, true], [17, false]]) { const { m, w, h } = waste(c), f = bonded1(m, w, h);
+    check(`G1 axis waste channel ${c / 10} mm ${filled ? "is closed" : "stays open"}`, (comps(f, w, h) === 1) === filled); }
+  // tie rule / self-consistency (review 2026-10-09): what construction keeps, the feature checks do not flag as too narrow
+  const feat = (m, w, h) => SBSupport.featureChecks(SBMaterial.assignParts(SBMaterial.fromMasks([full(w, h), m], w, h, { artWMM: w * 0.1, artHMM: h * 0.1, frameMM: 0 }, {})),
+    { minFeatureMM: 1.5, advisoryFeatureMM: 2, minPartMM2: 0, mmPerPxMax: 0.1, calibrated: true }).map((d) => d.code);
+  { const { m, w, h } = axisNeck(17), c = feat(bonded1(m, w, h), w, h);
+    check("G1 tie rule: the smallest kept axis neck (1.7 mm) is not NECK_NARROW or PART_THIN", !c.includes("NECK_NARROW") && !c.includes("PART_THIN")); }
+  { const w = 200, h = 60, m = new Uint8Array(w * h); for (let y = 20; y < 37; y++) m.fill(1, y * w, y * w + w);   // a 17 px strip across the image
+    const f = bonded1(m, w, h), c = feat(f, w, h);
+    check("G1 tie rule: the smallest kept whole strip (1.7 mm) survives construction and is not PART_THIN", f.some((v) => v) && !c.includes("PART_THIN") && !c.includes("NECK_NARROW")); }
+  { const w = 200, h = 60, m = new Uint8Array(w * h); for (let y = 20; y < 36; y++) m.fill(1, y * w, y * w + w);   // 16 px: removed
+    check("G1 tie rule: a 1.6 mm strip is removed entirely", !bonded1(m, w, h).some((v) => v)); }
+  // border semantics (review 2026-10-09): art touching the image edge is cleaned like interior art (the square kernels kept the 1-px ring)
+  { const w = 100, h = 60, thin = new Uint8Array(w * h), wide = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) { thin.fill(1, y * w, y * w + 6); wide.fill(1, y * w, y * w + 17); }
+    check("G1 border: a 0.6 mm strip along the image edge is removed completely; a 1.7 mm strip keeps its edge column",
+      !bonded1(thin, w, h).some((v) => v) && (() => { const f = bonded1(wide, w, h); for (let y = 0; y < h; y++) if (!f[y * w]) return false; return true; })()); }
+  // diagonal neck and waste (neck_test.js): 45° strip of perpendicular width wpx between two 6 mm blocks
+  const diag = (wpx, inv) => { const w = 220, h = 220, m = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const A = x >= 20 && x < 80 && y >= 20 && y < 80, B = x >= 140 && x < 200 && y >= 140 && y < 200,
+      S = Math.abs(x - y) / Math.SQRT2 <= wpx / 2 && x >= 50 && x <= 170; m[y * w + x] = A || B || S ? 1 : 0; }
+    if (inv) { for (let i = 0; i < m.length; i++) m[i] = m[i] ? 0 : 1; for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (x < 4 || y < 4 || x >= w - 4 || y >= h - 4) m[y * w + x] = 1; }
+    return { m, w, h }; };
+  for (const wpx of [19, 22]) {
+    { const { m, w, h } = diag(wpx, false), f = bonded1(m, w, h); let cut = 0; for (let t = 60; t <= 160; t++) if (!f[t * w + t]) cut++;
+      check(`G1 diagonal material neck ${wpx / 10} mm keeps its centre line (was chopped by the square window)`, cut === 0); }
+    { const { m, w, h } = diag(wpx, true), f = bonded1(m, w, h); let fill = 0; for (let t = 60; t <= 160; t++) if (f[t * w + t]) fill++;
+      check(`G1 diagonal waste channel ${wpx / 10} mm is not filled`, fill === 0); }
+  }
+  // the six real 12 × 12 mm crops of height_8layer_v2.png: construct creates no new neck or waste neck < 1.3 mm
+  const dir = path.join(__dirname, "neck_fixtures"), files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((n) => n.endsWith(".png")).sort() : [];
+  check("G1 six neck fixtures present (test/neck_fixtures)", files.length === 6);
+  for (const f of files) checkAsync(`G1 ${f}: no new material or waste neck < 1.3 mm`, SBPng.decode(new Uint8Array(fs.readFileSync(path.join(dir, f))), { mode: "height" }).then((d) => {
+    const w = d.w, h = d.h, k = +f.slice(1, 3) - 1, masks = [];
+    for (let j = 0; j < 8; j++) masks.push(d.samples.map((v) => (v >= Math.round((j * 255) / 7) ? 1 : 0)));
+    const fin = C.bonded(masks, w, h, Object.assign({}, PX, { cullEnabled: false })).final[k];
+    const inv = (m) => m.map((v) => (v ? 0 : 1)), open36 = (m) => O.dilate(O.erode(m, w, h, 36), w, h, 36);
+    const thinNew = (src, out) => { const os = open36(src), oo = open36(out), deep = O.erode(src, w, h, 15); let n = 0;   // deep: d² ≥ 16, ≥ 0.4 mm from background
+      for (let y = 15; y < h - 15; y++) for (let x = 15; x < w - 15; x++) { const i = y * w + x; if (os[i] && !oo[i] && deep[i]) n++; } return n; };
+    return thinNew(masks[k], fin) === 0 && thinNew(inv(masks[k]), inv(fin)) === 0; }));
+  // nesting (D-4.5) with the disc (review 2026-10-09: the 40 × 30 stacks at R2 up to 49 erase most content, so they proved little).
+  // Small stacks keep the cheap R2 2/8. The strong test uses structured 120 × 90 stacks (F.busyHeightMap thresholded at five levels, so they are nested by
+  // construction and keep ~50-58 % of the pixels on layers 1-4 after cleanup; F.randomNestedStack leaves layers 2-4 nearly empty even at 120 × 90),
+  // R2 in {4, 9, 64}, with and without cullEnabled (removeSpecks), at constructLayer level. Measured 2026-10-09 with the prototype chain: 0 violations in 60 seeds.
+  { let ok = true; for (let s = 1; s <= 200 && ok; s++) { const st = F.randomNestedStack(F.lcg(s), 40, 30, 5);
+      for (const discR2 of [2, 8]) { const r = C.bonded(st, 40, 30, { ...PX, featR: 3, discR2, holePx: 30 });
+        for (let k = 2; k < r.final.length; k++) if (r.final[k].some((v, i) => v && !r.final[k - 1][i])) ok = false; } }
+    check("D-4.5 property: bonded disc morphology keeps nesting (200 seeds, 40 × 30, R2 2/8)", ok); }
+  { const bad = { cull: 0, nocull: 0 }, kept = [];
+    for (let s = 1; s <= 60; s++) { const hm = F.busyHeightMap(1000 + s, 120, 90, 14), st = [0, 1, 2, 3, 4].map((k) => hm.map((v) => (v >= k * 45 ? 1 : 0)));
+      for (const discR2 of [4, 9, 64]) for (const cull of [false, true]) {
+        const px = { ...PX, featR: Math.round(Math.sqrt(discR2)), discR2, holePx: 30, speckPx: 150, cullEnabled: cull };
+        const fin = st.map((mask, k) => C.constructLayer(k, { mask, W: 120, H: 90, px, bonded: true }).final);   // constructLayer level, as the pool runs it
+        kept.push(fin.slice(1).reduce((a, m) => a + m.reduce((x, v) => x + v, 0), 0));
+        for (let k = 2; k < fin.length; k++) if (fin[k].some((v, i) => v && !fin[k - 1][i])) bad[cull ? "cull" : "nocull"]++; } }
+    check("D-4.5 property: nesting at constructLayer level on 120 × 90 stacks, R2 4/9/64, cullEnabled false", bad.nocull === 0);
+    check("D-4.5 property: nesting at constructLayer level on 120 × 90 stacks, R2 4/9/64, cullEnabled true (removeSpecks)", bad.cull === 0);
+    check("G1 the nesting stacks keep material (not vacuous: layers 1-4 keep > 30 % of the pixels on average)", kept.reduce((a, b) => a + b, 0) / kept.length > 0.3 * 120 * 90 * 4); }
+  // fallback and contract
+  { const st = F.randomNestedStack(F.lcg(9), 40, 30, 4), sq = { ...PX, featR: 1, holePx: 8 };
+    const a = C.bonded(st, 40, 30, { ...sq, discR2: 0 }).final, b = st.map((m, k) => (k ? C._morph(m, 40, 30, sq, false).m : m));
+    check("G1 R2 0 (minFeature < 3 px, draft only) falls back to the square featR chain", a.every((m, k) => m.join() === b[k].join())); }
+  check("G1 px without discR2 uses featR²", (() => { const st = F.randomNestedStack(F.lcg(3), 40, 30, 4);
+    const a = C.bonded(st, 40, 30, { ...PX, discR2: undefined, featR: 3 }).final, b = C.bonded(st, 40, 30, { ...PX, featR: 3, discR2: 9 }).final;
+    return a.every((m, k) => m.join() === b[k].join()); })());
+  check("G1 discR2 must be a non-negative integer when given (CONSTRUCT_ARG)", (() => { try { C.bonded([full(4, 4)], 4, 4, { ...PX, discR2: 1.5 }); return false; } catch (e) { return e.code === "CONSTRUCT_ARG"; } })());
+  { const p = SBSchema.defaults("plywood"), cp = SBEngine._constructPx || null;
+    check("G1 constructPx gives discR2 = 64 at 1.5 mm and 0.1 mm/px (tie rule), 9 at 0.25 mm/px, 0 at 0.55 and 0.75 mm/px (square fallback), monotone in F",
+      !!cp && cp(p.construction, true, 100, 100).discR2 === 64 && cp(p.construction, true, 250, 250).discR2 === 9 &&
+      cp(p.construction, true, 550, 550).discR2 === 0 && cp(p.construction, true, 750, 750).discR2 === 0 &&
+      [10, 14, 16, 20, 25, 30, 40, 50, 60, 75, 100].map((u) => cp(p.construction, true, u, u).discR2).every((v, i, a) => !i || v <= a[i - 1]));   // finer pitch (smaller µm) → larger R2
+    check("G1 constructPx R2 sizes the distance plane: 50 mm minimum feature at 0.05 mm/px gives R2 = 250000 (> 65025)", (() => { const q = SBSchema.defaults("plywood").construction; q.cleanup.minFeatureMM = 50;
+      return cp(q, true, 50, 50).discR2 === 250000; })()); }
+  // connected is untouched: the v1.1.0 chain test and oldrun.json stay as they are (suites "construct.js — G2.6 extended", "golden oldrun")
+  { const st = F.randomNestedStack(F.lcg(5), 40, 30, 5), q = { ...PX, featR: 3, discR2: 6, frameAnchored: true, speckPx: 4, holePx: 30 };
+    const a = C.connected(st, 40, 30, q).final, b = C.connected(st, 40, 30, { ...q, discR2: 0 }).final;
+    check("SUP-06 connected ignores discR2", a.every((m, k) => m.join() === b[k].join())); }
+  // G-D6: the G1 recapture names exactly the bonded corpus fixtures; no connected id was re-captured by G1 (connected entries keep their digests)
+  { const corpus = require("./pool_corpus.js").corpus(), gold = JSON.parse(fs.readFileSync(path.join(__dirname, "golden", "pool-equality.json"), "utf8"));
+    const g1 = (gold.recaptured || []).find((r) => r.task === "G1"), bondedIds = corpus.filter((f) => f.project.construction.mode === "bonded-relief").map((f) => f.id).sort();
+    const connIds = corpus.filter((f) => f.project.construction.mode !== "bonded-relief").map((f) => f.id);
+    check("G-D6 G1 re-captured exactly the bonded fixtures; every connected fixture's digest is unchanged",
+      !!g1 && g1.ids.slice().sort().join() === bondedIds.join() && connIds.length > 0 && !connIds.some((id) => g1.ids.includes(id) || (g1.previous && g1.previous[id])) &&
+      Object.keys(g1.previous || {}).sort().join() === bondedIds.join()); }
 });
 
 // ------------------------------------------------------------------ report

@@ -27,6 +27,18 @@
  *
  * Speed round F5 (NFR-05): fillHoles/removeSpecks label row runs with union-find (SBMorph.runComponents, shared with
  * construct.js) instead of a per-pixel BFS with Int32 label and queue planes; outputs byte-identical (oracle kept).
+ *
+ * Appendix G G1 (PO-FIX-1, G-D1): exact digital-disc morphology for bonded construction. discErode/discDilate(mask,
+ * w, h, R2) use the disc {d : |d|² ≤ R2} (R2 an integer squared radius): a pixel survives erosion iff no background
+ * pixel lies within R2 of it, and dilation sets a pixel iff some material pixel lies within R2. Pixels OUTSIDE the
+ * image are neither material nor background: erosion never erodes from outside and dilation never adds from outside.
+ * Unlike the square kernels above (which never touch the 1-px border ring), the disc erodes a border pixel when
+ * interior background lies within R2 of it, so art touching the image edge is cleaned like interior art.
+ * discOpenClose(mask, w, h, R2o, R2c) = erode_c(dilate_c(dilate_o(erode_o(mask)))): four windows, no fusion (a digital
+ * disc ⊕ disc is not a disc). Each window: vertical distance to the nearest indicator per column (down and up sweeps,
+ * capped at ⌊√R2⌋ + 1), then per row a left and a right "reach" sweep with hw[t] = ⌊√(R2 − t²)⌋. O(w·h) for any R2,
+ * integer arithmetic only (NFR-05); 4-byte word sweeps for R2 < 15876, a byte/Uint16 plane beyond. Both are increasing,
+ * so open/close keep nested masks nested (D-4.5). Output 0/1, input never mutated; R2 0 is the identity.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -179,6 +191,115 @@
     if (!(r >= 1 && r2 >= 1)) return M.close(M.open(mask, w, h, r), w, h, r2);
     const mid = new Uint8Array(w * h);
     return erodeInto(dilateInto(erodeInto(mask, w, h, r, mid), w, h, r + r2, mid), w, h, r2, mid);
+  };
+
+  /**
+   * Appendix G G1 (PO-FIX-1, G-D1): exact digital-disc window. hit[p] = 1 iff some indicator pixel q (src[q] !== 0, or
+   * src[q] === 0 when invert) has |p − q|² ≤ R2 (integer); pixels outside the image are never indicators. g = vertical
+   * distance to the nearest indicator in p's column, capped at C = A + 1 (A = ⌊√R2⌋), from a down and an up row-major
+   * sweep; hw[t] = max{a : a² ≤ R2 − t²} for t ≤ A, −1 beyond; per row, hit[x] iff ∃ q: |x − q| ≤ hw[g[q]], from a left
+   * and a right "reach" sweep. O(w·h) for any R2; integer arithmetic only (NFR-05). Without erodeOf: returns out (0/1).
+   * With erodeOf (a copy of the mask): sets erodeOf[p] = 0 where hit and returns it.
+   */
+  function discWindow(src, w, h, R2, invert, erodeOf) {
+    let A = Math.floor(Math.sqrt(R2)); while (A * A > R2) A--; while ((A + 1) * (A + 1) <= R2) A++;
+    const C = A + 1, n = w * h, g = C > 255 ? new Uint16Array(n) : new Uint8Array(n), hw = new Int32Array(C + 1).fill(-1);
+    for (let t = 0; t <= A; t++) { const v = R2 - t * t; let a = Math.floor(Math.sqrt(v)); while (a * a > v) a--; while ((a + 1) * (a + 1) <= v) a++; hw[t] = a; }
+    if (invert) {
+      for (let i = 0; i < w && i < n; i++) g[i] = src[i] === 0 ? 0 : C;
+      for (let i = w; i < n; i++) { if (src[i] === 0) g[i] = 0; else { const d = g[i - w] + 1; g[i] = d < C ? d : C; } }
+    } else {
+      for (let i = 0; i < w && i < n; i++) g[i] = src[i] !== 0 ? 0 : C;
+      for (let i = w; i < n; i++) { if (src[i] !== 0) g[i] = 0; else { const d = g[i - w] + 1; g[i] = d < C ? d : C; } }
+    }
+    for (let i = n - w - 1; i >= 0; i--) { const d = g[i + w] + 1; if (d < g[i]) g[i] = d; }
+    const out = erodeOf || new Uint8Array(n), reach = new Int32Array(w);
+    for (let y = 0, o = 0; y < h; y++, o += w) {
+      let r = -1;
+      for (let x = 0; x < w; x++) { const v = hw[g[o + x]]; r = r - 1 > v ? r - 1 : v; reach[x] = r; }
+      r = -1;
+      if (!erodeOf) for (let x = w - 1; x >= 0; x--) { const v = hw[g[o + x]]; r = r - 1 > v ? r - 1 : v; out[o + x] = r >= 0 || reach[x] >= 0 ? 1 : 0; }
+      else for (let x = w - 1; x >= 0; x--) { const v = hw[g[o + x]]; r = r - 1 > v ? r - 1 : v; if (r >= 0 || reach[x] >= 0) out[o + x] = 0; }
+    }
+    return out;
+  }
+  /** ⌊√v⌋ for a non-negative integer v, corrected so that a² ≤ v < (a + 1)² holds exactly. */
+  function isqrt(v) { let a = Math.floor(Math.sqrt(v)); while (a * a > v) a--; while ((a + 1) * (a + 1) <= v) a++; return a; }
+
+  /**
+   * The same window as discWindow, for C = A + 1 ≤ 126 (R2 < 15876; the production radius is R2 = 64), with every plane in
+   * 4-byte words (SWAR: all byte values stay ≤ 127, so no carry or borrow crosses a byte). g lives on a padded stride
+   * wp = 4·⌈w/4⌉ whose padding columns are never indicators (g = C there, so they add nothing); each src row is copied
+   * into an aligned row buffer first. Down sweep: g = indicator ? 0 : min(g_above + 1, C); up sweep: g = min(g, g_below + 1);
+   * per row, the left and right reach sweeps skip words that are all C (no reach) or all 0 (indicators). The result is
+   * written as 0/1 (dilation: hit; erosion: ¬hit, since every background pixel is its own hit). s: reusable scratch.
+   */
+  function discWindowSwar(src, w, h, A, hw, invert, out, s) {
+    const C = A + 1, wp = (w + 3) & ~3, nw = wp >> 2, n = wp * h;
+    if (!s.g || s.g.length < n) { s.g = new Uint8Array(n); s.g32 = new Uint32Array(s.g.buffer, 0, n >> 2); }
+    if (!s.row || s.row.length < wp) { s.row = new Uint8Array(wp); s.row32 = new Uint32Array(s.row.buffer); s.hit = new Uint8Array(wp); s.hit32 = new Uint32Array(s.hit.buffer); }
+    const g = s.g, g32 = s.g32, row = s.row, row32 = s.row32, hit = s.hit, hit32 = s.hit32;
+    row.fill(invert ? 1 : 0, w, wp);                           // padding columns: never indicators
+    const ONES = 0x01010101, HI = 0x80808080, LO7 = 0x7f7f7f7f, Cw = (C * ONES) >>> 0, C1w = ((C + 1) * ONES) | 0;
+    // down sweep (row −1 counts as all C)
+    for (let y = 0, o = 0, b = 0; y < h; y++, o += w, b += nw) {
+      row.set(src.subarray(o, o + w));
+      for (let j = 0; j < nw; j++) {
+        const v = row32[j], nz = (((v & LO7) + LO7) | v) & HI;          // high bit of every nonzero byte
+        const ind = invert ? ~nz & HI : nz;
+        let t = (y ? g32[b - nw + j] : Cw) + ONES;                       // bytes ≤ C + 1 ≤ 127
+        const x = t ^ C1w, eq = ~((((x & LO7) + LO7) | x) & HI) & HI;    // high bit where the byte is C + 1
+        t -= eq >>> 7;                                                   // saturate at C
+        g32[b + j] = t & ~((ind >>> 7) * 0xff);
+      }
+    }
+    // up sweep: g = min(g, g_below + 1)
+    for (let b = (h - 2) * nw; b >= 0; b -= nw) {
+      for (let j = 0; j < nw; j++) {
+        const a = g32[b + j], c = g32[b + nw + j] + ONES;
+        if (a === Cw && c === Cw + ONES) continue;
+        const m = ((((a | HI) - c) & HI) >>> 7) * 0xff;                  // 0xff where a ≥ c
+        g32[b + j] = (c & m) | (a & ~m);
+      }
+    }
+    // per row: hit[x] iff ∃ q: |x − q| ≤ hw[g[q]] (left and right reach sweeps)
+    for (let y = 0, o = 0, b = 0; y < h; y++, o += w, b += nw) {
+      const go = b << 2;
+      let r = -1;
+      for (let j = 0; j < nw; j++) {
+        const v = g32[b + j];
+        if (v === 0) { hit32[j] = ONES; r = A; continue; }
+        if (v === Cw && r <= 0) { hit32[j] = 0; r = -1; continue; }
+        for (let x = j << 2, e = x + 4; x < e; x++) { const q = hw[g[go + x]]; r = r - 1 > q ? r - 1 : q; hit[x] = r >= 0 ? 1 : 0; }
+      }
+      r = -1;
+      for (let j = nw - 1; j >= 0; j--) {
+        const v = g32[b + j];
+        if (v === 0) { r = A; continue; }
+        if (v === Cw && r <= 0) { r = -1; continue; }
+        for (let x = (j << 2) + 3, e = j << 2; x >= e; x--) { const q = hw[g[go + x]]; r = r - 1 > q ? r - 1 : q; if (r >= 0) hit[x] = 1; }
+      }
+      if (invert) for (let j = 0; j < nw; j++) hit32[j] ^= ONES;
+      out.set(hit.subarray(0, w), o);
+    }
+    return out;
+  }
+
+  /** One disc window for erosion (invert) or dilation, R2 ≥ 1; s: scratch reused across calls (discOpenClose). */
+  function discOp(mask, w, h, R2, invert, s) {
+    const A = isqrt(R2);
+    if (A + 1 > 126) return discWindow(mask, w, h, R2, invert, invert ? mask.slice() : null);
+    const hw = new Int32Array(A + 2).fill(-1);
+    for (let t = 0; t <= A; t++) hw[t] = isqrt(R2 - t * t);
+    return discWindowSwar(mask, w, h, A, hw, invert, new Uint8Array(w * h), s);
+  }
+
+  M.discErode = (mask, w, h, R2) => (R2 < 1 ? mask.slice() : discOp(mask, w, h, R2, true, {}));
+  M.discDilate = (mask, w, h, R2) => (R2 < 1 ? Uint8Array.from(mask, (v) => (v ? 1 : 0)) : discOp(mask, w, h, R2, false, {}));
+  M.discOpenClose = function (mask, w, h, R2o, R2c) {
+    if (!(R2o >= 1 && R2c >= 1)) return M.discErode(M.discDilate(M.discDilate(M.discErode(mask, w, h, R2o), w, h, R2o), w, h, R2c), w, h, R2c);
+    const s = {};   // one scratch (g plane, row buffers) for the four windows
+    return discOp(discOp(discOp(discOp(mask, w, h, R2o, true, s), w, h, R2o, false, s), w, h, R2c, false, s), w, h, R2c, true, s);
   };
 
   /**

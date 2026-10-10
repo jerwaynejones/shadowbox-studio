@@ -465,16 +465,20 @@
    * Construction parameters in px for SBConstruct (G2.6 px contract) from construction.cleanup / bridge at the real
    * raster scales (sxUm, syUm; D-4.2). Radii use the coarser axis pitch pMax (the smaller radius: less is removed);
    * areas use the real pixel area sx·sy. featR = max(1, round(minFeatureUm / (2·pMax))) as in v1.1.0, 0 when the cleanup
-   * minimum feature is 0 (no morphology). Bonded culling (cullEnabled) removes specks below bridge.cullBelowMM2 (the
+   * minimum feature is 0 (no morphology). discR2 (Appendix G G-D1) is the bonded disc R² = m², m = ⌊(⌊F⌋ + 1)/2⌋ with
+   * F = minFeatureUm / pMax (rounded to 1e-9), when F ≥ 3, else 0 (the square featR fallback, drafts only). Bonded culling (cullEnabled) removes specks below bridge.cullBelowMM2 (the
    * explicit cull threshold, SUP-01); connected mode removes specks below cleanup.speckMM2 and culls/bridges islands.
    */
   function constructPx(c, bonded, sxUm, syUm) {
     const pMax = Math.max(sxUm, syUm), pxUm2 = sxUm * syUm;
     const featUm = Math.round(c.cleanup.minFeatureMM * 1000);
     const featR = featUm > 0 ? Math.max(1, Math.round(featUm / (2 * pMax))) : 0;
+    // Appendix G G-D1 tie rule: F = minimum feature in px (rounded to 1e-9 so binary noise cannot move a tie), m = ⌊(⌊F⌋ + 1)/2⌋, R² = m² for F ≥ 3, else 0
+    const F = featUm > 0 ? Math.round((featUm / pMax) * 1e9) / 1e9 : 0, mHalf = F >= 3 ? Math.floor((Math.floor(F) + 1) / 2) : 0;
     const area = (mm2) => (mm2 * 1e6) / pxUm2;
     return {
       featR,
+      discR2: mHalf * mHalf,   // bonded disc R² (integer; SBConstruct.bonded); connected ignores it
       bridgeR: Math.max(featR, (c.bridge.bridgeMM * 1000) / (2 * pMax)),
       cullPx: area(c.bridge.cullBelowMM2),
       maxBridgePx: Math.round((c.bridge.maxBridgeMM * 1000) / pMax),
@@ -484,6 +488,7 @@
       cullEnabled: !!c.bridge.cullEnabled,
     };
   }
+  E._constructPx = constructPx;   // test hook (Appendix G G1): the px contract, incl. discR2
 
   /** The legacy connected corner holes (G1.7) until G3.1 places validated registration holes; [] in bonded mode. */
   function legacyHoles(project, page) {

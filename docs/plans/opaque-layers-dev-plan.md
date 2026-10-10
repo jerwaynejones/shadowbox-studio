@@ -4676,7 +4676,7 @@ Order is binding: G1 → G2 → G3 → G4 → G5 → G6 → G7 → G8. G2 introd
   - px gains `discR2` (integer ≥ 0, optional; default `featR²`, G-D1).
 - Consumes: `SBMorph.removeSpecks`, `SBMorph.fillHoles`, `SBMorph.openClose` (fallback when `discR2 === 0`).
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   1. Copy the fixtures:
 
      ```bash
@@ -4820,8 +4820,8 @@ suite("morph/construct — Appendix G G1 bonded disc morphology (PO-FIX-1, GEO-0
 ```
 
      `SBEngine._constructPx` is a new **test hook**: `E._constructPx = constructPx`, the same pattern as `C._morph`.
-- [ ] **Step 2: Run the new suite and confirm it fails.** Run `node test/run_tests.js --only "Appendix G G1"`. Expected FAIL: "G1 SBMorph.discErode/discDilate/discOpenClose exist" fails and the suite returns early.
-- [ ] **Step 3: Implement the kernel** in `js/morph.js` after `M.openClose`. This is the measured prototype (G.7), exact against brute force:
+- [x] **Step 2: Run the new suite and confirm it fails.** Run `node test/run_tests.js --only "Appendix G G1"`. Expected FAIL: "G1 SBMorph.discErode/discDilate/discOpenClose exist" fails and the suite returns early.
+- [x] **Step 3: Implement the kernel** in `js/morph.js` after `M.openClose`. This is the measured prototype (G.7), exact against brute force:
 
 ```js
   /**
@@ -4871,7 +4871,7 @@ suite("morph/construct — Appendix G G1 bonded disc morphology (PO-FIX-1, GEO-0
      - ratio ≤ 2.0 × on the real fusion2 layers and ≤ 3.0 × on the dense mask: ship, budgets as in G.7;
      - between those and 3.0 × on the real layers: ship, and the **absolute cumulative gates** of G.7 (S2 p95, construct +1.0 s) decide;
      - above 3.0 × on the real layers: **stop**, do not ship. Take the fallback in G.9 #1 to the product owner; the 4 s EDT prototype is never shipped.
-- [ ] **Step 4: Wire the disc into construct and engine.**
+- [x] **Step 4: Wire the disc into construct and engine.**
   - **`js/construct.js`:**
     - `checkPx` accepts `discR2` (`undefined`, or a non-negative safe integer, otherwise `CONSTRUCT_ARG`).
     - Add:
@@ -4903,8 +4903,8 @@ suite("morph/construct — Appendix G G1 bonded disc morphology (PO-FIX-1, GEO-0
 
     and `E._constructPx = constructPx;` next to the other test hooks. `featR` itself is unchanged (connected mode and the R² = 0 fallback use it).
   - **Docs:** update the `js/morph.js` header (the disc section and the border behaviour), `docs/ALGORITHMS.md` §3 (bonded: exact digital disc with R² = m², m = ⌊(⌊F⌋ + 1)/2⌋, the tie rule and why 2m − 1 and 2m px are indistinguishable; **the image-border behaviour change for art touching the edge**; connected: the v1.1 square chain), and `docs/ARCHITECTURE.md` (the G-D1 paragraph).
-- [ ] **Step 5: Run the new suite.** Run `node test/run_tests.js --only "Appendix G G1"`. Expected: PASS (all checks).
-- [ ] **Step 6: Re-capture the golden and make the F1 check chain-aware.**
+- [x] **Step 5: Run the new suite.** Run `node test/run_tests.js --only "Appendix G G1"`. Expected: PASS (all checks).
+- [x] **Step 6: Re-capture the golden and make the F1 check chain-aware.**
   1. Make the F1 check chain-aware (`test/run_tests.js:6186-6192`):
 
 ```js
@@ -4926,8 +4926,8 @@ node test/capture_golden.js --pool-equality --recapture "$IDS" --task G1
 
      `capture_golden.js` captures every named fixture, slow ones included, and keeps their `slow` tags.
   3. Add a check: `G-D6 G1 re-captured exactly the bonded fixtures; every connected fixture's digest is unchanged`. It asserts that the `G1` record's ids equal the bonded corpus ids and that no connected id appears **in the G1 record** (review 2026-10-09). It must **not** assert this for later G records: `NECK_KERF` is evaluated in connected mode too and the G3 octagon changes `NECK_NARROW`/`FEATURE_MARGINAL` in every mode, so the G2 and G3 recaptures can legitimately include connected ids, with only `diagSha`/`wholeSha` changed (G-D6; each of those tasks asserts `geometryHash` and `layerHashes` unchanged for connected ids).
-- [ ] **Step 6b: Re-run and record the E3b draft fidelity check (review 2026-10-09).** The radius rule changes the draft cleanup (fabrication 0.25 mm/px: square r = 3 becomes the disc R² = 9; the 0.75 mm/px draft stays on the square r = 1). Run `node test/run_tests.js --only "E3b"` (the check at `test/run_tests.js:5472-5492`), record the new margins next to the old ones (area 2.28 % against 8 %, part ratio 1.75 against 2) in the G1 Result note, and add a plan note if a margin moves toward its limit. **Never loosen the thresholds**: a failing margin stops G1 and goes to the product owner.
-- [ ] **Step 7: Run the perf gate (G.7).**
+- [x] **Step 6b: Re-run and record the E3b draft fidelity check (review 2026-10-09).** The radius rule changes the draft cleanup (fabrication 0.25 mm/px: square r = 3 becomes the disc R² = 9; the 0.75 mm/px draft stays on the square r = 1). Run `node test/run_tests.js --only "E3b"` (the check at `test/run_tests.js:5472-5492`), record the new margins next to the old ones (area 2.28 % against 8 %, part ratio 1.75 against 2) in the G1 Result note, and add a plan note if a margin moves toward its limit. **Never loosen the thresholds**: a failing margin stops G1 and goes to the product owner.
+- [x] **Step 7: Run the perf gate (G.7).**
   1. Add `bench morph` to `test/bench.js`: 3985 × 3000, the alpha.3 scene's layer masks at 0.1 mm/px (`stages` as in `neckrepro/stages.js`, or the user12 scene). Per layer, `SBMorph.openClose(m, 8, 7)` vs `discOpenClose(m, 49, 49)`, interleaved, 5 runs, p50. `--record` writes `docs/perf/speed-round.json` `appendixG.morph`.
   2. Gates (G.7 has the table; the absolute cumulative gate is the binding one):
      - disc / square on the real fusion2 layers and on the dense mask, p50, as the decision rule of Step 3 (target ≤ 2.0 ×, ≤ 3.0 × allowed only with the absolute gates passing; above 3.0 × on the real layers G1 does not ship);
@@ -4936,7 +4936,7 @@ node test/capture_golden.js --pool-equality --recapture "$IDS" --task G1
      - the same bench with `--pool 0` (serial fallback): **record** the serial total (phaseB: 12879 ms; the disc adds roughly 4-5 s over eight layers) in the G1 Result note;
      - `node test/bench.js draft --only a --candidates 720` warm p95 ≤ 3.0 s (E4 rule).
   3. Record the numbers in the plan's G1 Result note.
-- [ ] **Step 8: Run the full suite, build and commit.**
+- [x] **Step 8: Run the full suite, build and commit.**
   1. Run `node test/run_tests.js`: 0 failed.
   2. `node build.js`
   3. Commit:
@@ -4947,6 +4947,16 @@ git commit -m "fix(morph,construct,engine): G1 exact Euclidean-disc open/close f
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
+
+**Result (2026-10-09):**
+- **Kernel.** `SBMorph.discErode`/`discDilate`/`discOpenClose` as specified, exact against `oracleDisc`. The Step 3 sweep kernel was 3.2 × the square chain on the real layers (re-measured: dense 3.24 ×, sparse 2.92 ×, fusion2 3.21 ×), so one optimisation round was taken: all four sweeps run on 4-byte words (SWAR; every byte stays ≤ 127, so no carry crosses a byte) on a 4-aligned padded stride, the reach sweeps skip words that are all-cap (no reach) or all-zero (indicators), and `discOpenClose` shares one scratch (distance plane and row buffers) across its four windows. The word path is used while ⌊√R²⌋ + 1 ≤ 126 (R² < 15876); above that the Step 3 byte/Uint16 kernel runs unchanged (tests at the word/scalar boundary R² 15624/15875/15876 and the Uint8/Uint16 boundary 65024/65025/65026 against brute force). Output is always 0/1.
+- **`bench morph`** (`node test/bench.js morph --runs 5 --record`, R² 64 = the production radius at 1.5 mm and 0.1 mm/px; `docs/perf/speed-round.json` `appendixG.morph`; load 2.7–4.8): dense 302 → 514 ms (**1.70 ×**), sparse 278 → 337 ms (1.21 ×), user12 layers Σ 1785 → 2357 ms (**1.32 ×**, max layer 1.43 ×), fusion2 layers Σ 1749 → 2417 ms (**1.38 ×**, max layer 1.43 ×). Decision rule: ≤ 2.0 × on the real layers and ≤ 3.0 × dense → **ship**, budgets as in G.7.
+- **Gates** (`appendixG.g1`): user12 fab4096 pool 8 p50 6050 / **p95 6997 ms** (≤ 10 s and ≤ 8794 + 1200 ms: pass); the pre-round tree back to back: p95 6054 ms; construct stage p50 1245 ms vs 1297 ms pre-round (within +1.0 s). Serial fallback (pool 0, recorded): p50 11998 / p95 12195 ms (phaseB serial 12879 ms). Warm draft 720 (plywood a, realistic): **p95 2958 ms** (≤ 3.0 s: pass, but with only 42 ms of headroom; the draft at 720 px has F < 3, so it runs the square fallback and the disc is not the cause). "NFR-03 bonded construction at fabrication radius" 310 ms (< 2.5 s).
+- **Bench fix.** `benchUser12Final` (F18) compared `geometryHash` across runs, but each run has its own `sampleHash`, which is part of `geometryHash`; every multi-run row threw "geometryHash differs between runs", on the pre-round tree too (F18 never ran it, `final` is still pending). Runs are now compared on the hash of their layer hashes.
+- **Golden.** `pool-equality.json` re-captured with `--task G1` for the 39 bonded ids. Geometry changed on 7 (a3-900/1800-fabrication, t-bonded-frame-draft/-fabrication, alpha-domain-draft/-fabrication, fine-pitch-fabrication); the other 32 are byte-identical (small rasters or F < 3, the square fallback). No connected id is in the record; `oldrun.json` unchanged. The F1 check is chain-aware.
+- **E3b draft fidelity (Step 6b)**, same fixture, measured on this tree vs the pre-round tree: worst area deviation **3.03 %** (layer 7) vs 2.28 % against the 8 % limit; worst part-count ratio **1.70** (10 vs 17, layer 5) vs 1.80 (10 vs 18) against 2. **Plan note:** the area margin moved toward its limit by 0.75 points (fabrication 0.25 mm/px now runs the disc R² 9 while the 160 px draft stays on the square r = 1); still 4.97 points inside, threshold not loosened.
+- Full suite: 2014 passed, 0 failed (1971 at the round baseline plus the G1 suite and checks added since).
+
 
 ---
 

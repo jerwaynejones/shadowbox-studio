@@ -14,6 +14,7 @@
  *     node test/bench.js draft-decide   (F17: the F.7 rule over docs/perf/draft-budget.json f17 → decision)
  *     node test/bench.js large --only user12 [--guides …] [--runs N] [--rows draft720,fab3600,fab4096] [--record] [--quick]
  *     node test/bench.js large --only user12 --pool 0,1,8 [--rows draft720,fab3600,fab4096,fab25] [--runs N] [--record]   (speed round F18, see benchUser12Final)
+ *     node test/bench.js morph [--runs 5] [--r2 64] [--record] [--quick]   (plan Appendix G G1, see benchMorph)
  *
  * Speed round F2 (S5, PO-PERF-5): every engine-driven row (draft, fabrication, user12) carries a per-stage table
  * derived from the SBEngine.generate onProgress marks (stageDurations: a stage lasts until the next different mark,
@@ -105,7 +106,8 @@ const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] :
 const stage = argv[0];
 const QUICK = argv.includes("--quick"), QUICK_ARG = QUICK;
 const RUNS = QUICK ? 1 : +arg("--runs", 15);
-const STAGES = { geom: benchGeom, support: benchSupport, large: benchLarge, "large-assemble": benchLargeAssemble, caps: benchCaps, draft: benchDraft, "draft-decide": () => benchDraftDecide() };
+const STAGES = { geom: benchGeom, support: benchSupport, large: benchLarge, "large-assemble": benchLargeAssemble, caps: benchCaps, draft: benchDraft, "draft-decide": () => benchDraftDecide(),
+  morph: () => benchMorph() };
 if (MAIN && !STAGES[stage]) { console.error("usage: node test/bench.js " + Object.keys(STAGES).join("|") + " [--runs N] [--json out.json] [--no-fail] [--quick]"); process.exit(2); }
 
 function timeRuns(fn, runs, warm) {
@@ -529,7 +531,9 @@ async function user12FinalPass(pool, p0, px, id, quality, probe) {
   const stages = stageDurations(seq, t0, t0 + ms);
   if (!pool && "guides" in stages) { stages["guides.build"] = probe.guidesBuild; stages["guides.validate"] = probe.guidesValidate; }
   const g = res.snapshot.geometry;
-  return { ms, stages, geometryHash: res.geometryHash, raster: g.rasterW + "×" + g.rasterH, mpx: +(g.rasterW * g.rasterH / 1e6).toFixed(2),
+  // Appendix G G1: every run has its own sampleHash (no cache), which is part of geometryHash; runs are compared on the layer hashes
+  const layersHash = SBHash.hashJSON(res.validatedLayers.map((L) => SBGeom.layerHashes(L).layerHash));
+  return { ms, stages, geometryHash: res.geometryHash, layersHash, raster: g.rasterW + "×" + g.rasterH, mpx: +(g.rasterW * g.rasterH / 1e6).toFixed(2),
     maxPartsPerLayer: Math.max(0, ...res.snapshot.layers.map((L) => L.parts.length)), mem };
 }
 
@@ -576,7 +580,7 @@ async function benchUser12Final(o = {}) {
           ledger: cs ? { peakLedgerMB: MB(cs.peakLedger), budgetMB: MB(cs.budgetBytes), maxInFlight: cs.maxInFlight, bands: cs.bands,
             itemsHelper: cs.itemsHelper, itemsInline: cs.itemsInline } : null,
           wallS: +((performance.now() - t0) / 1000).toFixed(1), loadAvg: os.loadavg().map((x) => +x.toFixed(2)) };
-        if (runs.some((r) => r.geometryHash !== r0.geometryHash)) throw new Error("user12 " + id + " pool " + P + ": geometryHash differs between runs");
+        if (runs.some((r) => r.layersHash !== r0.layersHash)) throw new Error("user12 " + id + " pool " + P + ": the layer hashes differ between runs");
         report.rows[id]["pool" + P] = row;
         console.error(`[user12 final] ${id} pool ${P} ${row.raster}: p50 ${row.p50Ms} p95 ${row.p95Ms} ms (n ${row.runs}), rss ≤${row.memory.rssPeakMB} MB, ` +
           `arrayBuffers ≤${row.memory.arrayBuffersPeakMB} MB${row.ledger ? ", ledger peak " + row.ledger.peakLedgerMB + " MB" : ""}, ${row.wallS} s wall`);
@@ -1374,6 +1378,61 @@ async function benchDraftSweep(o = {}) {
   return report;
 }
 
+/**
+ * Plan Appendix G G1 (G.7): `node test/bench.js morph [--runs 5] [--r2 64] [--record] [--quick]`. Per layer mask, the square
+ * chain SBMorph.openClose(m, 8, 7) (featR 8 at 1.5 mm and 0.1 mm/px) against the bonded disc SBMorph.discOpenClose(m, R², R²)
+ * (default R² 64, the G-D1 production radius at the same settings), interleaved, `runs` runs, p50 per layer. Families:
+ *   dense   F.busyHeightMap(7, 3985, 3000, 60) ≥ 110 (a blobby mask, ~60 % material);
+ *   sparse  the same map ≥ 200;
+ *   user12  the alpha.3 scene's fabrication layers 1..7 (4096 × 3084 source at 0.1 mm/px, the S2 workload), captured from
+ *           SBConstruct.constructLayer during one serial generate;
+ *   fusion2 the real fusion2 layers 1..7 (spikes/S7/results/fusion2/height_8layer_v2.png, plywood height, 8 sheets,
+ *           300 mm high, 0.1 mm/px), only when that file is present (G7 commits it).
+ * Per family: Σ p50 of both kernels, their ratio (disc / square) and the largest per-layer ratio. The G1 decision rule
+ * (plan G1 Step 3) reads the ratio on the real layers (user12, fusion2) and on the dense mask. --record merges the
+ * report into docs/perf/speed-round.json `appendixG.morph`. --quick shrinks every mask by 8 and runs once.
+ */
+async function benchMorph() {
+  const os = require("os"), M = SBMorph, E = SBEngine, div = QUICK ? 8 : 1, runs = QUICK ? 1 : +arg("--runs", 5), R2 = +arg("--r2", 64);
+  const report = { stage: "morph", quick: QUICK, node: process.version, cpu: os.cpus()[0].model, threads: os.cpus().length, runs,
+    square: "SBMorph.openClose(m, 8, 7)", disc: "SBMorph.discOpenClose(m, " + R2 + ", " + R2 + ")", loadAvgStart: os.loadavg().map((x) => +x.toFixed(2)), families: {} };
+  const fams = [];
+  { const W = Math.round(3985 / div), H = Math.round(3000 / div), hm = F.busyHeightMap(7, W, H, Math.max(4, Math.round(60 / div)));
+    fams.push(["dense", W, H, [hm.map((v) => (v >= 110 ? 1 : 0))]], ["sparse", W, H, [hm.map((v) => (v >= 200 ? 1 : 0))]]); }
+  const capture = (p, px) => {   // the bonded layer masks k ≥ 1 that generate hands to constructLayer
+    const C = SBConstruct, real = C.constructLayer, got = []; let W = 0, H = 0;
+    C.constructLayer = (k, a) => { if (k >= 1) { got[k - 1] = a.mask.slice(); W = a.W; H = a.H; } return real(k, a); };
+    try { E.generate(E.request(p, px, { quality: "fabrication" })); } finally { C.constructLayer = real; }
+    return [W, H, got.filter(Boolean)];
+  };
+  { const w = Math.round(USER12.src[0] / div), h = Math.round(USER12.src[1] / div), px = alpha3Rgba(w, h), p = user12Project(px, "none");
+    if (QUICK) p.geometry.fabPitchMM = 0.8;
+    const [W, H, L] = capture(p, px); fams.push(["user12", W, H, L]); }
+  const png = path.join(__dirname, "..", "spikes", "S7", "results", "fusion2", "height_8layer_v2.png");
+  if (fs.existsSync(png) && !QUICK) {
+    const d = await SBPng.decode(new Uint8Array(fs.readFileSync(png)), { mode: "height" }), px = { pixels: d.samples, channels: 1, w: d.w, h: d.h, alpha: null };
+    let p = SBSchema.withSource(SBSchema.defaults("plywood"), E.sourceRecord(px, { format: "png", decode: "raw-gray8" }));
+    p.interpretation.mode = "height"; p.construction.sheets = 8; p.geometry.sizeBy = "height"; p.geometry.targetMM = 300;
+    p = SBSchema.applyFabPitch(p, 0.1);
+    const [W, H, L] = capture(p, px); fams.push(["fusion2", W, H, L]);
+  } else report.fusion2 = "skipped (" + (QUICK ? "--quick" : "spikes/S7/results/fusion2/height_8layer_v2.png not present") + ")";
+  const now = () => performance.now(), p50 = (a) => a.slice().sort((x, y) => x - y)[(a.length - 1) >> 1];
+  for (const [name, W, H, layers] of fams) {
+    const sq = layers.map(() => []), dc = layers.map(() => []);
+    for (let r = 0; r < runs; r++) layers.forEach((m, i) => {
+      let t = now(); M.openClose(m, W, H, 8, 7); sq[i].push(now() - t);
+      t = now(); M.discOpenClose(m, W, H, R2, R2); dc[i].push(now() - t);
+    });
+    const s = sq.map(p50), d = dc.map(p50), S = s.reduce((a, b) => a + b, 0), D = d.reduce((a, b) => a + b, 0);
+    report.families[name] = { raster: W + "×" + H, layers: layers.length, squareP50Ms: s.map((v) => +v.toFixed(1)), discP50Ms: d.map((v) => +v.toFixed(1)),
+      squareSumMs: +S.toFixed(1), discSumMs: +D.toFixed(1), ratio: +(D / S).toFixed(2), maxLayerRatio: +Math.max(...d.map((v, i) => v / s[i])).toFixed(2) };
+    console.error(`[morph] ${name} ${W}×${H} × ${layers.length}: square Σp50 ${S.toFixed(0)} ms, disc Σp50 ${D.toFixed(0)} ms, ratio ${(D / S).toFixed(2)} (max layer ${report.families[name].maxLayerRatio})`);
+  }
+  report.loadAvgEnd = os.loadavg().map((x) => +x.toFixed(2));
+  if (!QUICK && argv.includes("--record")) updateSpeedRound((j) => { j.appendixG = j.appendixG || {}; j.appendixG.morph = Object.assign({ task: "G1", command: "node test/bench.js morph --runs " + runs + " --record", date: (() => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); })() }, report); });
+  return report;
+}
+
 async function main() {
   if ((stage === "large" || stage === "caps") && typeof global.gc !== "function") { // the working-set pass needs gc()
     const r = require("child_process").spawnSync(process.execPath, ["--expose-gc", __filename, ...argv], { stdio: "inherit" });
@@ -1391,5 +1450,5 @@ async function main() {
     process.exit(1);
   }
 }
-module.exports = { stageDurations, benchDraft, benchDraftSweep, F17, decideDraftF17, USER12, user12Project, user12Spec, poolList, benchUser12Final, DRAFT, decideDraft, LARGE_WORKLOADS, LARGE, TRACKED_LARGE, LARGE_SHORTENED, CAPS, decideLarge, decideCaps, gateLarge, knownOverLarge, largeRowFromSummary, largeMethodKind };
+module.exports = { benchMorph, stageDurations, benchDraft, benchDraftSweep, F17, decideDraftF17, USER12, user12Project, user12Spec, poolList, benchUser12Final, DRAFT, decideDraft, LARGE_WORKLOADS, LARGE, TRACKED_LARGE, LARGE_SHORTENED, CAPS, decideLarge, decideCaps, gateLarge, knownOverLarge, largeRowFromSummary, largeMethodKind };
 if (MAIN) main().catch((e) => { console.error(e); process.exit(1); });

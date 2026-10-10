@@ -6,7 +6,8 @@
  *   connected(masks, w, h, px)  connected-sheet mode: the v1.1.0 per-sheet chain
  *                               open → close → removeSpecks → fillHoles → SBIslands.resolve
  *                               (bridge or cull every loose part; SUP-06, one part per layer).
- *   bonded(masks, w, h, px)     bonded-relief mode: the same open → close → fillHoles chain,
+ *   bonded(masks, w, h, px)     bonded-relief mode: open → close → fillHoles with the exact digital disc of px.discR2
+ *                               (Appendix G G1; the square chain when it is 0),
  *                               removeSpecks only when px.cullEnabled (SUP-01: culling is explicit),
  *                               NEVER SBIslands.resolve and no clip. The chain is monotone, so nested
  *                               input stays nested (D-4.5): bonded morphology never creates an overhang.
@@ -19,9 +20,12 @@
  * Speed round F9 (S1): both are maps over constructLayer(k, {mask, W, H, px, bonded, wantChange}), the per-layer
  * kernel the worker pool runs; changeMask(a, b, w, h) is the bounding-box crop of a ∧ ¬b (draft change overlays).
  *
- * px = {featR, bridgeR, cullPx, maxBridgePx, speckPx, holePx, frameAnchored, cullEnabled}:
+ * px = {featR, discR2?, bridgeR, cullPx, maxBridgePx, speckPx, holePx, frameAnchored, cullEnabled}:
  *   featR        opening radius (px); the closing radius is max(1, featR − 1) as in v1.1.0, and featR 0
  *                disables both (no morphology);
+ *   discR2       bonded only (Appendix G G1, G-D1): the integer squared radius of the exact digital-disc open/close
+ *                (same R² for both; SBMorph.discOpenClose). Optional, default featR²; 0 keeps the square featR chain
+ *                (drafts with a minimum feature below 3 px). Connected mode ignores it (the v1.1.0 square chain);
  *   speckPx      removeSpecks area limit (px²); holePx fillHoles area limit (px²);
  *   bridgeR, cullPx, maxBridgePx, frameAnchored  SBIslands.resolve options (connected only);
  *   cullEnabled  bonded only: run removeSpecks (connected always runs it, as v1.1.0 did).
@@ -73,6 +77,7 @@
     if (!px || typeof px !== "object") throw cfail("px must be {featR, bridgeR, cullPx, maxBridgePx, speckPx, holePx, frameAnchored, cullEnabled}");
     if (!Number.isInteger(px.featR) || px.featR < 0) throw cfail("featR must be a non-negative integer (got " + px.featR + ")");
     for (const f of ["bridgeR", "cullPx", "maxBridgePx", "speckPx", "holePx"]) if (!isNum(px[f])) throw cfail(f + " must be a non-negative number (got " + px[f] + ")");
+    if (px.discR2 !== undefined && !(Number.isSafeInteger(px.discR2) && px.discR2 >= 0)) throw cfail("discR2 must be a non-negative integer when given (got " + px.discR2 + ")");
   }
 
   /** The shared per-layer morphology: open → close (→ removeSpecks when cull) → fillHoles. Returns {m, specks, holes}. */
@@ -86,6 +91,23 @@
   }
 
   C._morph = morph;   // test hook (speed round F4): compared against the pre-F4 chain in test/oracle_kernels.js
+
+  /**
+   * Appendix G G1 (G-D1): the bonded chain — exact digital-disc open/close at R2 = discR2 (the same R2 for both), then
+   * removeSpecks (when cull) and fillHoles; the square featR chain when R2 is 0 (drafts with F < 3 px only). discR2
+   * undefined (a direct caller) means featR². No fusion: disc dilations do not compose exactly.
+   */
+  function morphDisc(mask, w, h, px, cull) {
+    const M = global.SBMorph, r = px.featR;
+    const R2 = px.discR2 === undefined ? r * r : px.discR2;
+    if (r === 0 || R2 === 0) return morph(mask, w, h, px, cull);   // featR 0: no morphology; R2 0: draft-only square fallback
+    const m = M.discOpenClose(mask, w, h, R2, R2);
+    const specks = cull ? M.removeSpecks(m, w, h, px.speckPx) : 0;
+    const holes = M.fillHoles(m, w, h, px.holePx);
+    return { m, specks, holes };
+  }
+
+  C._morphDisc = morphDisc;   // test hook (Appendix G G1)
 
   function diff(before, after) {
     let added = 0, removed = 0;
@@ -142,7 +164,7 @@
     if (k === 0) {
       out = { final: mask.slice(), bridges: null, report: a.bonded ? baseEntry() : { ...baseEntry(), bridged: 0, culled: 0 } };
     } else if (a.bonded) {
-      const { m, specks, holes } = morph(mask, w, h, px, !!px.cullEnabled);
+      const { m, specks, holes } = morphDisc(mask, w, h, px, !!px.cullEnabled);
       out = { final: m, bridges: null, report: { layer: k, ...diff(mask, m), filledHoles: holes, removedParts: specks } };
     } else {
       const { m, specks, holes } = morph(mask, w, h, px, true);

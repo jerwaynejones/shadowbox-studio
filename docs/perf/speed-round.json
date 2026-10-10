@@ -558,5 +558,189 @@
    "status": "pending (benchUser12Final rows fab4096 and fab25)",
    "interim": "serial user12 12 Mpx: Node process RSS 588 MB at the end of the row (phaseA); the ledger peak is not yet measured at scale"
   }
+ },
+ "appendixG": {
+  "morph": {
+   "task": "G1",
+   "command": "node test/bench.js morph --runs 5 --record",
+   "date": "2026-10-09",
+   "stage": "morph",
+   "quick": false,
+   "node": "v26.7.0",
+   "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+   "threads": 16,
+   "runs": 5,
+   "square": "SBMorph.openClose(m, 8, 7)",
+   "disc": "SBMorph.discOpenClose(m, 64, 64)",
+   "loadAvgStart": [
+    2.72,
+    4.84,
+    4.24
+   ],
+   "families": {
+    "dense": {
+     "raster": "3985×3000",
+     "layers": 1,
+     "squareP50Ms": [
+      302.5
+     ],
+     "discP50Ms": [
+      514.2
+     ],
+     "squareSumMs": 302.5,
+     "discSumMs": 514.2,
+     "ratio": 1.7,
+     "maxLayerRatio": 1.7
+    },
+    "sparse": {
+     "raster": "3985×3000",
+     "layers": 1,
+     "squareP50Ms": [
+      277.6
+     ],
+     "discP50Ms": [
+      337.1
+     ],
+     "squareSumMs": 277.6,
+     "discSumMs": 337.1,
+     "ratio": 1.21,
+     "maxLayerRatio": 1.21
+    },
+    "user12": {
+     "raster": "3985×3000",
+     "layers": 7,
+     "squareP50Ms": [
+      234.8,
+      241.8,
+      251.4,
+      252,
+      258.4,
+      272.3,
+      274
+     ],
+     "discP50Ms": [
+      336.5,
+      337.3,
+      338.8,
+      339.4,
+      336.6,
+      333.6,
+      334.4
+     ],
+     "squareSumMs": 1784.7,
+     "discSumMs": 2356.6,
+     "ratio": 1.32,
+     "maxLayerRatio": 1.43
+    },
+    "fusion2": {
+     "raster": "3985×3000",
+     "layers": 7,
+     "squareP50Ms": [
+      226.4,
+      229,
+      234.5,
+      243.3,
+      261.8,
+      275.7,
+      277.9
+     ],
+     "discP50Ms": [
+      322.2,
+      327.7,
+      331.4,
+      336.9,
+      371.6,
+      375.1,
+      352.6
+     ],
+     "squareSumMs": 1748.6,
+     "discSumMs": 2417.5,
+     "ratio": 1.38,
+     "maxLayerRatio": 1.43
+    }
+   },
+   "loadAvgEnd": [
+    2.79,
+    4.37,
+    4.12
+   ]
+  },
+  "g1": {
+   "task": "G1",
+   "date": "2026-10-09",
+   "machine": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (16 threads), node v26.7.0",
+   "gates": {
+    "fab4096Pool8": {
+     "command": "node test/bench.js large --only user12 --pool 8 --rows fab4096 --runs 5",
+     "budget": "p95 <= 10000 ms (S2) and <= phaseB.fab4096.pooledWallMs 8794 + 1200 ms; construct stage <= +1000 ms",
+     "pass": true,
+     "runsMs": [
+      6063.1,
+      6997.1,
+      6049.7,
+      4988.4,
+      5223.9
+     ],
+     "p50Ms": 6049.7,
+     "p95Ms": 6997.1,
+     "constructP50Ms": 1244.5,
+     "loadAvg": [
+      4.52,
+      4.25,
+      4.14
+     ]
+    },
+    "fab4096Pool8PreRound": {
+     "note": "the same command on the pre-round tree (18c0307, shipped code as 43f2c88, plus this bench fix), run back to back for the construct-stage comparison",
+     "runsMs": [
+      5940,
+      6054,
+      5145.6,
+      4856.7,
+      4727.3
+     ],
+     "p50Ms": 5145.6,
+     "p95Ms": 6054,
+     "constructP50Ms": 1296.5,
+     "loadAvg": [
+      4.35,
+      4.21,
+      4.12
+     ]
+    },
+    "fab4096Pool0": {
+     "command": "node test/bench.js large --only user12 --pool 0 --rows fab4096 --runs 5",
+     "note": "recorded, no gate (phaseB.fab4096.serialMs 12879)",
+     "runsMs": [
+      12160.4,
+      11998.2,
+      12194.8,
+      11815,
+      11743.9
+     ],
+     "p50Ms": 11998.2,
+     "p95Ms": 12194.8,
+     "constructP50Ms": 2830.3,
+     "loadAvg": [
+      3.05,
+      3.76,
+      3.97
+     ]
+    },
+    "draft720": {
+     "command": "node test/bench.js draft --only a --candidates 720",
+     "family": "realistic",
+     "warmP95Ms": 2957.7,
+     "budgetMs": 3000,
+     "pass": true
+    },
+    "nfr03Construct": {
+     "check": "NFR-03 bonded construction at fabrication radius (featR 8, 1 Mpx x 8 layers)",
+     "ms": 310,
+     "budgetMs": 2500
+    }
+   },
+   "benchFix": "benchUser12Final compared geometryHash across runs, but every run has its own sampleHash (part of geometryHash), so the check failed on every multi-run row, before G1 too; runs are now compared on the hash of their layer hashes"
+  }
  }
 }
