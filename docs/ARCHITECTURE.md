@@ -443,6 +443,18 @@ Laser-detail performance targets (PO-LASER-9). Measured columns filled by G2.2b 
 
 Support stage (G2.7, 2026-10-08): the rows above were timed with the pre-G2.7 support pass (one layer-level intersection per pair, `classifyContact` then `survivesInset` per piece). `test/bench.js large` now times `SBSupport.validate` (bonded-relief, 1.5 / 2.0 mm, upward differences reused) in that slot; its p95 on the dense geom page is **1.32 s** (B3b, under the 3 s B3 budget; `docs/perf/SUPPORT.md`). The large rows were **not** re-run in G2.7 (the long large-image benchmark was out of scope for this task; only `large --quick` was run as a smoke check). Their support p95 is recorded with the G2.7b runs: **87–107 ms** on realistic `r25`, and 0.4–0.95 s on busy art at 176–340 parts/layer (`docs/perf/LARGE_IMAGE.md` "G2.7b"). With the complexity gate, `r25` measures 7.61 s bonded (estimate 256 ms).
 
+### D7 — AI depth pipeline (hybrid, cloud, beta)
+
+- Owner: product owner (defaults accepted 2026-10-10); plan Appendix H (tasks H1–H8); evidence `spikes/S7/results/{README.md,cloud/README.md,fusion/README.md,fusion2/README.md}`. Documentation decision only: no code changes with this record.
+- **Decision.** The depth pipeline is a **hybrid**:
+  1. **Base depth: Marigold V2** (Apache-2.0, `huawei-bayerlab/marigold-v2-0`, Qwen-Image-Edit-2509 backbone) run at 2048 on the original image. It gave the best foreground / paper-layer ordering in S7. Cloud-only (20-31 GB VRAM).
+  2. **Cross / centre prior, ring banding, snapping, cleaning: Marigold v1-1** (OpenRAIL++-M; the SD2 Attachment A use restrictions must appear in the ToS) supplies the cross/centre prior; colour/brightness ring banding (brighter = deeper in backlit regions); edge snapping; exact-disc cut-clean (no material/gap neck below the minimum feature, islands below 10 mm2); JSON overrides.
+  3. **Output:** an 8-level height map at the exact fabrication raster size, fed to the existing Height map mode. The offline app is unchanged and works without the service.
+- **Hosting.** Modal during development and beta (per-second billing, credits); RunPod Serverless for production traffic (cheapest per job; weights baked into the image). The same container runs on either.
+- **Measured cost (S7).** Marigold V2 warm on L40S: about $0.0008 per image at 1024 and $0.0036 at 2048, about 70 s model load; total spike spend $0.62.
+- **Longer term.** Fine-tune an Apache-licensed base (DA3MONO-LARGE) on procedurally rendered paper-cut scenes (see the Claude Doc "AI Depth: Model Licensing & Training Data") to remove the OpenRAIL dependency.
+- **Diagnostics unchanged.** Per the product-owner decision of 2026-10-10 (Appendix G, G2): `NECK_KERF` stays **blocking** and `PART_POINT_CONTACT` is a **warning**. AI-depth output goes through the same validation and export gate.
+
 ## Speed round (Appendix F): module-state audit (F0)
 
 Plan Appendix F task F0 (2026-10-09, NFR-05). Before the worker pool (F9–F16) runs kernels in several realms and in any

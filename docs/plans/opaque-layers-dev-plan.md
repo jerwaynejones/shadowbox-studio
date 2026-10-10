@@ -5760,3 +5760,61 @@ suite("CHANGELOG — checkpoint v2.0.0-alpha.5 (R9, PO-FIX-1..7)", () => {
   - `diagRows`/`ackAllPlan`/`fabListedIn` are used in G5;
   - `matchSourcePitch` (raster: µm object; engine: `{fabPitchMM, W, H}`) is used in G6.
 - No placeholder steps: each task names files, interfaces, failing tests, the implementation and the gate.
+
+---
+
+## Appendix H — AI depth (beta)
+
+**Plan only; no code in this appendix's authoring round.** Decision: `docs/ARCHITECTURE.md` D7 (product owner accepted defaults, 2026-10-10). Evidence: `spikes/S7/results/{README.md,cloud/README.md,fusion/README.md,fusion2/README.md}`. Unchanged by this appendix: `NECK_KERF` blocking, `PART_POINT_CONTACT` warning (G2 decision, 2026-10-10).
+
+### H.0 Pipeline and hosting (summary of D7)
+
+- **Pipeline:** Marigold V2 (Apache-2.0, Qwen-Image-Edit-2509 backbone) at 2048 on the original image for base depth (cloud-only, 20-31 GB VRAM) + Marigold v1-1 (OpenRAIL++-M) for the cross/centre prior, colour/brightness ring banding (brighter = deeper in backlit regions), edge snapping, exact-disc cut-clean (no material/gap neck below the minimum feature, islands below 10 mm2) and JSON overrides. Output: 8-level height map at the exact fabrication raster size into the existing Height map mode.
+- **Hosting:** Modal for development/beta; RunPod Serverless for production (weights baked into the image); one container for both.
+- **Cost (S7):** V2 warm about $0.0008 (1024) / $0.0036 (2048) per image on L40S, about 70 s load; spike total $0.62.
+- **Longer term:** fine-tune DA3MONO-LARGE (Apache) on procedurally rendered paper-cut scenes.
+
+### H.1 Tasks (ordered; each ships with tests and acceptance)
+
+**H1 Generalise the fusion.** Remove image-specific thresholds from the S7 fusion2 scripts; make luminous-region detection robust across a small test set; add regression images.
+- Tests: fusion on every set image is deterministic for a fixed seed; no constant tuned to a single image remains (grep check for the listed constants); luminous-region masks match hand-labelled masks within a stated IoU.
+- Acceptance: the fusion2 deliverable is reproduced within tolerance and the other set images pass the H7 probes without per-image parameters.
+
+**H2 Depth service container + API.** Image in, height map out.
+- Job IDs, per-job timeout, input/output cleanup, determinism record (model revisions, seeds, container digest, input hash), per-job cost logging (GPU seconds x rate).
+- Tests: submit/poll/fetch round trip; timeout kills and cleans; same input and record gives the same output hash; cost log line present per job.
+- Acceptance: identical container runs on Modal and RunPod Serverless; output size equals the requested fabrication raster exactly.
+
+**H3 Credits/metering + auth.** Stripe Checkout plus a credit ledger; the app handles no card data.
+- Tests: webhook-verified credit grant; idempotent on redelivery; job debits once, refunds on service failure; negative balance impossible.
+- Acceptance: payment happens only on Stripe-hosted pages; ledger reconciles with the H2 cost log.
+
+**H4 App integration.** "AI depth (beta)" interpretation choice, upload consent, job, then the Height map path.
+- Tests: consent required before any upload; result enters Height map mode unchanged; offline app and all existing tests pass with the feature absent or the service unreachable; failure leaves the project intact.
+- Acceptance: with the service off, behaviour is identical to today.
+
+**H5 Overrides UI.** Pin a region to a layer, push/pull; stored in the project (JSON overrides).
+- Tests: round trip through save/load; overrides applied deterministically on re-run; schema-version handling.
+- Acceptance: overridden regions survive re-generation and appear in the height map.
+
+**H6 Privacy / ToS.** Retention limit with deletion, no training on user images without opt-in, OpenRAIL++-M / SD2 Attachment A use restrictions passed through, medical exclusion.
+- Tests: retention sweeper deletes on schedule; opt-in flag defaults off and is honoured.
+- Acceptance: ToS text reviewed by the product owner before beta opens.
+
+**H7 Evaluation set + acceptance.** Cross/ring probes, cut-clean checks, and an export check like zipcheck on the AI-depth output.
+- Tests: probe scores over thresholds; cut-clean leaves no neck below minimum feature and no island below 10 mm2; exported files pass the zipcheck-style verification.
+- Acceptance: scores recorded in the repo for each model/pipeline revision.
+
+**H8 Rented-GPU ops.** Budget alarms, scale-to-zero, cleanup.
+- Tests/checks: alarm fires at configured thresholds; idle workers reach zero; orphaned jobs and volumes swept.
+- Acceptance: a month of beta traffic cannot exceed the set cap.
+
+### H.2 Open questions (recommended defaults)
+
+1. Credit price per job. Default: cost x 10, rounded to a simple pack (for example 10 credits per 2048 job), revisit after beta data.
+2. Result retention. Default: delete inputs and outputs after 24 h, unless the user saves the project.
+3. Training opt-in. Default: off, per-job opt-in only.
+4. Cold-start tolerance (about 70 s). Default: show progress, no warm pool in beta; pooled warm instance only in production if latency complaints arise.
+5. Moving production off Modal to RunPod. Default: when monthly volume makes the per-job saving exceed migration effort.
+6. Medical exclusion wording. Default: ToS clause plus an upload-time acknowledgement.
+7. Account system. Default: email magic-link, no passwords stored.
