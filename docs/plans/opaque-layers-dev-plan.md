@@ -5250,7 +5250,7 @@ suite("support.js — Appendix G G3 octagonal erosion and neck regions (PO-FIX-3
   - `SBGuides._keepGuidePoly(poly, P) → boolean` (test hook);
   - `buildPair` output shape unchanged.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```js
 suite("guides.js — Appendix G G4 no score stubs (PO-FIX-4, ASM-01/02)", () => {
@@ -5276,8 +5276,8 @@ suite("guides.js — Appendix G G4 no score stubs (PO-FIX-4, ASM-01/02)", () => 
 });
 ```
 
-- [ ] **Step 2: Run the new suite and confirm it fails.** Run `node test/run_tests.js --only "Appendix G G4"`. Expected FAIL: a 1.2 mm ring is emitted, and `GUIDE_MIN_EXTENT_UM` is undefined.
-- [ ] **Step 3: Implement the filter.**
+- [x] **Step 2: Run the new suite and confirm it fails.** Run `node test/run_tests.js --only "Appendix G G4"`. Expected FAIL: a 1.2 mm ring is emitted, and `GUIDE_MIN_EXTENT_UM` is undefined.
+- [x] **Step 3: Implement the filter.**
 
 ```js
   const GUIDE_MIN_EXTENT_UM = 2000;   // Appendix G G-D4: a score ring shorter than this is a stub, not a guide
@@ -5294,14 +5294,21 @@ suite("guides.js — Appendix G G4 no score stubs (PO-FIX-4, ASM-01/02)", () => 
   - In inset-outline mode a part without a kept polygon is omitted with `"no concealed guide area ≥ 2 mm"` when it had Rc polygons and with the existing `"no concealed area ≥ footprint"` when it had none (`js/guides.js:98`); interior-mark reasons are unchanged. Keep the extent test before the footprint-inset offset (`keepGuidePoly` already does).
   - The label placement keeps `Rc`.
   - Export `GUIDE_MIN_EXTENT_UM` and `_keepGuidePoly` **inside the `Object.freeze({...})` literal** (`:192`); there is no mutable `G` alias, and an assignment after the freeze would throw in strict mode. Update the header.
-- [ ] **Step 4: Run the new suite.** Run `node test/run_tests.js --only "Appendix G G4"`. Expected: PASS.
-- [ ] **Step 5: Re-capture the golden and run the perf check.**
+- [x] **Step 4: Run the new suite.** Run `node test/run_tests.js --only "Appendix G G4"`. Expected: PASS.
+- [x] **Step 5: Re-capture the golden and run the perf check.**
   - Re-capture with `--task G4` for the guide fixtures that changed (`guidesSha`, `layerHashes`, `geometryHash`, `diagSha`, `wholeSha` may differ; others not; check shape as G2 with that field list).
   - Perf: the `guides` stage p50 at fab4096 must not exceed its G3 value by more than 10 % (the filter drops rings, but it adds one footprint-inset offset per Rc polygon that passes the extent test; the extent test runs first), and the pooled total p95 stays ≤ 10 s (G.7).
-- [ ] **Step 6: Run the full suite, build and commit.**
+- [x] **Step 6: Run the full suite, build and commit.**
   1. Run `node test/run_tests.js`: 0 failed.
   2. `node build.js`
   3. Commit `js/guides.js test/run_tests.js test/golden/pool-equality.json dist/shadowbox-studio.html`: `fix(guides): G4 drop guide score stubs below 2 mm or the footprint inset (PO-FIX-4)` + trailer.
+
+
+**Result (2026-10-10):**
+- **Implemented as specified.** `GUIDE_MIN_EXTENT_UM = 2000`, `extentOf`, `keepGuidePoly` (extent first, then the footprint inset) in `js/guides.js`; `buildPair` attributes and rings from `RcG` in inset-outline mode (interior-mark and the label keep `Rc`); a ring under 2 mm of a kept polygon is skipped. The parts' Rc attribution for the reason ("no concealed guide area ≥ 2 mm" vs "no concealed area ≥ footprint") is computed only when some part has no kept polygon. Both exports are in the frozen literal; header updated.
+- **Tests.** The plan's suite plus three checks: `_keepGuidePoly` boundaries (1.999 mm dropped, 2 mm kept, a 0.15 mm strip dropped at fp 0.2 mm and kept at fp 0), a part with no Rc keeps the old reason, and the G-D6 G4 golden check. The ASM-03 fixture is the 5.0 mm square as listed.
+- **Golden.** `pool-equality.json` re-captured with `--task G4` for 27 ids (the bonded/guided fixtures). `geometryHash`/`layerHashes`/`wholeSha` move in all (the rings are layer geometry); `guidesSha`/`diagSha` move where a part is newly omitted (all but `simplify-busy-*`, which lost stub rings only). `slow`, `status`, `code`, `cleanupSha`, `supportSha`, `statsSha` unchanged (check `G-D6 G4 …`).
+- **Perf (`docs/perf/speed-round.json` `appendixG.g4`).** `guides` stage p50 (serial `--pool 0`, the only driver that attributes it; G3 tree exported from 97f62ce and run back to back): G3 1633 ms, G4 1676 / 1715 ms (+2.6 % / +5.0 %, ≤ 10 %: **pass**; `guides.build` 748 → 832 / 837 ms). Pooled `--pool 8 --runs 5`: p95 7347 / 7021 ms (≤ 10 s and ≤ 9994 ms: **pass**).
 
 ---
 

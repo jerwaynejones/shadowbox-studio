@@ -854,6 +854,59 @@
      "decision": "product owner 2026-10-10, G.9 #11 option (a): accept the features-stage cost because the absolute gates pass; the stage allowance after G3 is replaced by the absolute cumulative gates (pooled p95 <= 10 s and <= 9994 ms), which are not loosened"
     }
    }
+  },
+  "g4": {
+   "task": "G4",
+   "date": "2026-10-10",
+   "machine": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (16 threads), node v26.7.0",
+   "note": "G4 drops inset-outline guide score rings below 2 mm extent or the footprint inset. The guides stage is attributed only by the serial driver; the G3 tree (97f62ce) was exported and run back to back (load 2-4).",
+   "gates": {
+    "guidesStage": {
+     "command": "node test/bench.js large --only user12 --pool 0 --rows fab4096 --runs 3",
+     "budget": "guides p50 <= 1.10 x the G3 value",
+     "g3": {
+      "p50Ms": 13217.8,
+      "guidesP50Ms": 1633.4,
+      "guidesBuildP50Ms": 748.3
+     },
+     "runs": [
+      {
+       "p50Ms": 13356.4,
+       "guidesP50Ms": 1676.3,
+       "guidesBuildP50Ms": 831.6
+      },
+      {
+       "p50Ms": 13260.8,
+       "guidesP50Ms": 1715,
+       "guidesBuildP50Ms": 836.9
+      }
+     ],
+     "ratio": "1.026-1.050",
+     "pass": true
+    },
+    "fab4096Pool8": {
+     "command": "node test/bench.js large --only user12 --pool 8 --rows fab4096 --runs 5",
+     "budget": "p95 <= 10000 ms (S2) and <= 9994 ms",
+     "runs": [
+      {
+       "runsMs": [
+        6639,
+        7347,
+        5775.2,
+        5477.3,
+        5336.4
+       ],
+       "p50Ms": 5775.2,
+       "p95Ms": 7347
+      },
+      {
+       "p50Ms": 6380.3,
+       "p95Ms": 7021.4
+      }
+     ],
+     "pass": true
+    }
+   }
   }
  }
 }

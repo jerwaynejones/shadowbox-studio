@@ -19,7 +19,11 @@
  * Integer µm throughout: c = concealInset, a = allowance, fp = footprint, fh = ⌊fp/2⌋, lh = label height.
  *   Rc_k = offset(upper, −(c + a + fh)) ∩ offset(lower, −fh)   centreline region of the guides (layer level)
  *   Rb_k = offset(upper, −(c + a)) ∩ lower                       where a burn may lie (validate)
- * inset-outline: every ring of Rc_k, closed. interior-mark: a position-only cross per attributed Rc polygon,
+ * inset-outline: every ring of Rc_k, closed, except stubs (Appendix G G-D4, PO-FIX-4): an Rc polygon is used for
+ * attribution and rings only if its bbox extent max(w, h) ≥ GUIDE_MIN_EXTENT_UM (2000 µm) and it survives the footprint
+ * inset offset(−fp) (when fp > 0); a ring of a kept polygon is emitted only if its own extent is ≥ 2000 µm. A part with
+ * Rc polygons but none kept is omitted with "no concealed guide area ≥ 2 mm". The label placement still uses all of Rc.
+ * interior-mark (unchanged by G-D4): a position-only cross per attributed Rc polygon,
  * arm 1500/1000/600/300 µm, centred by SBGeom.placeBox. Sheet label String(k + 1) in Rc_k shrunk by fp + fh
  * (and clear of the crosses), placed by its own box (SBGeom.placeBox) in the first Rc_k polygon, largest area first,
  * that fits it (alpha.3 E11, E-R4: one polygon per attempt). The top sheet gets neither.
@@ -36,6 +40,10 @@
   // √2/2 µm, and a 51° corner measured a 2.09 µm-wide residue (E10 test E-R5). A real stray burn is 2·fh wide.
   const SLIVER_UM = 2;
   const um = (mm) => Math.round(mm * 1000);
+  const GUIDE_MIN_EXTENT_UM = 2000;   // Appendix G G-D4: a score ring shorter than this is a stub, not a guide
+  const extentOf = (r) => { let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (let i = 0; i < r.length; i += 2) { if (r[i] < x0) x0 = r[i]; if (r[i] > x1) x1 = r[i]; if (r[i + 1] < y0) y0 = r[i + 1]; if (r[i + 1] > y1) y1 = r[i + 1]; }
+    return Math.max(x1 - x0, y1 - y0); };
 
   function params(cfg) {
     if (!cfg || typeof cfg !== "object") throw new Error("SBGuides: cfg (construction.guides) required");
@@ -46,6 +54,11 @@
   }
   const nonEmpty = (L) => !!(L && L.material && L.material.length && !global.SBGeom.isEmpty(L.material));
   const off = (polys, d) => (polys.length ? global.SBGeom.offset(polys, d, "miter") : []);
+  /** G-D4 (inset-outline only): an Rc polygon is a guide if its extent is ≥ 2 mm (tested first) and it survives the footprint inset. */
+  function keepGuidePoly(poly, P) {
+    if (extentOf(poly.outer) < GUIDE_MIN_EXTENT_UM) return false;
+    return P.fp <= 0 || off([poly], -P.fp).length > 0;
+  }
   const isect = (a, b) => (a.length && b.length ? global.SBGeom.normalize(global.SBGeom.intersection(a, b)) : []);
 
   /** Rc_k: the region every guide centreline of layer k+1 on layer k lies in. */
@@ -82,9 +95,11 @@
     const paths = [], labels = [], omitted = [], diagnostics = [];
     if (!nonEmpty(upper) || !nonEmpty(lower)) return { paths, labels, omitted, diagnostics };
     const Rc = regionC(lower, upper, P), parts = upper.parts || [];
+    // G-D4: inset-outline guides use only the Rc polygons that are not stubs; interior-mark and the label keep all of Rc
+    const RcG = interior ? Rc : Rc.filter((poly) => keepGuidePoly(poly, P));
     // attribution: each Rc polygon lies inside exactly one part of k+1
     const byPart = new Map();
-    for (const poly of Rc) {
+    for (const poly of RcG) {
       const p = attribute(poly, parts); if (!p) continue;
       if (!byPart.has(p.id)) byPart.set(p.id, []);
       byPart.get(p.id).push(poly);
@@ -95,8 +110,13 @@
       diagnostics.push(D.make("GUIDE_OMITTED", Object.assign({ layer: k + 1, parts: [id], detail: { kind: "part", text: reason } }, dOpts)));
     };
     if (!interior) {
-      for (const p of parts) if (!byPart.has(p.id)) omit(p.id, "no concealed area ≥ footprint");
-      for (const poly of Rc) for (const r of [poly.outer].concat(poly.holes || [])) paths.push(closedRing(r));
+      let hadRc = null;   // ids of the parts that had any Rc polygon (only computed when some part has no kept polygon)
+      for (const p of parts) {
+        if (byPart.has(p.id)) continue;
+        if (!hadRc) { hadRc = new Set(); for (const poly of Rc) { const q = attribute(poly, parts); if (q) hadRc.add(q.id); } }
+        omit(p.id, hadRc.has(p.id) ? "no concealed guide area ≥ 2 mm" : "no concealed area ≥ footprint");
+      }
+      for (const poly of RcG) for (const r of [poly.outer].concat(poly.holes || [])) if (extentOf(r) >= GUIDE_MIN_EXTENT_UM) paths.push(closedRing(r));
     } else {
       for (const p of parts) {
         const polys = byPart.get(p.id);
@@ -189,5 +209,6 @@
     return out;
   }
 
-  global.SBGuides = Object.freeze({ build, validate, params, buildPair, buildFold, validatePair });
+  global.SBGuides = Object.freeze({ build, validate, params, buildPair, buildFold, validatePair,
+    GUIDE_MIN_EXTENT_UM, _keepGuidePoly: keepGuidePoly });
 })(typeof window !== "undefined" ? window : globalThis);

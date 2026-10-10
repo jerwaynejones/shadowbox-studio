@@ -5906,7 +5906,7 @@ suite("guides.js — alpha.3 E10 concealed guides and sheet labels (ASM-01/02/03
   check("AT-14 one aggregated GUIDE_OMITTED warning per layer with a count", agg.length === 1 && agg[0].count === 3 && agg[0].parts.length === 3);
   check("AT-14 no score line on visible material for the omitted parts (validate clean)", SBGuides.validate([L0, Lx], bx, cfg, ctx).length === 0 &&
     bx.scorePaths[0].every((p) => p.every((v, i) => i % 2 ? true : v < 30000)));
-  const Lsmall = mk(1, sq(10000, 10000, 3500, 3500));   // Rc = 1.3 mm square: the guide fits, the 2.2 × 3.2 mm label box does not
+  const Lsmall = mk(1, sq(10000, 10000, 5000, 5000));   // Rc = 2.8 mm square: the guide fits (≥ 2 mm, Appendix G G4), the 2.2 × 3.2 mm label box does not
   const bs = SBGuides.build([L0, Lsmall], cfg, ctx), lo = bs.diagnostics.find((d) => d.code === "GUIDE_OMITTED" && d.detail && d.detail.kind === "label");
   check("ASM-03 a label that does not fit is GUIDE_OMITTED kind label on that sheet, pointing at the placement map; the guide stays",
     bs.guides.labels.length === 0 && bs.scorePaths[0].length === 1 && lo && lo.layer === 0 && Array.isArray(lo.parts) && lo.parts.length === 0 &&
@@ -8396,6 +8396,51 @@ suite("support.js — Appendix G G3 octagonal erosion and neck regions (PO-FIX-3
       g3.previous[id].diagSha === after(id).diagSha) : ["(no G3 recapture record)"];
     check("G-D6 G3 re-captured ids differ from their previous digests only in diagSha/wholeSha" + (off.length ? " — " + off.join(", ") : ""),
       !!g3 && g3.ids.length > 0 && off.length === 0 && Object.keys(g3.previous).sort().join() === g3.ids.slice().sort().join()); }
+});
+
+// ------------------------------------------------ Appendix G G4 (PO-FIX-4): no guide score stubs below 2 mm extent
+suite("guides.js — Appendix G G4 no score stubs (PO-FIX-4, ASM-01/02)", () => {
+  // 0.1 mm/px; lower: full 40 × 40 mm; upper: a 20 mm, a 4.4 mm and a 3.4 mm square (Rc inset 1.1 mm → 17.8, 2.2, 1.2 mm)
+  const w = 400, h = 400, up = new Uint8Array(w * h), sq = (x0, y0, s) => { for (let y = y0; y < y0 + s; y++) up.fill(1, y * w + x0, y * w + x0 + s); };
+  sq(20, 20, 200); sq(260, 40, 44); sq(260, 200, 34);
+  const L = SBMaterial.assignParts(SBMaterial.fromMasks([new Uint8Array(w * h).fill(1), up], w, h, { artWMM: 40, artHMM: 40, frameMM: 0 }, {}));
+  const cfg = { mode: "inset-outline", concealInsetMM: 0.5, markFootprintMM: 0.2, allowanceMM: 0.5, labelHeightMM: 50 };   // no label fits: every path is a guide ring
+  const b = SBGuides.build(L, cfg, { revision: 0, quality: "fabrication" });
+  const ext = (f) => { let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity; for (let i = 0; i < f.length; i += 2) { x0 = Math.min(x0, f[i]); x1 = Math.max(x1, f[i]); y0 = Math.min(y0, f[i + 1]); y1 = Math.max(y1, f[i + 1]); } return Math.max(x1 - x0, y1 - y0); };
+  check("G4 GUIDE_MIN_EXTENT_UM is 2000", SBGuides.GUIDE_MIN_EXTENT_UM === 2000);
+  check("PO-FIX-4 no score ring has extent < 2 mm", b.scorePaths[0].length > 0 && b.scorePaths[0].every((f) => ext(f) >= 2000));
+  check("PO-FIX-4 the 4.4 mm part keeps its guide ring (Rc 2.2 mm)", b.scorePaths[0].some((f) => ext(f) >= 2000 && ext(f) < 3000));
+  const small = L[1].parts.find((p) => p.bbox[2] - p.bbox[0] === 3400);
+  check("PO-FIX-4 the 3.4 mm part (Rc 1.2 mm) is GUIDE_OMITTED with the 2 mm reason", !!small && b.guides.omitted.some((o) => o.part === small.id && /2 mm/.test(o.reason)));
+  check("ASM-02 validate still passes (no GUIDE_UNCONTAINED)", SBGuides.validate(L, b, cfg, { revision: 0, quality: "fabrication" }).length === 0);
+  // interior-mark is out of scope (review 2026-10-09): the smallest cross arm is 0.6 mm, so the 2 mm rule must not touch it. Baseline measured before the change:
+  // crosses of 3.0, 2.0 and 0.6 mm (two paths each), nothing omitted.
+  const im = SBGuides.build(L, Object.assign({}, cfg, { mode: "interior-mark" }), { revision: 0, quality: "fabrication" });
+  check("G4 interior-mark is unchanged: the 3.4 mm part still gets its 0.6 mm cross, nothing is omitted",
+    im.scorePaths[0].map(ext).sort((a, c) => c - a).join() === "3000,3000,2000,2000,600,600" && im.guides.omitted.length === 0);
+  check("G4 inset-outline emits exactly the 17.8 and 2.2 mm rings of the three parts (the 1.2 mm Rc ring is dropped)", b.scorePaths[0].map(ext).sort((a, c) => c - a).join() === "17800,2200");
+  // _keepGuidePoly: the extent test, then the footprint inset (G-D4)
+  const P = SBGuides.params(cfg), P0 = Object.assign({}, P, { fp: 0 });
+  const sqp = (s) => ({ outer: [0, 0, s, 0, s, s, 0, s], holes: [] });
+  const strip = { outer: [0, 0, 5000, 0, 5000, 150, 0, 150], holes: [] };   // 5 mm long, 0.15 mm wide: long enough, but gone at −0.2 mm
+  check("G4 _keepGuidePoly: 1.999 mm dropped, 2 mm kept, a strip narrower than the footprint dropped, kept with fp 0",
+    !SBGuides._keepGuidePoly(sqp(1999), P) && SBGuides._keepGuidePoly(sqp(2000), P) && !SBGuides._keepGuidePoly(strip, P) && SBGuides._keepGuidePoly(strip, P0));
+  // a part whose Rc is empty keeps the old reason; a part whose Rc is all stubs gets the 2 mm reason
+  const tinyUp = new Uint8Array(w * h); for (let y = 100; y < 115; y++) tinyUp.fill(1, y * w + 100, y * w + 115);   // 1.5 mm: Rc empty
+  const Lt = SBMaterial.assignParts(SBMaterial.fromMasks([new Uint8Array(w * h).fill(1), tinyUp], w, h, { artWMM: 40, artHMM: 40, frameMM: 0 }, {}));
+  const bt = SBGuides.build(Lt, cfg, { revision: 0, quality: "fabrication" });
+  check("G4 a part with no Rc polygon keeps the reason \"no concealed area ≥ footprint\"",
+    bt.guides.omitted.length === 1 && bt.guides.omitted[0].reason === "no concealed area ≥ footprint" && bt.scorePaths[0].length === 0);
+  // G-D6: the G4 recapture changed guide output only (chain-aware like G3): the score rings live in the layer geometry,
+  // so geometryHash/layerHashes move; guidesSha/diagSha move only where a part is newly omitted (simplify-busy: rings only)
+  { const gold = JSON.parse(fs.readFileSync(path.join(__dirname, "golden", "pool-equality.json"), "utf8")), recs = gold.recaptured || [];
+    const g4 = recs.find((r) => r.task === "G4"), i4 = recs.indexOf(g4);
+    const after = (id) => { const later = recs.slice(i4 + 1).find((r) => r.ids.includes(id)); return later ? later.previous[id] : gold.fixtures[id]; };
+    const keep = ["slow", "status", "code", "cleanupSha", "supportSha", "statsSha"];
+    const off = g4 ? g4.ids.filter((id) => !g4.previous || !g4.previous[id] || keep.some((k) => JSON.stringify(g4.previous[id][k]) !== JSON.stringify(after(id)[k])) ||
+      g4.previous[id].wholeSha === after(id).wholeSha) : ["(no G4 recapture record)"];
+    check("G-D6 G4 re-captured ids differ from their previous digests only in guidesSha/layerHashes/geometryHash/diagSha/wholeSha" + (off.length ? " — " + off.join(", ") : ""),
+      !!g4 && g4.ids.length > 0 && off.length === 0 && Object.keys(g4.previous).sort().join() === g4.ids.slice().sort().join()); }
 });
 
 // ------------------------------------------------------------------ report
