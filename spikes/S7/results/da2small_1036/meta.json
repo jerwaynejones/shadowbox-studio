@@ -1,0 +1,189 @@
+{
+  "method": "Depth Anything V2 Small (transformers)",
+  "repo": "depth-anything/Depth-Anything-V2-Small-hf",
+  "revision": "5426e4f0f36572d16453bbda7a8389317b1bef99",
+  "input_hw": [
+    1036,
+    1372
+  ],
+  "fp16": true,
+  "transformers": "5.19.0",
+  "seconds": 0.21,
+  "peak_vram_mb": 511.6,
+  "raw_kind": "disparity",
+  "raw_min": 1.91015625,
+  "raw_max": 4.53515625,
+  "native_shape": [
+    1036,
+    1372
+  ],
+  "probe": {
+    "regions": {
+      "cross": {
+        "mean": 0.1058,
+        "std": 0.0295,
+        "n": 3156
+      },
+      "disc": {
+        "mean": 0.0784,
+        "std": 0.0233,
+        "n": 5678
+      },
+      "swirl": {
+        "mean": 0.0347,
+        "std": 0.025,
+        "n": 39421
+      },
+      "rays": {
+        "mean": 0.0308,
+        "std": 0.0252,
+        "n": 21804
+      },
+      "foliage": {
+        "mean": 0.5395,
+        "std": 0.1569,
+        "n": 234234
+      }
+    },
+    "ring_levels": 1,
+    "ring_levels_incl_weak": 1,
+    "terrace_edges": {
+      "disc_edge": {
+        "radius": 51,
+        "jump": -0.0038,
+        "expected_from_slope": -0.0051,
+        "excess": 0.0012,
+        "sharp_step": false,
+        "weak_step": false
+      },
+      "swirl_outer_edge": {
+        "radius": 182,
+        "jump": 0.0005,
+        "expected_from_slope": 0.0012,
+        "excess": 0.0007,
+        "sharp_step": false,
+        "weak_step": false
+      }
+    },
+    "region_levels": 2,
+    "region_level_steps": [
+      "disc->swirl: -0.044 (d=1.8)*",
+      "swirl->rays: -0.004 (d=0.2)"
+    ],
+    "cross_minus_disc": 0.0274,
+    "cross_minus_local_ring": 0.0109,
+    "cross_vs_disc_effect_size": 1.03,
+    "cross_separated": false,
+    "ring_hist_peaks": 1,
+    "ring_hist_peak_positions": [
+      0.023
+    ],
+    "radial_profile_steps": 1,
+    "radial_step_radii_px": [
+      9
+    ],
+    "ring_zone_p5_p95_range": 0.0827,
+    "local_cross_minus_disc": 0.156,
+    "local_ring_hist_peaks": 2,
+    "local_radial_steps": 3,
+    "local_radial_step_radii_px": [
+      9,
+      234,
+      255
+    ],
+    "swirl_minus_disc": -0.0437,
+    "rays_minus_swirl": -0.0039,
+    "radial_profile": [
+      null,
+      null,
+      null,
+      null,
+      0.0747,
+      0.0719,
+      0.0697,
+      0.068,
+      0.066,
+      0.0637,
+      0.0609,
+      0.0589,
+      0.0574,
+      0.0557,
+      0.054,
+      0.0525,
+      0.0511,
+      0.0498,
+      0.0489,
+      0.0472,
+      0.0459,
+      0.044,
+      0.0435,
+      0.042,
+      0.0409,
+      0.0394,
+      0.0386,
+      0.0383,
+      0.0373,
+      0.0364,
+      0.0355,
+      0.0344,
+      0.0335,
+      0.0321,
+      0.0308,
+      0.0297,
+      0.0287,
+      0.0273,
+      0.0262,
+      0.0252,
+      0.0241,
+      0.0229,
+      0.0217,
+      0.0205,
+      0.0199,
+      0.0189,
+      0.0182,
+      0.0175,
+      0.0164,
+      0.0154,
+      0.0152,
+      0.015,
+      0.0149,
+      0.0146,
+      0.0148,
+      0.0148,
+      0.0149,
+      0.015,
+      0.0154,
+      0.0156,
+      0.0159,
+      0.016,
+      0.0162,
+      0.0166,
+      0.0174,
+      0.0182,
+      0.019,
+      0.0196,
+      0.0209,
+      0.0215,
+      0.0229,
+      0.0245,
+      0.0262,
+      0.0284,
+      0.0312,
+      0.0324,
+      0.0349,
+      0.039,
+      0.0419,
+      0.0459,
+      0.0492,
+      0.0521,
+      0.0556,
+      0.0588,
+      0.0617,
+      0.0645,
+      0.069,
+      0.0727,
+      0.0769,
+      0.0787
+    ]
+  }
+}

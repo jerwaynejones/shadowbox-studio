@@ -1,0 +1,49 @@
+[
+  {
+    "stage": "download",
+    "wall_seconds_client": 71.4,
+    "sum_container_seconds": 220.5,
+    "files": 16,
+    "cost_usd_est": 0.0414
+  },
+  {
+    "stage": "mv2",
+    "gpu_reported": "NVIDIA L40S, 49140 MiB",
+    "wall_seconds_client": 104.7,
+    "cold_start_seconds": 43.9,
+    "function_seconds": 57.0,
+    "model_load_seconds": 40.0,
+    "billed_seconds_est": 164.7,
+    "cost_usd_est": 0.1096,
+    "peak_vram_mb_smi_total": 31135.0,
+    "per_image": {
+      "mv2_log_r2048": {
+        "seconds": 4.81,
+        "cross": true,
+        "d": 4.07,
+        "rings": [
+          3,
+          3
+        ]
+      },
+      "mv2_log_r2048_hflip": {
+        "seconds": 5.22,
+        "cross": true,
+        "d": 4.78,
+        "rings": [
+          3,
+          3
+        ]
+      },
+      "mv2_log_r1792": {
+        "seconds": 4.01,
+        "cross": true,
+        "d": 4.65,
+        "rings": [
+          3,
+          3
+        ]
+      }
+    }
+  }
+]

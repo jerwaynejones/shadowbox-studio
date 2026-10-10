@@ -1,0 +1,26 @@
+[   0.0s] load
+[   1.8s] bases
+[   3.5s] glow_bands
+[  13.9s] base_fusion
+[  16.2s] compose
+[  17.8s] colour_classes
+[  19.2s] superpixels_refine
+[  34.9s] overrides
+[  35.2s] cut_clean
+[  74.0s] write
+[  78.5s] engrave
+[  91.1s] previews
+[  98.4s] probe
+[ 105.2s] done {"load": 1.85, "bases": 1.65, "glow_bands": 10.36, "base_fusion": 2.38, "compose": 1.58, "colour_classes": 1.42, "superpixels_refine": 15.7, "overrides": 0.24, "cut_clean": 38.84, "write": 4.5, "engrave": 12.56, "previews": 7.37, "probe": 6.48}
+v2_base_tta        cross_sep=True d=7.03 Δdisc=0.1217 ring_levels=3/3 region_levels=3 disc +0.066 swirl +0.058
+fused_base         cross_sep=True d=7.53 Δdisc=0.1086 ring_levels=1/2 region_levels=3 disc +0.010 swirl +0.013
+round2_auto        cross_sep=True d=5.28 Δdisc=0.3683 ring_levels=2/3 region_levels=3 disc +0.143 swirl +0.143
+round2_overrides   cross_sep=True d=20.71 Δdisc=0.8274 ring_levels=2/3 region_levels=3 disc +0.143 swirl +0.143
+{'sheet': 1, 'parts': 1, 'min_part_area_px': 11885067, 'min_part_area_mm2': 118850.7, 'islands_lt_10mm2': 0, 'holes': 1, 'min_hole_area_mm2': 699.3, 'thin_px_below_1_5mm': 0, 'narrow_gap_px_below_1_5mm': 0, 'narrowest_part_max_width_mm': 483.21, 'coverage': 0.9942}
+{'sheet': 2, 'parts': 1, 'min_part_area_px': 11071249, 'min_part_area_mm2': 110712.5, 'islands_lt_10mm2': 0, 'holes': 2, 'min_hole_area_mm2': 39.1, 'thin_px_below_1_5mm': 0, 'narrow_gap_px_below_1_5mm': 0, 'narrowest_part_max_width_mm': 424.52, 'coverage': 0.9261}
+{'sheet': 3, 'parts': 1, 'min_part_area_px': 10522730, 'min_part_area_mm2': 105227.3, 'islands_lt_10mm2': 0, 'holes': 2, 'min_hole_area_mm2': 18.2, 'thin_px_below_1_5mm': 0, 'narrow_gap_px_below_1_5mm': 0, 'narrowest_part_max_width_mm': 410.29, 'coverage': 0.8802}
+{'sheet': 4, 'parts': 3, 'min_part_area_px': 14362, 'min_part_area_mm2': 143.6, 'islands_lt_10mm2': 0, 'holes': 19, 'min_hole_area_mm2': 10.6, 'thin_px_below_1_5mm': 0, 'narrow_gap_px_below_1_5mm': 143, 'narrowest_part_max_width_mm': 6.08, 'coverage': 0.7215}
+{'sheet': 5, 'parts': 11, 'min_part_area_px': 1198, 'min_part_area_mm2': 12.0, 'islands_lt_10mm2': 0, 'holes': 49, 'min_hole_area_mm2': 10.8, 'thin_px_below_1_5mm': 0, 'narrow_gap_px_below_1_5mm': 862, 'narrowest_part_max_width_mm': 3.28, 'coverage': 0.5282}
+{'sheet': 6, 'parts': 16, 'min_part_area_px': 1147, 'min_part_area_mm2': 11.5, 'islands_lt_10mm2': 0, 'holes': 57, 'min_hole_area_mm2': 10.8, 'thin_px_below_1_5mm': 0, 'narrow_gap_px_below_1_5mm': 604, 'narrowest_part_max_width_mm': 2.04, 'coverage': 0.363}
+{'sheet': 7, 'parts': 21, 'min_part_area_px': 1095, 'min_part_area_mm2': 10.9, 'islands_lt_10mm2': 0, 'holes': 13, 'min_hole_area_mm2': 10.6, 'thin_px_below_1_5mm': 0, 'narrow_gap_px_below_1_5mm': 181, 'narrowest_part_max_width_mm': 2.76, 'coverage': 0.1906}
+nested True colour {'petal_components': 12, 'petal_raised': 12, 'petal_flat_no_raise': 0, 'petal_px': 494716, 'dark_components': 197, 'dark_pushed': 195}

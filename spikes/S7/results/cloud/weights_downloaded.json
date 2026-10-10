@@ -1,0 +1,130 @@
+[
+  {
+    "repo": "Qwen/Qwen-Image-Edit-2509",
+    "revision": "d3968ef930e841f4c73640fb8afa3b306a78167e",
+    "path": "model_index.json",
+    "bytes": 516,
+    "sha256": "5ba11ceee68457ad6a48b899b8c9493e347f4685e11e5eeca952a13f16549e35",
+    "seconds": 1.1
+  },
+  {
+    "repo": "Qwen/Qwen-Image-Edit-2509",
+    "revision": "d3968ef930e841f4c73640fb8afa3b306a78167e",
+    "path": "transformer/config.json",
+    "bytes": 339,
+    "sha256": "247c94f9b923a7d6b6035ca76d27b556bd0efd1a8c7672f31f037644fcce340e",
+    "seconds": 0.7
+  },
+  {
+    "repo": "Qwen/Qwen-Image-Edit-2509",
+    "revision": "d3968ef930e841f4c73640fb8afa3b306a78167e",
+    "path": "transformer/diffusion_pytorch_model.safetensors.index.json",
+    "bytes": 198887,
+    "sha256": "034f003b74493730e1c595b2e23232e99d9e28bcef3b4c10c56d1b53eee4b435",
+    "seconds": 1.1
+  },
+  {
+    "repo": "Qwen/Qwen-Image-Edit-2509",
+    "revision": "d3968ef930e841f4c73640fb8afa3b306a78167e",
+    "path": "vae/config.json",
+    "bytes": 730,
+    "sha256": "c448160dba5ce79c965cb075ee02e18d1c42eb6424f787e5869790d577b56a65",
+    "seconds": 1.0
+  },
+  {
+    "repo": "Qwen/Qwen-Image-Edit-2509",
+    "revision": "d3968ef930e841f4c73640fb8afa3b306a78167e",
+    "path": "vae/diffusion_pytorch_model.safetensors",
+    "bytes": 253806966,
+    "sha256": "0c8bc8b758c649abef9ea407b95408389a3b2f610d0d10fcb054fe171d0a8344",
+    "seconds": 2.9
+  },
+  {
+    "repo": "Qwen/Qwen-Image-Edit-2509",
+    "revision": "d3968ef930e841f4c73640fb8afa3b306a78167e",
+    "path": "transformer/diffusion_pytorch_model-00001-of-00005.safetensors",
+    "bytes": 9973578592,
+    "sha256": "784a8efc4dcea09ba20b534bbe9e5fae3367d929525031a4bd26c5ddb7eb18e5",
+    "seconds": 66.6
+  },
+  {
+    "repo": "Qwen/Qwen-Image-Edit-2509",
+    "revision": "d3968ef930e841f4c73640fb8afa3b306a78167e",
+    "path": "transformer/diffusion_pytorch_model-00002-of-00005.safetensors",
+    "bytes": 9987326072,
+    "sha256": "86ce21e5e3bdecfbeaa31aa587c03d0d1af6ab05d79c127149e8217f81e0247f",
+    "seconds": 57.0
+  },
+  {
+    "repo": "Qwen/Qwen-Image-Edit-2509",
+    "revision": "d3968ef930e841f4c73640fb8afa3b306a78167e",
+    "path": "transformer/diffusion_pytorch_model-00003-of-00005.safetensors",
+    "bytes": 9987307440,
+    "sha256": "c6a046daa991f3b32c3ae39ff95e6e7220455265fcbbb643e9f556bea8641d02",
+    "seconds": 68.6
+  },
+  {
+    "repo": "Qwen/Qwen-Image-Edit-2509",
+    "revision": "d3968ef930e841f4c73640fb8afa3b306a78167e",
+    "path": "transformer/diffusion_pytorch_model-00004-of-00005.safetensors",
+    "bytes": 9930685712,
+    "sha256": "c28bf871d5db0a6397843eca3987e58ba2c3013d287d5d4a1271d68e158ce7e8",
+    "seconds": 96.8
+  },
+  {
+    "repo": "Qwen/Qwen-Image-Edit-2509",
+    "revision": "d3968ef930e841f4c73640fb8afa3b306a78167e",
+    "path": "transformer/diffusion_pytorch_model-00005-of-00005.safetensors",
+    "bytes": 982130472,
+    "sha256": "dd2844e5cafb03b16bed9556aa29c15396a787e17c38a0eda7f5a1281497c76a",
+    "seconds": 36.3
+  },
+  {
+    "repo": "huawei-bayerlab/marigold-v2-0",
+    "revision": "cdf9810fb690886391a63aec012b5f501064fb0d",
+    "path": "depth/Log-stage2/trainables.safetensors",
+    "bytes": 1853909694,
+    "sha256": "3edec69490ba8e8fdc8d63e130f93cb93f514360d415a22701250b2535056892",
+    "seconds": 28.8
+  },
+  {
+    "repo": "huawei-bayerlab/marigold-v2-0",
+    "revision": "cdf9810fb690886391a63aec012b5f501064fb0d",
+    "path": "qwen_text_embeddings/qwen_edit_2509_qwen_depth_realimg512_prompt_embeds.pt",
+    "bytes": 19384278,
+    "sha256": "ba752b582571d990c75ad6aac2a2eeb0cf04c2fe01b233b1675028eabf342a6d",
+    "seconds": 7.1
+  },
+  {
+    "repo": "huawei-bayerlab/marigold-v2-0",
+    "revision": "cdf9810fb690886391a63aec012b5f501064fb0d",
+    "path": "qwen_text_embeddings/qwen_edit_2509_qwen_depth_realimg512_prompt_mask.pt",
+    "bytes": 23624,
+    "sha256": "80973a6521f21a5a6faf6402cae185dafef840d91e654efbeb1097914e634798",
+    "seconds": 3.5
+  },
+  {
+    "repo": "huawei-bayerlab/marigold-v2-0",
+    "revision": "cdf9810fb690886391a63aec012b5f501064fb0d",
+    "path": "README.md",
+    "bytes": 7753,
+    "sha256": "ad64b950df083da7521387d2fdd78a0f2a61f009471bc0e710f4a5ade6d2a1a4",
+    "seconds": 0.9
+  },
+  {
+    "repo": "huawei-bayerlab/marigold-v2-0",
+    "revision": "cdf9810fb690886391a63aec012b5f501064fb0d",
+    "path": "LICENSE",
+    "bytes": 11357,
+    "sha256": "b9cf2597773e6ad82b35aa652e4af4bba68e9304fbe4406bc0f6bdedad8a4b4a",
+    "seconds": 2.4
+  },
+  {
+    "repo": "huawei-bayerlab/marigold-v2-0",
+    "revision": "cdf9810fb690886391a63aec012b5f501064fb0d",
+    "path": "manifest.json",
+    "bytes": 5579,
+    "sha256": "b6545c4fcc395b1628c7960e1942e8428d411916a74c2d19acabfafd475454e8",
+    "seconds": 0.8
+  }
+]

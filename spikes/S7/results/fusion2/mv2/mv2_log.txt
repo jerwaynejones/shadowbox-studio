@@ -1,0 +1,47 @@
+     4.7 2026-10-09 11:24:49,023 - INFO - Started at 2026-10-09 11:24:49.023574
+     5.0 2026-10-09 11:24:49,305 - WARNING - [RANK 0] Detected kernel version 4.19.0, which is below the recommended minimum of 5.5.0; this can cause the process to hang. It is recommended to upgrade the kernel to the minimum version or higher.
+    12.8 2026-10-09 11:24:57,109 - INFO - Loaded Qwen-Image-Edit VAE.
+    13.7 
+    18.3 Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]
+    22.8 Loading checkpoint shards:  20%|██        | 1/5 [00:04<00:18,  4.58s/it]
+    27.2 Loading checkpoint shards:  40%|████      | 2/5 [00:09<00:13,  4.52s/it]
+    31.7 Loading checkpoint shards:  60%|██████    | 3/5 [00:13<00:08,  4.48s/it]
+    32.4 Loading checkpoint shards:  80%|████████  | 4/5 [00:17<00:04,  4.48s/it]
+    32.4 Loading checkpoint shards: 100%|██████████| 5/5 [00:18<00:00,  3.11s/it]
+    32.4 Loading checkpoint shards: 100%|██████████| 5/5 [00:18<00:00,  3.73s/it]
+    32.5 2026-10-09 11:25:16,815 - INFO - [Qwen-Image-Edit] dequantized modules to bf16: ['proj_out']
+    38.9 2026-10-09 11:25:23,180 - INFO - [Qwen-Image-Edit] quantization=4bit; trainable params: 851779584 / 21282180672
+    38.9 2026-10-09 11:25:23,216 - INFO - Config saved to /tmp/out/config.yaml
+    38.9 2026-10-09 11:25:23,216 - INFO - device = cuda
+    38.9 2026-10-09 11:25:23,216 - INFO - distributed eval context: process_index=0 num_processes=1 is_main_process=True
+    39.9 2026-10-09 11:25:24,228 - INFO - Froze all network components for inference after checkpoint loading.
+    40.0 Loading checkpoint from: /w/assets/checkpoints/Marigold-V2/depth/Log-stage2
+    40.0 [eval] Loading Diffuser and VAE weights from checkpoint.
+    40.0 [load] Loading trainables from /w/assets/checkpoints/Marigold-V2/depth/Log-stage2/trainables.safetensors
+    40.0 [load] VAE: missing=86 unexpected=0
+    40.0 [load] Diffuser: missing=1933 unexpected=0
+    40.0 
+    40.0 Evaluating on 1 dataset(s)...
+    40.0 
+    40.0 
+    40.5 evaluating on images:   0%|          | 0/4 [00:00<?, ?it/s]/usr/local/lib/python3.10/site-packages/diffusers/models/transformers/transformer_qwenimage.py:901: FutureWarning: Passing `txt_seq_lens` is deprecated and will be removed in version 0.39.0. Please use `encoder_hidden_states_mask` instead. The mask-based approach is more flexible and supports variable-length sequences.
+    40.5   deprecate(
+    41.1 
+    46.3 evaluating on images:  25%|██▌       | 1/4 [00:01<00:03,  1.14s/it]
+    51.6 evaluating on images:  50%|█████     | 2/4 [00:06<00:07,  3.54s/it]
+    55.4 evaluating on images:  75%|███████▌  | 3/4 [00:11<00:04,  4.31s/it]
+    55.4 evaluating on images: 100%|██████████| 4/4 [00:15<00:00,  4.13s/it]
+    55.4 evaluating on images: 100%|██████████| 4/4 [00:15<00:00,  3.86s/it]
+    55.5 Validation data loading took longer than 0.1s: 0.23241400718688965
+    55.5 Validation data loading took longer than 0.1s: 0.22664165496826172
+    55.5 Validation data loading took longer than 0.1s: 0.1802661418914795
+    55.5 
+    55.5 ============================================================
+    55.5   Results for: images
+    55.5 ============================================================
+    55.5 ============================================================
+    55.5 
+    55.5 
+    55.5 Evaluation complete. Results saved to: /tmp/out
+    56.7 4 images under /tmp/in
+    56.7 Modality: depth; checkpoint: /w/assets/checkpoints/Marigold-V2/depth/Log-stage2; resolution: native

@@ -1,0 +1,72 @@
+[
+  {
+    "repo": "prs-eth/marigold-depth-hr-v1-1",
+    "revision": "902ff7c71d69caec27a5953f50c9195cb8bfa3e3",
+    "path": "boosting_unet/diffusion_pytorch_model.fp16.safetensors",
+    "bytes": 1731950784,
+    "sha256": "8392ace54d71d441ab0a9353d69fb2dec812a145b8c5dff719e7e98adcd63dc1"
+  },
+  {
+    "repo": "prs-eth/marigold-depth-hr-v1-1",
+    "revision": "902ff7c71d69caec27a5953f50c9195cb8bfa3e3",
+    "path": "text_encoder/model.fp16.safetensors",
+    "bytes": 680820392,
+    "sha256": "bc1827c465450322616f06dea41596eac7d493f4e95904dcb51f0fc745c4e13f"
+  },
+  {
+    "repo": "prs-eth/marigold-depth-hr-v1-1",
+    "revision": "902ff7c71d69caec27a5953f50c9195cb8bfa3e3",
+    "path": "unet/diffusion_pytorch_model.fp16.safetensors",
+    "bytes": 1731927776,
+    "sha256": "da9c13e214461c2cf82e4a0f125d914976522e53806a54d508e30ea5b8cd67f2"
+  },
+  {
+    "repo": "prs-eth/marigold-depth-hr-v1-1",
+    "revision": "902ff7c71d69caec27a5953f50c9195cb8bfa3e3",
+    "path": "vae/diffusion_pytorch_model.fp16.safetensors",
+    "bytes": 167335342,
+    "sha256": "3e4c08995484ee61270175e9e7a072b66a6e4eeb5f0c266667fe1f45b90daf9a"
+  },
+  {
+    "repo": "prs-eth/marigold-depth-v1-1",
+    "revision": "9571e7123e258cf052b4e54241f17971c290e9a8",
+    "path": "text_encoder/model.fp16.safetensors",
+    "bytes": 680821096,
+    "sha256": "681c555376658c81dc273f2d737a2aeb23ddb6d1d8e5b3a7064636d359a22668"
+  },
+  {
+    "repo": "prs-eth/marigold-depth-v1-1",
+    "revision": "9571e7123e258cf052b4e54241f17971c290e9a8",
+    "path": "text_encoder/model.safetensors",
+    "bytes": 1361597018,
+    "sha256": "cce6febb0b6d876ee5eb24af35e27e764eb4f9b1d0b7c026c8c3333d4cfc916c"
+  },
+  {
+    "repo": "prs-eth/marigold-depth-v1-1",
+    "revision": "9571e7123e258cf052b4e54241f17971c290e9a8",
+    "path": "unet/diffusion_pytorch_model.fp16.safetensors",
+    "bytes": 1731927776,
+    "sha256": "890a2a9efc296e10c09a6ee7c1267a91dc72adb256ae6040bcf1a12c10521f4c"
+  },
+  {
+    "repo": "prs-eth/marigold-depth-v1-1",
+    "revision": "9571e7123e258cf052b4e54241f17971c290e9a8",
+    "path": "unet/diffusion_pytorch_model.safetensors",
+    "bytes": 3463772592,
+    "sha256": "ad9342d79bb5773bb3fae5e55cbe5aa7f9c9433ba30dc1ace18998d4fb5dd9a2"
+  },
+  {
+    "repo": "prs-eth/marigold-depth-v1-1",
+    "revision": "9571e7123e258cf052b4e54241f17971c290e9a8",
+    "path": "vae/diffusion_pytorch_model.fp16.safetensors",
+    "bytes": 167335342,
+    "sha256": "3e4c08995484ee61270175e9e7a072b66a6e4eeb5f0c266667fe1f45b90daf9a"
+  },
+  {
+    "repo": "prs-eth/marigold-depth-v1-1",
+    "revision": "9571e7123e258cf052b4e54241f17971c290e9a8",
+    "path": "vae/diffusion_pytorch_model.safetensors",
+    "bytes": 334643276,
+    "sha256": "a1d993488569e928462932c8c38a0760b874d166399b14414135bd9c42df5815"
+  }
+]

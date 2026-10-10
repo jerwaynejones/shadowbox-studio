@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "coords": "input",
+  "rules": [
+    {
+      "name": "pin the cross to layer 6",
+      "select": {"seed": [492, 410], "tolerance": 18, "grow_px": 3, "within": {"rect": [440, 316, 540, 452]}},
+      "layer": 6
+    }
+  ]
+}

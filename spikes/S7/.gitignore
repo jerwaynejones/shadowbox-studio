@@ -1,0 +1,21 @@
+.venv/
+models/
+.cache/
+results/**/*.npy
+results/upscaled/
+*.pth
+*.safetensors
+src/
+results/**/raw16.png
+results/**/height16_native.png
+__pycache__/
+*.pyc
+# Appendix G G7: derived or oversized rasters (regenerable from the scripts; contact sheets keep the overview)
+results/**/color.png
+results/fusion/height_continuous*.png
+results/fusion/side_by_side.png
+results/fusion/layers_preview.png
+results/fusion2/engrave_preview.png
+results/fusion2/layers_preview.png
+results/fusion2/side_by_side.png
+input/cross.png

@@ -1,0 +1,955 @@
+{
+  "params": {
+    "grid": [
+      3985,
+      3000
+    ],
+    "n_layers": 8,
+    "upscale": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/spikes/S7/results/upscaled/cross_realesrgan_x4.png",
+    "input": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/spikes/S7/input/cross.png",
+    "v11_dir": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/spikes/S7/results/marigold11_r768_e5_s4",
+    "v2_dirs": [
+      "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/spikes/S7/results/fusion2/mv2/mv2_log_r2048",
+      "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/spikes/S7/results/fusion2/mv2/mv2_log_r2048_hflip"
+    ],
+    "v2_fallback": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/spikes/S7/results/cloud/mv2_log_r2048",
+    "partB": "/run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/spikes/S7/results/fusion/height_8layer.png",
+    "gf_v11": [
+      16,
+      0.001
+    ],
+    "gf_v2": [
+      8,
+      0.0001
+    ],
+    "centre_radius_in": 200,
+    "centre_feather_in": 25,
+    "vein_close_px": 9,
+    "blue_b": -4.0,
+    "blue_a": 10.0,
+    "petal_L": 23.5,
+    "petal_a": 2.5,
+    "dark_L": 8.5,
+    "class_sigma": 3,
+    "petal_open_px": 7,
+    "petal_min_px": 1500,
+    "petal_ring_px": 25,
+    "depth_agree_tol": 0.02,
+    "slic_region": 10,
+    "slic_iters": 5,
+    "refine_r": 6,
+    "refine_eps": 0.001,
+    "min_feature_px": 15,
+    "min_island_px": 1000,
+    "cut_iters": 3,
+    "engrave_kernel": 21,
+    "engrave_margin_px": 10,
+    "engrave_min_px": 80,
+    "engrave_abs": 7.0,
+    "engrave_pct": 78,
+    "svg_stroke_mm": 0.3,
+    "svg_min_len_px": 20,
+    "svg_simplify_px": 1.0
+  },
+  "v2_sources": [
+    "results/fusion2/mv2/mv2_log_r2048",
+    "results/fusion2/mv2/mv2_log_r2048_hflip"
+  ],
+  "v11_source": "results/marigold11_r768_e5_s4/nearness_1024.npy",
+  "output_shape": [
+    3000,
+    3985
+  ],
+  "luminous_centre_px": [
+    1929.0,
+    1331.0
+  ],
+  "n_superpixels": 114873,
+  "band_centres_Lab_sd_r": [
+    [
+      86.59,
+      1.98,
+      52.32,
+      11.94,
+      158.07
+    ],
+    [
+      66.64,
+      29.91,
+      54.04,
+      19.35,
+      404.44
+    ],
+    [
+      61.93,
+      40.58,
+      59.8,
+      11.55,
+      742.67
+    ]
+  ],
+  "colour_layers": {
+    "petal_components": 12,
+    "petal_raised": 12,
+    "petal_flat_no_raise": 0,
+    "petal_px": 494716,
+    "dark_components": 197,
+    "dark_pushed": 195
+  },
+  "overrides": [
+    {
+      "name": "pin the cross to layer 6",
+      "selected_px": 52046,
+      "changed_px": 52046,
+      "layers_before": [
+        0,
+        8308,
+        477,
+        43261,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "sheets_before_cut_clean": [
+    {
+      "sheet": 1,
+      "parts": 1,
+      "min_part_area_px": 11885054,
+      "min_part_area_mm2": 118850.5,
+      "islands_lt_10mm2": 0,
+      "holes": 1,
+      "min_hole_area_mm2": 699.5,
+      "thin_px_below_1_5mm": 41,
+      "narrow_gap_px_below_1_5mm": 52,
+      "narrowest_part_max_width_mm": 483.21,
+      "coverage": 0.9941
+    },
+    {
+      "sheet": 2,
+      "parts": 1,
+      "min_part_area_px": 11071074,
+      "min_part_area_mm2": 110710.7,
+      "islands_lt_10mm2": 0,
+      "holes": 2,
+      "min_hole_area_mm2": 39.2,
+      "thin_px_below_1_5mm": 196,
+      "narrow_gap_px_below_1_5mm": 274,
+      "narrowest_part_max_width_mm": 424.52,
+      "coverage": 0.9261
+    },
+    {
+      "sheet": 3,
+      "parts": 1,
+      "min_part_area_px": 10522623,
+      "min_part_area_mm2": 105226.2,
+      "islands_lt_10mm2": 0,
+      "holes": 2,
+      "min_hole_area_mm2": 18.3,
+      "thin_px_below_1_5mm": 432,
+      "narrow_gap_px_below_1_5mm": 427,
+      "narrowest_part_max_width_mm": 410.29,
+      "coverage": 0.8802
+    },
+    {
+      "sheet": 4,
+      "parts": 4,
+      "min_part_area_px": 183,
+      "min_part_area_mm2": 1.8,
+      "islands_lt_10mm2": 1,
+      "holes": 40,
+      "min_hole_area_mm2": 0.0,
+      "thin_px_below_1_5mm": 1811,
+      "narrow_gap_px_below_1_5mm": 4506,
+      "narrowest_part_max_width_mm": 1.44,
+      "coverage": 0.7207
+    },
+    {
+      "sheet": 5,
+      "parts": 22,
+      "min_part_area_px": 26,
+      "min_part_area_mm2": 0.3,
+      "islands_lt_10mm2": 13,
+      "holes": 111,
+      "min_hole_area_mm2": 0.1,
+      "thin_px_below_1_5mm": 10616,
+      "narrow_gap_px_below_1_5mm": 18319,
+      "narrowest_part_max_width_mm": 0.56,
+      "coverage": 0.5263
+    },
+    {
+      "sheet": 6,
+      "parts": 29,
+      "min_part_area_px": 20,
+      "min_part_area_mm2": 0.2,
+      "islands_lt_10mm2": 14,
+      "holes": 106,
+      "min_hole_area_mm2": 0.1,
+      "thin_px_below_1_5mm": 10145,
+      "narrow_gap_px_below_1_5mm": 14170,
+      "narrowest_part_max_width_mm": 0.44,
+      "coverage": 0.3616
+    },
+    {
+      "sheet": 7,
+      "parts": 23,
+      "min_part_area_px": 6,
+      "min_part_area_mm2": 0.1,
+      "islands_lt_10mm2": 3,
+      "holes": 17,
+      "min_hole_area_mm2": 3.1,
+      "thin_px_below_1_5mm": 3928,
+      "narrow_gap_px_below_1_5mm": 3540,
+      "narrowest_part_max_width_mm": 0.2,
+      "coverage": 0.1906
+    }
+  ],
+  "sheets_after_cut_clean": [
+    {
+      "sheet": 1,
+      "parts": 1,
+      "min_part_area_px": 11885067,
+      "min_part_area_mm2": 118850.7,
+      "islands_lt_10mm2": 0,
+      "holes": 1,
+      "min_hole_area_mm2": 699.3,
+      "thin_px_below_1_5mm": 0,
+      "narrow_gap_px_below_1_5mm": 0,
+      "narrowest_part_max_width_mm": 483.21,
+      "coverage": 0.9942
+    },
+    {
+      "sheet": 2,
+      "parts": 1,
+      "min_part_area_px": 11071249,
+      "min_part_area_mm2": 110712.5,
+      "islands_lt_10mm2": 0,
+      "holes": 2,
+      "min_hole_area_mm2": 39.1,
+      "thin_px_below_1_5mm": 0,
+      "narrow_gap_px_below_1_5mm": 0,
+      "narrowest_part_max_width_mm": 424.52,
+      "coverage": 0.9261
+    },
+    {
+      "sheet": 3,
+      "parts": 1,
+      "min_part_area_px": 10522730,
+      "min_part_area_mm2": 105227.3,
+      "islands_lt_10mm2": 0,
+      "holes": 2,
+      "min_hole_area_mm2": 18.2,
+      "thin_px_below_1_5mm": 0,
+      "narrow_gap_px_below_1_5mm": 0,
+      "narrowest_part_max_width_mm": 410.29,
+      "coverage": 0.8802
+    },
+    {
+      "sheet": 4,
+      "parts": 3,
+      "min_part_area_px": 14362,
+      "min_part_area_mm2": 143.6,
+      "islands_lt_10mm2": 0,
+      "holes": 19,
+      "min_hole_area_mm2": 10.6,
+      "thin_px_below_1_5mm": 0,
+      "narrow_gap_px_below_1_5mm": 143,
+      "narrowest_part_max_width_mm": 6.08,
+      "coverage": 0.7215
+    },
+    {
+      "sheet": 5,
+      "parts": 11,
+      "min_part_area_px": 1198,
+      "min_part_area_mm2": 12.0,
+      "islands_lt_10mm2": 0,
+      "holes": 49,
+      "min_hole_area_mm2": 10.8,
+      "thin_px_below_1_5mm": 0,
+      "narrow_gap_px_below_1_5mm": 862,
+      "narrowest_part_max_width_mm": 3.28,
+      "coverage": 0.5282
+    },
+    {
+      "sheet": 6,
+      "parts": 16,
+      "min_part_area_px": 1147,
+      "min_part_area_mm2": 11.5,
+      "islands_lt_10mm2": 0,
+      "holes": 57,
+      "min_hole_area_mm2": 10.8,
+      "thin_px_below_1_5mm": 0,
+      "narrow_gap_px_below_1_5mm": 604,
+      "narrowest_part_max_width_mm": 2.04,
+      "coverage": 0.363
+    },
+    {
+      "sheet": 7,
+      "parts": 21,
+      "min_part_area_px": 1095,
+      "min_part_area_mm2": 10.9,
+      "islands_lt_10mm2": 0,
+      "holes": 13,
+      "min_hole_area_mm2": 10.6,
+      "thin_px_below_1_5mm": 0,
+      "narrow_gap_px_below_1_5mm": 181,
+      "narrowest_part_max_width_mm": 2.76,
+      "coverage": 0.1906
+    }
+  ],
+  "bonded_nesting_ok": true,
+  "layer_pixel_fraction": [
+    0.0058,
+    0.0681,
+    0.0459,
+    0.1587,
+    0.1933,
+    0.1652,
+    0.1724,
+    0.1906
+  ],
+  "probe_region_layer_hist_1024": {
+    "cross": [
+      0,
+      9,
+      0,
+      0,
+      0,
+      0,
+      3147,
+      0
+    ],
+    "disc": [
+      4526,
+      1147,
+      1,
+      4,
+      0,
+      0,
+      0,
+      0
+    ],
+    "swirl": [
+      0,
+      34292,
+      5047,
+      82,
+      0,
+      0,
+      0,
+      0
+    ],
+    "rays": [
+      0,
+      41,
+      16711,
+      4502,
+      531,
+      19,
+      0,
+      0
+    ],
+    "foliage": [
+      0,
+      0,
+      0,
+      8,
+      7073,
+      43116,
+      99041,
+      84996
+    ]
+  },
+  "engrave": [
+    {
+      "layer": 0,
+      "threshold_blackhat_L": 7.0,
+      "engrave_px": 0,
+      "engrave_frac_of_visible": 0.0,
+      "svg_polylines": 0,
+      "svg_vertices": 0
+    },
+    {
+      "layer": 1,
+      "threshold_blackhat_L": 41.05,
+      "engrave_px": 153524,
+      "engrave_frac_of_visible": 0.189,
+      "svg_polylines": 497,
+      "svg_vertices": 2270
+    },
+    {
+      "layer": 2,
+      "threshold_blackhat_L": 30.14,
+      "engrave_px": 93985,
+      "engrave_frac_of_visible": 0.171,
+      "svg_polylines": 118,
+      "svg_vertices": 527
+    },
+    {
+      "layer": 3,
+      "threshold_blackhat_L": 12.81,
+      "engrave_px": 339964,
+      "engrave_frac_of_visible": 0.179,
+      "svg_polylines": 544,
+      "svg_vertices": 2396
+    },
+    {
+      "layer": 4,
+      "threshold_blackhat_L": 7.0,
+      "engrave_px": 132180,
+      "engrave_frac_of_visible": 0.057,
+      "svg_polylines": 262,
+      "svg_vertices": 1104
+    },
+    {
+      "layer": 5,
+      "threshold_blackhat_L": 7.0,
+      "engrave_px": 116676,
+      "engrave_frac_of_visible": 0.059,
+      "svg_polylines": 385,
+      "svg_vertices": 1531
+    },
+    {
+      "layer": 6,
+      "threshold_blackhat_L": 7.16,
+      "engrave_px": 263441,
+      "engrave_frac_of_visible": 0.128,
+      "svg_polylines": 1019,
+      "svg_vertices": 4066
+    },
+    {
+      "layer": 7,
+      "threshold_blackhat_L": 7.0,
+      "engrave_px": 245975,
+      "engrave_frac_of_visible": 0.108,
+      "svg_polylines": 1000,
+      "svg_vertices": 4186
+    }
+  ],
+  "grey_values": [
+    0,
+    36,
+    73,
+    109,
+    146,
+    182,
+    219,
+    255
+  ],
+  "timings_s": {
+    "load": 1.85,
+    "bases": 1.65,
+    "glow_bands": 10.36,
+    "base_fusion": 2.38,
+    "compose": 1.58,
+    "colour_classes": 1.42,
+    "superpixels_refine": 15.7,
+    "overrides": 0.24,
+    "cut_clean": 38.84,
+    "write": 4.5,
+    "engrave": 12.56,
+    "previews": 7.37,
+    "probe": 6.48
+  },
+  "total_s": 104.93,
+  "probe": {
+    "v2_base_tta": {
+      "regions": {
+        "cross": {
+          "mean": 0.156,
+          "std": 0.0166,
+          "n": 3156
+        },
+        "disc": {
+          "mean": 0.0343,
+          "std": 0.018,
+          "n": 5678
+        },
+        "swirl": {
+          "mean": 0.0734,
+          "std": 0.0373,
+          "n": 39421
+        },
+        "rays": {
+          "mean": 0.1207,
+          "std": 0.0617,
+          "n": 21804
+        },
+        "foliage": {
+          "mean": 0.7474,
+          "std": 0.1262,
+          "n": 234234
+        }
+      },
+      "ring_levels": 3,
+      "ring_levels_incl_weak": 3,
+      "terrace_edges": {
+        "disc_edge": {
+          "radius": 51,
+          "jump": 0.0661,
+          "expected_from_slope": 0.0024,
+          "excess": 0.0637,
+          "sharp_step": true,
+          "weak_step": true
+        },
+        "swirl_outer_edge": {
+          "radius": 176,
+          "jump": 0.0579,
+          "expected_from_slope": 0.0044,
+          "excess": 0.0536,
+          "sharp_step": true,
+          "weak_step": true
+        }
+      },
+      "region_levels": 3,
+      "region_level_steps": [
+        "disc->swirl: +0.039 (d=1.3)*",
+        "swirl->rays: +0.047 (d=0.9)*"
+      ],
+      "cross_minus_disc": 0.1217,
+      "cross_minus_local_ring": 0.1013,
+      "cross_vs_disc_effect_size": 7.03,
+      "cross_separated": true,
+      "ring_hist_peaks": 1,
+      "ring_hist_peak_positions": [
+        0.07
+      ],
+      "radial_profile_steps": 6,
+      "radial_step_radii_px": [
+        12,
+        48,
+        171,
+        183,
+        231,
+        255
+      ],
+      "ring_zone_p5_p95_range": 0.2172,
+      "local_cross_minus_disc": 0.271,
+      "local_ring_hist_peaks": 1,
+      "local_radial_steps": 4,
+      "local_radial_step_radii_px": [
+        12,
+        48,
+        171,
+        231
+      ],
+      "swirl_minus_disc": 0.0391,
+      "rays_minus_swirl": 0.0473
+    },
+    "fused_base": {
+      "regions": {
+        "cross": {
+          "mean": 0.1246,
+          "std": 0.0045,
+          "n": 3156
+        },
+        "disc": {
+          "mean": 0.016,
+          "std": 0.0199,
+          "n": 5678
+        },
+        "swirl": {
+          "mean": 0.0531,
+          "std": 0.019,
+          "n": 39421
+        },
+        "rays": {
+          "mean": 0.1248,
+          "std": 0.0475,
+          "n": 21804
+        },
+        "foliage": {
+          "mean": 0.7474,
+          "std": 0.1262,
+          "n": 234234
+        }
+      },
+      "ring_levels": 1,
+      "ring_levels_incl_weak": 2,
+      "terrace_edges": {
+        "disc_edge": {
+          "radius": 51,
+          "jump": 0.0099,
+          "expected_from_slope": 0.0033,
+          "excess": 0.0066,
+          "sharp_step": false,
+          "weak_step": false
+        },
+        "swirl_outer_edge": {
+          "radius": 182,
+          "jump": 0.0131,
+          "expected_from_slope": 0.0075,
+          "excess": 0.0056,
+          "sharp_step": false,
+          "weak_step": true
+        }
+      },
+      "region_levels": 3,
+      "region_level_steps": [
+        "disc->swirl: +0.037 (d=1.9)*",
+        "swirl->rays: +0.072 (d=2.0)*"
+      ],
+      "cross_minus_disc": 0.1086,
+      "cross_minus_local_ring": 0.0715,
+      "cross_vs_disc_effect_size": 7.53,
+      "cross_separated": true,
+      "ring_hist_peaks": 2,
+      "ring_hist_peak_positions": [
+        0.086,
+        0.227
+      ],
+      "radial_profile_steps": 3,
+      "radial_step_radii_px": [
+        18,
+        234,
+        255
+      ],
+      "ring_zone_p5_p95_range": 0.2187,
+      "local_cross_minus_disc": 0.249,
+      "local_ring_hist_peaks": 2,
+      "local_radial_steps": 2,
+      "local_radial_step_radii_px": [
+        18,
+        234
+      ],
+      "swirl_minus_disc": 0.0371,
+      "rays_minus_swirl": 0.0717
+    },
+    "round2_auto": {
+      "regions": {
+        "cross": {
+          "mean": 0.3968,
+          "std": 0.0819,
+          "n": 3156
+        },
+        "disc": {
+          "mean": 0.0285,
+          "std": 0.0551,
+          "n": 5678
+        },
+        "swirl": {
+          "mean": 0.1612,
+          "std": 0.0483,
+          "n": 39421
+        },
+        "rays": {
+          "mean": 0.3212,
+          "std": 0.0691,
+          "n": 21804
+        },
+        "foliage": {
+          "mean": 0.8757,
+          "std": 0.1125,
+          "n": 234234
+        }
+      },
+      "ring_levels": 2,
+      "ring_levels_incl_weak": 3,
+      "terrace_edges": {
+        "disc_edge": {
+          "radius": 53,
+          "jump": 0.1429,
+          "expected_from_slope": 0.033,
+          "excess": 0.1099,
+          "sharp_step": true,
+          "weak_step": true
+        },
+        "swirl_outer_edge": {
+          "radius": 181,
+          "jump": 0.1429,
+          "expected_from_slope": 0.0162,
+          "excess": 0.1267,
+          "sharp_step": false,
+          "weak_step": true
+        }
+      },
+      "region_levels": 3,
+      "region_level_steps": [
+        "disc->swirl: +0.133 (d=2.6)*",
+        "swirl->rays: +0.160 (d=2.7)*"
+      ],
+      "cross_minus_disc": 0.3683,
+      "cross_minus_local_ring": 0.3104,
+      "cross_vs_disc_effect_size": 5.28,
+      "cross_separated": true,
+      "ring_hist_peaks": 4,
+      "ring_hist_peak_positions": [
+        0.148,
+        0.305,
+        0.414,
+        0.555
+      ],
+      "radial_profile_steps": 6,
+      "radial_step_radii_px": [
+        15,
+        48,
+        156,
+        174,
+        186,
+        225
+      ],
+      "ring_zone_p5_p95_range": 0.2857,
+      "local_cross_minus_disc": 0.644,
+      "local_ring_hist_peaks": 3,
+      "local_radial_steps": 6,
+      "local_radial_step_radii_px": [
+        15,
+        48,
+        156,
+        174,
+        186,
+        225
+      ],
+      "swirl_minus_disc": 0.1327,
+      "rays_minus_swirl": 0.16
+    },
+    "round2_overrides": {
+      "regions": {
+        "cross": {
+          "mean": 0.856,
+          "std": 0.0125,
+          "n": 3156
+        },
+        "disc": {
+          "mean": 0.0286,
+          "std": 0.0551,
+          "n": 5678
+        },
+        "swirl": {
+          "mean": 0.1612,
+          "std": 0.0483,
+          "n": 39421
+        },
+        "rays": {
+          "mean": 0.3212,
+          "std": 0.0691,
+          "n": 21804
+        },
+        "foliage": {
+          "mean": 0.8757,
+          "std": 0.1125,
+          "n": 234234
+        }
+      },
+      "ring_levels": 2,
+      "ring_levels_incl_weak": 3,
+      "terrace_edges": {
+        "disc_edge": {
+          "radius": 53,
+          "jump": 0.1429,
+          "expected_from_slope": 0.033,
+          "excess": 0.1099,
+          "sharp_step": true,
+          "weak_step": true
+        },
+        "swirl_outer_edge": {
+          "radius": 181,
+          "jump": 0.1429,
+          "expected_from_slope": 0.0162,
+          "excess": 0.1267,
+          "sharp_step": false,
+          "weak_step": true
+        }
+      },
+      "region_levels": 3,
+      "region_level_steps": [
+        "disc->swirl: +0.133 (d=2.6)*",
+        "swirl->rays: +0.160 (d=2.7)*"
+      ],
+      "cross_minus_disc": 0.8274,
+      "cross_minus_local_ring": 0.7119,
+      "cross_vs_disc_effect_size": 20.71,
+      "cross_separated": true,
+      "ring_hist_peaks": 4,
+      "ring_hist_peak_positions": [
+        0.148,
+        0.305,
+        0.414,
+        0.555
+      ],
+      "radial_profile_steps": 6,
+      "radial_step_radii_px": [
+        15,
+        48,
+        156,
+        174,
+        186,
+        225
+      ],
+      "ring_zone_p5_p95_range": 0.2857,
+      "local_cross_minus_disc": 0.95,
+      "local_ring_hist_peaks": 3,
+      "local_radial_steps": 6,
+      "local_radial_step_radii_px": [
+        15,
+        48,
+        156,
+        174,
+        186,
+        225
+      ],
+      "swirl_minus_disc": 0.1326,
+      "rays_minus_swirl": 0.16
+    }
+  },
+  "v2_cutclean2": {
+    "file": "height_8layer_v2.png",
+    "engrave": [
+      {
+        "layer": 0,
+        "threshold_blackhat_L": 7.0,
+        "engrave_px": 0,
+        "engrave_frac_of_visible": 0.0,
+        "svg_polylines": 0,
+        "svg_vertices": 0
+      },
+      {
+        "layer": 1,
+        "threshold_blackhat_L": 41.05,
+        "engrave_px": 153533,
+        "engrave_frac_of_visible": 0.189,
+        "svg_polylines": 497,
+        "svg_vertices": 2270
+      },
+      {
+        "layer": 2,
+        "threshold_blackhat_L": 30.14,
+        "engrave_px": 94019,
+        "engrave_frac_of_visible": 0.171,
+        "svg_polylines": 118,
+        "svg_vertices": 527
+      },
+      {
+        "layer": 3,
+        "threshold_blackhat_L": 12.82,
+        "engrave_px": 340037,
+        "engrave_frac_of_visible": 0.18,
+        "svg_polylines": 546,
+        "svg_vertices": 2405
+      },
+      {
+        "layer": 4,
+        "threshold_blackhat_L": 7.0,
+        "engrave_px": 134930,
+        "engrave_frac_of_visible": 0.059,
+        "svg_polylines": 268,
+        "svg_vertices": 1129
+      },
+      {
+        "layer": 5,
+        "threshold_blackhat_L": 7.0,
+        "engrave_px": 119808,
+        "engrave_frac_of_visible": 0.06,
+        "svg_polylines": 390,
+        "svg_vertices": 1549
+      },
+      {
+        "layer": 6,
+        "threshold_blackhat_L": 7.15,
+        "engrave_px": 269293,
+        "engrave_frac_of_visible": 0.129,
+        "svg_polylines": 1036,
+        "svg_vertices": 4120
+      },
+      {
+        "layer": 7,
+        "threshold_blackhat_L": 7.0,
+        "engrave_px": 246331,
+        "engrave_frac_of_visible": 0.108,
+        "svg_polylines": 1004,
+        "svg_vertices": 4198
+      }
+    ],
+    "probe": {
+      "regions": {
+        "cross": {
+          "mean": 0.856,
+          "std": 0.0123,
+          "n": 3156
+        },
+        "disc": {
+          "mean": 0.0286,
+          "std": 0.0552,
+          "n": 5678
+        },
+        "swirl": {
+          "mean": 0.1612,
+          "std": 0.0483,
+          "n": 39421
+        },
+        "rays": {
+          "mean": 0.3214,
+          "std": 0.0696,
+          "n": 21804
+        },
+        "foliage": {
+          "mean": 0.8761,
+          "std": 0.112,
+          "n": 234234
+        }
+      },
+      "ring_levels": 2,
+      "ring_levels_incl_weak": 3,
+      "terrace_edges": {
+        "disc_edge": {
+          "radius": 53,
+          "jump": 0.1429,
+          "expected_from_slope": 0.033,
+          "excess": 0.1099,
+          "sharp_step": true,
+          "weak_step": true
+        },
+        "swirl_outer_edge": {
+          "radius": 181,
+          "jump": 0.1429,
+          "expected_from_slope": 0.0162,
+          "excess": 0.1267,
+          "sharp_step": false,
+          "weak_step": true
+        }
+      },
+      "region_levels": 3,
+      "region_level_steps": [
+        "disc->swirl: +0.133 (d=2.6)*",
+        "swirl->rays: +0.160 (d=2.7)*"
+      ],
+      "cross_minus_disc": 0.8274,
+      "cross_minus_local_ring": 0.7122,
+      "cross_vs_disc_effect_size": 20.69,
+      "cross_separated": true,
+      "ring_hist_peaks": 4,
+      "ring_hist_peak_positions": [
+        0.148,
+        0.305,
+        0.414,
+        0.555
+      ],
+      "radial_profile_steps": 6,
+      "radial_step_radii_px": [
+        15,
+        48,
+        156,
+        174,
+        186,
+        225
+      ],
+      "ring_zone_p5_p95_range": 0.2857,
+      "local_cross_minus_disc": 0.95,
+      "local_ring_hist_peaks": 3,
+      "local_radial_steps": 6,
+      "local_radial_step_radii_px": [
+        15,
+        48,
+        156,
+        174,
+        186,
+        225
+      ],
+      "swirl_minus_disc": 0.1326,
+      "rays_minus_swirl": 0.1602
+    },
+    "report": "cutclean_v2_report.json"
+  }
+}

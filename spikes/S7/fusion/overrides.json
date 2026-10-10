@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "coords": "input",
+  "rules": [
+    {
+      "name": "push the bright disc to the back",
+      "select": {"seed": [455, 330], "tolerance": 22, "within": {"circle": {"center": [492, 356], "radius": 58}}},
+      "layer": 0,
+      "snap_superpixels": true
+    },
+    {
+      "name": "pin the cross to layer 6",
+      "select": {"seed": [492, 410], "tolerance": 18, "grow_px": 3, "within": {"rect": [440, 316, 540, 452]}},
+      "layer": 6
+    }
+  ]
+}

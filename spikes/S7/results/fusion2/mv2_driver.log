@@ -1,0 +1,35 @@
+✓ Initialized. View run at 
+https://modal.com/apps/<workspace>/main/<app-id>
+✓ Created objects.
+├── ✓ Uploaded 
+│   /run/media/geekuser/Storage/WebstormProjects/ShadowBox-Stacked/spikes/S7/scr
+│   ipts/modal_app.py
+├── ✓ Created Function fetch_file.
+├── ✓ Created Function hash_hf_cache.
+├── ✓ Created Function marigold_run.
+└── ✓ Created Function mv2_infer.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+downloaded 16 files in 71.4 s
+mv2_log_r2048 {'seconds': 4.81, 'cross': True, 'd': 4.07, 'rings': [3, 3]}
+mv2_log_r2048_hflip {'seconds': 5.22, 'cross': True, 'd': 4.78, 'rings': [3, 3]}
+mv2_log_r1792 {'seconds': 4.01, 'cross': True, 'd': 4.65, 'rings': [3, 3]}
+{
+ "gpu_reported": "NVIDIA L40S, 49140 MiB",
+ "wall_seconds_client": 104.7,
+ "cold_start_seconds": 43.9,
+ "function_seconds": 57.0,
+ "model_load_seconds": 40.0,
+ "billed_seconds_est": 164.7,
+ "cost_usd_est": 0.1096,
+ "peak_vram_mb_smi_total": 31135.0
+}
+Stopping app - local entrypoint completed.
+✓ App completed. View run at 
+https://modal.com/apps/<workspace>/main/<app-id>
