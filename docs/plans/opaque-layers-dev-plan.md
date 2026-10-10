@@ -4495,7 +4495,7 @@ All references below were re-checked against `43f2c88` (after the speed round).
      - It erodes a 45° neck of perpendicular width w whenever w < 2·8·√2 px ≈ 2.3 mm. Opening then rebuilds the two sides as blocks that touch only at corners, leaving 0.1–0.6 mm pinches on the six crops.
      - The close fills diagonal waste narrower than about 2.1 mm.
      - Even axis-aligned, strips narrower than 17 px (1.7 mm) are removed, not 15 px.
-   - `neck_test.js` (current tree): **10 failing** of 15. With the exact disc at R² = 49 for both open and close: **all pass** (re-run 2026-10-09).
+   - `neck_test.js` (current tree): **10 failing** of 15. With the exact disc at R² = 49 for both open and close: **all pass** (re-run 2026-10-09). The review of 2026-10-09 moved the production radius to R² = 64 (G-D1, tie rule); the six fixture expectations and the diagonal cases still hold at 64 (re-measured: a 1.9 and a 2.2 mm diagonal neck keep their centre line, a 1.9 and a 2.2 mm diagonal waste channel stay open).
 2. **No rule for sub-kerf necks or point contacts (G2).**
    - Same-layer parts that touch only at a vertex are split into separate rings by `rechain` (`js/geom.js:303-366`, D3 step 2). Nothing measures that contact.
    - `featureLayer` (`js/support.js:403-433`) only warns (`NECK_NARROW`), even for a neck the kerf cuts through. The machine kerf is `machine.kerfMM` (xTool S1 0.15 mm, `js/schema.js:140`); `project.machine` is `null` for "none".
@@ -4539,60 +4539,85 @@ This round's checkpoint (G8) therefore ships **2.0.0-alpha.5**. Re-using alpha.4
 ### G.2 Decisions taken for this round
 
 - **G-D1 (G1) Bonded disc morphology.**
-  - **Pitch and radius.** p = pMax (the coarser axis pitch, as `constructPx`), r* = minFeatureUm / (2·p) px and ρ = max(0, r* − 0.5).
-    - A pixel survives erosion iff its squared distance to the nearest background pixel is **> ρ²**.
-    - A pixel is set by dilation iff some material pixel lies at squared distance ≤ ρ².
-    - Squared distances are integers, so both tests use the integer **R² = ⌊ρ²⌋**, computed once in `constructPx` as `discR2` (IEEE `+ − * /` only; deterministic, NFR-05). At 1.5 mm and 0.1 mm/px that is ρ = 7 and R² = 49: a 15 px (1.5 mm) strip keeps its centre line and a 14 px strip is removed.
-  - **Closing.** The closing uses the **same** R². A disc closing of radius ρ fills exactly the waste narrower than 2ρ + 1 px, which is the minimum feature, the same rule as for material. v1.1's "close = featR − 1" compensated the square window's over-reach and is not carried over. On axis, the closing fills ≤ 14 px waste, exactly what square close 7 filled; on the diagonal it fills far less than the square's ≈ 2.1 mm.
+  - **Pitch and radius.** p = pMax (the coarser axis pitch, as `constructPx`) and F = minFeatureUm / p, the minimum feature in px.
+    - A pixel survives erosion iff its squared distance to the nearest background pixel is **> R²**.
+    - A pixel is set by dilation iff some material pixel lies at squared distance ≤ R².
+    - Squared distances are integers, so both tests use an integer **R²**, computed once in `constructPx` as `discR2` (IEEE `+ − * /` and `Math.floor` only; deterministic, NFR-05).
+  - **Tie rule (review 2026-10-09, G.9 #6).** The feature checks treat a width **at or below** the minimum feature as too narrow (`featureLayer`: "w ≤ 2·halfUm vanishes"), so cleanup must not keep a width the checks flag.
+    - A strip of w px has centre-line distance ⌊(w + 1)/2⌋ to the background, so the digital disc **cannot tell 2m − 1 from 2m px**: a strip of 2m − 1 or 2m px survives erosion iff m² > R².
+    - The first draft's R² = ⌊(F/2 − ½)²⌋ = 49 kept exactly 15 px at F = 15, which `featureLayer` immediately flags (measured on the current tree: a 15 px axis neck is `NECK_NARROW`, a whole 15 px strip `PART_THIN`, 16 px `FEATURE_MARGINAL`). Every minimum-width neck would have become a warning, which defeats the G5 goal.
+    - **Rule:** m = ⌊(⌊F⌋ + 1)/2⌋ and **R² = m²** when F ≥ 3, else 0 (draft fallback below). F is rounded to 1e-9 before `⌊·⌋` so binary noise cannot move a tie. At 1.5 mm and 0.1 mm/px: F = 15, m = 8, **R² = 64**. Strips and necks of ≤ 16 px (1.6 mm) are removed, 17 px (1.7 mm) survive; waste channels of ≤ 16 px are closed, 17 px stay open. On axis this is the width the square window had (17 px), now with exact diagonals.
+    - Measured on the current tree (axis neck, diagonal neck of perpendicular width, whole strip; the diagonal case is judged with the G3 octagon): R² 49 keeps 15 / 13 / 15 px, R² 63 keeps 15 / 16 / 15 px (still flagged on axis), R² 64 keeps 17 / 16 / 17 px. 16 px diagonal necks pass the octagon check (≥ 16 px survive an octagon erosion of 750 µm, G3), 17 px axis necks pass the current check.
+    - Self-consistency is a test (G1 Step 1 for axis and strip, G3 for the diagonal): construct, then `featureChecks`, on the smallest kept width gives no `NECK_NARROW` and no `PART_THIN`.
+  - **Closing.** The closing uses the **same** R². A disc closing of radius m fills the waste of ≤ 2m px, the same rule as for material. v1.1's "close = featR − 1" compensated the square window's over-reach and is not carried over. On axis the closing fills ≤ 16 px waste; on the diagonal it fills far less than the square's ≈ 2.1 mm.
   - **Order and fusion.** The chain is open → close → (removeSpecks when `cullEnabled`) → fillHoles, as today. Disc dilations do not compose exactly (a digital disc ⊕ disc ≠ disc), so there is **no fusion**: four window passes.
   - **Image border.** Pixels outside the image are neither material nor background: erosion never erodes from outside, and dilation never adds from outside.
+    - **Behaviour change versus the square kernels (review 2026-10-09).** `SBMorph.erode` never touches the 1-px border ring (`morph.js` header, `windowAny` emit skips row 0, row h − 1, column 0 and column w − 1), so a thin strip along the image edge kept its border pixels. The disc erodes a border pixel when interior background lies within ρ of it, so **art touching the image edge is cleaned like art in the interior**: an edge strip of ≤ 16 px disappears completely, one of ≥ 17 px keeps its edge pixels. This is intended and documented in ALGORITHMS §3 and the CHANGELOG; G1 has a test for both strips.
   - **Nesting.** Erosion and dilation with one structuring element and this border rule are increasing, so open/close are increasing and nesting holds (D-4.5; the 200-seed property test is extended).
-  - **R² = 0** (minFeaturePx < 3) gives ρ < 1. The disc is then the identity, so the bonded chain keeps the square `featR` open/close of today for that raster only.
-    - At fabrication, minFeaturePx < 3 is exactly the blocking `SAMPLING_LOW` condition (`js/support.js` `featureHead`, 3 samples), so this fallback is reached only by drafts (or by an already blocked fabrication run).
+  - **R² = 0** (F < 3) keeps the square `featR` open/close of today for that raster only (`featR` = 1: a 3 × 3 window).
+    - At fabrication, F < 3 is exactly the blocking `SAMPLING_LOW` condition (`js/support.js` `featureHead`, 3 samples), so this fallback is reached only by drafts (or by an already blocked fabrication run).
     - It keeps the E3b draft fidelity check (`test/run_tests.js:5472-5492`) meaningful.
-  - **Px contract.** `constructPx` adds the integer `discR2` (≥ 0) to the px object. A direct caller that omits it gets `discR2 = featR² − featR` (= ⌊(featR − ½)²⌋), so `featR`-only test fixtures keep working. **Connected mode ignores `discR2`.**
+    - **Monotonicity across the switch.** Below F = 3 the 3 × 3 window removes strips of ≤ 2 px. At F = 3 the rule gives m = 2, R² = 4 and removes ≤ 4 px, so the strength never drops as F grows (the first draft's R² = 1 at 3 ≤ F < 3.8, a 4-neighbour cross, was weaker than the square it replaced).
+    - **Draft fidelity (review 2026-10-09).** The rule moves the draft radius too: fabrication 0.25 mm/px (F = 6) goes from the square r = 3 to the disc R² = 9, and a 0.75 mm/px draft (F = 2) stays on the square r = 1. The E3b fidelity check carries recorded margins of 2.28 % against 8 % (area) and a part ratio of 1.75 against 2, and the plan never loosens a threshold without a note. G1 Step 6b re-runs the check, records the new margins in the G1 Result note and, if one fails, stops for a plan note instead of loosening it.
+  - **Px contract.** `constructPx` adds the integer `discR2` (≥ 0) to the px object. A direct caller that omits it gets `discR2 = featR²` (for F ≥ 3 the rule gives m = `featR`, e.g. 8 at F = 15 and 16, 9 at F = 17), so `featR`-only test fixtures keep working. **Connected mode ignores `discR2`.**
 - **G-D2 (G2, D3 extension, product owner 2026-10-09).** Two new **blocking** diagnostics, both evaluated by `featureLayer` at both qualities.
   - **`NECK_KERF`.** A part that splits under an octagonal erosion of half the neck limit T = max(kerfUm, 0.5 µm).
     - `kerfUm = round(machine.kerfMM·1000)`, with 0 when `machine` is `null` or `kerfMM` is 0.
-    - The erosion runs on the layer scaled ×4 so that the 0.25 µm floor is an integer delta: delta = −round(2·T) in ×4 units, i.e. −300 for the 0.15 mm kerf and −1 for the floor.
+    - **No kerf, no pass (review 2026-10-09).** When `kerfUm` is 0 the 0.5 µm floor is only the documented lower bound of the limit: the erosion is **skipped**. Pixel-lattice geometry has no neck narrower than one pixel inside a single part (a point contact is split into two parts by `rechain`, D3 2), so the pass could not fire and would only cost a third offset of every layer.
+    - **Scale.** T is an integer µm. The erosion halves it, so it runs at scale 1 (delta −T/2 µm) when T is even and on the layer scaled ×2 (delta −T in half-µm units) when T is odd. There is no ×4 scale. For the 0.15 mm kerf: scale 1, delta −75.
     - A neck **at or below** T counts as narrow, the same tie convention as `NECK_NARROW` ("w ≤ 2·halfUm vanishes").
     - A part with `NECK_KERF` gets no `NECK_NARROW` and no neck `FEATURE_MARGINAL`.
+    - **A part that vanishes entirely under the kerf erosion** (narrower than the kerf everywhere) gets `PART_THIN` from the minimum-feature erosion and **no** `NECK_KERF`; `PART_THIN` is a warning. A part thinner than the kerf is lost at the laser, so this may be less strict than the product owner intends (G.9 #7).
+    - **No repair action (review 2026-10-09).** `NECK_KERF` and `PART_POINT_CONTACT` are blocking at draft too and no clip action exists for them: the user widens the art, raises the minimum feature size or accepts that the export stays blocked. The USER_GUIDE says so (G8).
   - **`PART_POINT_CONTACT`.** Two distinct parts of one layer share a vertex (after `normalize`, every inter-part point contact, T-contacts included, is a shared vertex: D3 2.1–2.3). It is checked in **bonded** mode only; connected mode already blocks multi-part layers with `CONNECTED_SPLIT`.
+    - **What it can see after bonded construction (review 2026-10-09, measured).** The disc closing turns a corner contact into a thin neck instead of removing it: two 6 mm squares touching at a corner, through the disc open/close at R² 49 or 64 and `fillHoles`, give **one part** with a neck of about 3 px (0.3 mm) along the anti-diagonal. That is flagged `NECK_NARROW` (a warning: above the 0.15 mm kerf, so not `NECK_KERF`). `PART_POINT_CONTACT` therefore almost never survives bonded construction. It remains as a guard for geometry the closing does not produce (clip repairs, future inputs).
+    - **The guarantee is for waste, not material.** The disc closing guarantees that no waste channel narrower than the minimum feature survives. It does **not** guarantee that no material pinch of 0.1–0.6 mm survives at a saddle: such a pinch is reported as `NECK_NARROW` (warning, located by G3), and as `NECK_KERF` only when it is at or below the kerf. This is stated in the USER_GUIDE and needs the product owner's confirmation that it satisfies "pinches 0.1–0.6 mm" (G.9 #8). G2 has an end-to-end test (saddle fixture through `C.bonded`, then `featureChecks`) that records the real behaviour.
   - **Not in scope:** a part touching its own hole at a point (outer–hole or hole–hole ring contact). It stays legal, as in D3 4 (open question G.9 #2).
   - `NECK_KERF` is aggregated per (code, layer) like `NECK_NARROW`. `PART_POINT_CONTACT` stays one diagnostic per contact: it carries two parts and one box, which `SBDiag.aggregate` would flatten. G5 merges its rows in the panel.
   - The export gate blocks on both like any blocking code (`SBDiag.exportGate`, `js/diag.js:357`).
 - **G-D3 (G3) Octagonal feature erosion.**
   - `featureLayer` erodes with the `"square"` join, the chamfered corner. On lattice geometry this is erosion by the octagon whose support distance is δ in all 8 lattice and diagonal directions, so a 45° neck of width w survives iff w > 2δ, as on the axis. `"round"` stays refused (NFR-05).
   - The orthogonal composition shortcut (`js/support.js:417-418`) is **removed**: chamfered residuals are not orthogonal, and rounded octagons do not compose exactly. The advisory erosion runs on the part polygons directly.
-  - The neck locator is `S.neckRegions`, described in G3.
-- **G-D4 (G4).** `GUIDE_MIN_EXTENT_UM = 2000`. An Rc polygon is used for attribution and rings only if its bbox extent max(w, h) ≥ 2000 µm **and** `offset([poly], −fp, "miter")` is non-empty (when fp > 0). A ring (outer or hole) of a kept polygon is emitted only if its own extent is ≥ 2000 µm.
-  - A part left with no kept polygon gets `GUIDE_OMITTED` with the reason "no concealed guide area ≥ 2 mm".
+  - The neck locator is `S.neckRegions`, described in G3. It is called only for parts that split, filters lost components by bbox before any Clipper call, and is bounded in work as well as in output (review 2026-10-09).
+  - The advisory erosion is no longer composed, so the features stage gains a full offset. Cost is controlled by cumulative gates against the pre-round baseline (G.7), not by task-to-task ratios.
+- **G-D4 (G4).** `GUIDE_MIN_EXTENT_UM = 2000`. **In inset-outline mode only** (the PO complaint is about score rings), an Rc polygon is used for attribution and rings only if its bbox extent max(w, h) ≥ 2000 µm **and** `offset([poly], −fp, "miter")` is non-empty (when fp > 0). A ring (outer or hole) of a kept polygon is emitted only if its own extent is ≥ 2000 µm.
+  - **Interior-mark mode is unchanged (review 2026-10-09).** Its smallest cross arm is 300 µm (0.6 mm, `ARMS` in `js/guides.js`), so a 2 mm extent rule would drop valid crosses and add `GUIDE_OMITTED` warnings. The filter is not applied there, and a test asserts the interior-mark output is byte-identical to before.
+  - **Cost.** The extent test is a bbox comparison and runs first; the footprint-inset offset runs only for polygons that pass it. The filter adds one offset per surviving Rc polygon, so it is not "work removed": the guides stage gate in G.7 allows for it.
+  - **Reasons.**
+    - A part with Rc polygons of which none is kept gets `GUIDE_OMITTED` with the reason "no concealed guide area ≥ 2 mm" (new text).
+    - A part with no Rc polygon at all keeps today's reason "no concealed area ≥ footprint" (`js/guides.js:98`).
+    - Interior-mark reasons ("no concealed area ≥ footprint", "no concealed area for the smallest mark", `js/guides.js:103` and below) are unchanged.
   - The label placement keeps using the full Rc list (unchanged).
 - **G-D5 (G6).** `SBRaster.matchSourcePitch` returns the largest integer pitch p (µm) whose uncapped raster covers the source on both axes, i.e. ⌈A/p⌉ ≥ S per axis, so `fabRaster` clamps to exactly the source. Two rule changes follow:
   - **`FAB_EXCEEDS_SOURCE` → `FAB_MATCHES_SOURCE`.** When the raster is clamped to exactly the source and the next coarser 1 µm pitch would not exceed it on either axis (⌈A/(p+1)⌉ ≤ S for both), `SBRaster.fabDiagnostics` emits the new **info** `FAB_MATCHES_SOURCE` ("the raster equals the source; real pitch x mm/px") instead of the `FAB_EXCEEDS_SOURCE` warning. That is the 1 µm pitch grid, not lost detail.
   - **Equal-size tonal skips the resample.** `resamplePolicy` returns `"none"` for tonal when W = srcW and H = srcH. This is shipped only if the area resample at equal size is byte-identical to the input (G6 Step 1), so the geometry is unchanged and only the stage and `RESAMPLED` disappear.
   - The offer is made only when the match pitch is within ±15 % of the target pitch, inside `SBSchema.FAB_PITCH` (0.05–2 mm) and inside the pixel budget.
+  - **Tolerance of the info rule (review 2026-10-09).** "One 1 µm step" is a different number of pixels at each pitch: the uncapped raster exceeds the source by up to about S/p px per axis (S the source axis in px, p the pitch in µm), i.e. a fraction 1/p of the axis. That is ≈ 42 px (1.0 %) for 4096 px at 97 µm and ≈ 82 px (2.0 %) at the 50 µm minimum pitch. The rule states this tolerance explicitly: `FAB_MATCHES_SOURCE` when the shortfall on each axis is at most one 1 µm step **and** at most 2 % of the source axis (the cap never binds inside `FAB_PITCH`, it is there so a future pitch range cannot widen the silent zone). A larger shortfall keeps the `FAB_EXCEEDS_SOURCE` warning. The info detail states the shortfall in px and %.
+  - **Side effects.** The `FAB_PITCH_CAPPED` detail ends "(see FAB_EXCEEDS_SOURCE)" only when that warning is emitted, else "(see FAB_MATCHES_SOURCE)". Equal-size tonal fixtures lose `RESAMPLED` as well as the resample stage, so their `diagSha` changes; their `geometryHash` and `layerHashes` do not (`resampleCore` already copies at equal size and `geometryHash` excludes the resample method).
 - **G-D6 Golden policy.**
   - G1 (all bonded fixtures), G2/G3 (diagnostics), G4 (guide fixtures) and G6 (equal-size tonal fixtures, if any) re-capture `test/golden/pool-equality.json` only through `node test/capture_golden.js --pool-equality --recapture <ids> --task Gn`. Each task's test asserts which digest fields may differ for its ids.
   - The F1 recapture check (`test/run_tests.js:6186-6192`) compares F1's `previous` with the **current** fixture, so the first later recapture of an F1 id would fail it. G1 makes it chain-aware: compare with the digest that F1 produced, i.e. the `previous[id]` of the first later record that re-captured the id, else the current fixture.
+  - **Connected fixtures (review 2026-10-09).** Connected mode still calls the square morphology, so its `geometryHash` and `layerHashes` never change in this round. Its **diagnostics** do change: `NECK_KERF` is evaluated in connected mode too, and the G3 octagon changes `NECK_NARROW` and `FEATURE_MARGINAL` in every mode. The connected F0 fixtures (`h-connected-*`, `t-connected-*`, `n3-*`) can therefore change `diagSha`/`wholeSha` in the G2 and G3 recaptures. The assertions are scoped per task: the **G1** record contains no connected id; the **G2** and **G3** records may contain connected ids, but only with `diagSha`/`wholeSha` differing, `geometryHash` and `layerHashes` unchanged.
   - `test/golden/oldrun.json`, `sheetmasks.json` and `legacy_svg.json` never change in this round.
 
 ### G.3 Global Constraints
 
 All of the plan's **Global Constraints**, E.3 and F.3 apply. In addition, for this round:
 
-- **Connected mode is frozen.** `SBConstruct.connected` stays the v1.1.0 chain byte for byte (`test/run_tests.js` "SUP-06/DEP-04 connected == the v1.1.0 chain", `:445-453`). `test/golden/oldrun.json` (`:715`) stays unchanged. The connected F0 fixtures (`h-connected-*`, `t-connected-*`, `n3-*`) keep `geometryHash`/`layerHashes`.
+- **Connected mode is frozen.** `SBConstruct.connected` stays the v1.1.0 chain byte for byte (`test/run_tests.js` "SUP-06/DEP-04 connected == the v1.1.0 chain incl. islands.resolve", suite at `:416-430`). `test/golden/oldrun.json` (`:715`) stays unchanged. The connected F0 fixtures (`h-connected-*`, `t-connected-*`, `n3-*`) keep `geometryHash`/`layerHashes`; their diagnostics (`diagSha`/`wholeSha`) may change in G2/G3 (G-D6).
 - **Pool equality holds.** The disc kernel runs inside `constructLayer` (the pool's construct item, `js/engine.js:548-549`). Pooled = serial over the F0 corpus after every recapture (F12 tests).
 - **No trig, no `Math.hypot`, no randomness** in new engine code (NFR-05). The disc uses integer squared distances. The neck locator and point-contact scan use exact integer coordinates and Clipper2 miter/square joins only.
 - **Blocking codes never fire on clean art.** The new blocking codes must not appear on the F0 corpus fixtures that had no point contact or sub-kerf neck. Each task lists the fixtures whose diagnostics changed in its recapture record.
-- After every task: `node test/run_tests.js` all green. When shipped code (`js/`, `index.html`, `css/`, `sw.js`) changes, run `node build.js` and commit `dist/shadowbox-studio.html` with the task. Commit only the task's files; messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. No push, no tags.
+- After every task: `node test/run_tests.js` all green. When shipped code (`js/`, `index.html`, `css/`, `sw.js`) changes, run `node build.js` and commit `dist/shadowbox-studio.html` with the task. Commit only the task's files; messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` (the plan's convention; if the executing session's own attribution instruction names another model, that instruction governs). No push, no tags.
+- **Existing tests this round changes are scheduled in the task that changes them** (review 2026-10-09): G3 (`test/run_tests.js` ~606-626 and the diagonal-layer delta test after it, plus the G2 delta effect), G4 (~5900-5911), G8 (`:2659`, `:8047-8049`, `:8262`). A task that leaves one of them red has not finished.
+- **Budgets are cumulative against the pre-round baseline** (G.7), not task to task: the original `docs/perf/speed-round.json` `phaseB.fab4096` (pooled 8794 ms, serial 12879 ms) and `final.s2` (pooled p95 ≤ 10 s in Chromium, still pending) are the references.
 
 ### G.4 Review Focus
 
 1. **Bonded layer touching the image border** (frame off, art to the edge). A reasonable person expects no erosion from outside and no material created from outside. Test in G1 (`G1 border: a full-width strip at the image edge keeps its edge row; dilation never sets a pixel with no material within R²`).
 2. **Very coarse and very fine pitches.**
-   - R² = 0 (draft at 0.55 mm/px) must keep today's draft cleanup.
-   - R² ≥ 255² (minFeature 50 mm at 0.05 mm/px, ρ = 499.5) must not overflow the distance plane.
+   - R² = 0 (draft at 0.55 mm/px, F < 3) must keep today's draft cleanup.
+   - R² > 65025 (minFeature 50 mm at 0.05 mm/px: F = 1000, m = 500, R² = 250000) must not overflow the distance plane.
 
    Test in G1 (`G1 R2 0 falls back to the square chain` and `G1 R2 > 65025 uses a Uint16 distance plane and equals brute force`).
 3. **Machine "none" or kerf 0.** The neck limit falls back to the 0.5 µm floor, and a 0.1 mm neck is not blocking (it is still `NECK_NARROW`). Test in G2.
@@ -4603,19 +4628,19 @@ All of the plan's **Global Constraints**, E.3 and F.3 apply. In addition, for th
 
 | File | Change | Responsibility after this round |
 |---|---|---|
-| `js/morph.js` | Modify | `discWindow` (exact digital-disc window), `M.discErode`, `M.discDilate`, `M.discOpenClose`; header documents the disc semantics next to the square ones. |
+| `js/morph.js` | Modify | `discWindow` (exact digital-disc window), `M.discErode`, `M.discDilate`, `M.discOpenClose`; header documents the disc semantics (including the border behaviour) next to the square ones. |
 | `js/construct.js` | Modify | `morphDisc` (bonded chain), `C._morphDisc` hook; px contract gains `discR2`; bonded `constructLayer` uses `morphDisc`; connected untouched. |
 | `js/engine.js` | Modify | `constructPx` adds `discR2`; `fcfg` and `E.legacyDiagnostics` pass `kerfMM`, `pointContacts`; `E.matchSourcePitch`. |
 | `js/support.js` | Modify | `erode(…, {join, scale})`; octagonal feature erosion; `NECK_KERF`, `PART_POINT_CONTACT`; `S.neckRegions`; header doc. |
 | `js/diag.js` | Modify | Codes `NECK_KERF`, `PART_POINT_CONTACT` (blocking), `FAB_MATCHES_SOURCE` (info); `AGGREGATED` gains `NECK_KERF`. |
-| `js/guides.js` | Modify | `GUIDE_MIN_EXTENT_UM`, `keepGuidePoly`; `buildPair` filters Rc for rings/attribution. |
+| `js/guides.js` | Modify | `GUIDE_MIN_EXTENT_UM`, `keepGuidePoly`; `buildPair` filters Rc for rings/attribution in inset-outline mode only; both exports go into the `Object.freeze({...})` literal (`:192`, there is no `G` alias). |
 | `js/raster.js` | Modify | `R.matchSourcePitch`; `fabDiagnostics` one-step rule; `resamplePolicy` tonal equal size → `"none"`. |
 | `js/proof.js` | Modify | `P.diagRows`, `P.ackAllPlan`, `P.fabListedIn` (pure view models). |
 | `js/app.js`, `index.html`, `css/app.css` | Modify | Rows with focus lists, "Acknowledge all" + inline confirm, single listing, "Match pitch to source" (pitch row and `RESAMPLED` item). |
 | `js/app.js:24`, `sw.js:23`, `js/worker.js:57` | Modify (G8) | `2.0.0-alpha.5`. |
 | `test/neck_fixtures/*.png` | **Create** | The six 120 × 120 crops from `neckrepro/fixtures/` (≈ 3 KB total). |
 | `test/oracle_kernels.js` | Modify | Add `oracleDisc` (brute-force disc erode/dilate; existing bodies untouched). |
-| `test/run_tests.js` | Modify | Suites G1–G6, G8; chain-aware F1 check; PLAN code list; DEP-02 version retargets. |
+| `test/run_tests.js` | Modify | Suites G1–G6, G8; chain-aware F1 check; PLAN code list; updates to the existing tests that G3 (Appendix C oracle and delta tests), G4 (AT-14 / ASM-03 guide fixtures) and G8 (`:2659`, `:8047-8049`, `:8262`) invalidate. |
 | `test/capture_golden.js` | Unchanged | `--recapture … --task Gn` already exists. |
 | `test/golden/pool-equality.json` | Modify | Re-captures G1–G6 (records with `task`). |
 | `test/bench.js` | Modify | `bench morph` (square vs disc per layer at 12 Mpx); records `docs/perf/speed-round.json` `appendixG`. |
@@ -4648,7 +4673,7 @@ Order is binding: G1 → G2 → G3 → G4 → G5 → G6 → G7 → G8. G2 introd
   - `SBMorph.discDilate(mask, w, h, R2) → Uint8Array` (fresh 0/1).
   - `SBMorph.discOpenClose(mask, w, h, R2o, R2c) → Uint8Array`: `discErode(discDilate(discDilate(discErode(m, R2o), R2o), R2c), R2c)`.
   - `SBConstruct._morphDisc(mask, w, h, px, cull) → {m, specks, holes}`.
-  - px gains `discR2` (integer ≥ 0, optional; default `featR² − featR`).
+  - px gains `discR2` (integer ≥ 0, optional; default `featR²`, G-D1).
 - Consumes: `SBMorph.removeSpecks`, `SBMorph.fillHoles`, `SBMorph.openClose` (fallback when `discR2 === 0`).
 
 - [ ] **Step 1: Write the failing tests.**
@@ -4703,19 +4728,34 @@ suite("morph/construct — Appendix G G1 bonded disc morphology (PO-FIX-1, GEO-0
     const e = M.discErode(m, w, h, 49);
     check("G1 border: material at the image edge is not eroded from outside (row 0 kept, rows ≥ 13 removed)",
       e.subarray(0, w).every((v) => v === 1) && e.subarray(13 * w, 20 * w).every((v) => v === 0)); }
-  // thresholds at 1.5 mm, 0.1 mm/px: R2 = 49 (ρ = 7)
-  const PX = { featR: 8, discR2: 49, bridgeR: 9, cullPx: 1000, maxBridgePx: 400, speckPx: 1000, holePx: 450, frameAnchored: false, cullEnabled: false };
+  // thresholds at 1.5 mm, 0.1 mm/px: F = 15, m = 8, R2 = 64 (G-D1 tie rule: widths ≤ 16 px are removed, 17 px survive)
+  const PX = { featR: 8, discR2: 64, bridgeR: 9, cullPx: 1000, maxBridgePx: 400, speckPx: 1000, holePx: 450, frameAnchored: false, cullEnabled: false };
   const full = (w, h) => new Uint8Array(w * h).fill(1), comps = (m, w, h) => M.runComponents(m, w, h, 1).count;
   const bonded1 = (m, w, h, px) => C.bonded([full(w, h), m], w, h, px || PX).final[1];
   const axisNeck = (wd) => { const w = 220, h = 100, m = new Uint8Array(w * h);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = (x < 80 && y > 20 && y < 80) || (x >= 140 && y > 20 && y < 80) || (y >= 40 && y < 40 + wd) ? 1 : 0;
     return { m, w, h }; };
-  for (const [wd, keep] of [[14, false], [15, true], [19, true]]) { const { m, w, h } = axisNeck(wd), f = bonded1(m, w, h);
-    check(`G1 axis neck ${wd / 10} mm (min 1.5) ${keep ? "kept (one part)" : "removed (two parts)"}`, comps(f, w, h) === (keep ? 1 : 2)); }
+  for (const [wd, keep] of [[14, false], [15, false], [16, false], [17, true], [19, true]]) { const { m, w, h } = axisNeck(wd), f = bonded1(m, w, h);
+    check(`G1 axis neck ${wd / 10} mm (min 1.5, tie: ≤ 1.6 removed) ${keep ? "kept (one part)" : "removed (two parts)"}`, comps(f, w, h) === (keep ? 1 : 2)); }
   const waste = (c) => { const w = 220, h = 60, m = new Uint8Array(w * h);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = x < 100 || x >= 100 + c ? 1 : 0; return { m, w, h }; };
-  for (const [c, filled] of [[14, true], [15, false]]) { const { m, w, h } = waste(c), f = bonded1(m, w, h);
+  for (const [c, filled] of [[14, true], [15, true], [16, true], [17, false]]) { const { m, w, h } = waste(c), f = bonded1(m, w, h);
     check(`G1 axis waste channel ${c / 10} mm ${filled ? "is closed" : "stays open"}`, (comps(f, w, h) === 1) === filled); }
+  // tie rule / self-consistency (review 2026-10-09): what construction keeps, the feature checks do not flag as too narrow
+  const feat = (m, w, h) => SBSupport.featureChecks(SBMaterial.assignParts(SBMaterial.fromMasks([full(w, h), m], w, h, { artWMM: w * 0.1, artHMM: h * 0.1, frameMM: 0 }, {})),
+    { minFeatureMM: 1.5, advisoryFeatureMM: 2, minPartMM2: 0, mmPerPxMax: 0.1, calibrated: true }).map((d) => d.code);
+  { const { m, w, h } = axisNeck(17), c = feat(bonded1(m, w, h), w, h);
+    check("G1 tie rule: the smallest kept axis neck (1.7 mm) is not NECK_NARROW or PART_THIN", !c.includes("NECK_NARROW") && !c.includes("PART_THIN")); }
+  { const w = 200, h = 60, m = new Uint8Array(w * h); for (let y = 20; y < 37; y++) m.fill(1, y * w, y * w + w);   // a 17 px strip across the image
+    const f = bonded1(m, w, h), c = feat(f, w, h);
+    check("G1 tie rule: the smallest kept whole strip (1.7 mm) survives construction and is not PART_THIN", f.some((v) => v) && !c.includes("PART_THIN") && !c.includes("NECK_NARROW")); }
+  { const w = 200, h = 60, m = new Uint8Array(w * h); for (let y = 20; y < 36; y++) m.fill(1, y * w, y * w + w);   // 16 px: removed
+    check("G1 tie rule: a 1.6 mm strip is removed entirely", !bonded1(m, w, h).some((v) => v)); }
+  // border semantics (review 2026-10-09): art touching the image edge is cleaned like interior art (the square kernels kept the 1-px ring)
+  { const w = 100, h = 60, thin = new Uint8Array(w * h), wide = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) { thin.fill(1, y * w, y * w + 6); wide.fill(1, y * w, y * w + 17); }
+    check("G1 border: a 0.6 mm strip along the image edge is removed completely; a 1.7 mm strip keeps its edge column",
+      !bonded1(thin, w, h).some((v) => v) && (() => { const f = bonded1(wide, w, h); for (let y = 0; y < h; y++) if (!f[y * w]) return false; return true; })()); }
   // diagonal neck and waste (neck_test.js): 45° strip of perpendicular width wpx between two 6 mm blocks
   const diag = (wpx, inv) => { const w = 220, h = 220, m = new Uint8Array(w * h);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const A = x >= 20 && x < 80 && y >= 20 && y < 80, B = x >= 140 && x < 200 && y >= 140 && y < 200,
@@ -4739,22 +4779,39 @@ suite("morph/construct — Appendix G G1 bonded disc morphology (PO-FIX-1, GEO-0
     const thinNew = (src, out) => { const os = open36(src), oo = open36(out), deep = O.erode(src, w, h, 15); let n = 0;   // deep: d² ≥ 16, ≥ 0.4 mm from background
       for (let y = 15; y < h - 15; y++) for (let x = 15; x < w - 15; x++) { const i = y * w + x; if (os[i] && !oo[i] && deep[i]) n++; } return n; };
     return thinNew(masks[k], fin) === 0 && thinNew(inv(masks[k]), inv(fin)) === 0; }));
-  // nesting (D-4.5) with the disc, 200 seeds, R2 in {2, 8, 49}
+  // nesting (D-4.5) with the disc (review 2026-10-09: the 40 × 30 stacks at R2 up to 49 erase most content, so they proved little).
+  // Small stacks keep the cheap R2 2/8. The strong test uses structured 120 × 90 stacks (F.busyHeightMap thresholded at five levels, so they are nested by
+  // construction and keep ~50-58 % of the pixels on layers 1-4 after cleanup; F.randomNestedStack leaves layers 2-4 nearly empty even at 120 × 90),
+  // R2 in {4, 9, 64}, with and without cullEnabled (removeSpecks), at constructLayer level. Measured 2026-10-09 with the prototype chain: 0 violations in 60 seeds.
   { let ok = true; for (let s = 1; s <= 200 && ok; s++) { const st = F.randomNestedStack(F.lcg(s), 40, 30, 5);
-      for (const discR2 of [2, 8, 49]) { const r = C.bonded(st, 40, 30, { ...PX, featR: 3, discR2, holePx: 30 });
+      for (const discR2 of [2, 8]) { const r = C.bonded(st, 40, 30, { ...PX, featR: 3, discR2, holePx: 30 });
         for (let k = 2; k < r.final.length; k++) if (r.final[k].some((v, i) => v && !r.final[k - 1][i])) ok = false; } }
-    check("D-4.5 property: bonded disc morphology keeps nesting (200 seeds, R2 2/8/49)", ok); }
+    check("D-4.5 property: bonded disc morphology keeps nesting (200 seeds, 40 × 30, R2 2/8)", ok); }
+  { const bad = { cull: 0, nocull: 0 }, kept = [];
+    for (let s = 1; s <= 60; s++) { const hm = F.busyHeightMap(1000 + s, 120, 90, 14), st = [0, 1, 2, 3, 4].map((k) => hm.map((v) => (v >= k * 45 ? 1 : 0)));
+      for (const discR2 of [4, 9, 64]) for (const cull of [false, true]) {
+        const px = { ...PX, featR: Math.round(Math.sqrt(discR2)), discR2, holePx: 30, speckPx: 150, cullEnabled: cull };
+        const fin = st.map((mask, k) => C.constructLayer(k, { mask, W: 120, H: 90, px, bonded: true }).final);   // constructLayer level, as the pool runs it
+        kept.push(fin.slice(1).reduce((a, m) => a + m.reduce((x, v) => x + v, 0), 0));
+        for (let k = 2; k < fin.length; k++) if (fin[k].some((v, i) => v && !fin[k - 1][i])) bad[cull ? "cull" : "nocull"]++; } }
+    check("D-4.5 property: nesting at constructLayer level on 120 × 90 stacks, R2 4/9/64, cullEnabled false", bad.nocull === 0);
+    check("D-4.5 property: nesting at constructLayer level on 120 × 90 stacks, R2 4/9/64, cullEnabled true (removeSpecks)", bad.cull === 0);
+    check("G1 the nesting stacks keep material (not vacuous: layers 1-4 keep > 30 % of the pixels on average)", kept.reduce((a, b) => a + b, 0) / kept.length > 0.3 * 120 * 90 * 4); }
   // fallback and contract
   { const st = F.randomNestedStack(F.lcg(9), 40, 30, 4), sq = { ...PX, featR: 1, holePx: 8 };
     const a = C.bonded(st, 40, 30, { ...sq, discR2: 0 }).final, b = st.map((m, k) => (k ? C._morph(m, 40, 30, sq, false).m : m));
     check("G1 R2 0 (minFeature < 3 px, draft only) falls back to the square featR chain", a.every((m, k) => m.join() === b[k].join())); }
-  check("G1 px without discR2 uses featR² − featR", (() => { const st = F.randomNestedStack(F.lcg(3), 40, 30, 4);
-    const a = C.bonded(st, 40, 30, { ...PX, discR2: undefined, featR: 3 }).final, b = C.bonded(st, 40, 30, { ...PX, featR: 3, discR2: 6 }).final;
+  check("G1 px without discR2 uses featR²", (() => { const st = F.randomNestedStack(F.lcg(3), 40, 30, 4);
+    const a = C.bonded(st, 40, 30, { ...PX, discR2: undefined, featR: 3 }).final, b = C.bonded(st, 40, 30, { ...PX, featR: 3, discR2: 9 }).final;
     return a.every((m, k) => m.join() === b[k].join()); })());
   check("G1 discR2 must be a non-negative integer when given (CONSTRUCT_ARG)", (() => { try { C.bonded([full(4, 4)], 4, 4, { ...PX, discR2: 1.5 }); return false; } catch (e) { return e.code === "CONSTRUCT_ARG"; } })());
   { const p = SBSchema.defaults("plywood"), cp = SBEngine._constructPx || null;
-    check("G1 constructPx gives discR2 = 49 at 1.5 mm and 0.1 mm/px, 0 at 0.55 mm/px", !!cp && cp(p.construction, true, 100, 100).discR2 === 49 &&
-      cp(p.construction, true, 550, 550).discR2 === 0); }
+    check("G1 constructPx gives discR2 = 64 at 1.5 mm and 0.1 mm/px (tie rule), 9 at 0.25 mm/px, 0 at 0.55 and 0.75 mm/px (square fallback), monotone in F",
+      !!cp && cp(p.construction, true, 100, 100).discR2 === 64 && cp(p.construction, true, 250, 250).discR2 === 9 &&
+      cp(p.construction, true, 550, 550).discR2 === 0 && cp(p.construction, true, 750, 750).discR2 === 0 &&
+      [10, 14, 16, 20, 25, 30, 40, 50, 60, 75, 100].map((u) => cp(p.construction, true, u, u).discR2).every((v, i, a) => !i || v <= a[i - 1]));   // finer pitch (smaller µm) → larger R2
+    check("G1 constructPx R2 sizes the distance plane: 50 mm minimum feature at 0.05 mm/px gives R2 = 250000 (> 65025)", (() => { const q = SBSchema.defaults("plywood").construction; q.cleanup.minFeatureMM = 50;
+      return cp(q, true, 50, 50).discR2 === 250000; })()); }
   // connected is untouched: the v1.1.0 chain test and oldrun.json stay as they are (suites "construct.js — G2.6 extended", "golden oldrun")
   { const st = F.randomNestedStack(F.lcg(5), 40, 30, 5), q = { ...PX, featR: 3, discR2: 6, frameAnchored: true, speckPx: 4, holePx: 30 };
     const a = C.connected(st, 40, 30, q).final, b = C.connected(st, 40, 30, { ...q, discR2: 0 }).final;
@@ -4803,7 +4860,17 @@ suite("morph/construct — Appendix G G1 bonded disc morphology (PO-FIX-1, GEO-0
     M.discErode(M.discDilate(M.discDilate(M.discErode(mask, w, h, R2o), w, h, R2o), w, h, R2c), w, h, R2c);
 ```
 
-  Before shipping, apply the optimisations the perf gate needs (G.7): skip the row sweeps on rows with no g ≤ A, reuse one `g` and `reach` scratch per `discOpenClose` call, and word-skip all-zero `src` runs in the down sweep. Each must keep the brute-force test green.
+  **The kernel above is exact but not fast enough (review 2026-10-09, re-measured on 3985 × 3000 blobby masks).** `SBMorph.openClose(8, 7)` takes 264-373 ms and `discOpenClose(49, 49)` 814-1124 ms: a ratio of 3.1-3.4 ×, already at or over the 3.0 × hard limit. A sparse mask gives 270 vs 805 ms. The previously planned "skip empty rows, word-skip all-zero runs" gain nothing on dense art, and the former "≤ 2 ×" expectation is unsupported. The optimisation work is therefore a measured loop, not a checklist:
+  1. **Bench first.** Land `bench morph` (Step 7) with a dense blobby mask, a sparse mask and the real fusion2 layers before touching the kernel, and record the unoptimised ratio.
+  2. **Candidates, in this order; each is kept only if it lowers the dense-mask p50 and keeps the brute-force test green** (the exactness suite covers the Uint8/Uint16 boundary at R² = 65024/65025/65026 and passes today):
+     - *Fewer passes.* Erosion and dilation each cost a down sweep, an up sweep and two reach sweeps. Share the `g` and `reach` scratch planes across the four calls of one `discOpenClose` (no per-call allocation of 12 MB planes), and fuse the up sweep with the first reach sweep of the same row band.
+     - *Row bands.* Process the reach sweeps in bands of ~64 rows so `g` rows, `reach` and the output stay in L2, and keep the vertical sweeps streaming.
+     - *Run-length rows.* Build, per row, the list of `g ≤ A` runs and emit `out` run by run (the reach of a run of equal `g` is one fill), which helps blobby art whose rows are long runs; it does nothing for noisy art, so keep it only if the dense and the real-layer rows both gain.
+     - *Branch-free reach.* Replace the `r - 1 > v ? ...` pair by integer `Math.max`-free arithmetic only if the profile shows branch mispredictions (the real layers are run-heavy, so they may not).
+  3. **Decision rule (binding).** After at most two optimisation rounds measure the dense, sparse and real-layer ratios (p50, interleaved, 5 runs, load noted):
+     - ratio ≤ 2.0 × on the real fusion2 layers and ≤ 3.0 × on the dense mask: ship, budgets as in G.7;
+     - between those and 3.0 × on the real layers: ship, and the **absolute cumulative gates** of G.7 (S2 p95, construct +1.0 s) decide;
+     - above 3.0 × on the real layers: **stop**, do not ship. Take the fallback in G.9 #1 to the product owner; the 4 s EDT prototype is never shipped.
 - [ ] **Step 4: Wire the disc into construct and engine.**
   - **`js/construct.js`:**
     - `checkPx` accepts `discR2` (`undefined`, or a non-negative safe integer, otherwise `CONSTRUCT_ARG`).
@@ -4828,13 +4895,14 @@ suite("morph/construct — Appendix G G1 bonded disc morphology (PO-FIX-1, GEO-0
   - **`js/engine.js` `constructPx`:**
 
 ```js
-    const rho = featUm > 0 ? Math.max(0, featUm / (2 * pMax) - 0.5) : 0;
+    // Appendix G G-D1 tie rule: F = minimum feature in px (rounded to 1e-9 so binary noise cannot move a tie), m = ⌊(⌊F⌋ + 1)/2⌋, R² = m² for F ≥ 3, else 0
+    const F = featUm > 0 ? Math.round((featUm / pMax) * 1e9) / 1e9 : 0, mHalf = F >= 3 ? Math.floor((Math.floor(F) + 1) / 2) : 0;
     // … in the returned object:
-      discR2: Math.floor(rho * rho),   // Appendix G G-D1: bonded disc R² (integer); connected ignores it
+      discR2: mHalf * mHalf,   // bonded disc R² (integer); connected ignores it
 ```
 
-    and `E._constructPx = constructPx;` next to the other test hooks.
-  - **Docs:** update the `js/morph.js` header (the disc section), `docs/ALGORITHMS.md` §3 (bonded: exact disc of radius minFeature/2 − ½ px; connected: the v1.1 square chain), and `docs/ARCHITECTURE.md` (the G-D1 paragraph).
+    and `E._constructPx = constructPx;` next to the other test hooks. `featR` itself is unchanged (connected mode and the R² = 0 fallback use it).
+  - **Docs:** update the `js/morph.js` header (the disc section and the border behaviour), `docs/ALGORITHMS.md` §3 (bonded: exact digital disc with R² = m², m = ⌊(⌊F⌋ + 1)/2⌋, the tie rule and why 2m − 1 and 2m px are indistinguishable; **the image-border behaviour change for art touching the edge**; connected: the v1.1 square chain), and `docs/ARCHITECTURE.md` (the G-D1 paragraph).
 - [ ] **Step 5: Run the new suite.** Run `node test/run_tests.js --only "Appendix G G1"`. Expected: PASS (all checks).
 - [ ] **Step 6: Re-capture the golden and make the F1 check chain-aware.**
   1. Make the F1 check chain-aware (`test/run_tests.js:6186-6192`):
@@ -4857,13 +4925,15 @@ node test/capture_golden.js --pool-equality --recapture "$IDS" --task G1
 ```
 
      `capture_golden.js` captures every named fixture, slow ones included, and keeps their `slow` tags.
-  3. Add a check: `G-D6 G1 re-captured exactly the bonded fixtures; every connected fixture's digest is unchanged`. It asserts that the `G1` record's ids equal the bonded corpus ids, and that no connected id appears in any record whose `task` starts with `G`.
+  3. Add a check: `G-D6 G1 re-captured exactly the bonded fixtures; every connected fixture's digest is unchanged`. It asserts that the `G1` record's ids equal the bonded corpus ids and that no connected id appears **in the G1 record** (review 2026-10-09). It must **not** assert this for later G records: `NECK_KERF` is evaluated in connected mode too and the G3 octagon changes `NECK_NARROW`/`FEATURE_MARGINAL` in every mode, so the G2 and G3 recaptures can legitimately include connected ids, with only `diagSha`/`wholeSha` changed (G-D6; each of those tasks asserts `geometryHash` and `layerHashes` unchanged for connected ids).
+- [ ] **Step 6b: Re-run and record the E3b draft fidelity check (review 2026-10-09).** The radius rule changes the draft cleanup (fabrication 0.25 mm/px: square r = 3 becomes the disc R² = 9; the 0.75 mm/px draft stays on the square r = 1). Run `node test/run_tests.js --only "E3b"` (the check at `test/run_tests.js:5472-5492`), record the new margins next to the old ones (area 2.28 % against 8 %, part ratio 1.75 against 2) in the G1 Result note, and add a plan note if a margin moves toward its limit. **Never loosen the thresholds**: a failing margin stops G1 and goes to the product owner.
 - [ ] **Step 7: Run the perf gate (G.7).**
   1. Add `bench morph` to `test/bench.js`: 3985 × 3000, the alpha.3 scene's layer masks at 0.1 mm/px (`stages` as in `neckrepro/stages.js`, or the user12 scene). Per layer, `SBMorph.openClose(m, 8, 7)` vs `discOpenClose(m, 49, 49)`, interleaved, 5 runs, p50. `--record` writes `docs/perf/speed-round.json` `appendixG.morph`.
-  2. Gates:
-     - disc p50 ≤ **2.0 ×** square p50 on the same run (hard limit 3.0 ×, see G.7);
+  2. Gates (G.7 has the table; the absolute cumulative gate is the binding one):
+     - disc / square on the real fusion2 layers and on the dense mask, p50, as the decision rule of Step 3 (target ≤ 2.0 ×, ≤ 3.0 × allowed only with the absolute gates passing; above 3.0 × on the real layers G1 does not ship);
      - "NFR-03 bonded construction at fabrication radius" (`test/run_tests.js:3911-3913`) stays < 2.5 s;
-     - `node test/bench.js large --only user12 --pool 8 --rows fab4096 --runs 3` p50 ≤ 10 s and the construct stage within +1.0 s of `speed-round.json` `phaseB`/`final`;
+     - `node test/bench.js large --only user12 --pool 8 --rows fab4096 --runs 5`: **p95** ≤ 10 s (the S2 rule) **and** ≤ `phaseB.fab4096.pooledWallMs` (8794 ms) + 1.2 s cumulative; the construct stage within +1.0 s of the same record;
+     - the same bench with `--pool 0` (serial fallback): **record** the serial total (phaseB: 12879 ms; the disc adds roughly 4-5 s over eight layers) in the G1 Result note;
      - `node test/bench.js draft --only a --candidates 720` warm p95 ≤ 3.0 s (E4 rule).
   3. Record the numbers in the plan's G1 Result note.
 - [ ] **Step 8: Run the full suite, build and commit.**
@@ -4897,7 +4967,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `test/run_tests.js`:
   - PLAN code list `:1785-1793`;
   - new suite `support.js — Appendix G G2 kerf necks and point contacts (PO-FIX-2, D3, GEO-02/05)`.
-- Modify: `test/golden/pool-equality.json` (recapture, task G2: `diagSha`/`wholeSha` only).
+- Modify: `test/golden/pool-equality.json` (recapture, task G2: `diagSha`/`wholeSha` only; connected ids may be included, G-D6).
 - Modify: `docs/ARCHITECTURE.md` (D3 extension; this round's docs commit already adds the decision text, and G2 adds "Implemented in `js/support.js` (G2)").
 
 **Interfaces:**
@@ -4907,13 +4977,13 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - New diagnostics:
     - `NECK_KERF` (blocking): `{layer, part, region, measured: null, limit: {value: T/1000, unit: "mm"}, detail}`;
     - `PART_POINT_CONTACT` (blocking): `{layer, parts: [a, b], region: [x−0.5, y−0.5, x+0.5, y+0.5] mm, detail}`, one per contact point.
-  - `erode(parts, idx, halfUnits, src, {join = "miter", scale = 1})`: `src(i)` returns polygons at the given scale.
+  - `erode(parts, idx, halfUnits, src, {join = "miter", scale = 1})`: `src(i)` returns polygons at the given scale (1 or 2).
 
 - [ ] **Step 1: Write the failing tests.**
 
 ```js
 suite("support.js — Appendix G G2 kerf necks and point contacts (PO-FIX-2, D3, GEO-02/05)", () => {
-  const mk = (layers, w, h) => SBMaterial.assignParts(SBMaterial.fromMasks(layers, w, h, { artWMM: w * 0.1, artHMM: h * 0.1, frameMM: 0 }, {}));
+  const mk = (layers, w, h) => SBMaterial.assignParts(SBMaterial.fromMasks(layers.length === w * h ? [new Uint8Array(w * h).fill(1), layers] : layers, w, h, { artWMM: w * 0.1, artHMM: h * 0.1, frameMM: 0 }, {}));   // a single mask = the upper layer over a full base
   const codes = (ds) => ds.map((d) => d.code), base = { minFeatureMM: 1.5, advisoryFeatureMM: 2, minPartMM2: 0, mmPerPxMax: 0.1, calibrated: true };
   check("G2 codes registered as blocking", ["NECK_KERF", "PART_POINT_CONTACT"].every((c) => SBDiag.CODES[c] && SBDiag.CODES[c].severity === "blocking"));
   // two 6 mm blocks joined by an axis neck of n px (0.1 mm/px)
@@ -4928,11 +4998,24 @@ suite("support.js — Appendix G G2 kerf necks and point contacts (PO-FIX-2, D3,
   check("G.4 #3 kerf 0 behaves as the floor", !codes(run(neck(1), { kerfMM: 0 })).includes("NECK_KERF"));
   const nk = run(neck(1), { kerfMM: 0.15 }).find((d) => d.code === "NECK_KERF");
   check("PO-FIX-2 NECK_KERF carries the limit in mm and the layer", !!nk && nk.layer === 1 && nk.limit.value === 0.15 && nk.limit.unit === "mm");
+  check("G-D2 an odd kerf (0.151 mm, scale 2) still flags a 0.1 mm neck and not a 0.2 mm one", codes(run(neck(1), { kerfMM: 0.151 })).includes("NECK_KERF") && !codes(run(neck(2), { kerfMM: 0.151 })).includes("NECK_KERF"));
+  { // cost control (review 2026-10-09): no kerf, no pass; a kerf adds exactly one extra offset per layer, at scale 1 for an even T
+    const calls = (cfg) => { const o = SBGeom.offset, seen = []; SBGeom.offset = (p, d, j) => (seen.push(d + ":" + j), o(p, d, j));
+      try { run(neck(2), cfg); } finally { SBGeom.offset = o; } return seen; };
+    check("G-D2 kerfMM null/0: the kerf erosion pass is skipped (no −75 offset)", !calls({ kerfMM: null }).some((c) => /^-75:/.test(c)) && !calls({ kerfMM: 0 }).some((c) => /^-75:/.test(c)));
+    check("G-D2 kerfMM 0.15: one square-join offset of −75 µm at scale 1", calls({ kerfMM: 0.15 }).filter((c) => c === "-75:square").length === 1); }
   // point contact: two 3 mm squares touching at one corner (pixel saddle)
   const saddle = (() => { const w = 80, h = 80, m = new Uint8Array(w * h);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = (x >= 10 && x < 40 && y >= 10 && y < 40) || (x >= 40 && x < 70 && y >= 40 && y < 70) ? 1 : 0;
     return mk([new Uint8Array(w * h).fill(1), m], w, h); })();
   const pc = run(saddle, { kerfMM: 0.15, pointContacts: true }).filter((d) => d.code === "PART_POINT_CONTACT");
+  // end-to-end (review 2026-10-09): the same saddle through bonded construction. The disc closing turns the contact into a thin neck: one part,
+  // NECK_NARROW (a warning, above the kerf), no PART_POINT_CONTACT. The guarantee is for waste, not material (G-D2, G.9 #8).
+  { const w = 80, h = 80, m = new Uint8Array(w * h), px = { featR: 8, discR2: 64, bridgeR: 9, cullPx: 1000, maxBridgePx: 400, speckPx: 1000, holePx: 450, frameAnchored: false, cullEnabled: false };
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = (x >= 10 && x < 40 && y >= 10 && y < 40) || (x >= 40 && x < 70 && y >= 40 && y < 70) ? 1 : 0;
+    const fin = SBConstruct.bonded([new Uint8Array(w * h).fill(1), m], w, h, px).final, L = mk(fin, w, h), c = codes(run(L, { kerfMM: 0.15, pointContacts: true }));
+    check("PO-FIX-2/G.9 #8 saddle after bonded construction: one part, NECK_NARROW (warning), no PART_POINT_CONTACT, no NECK_KERF",
+      L[1].parts.length === 1 && c.includes("NECK_NARROW") && !c.includes("PART_POINT_CONTACT") && !c.includes("NECK_KERF")); }
   check("PO-FIX-2 two parts touching at a vertex → one PART_POINT_CONTACT naming both parts, region around (4 mm, 4 mm)",
     pc.length === 1 && (pc[0].parts || []).length === 2 && Array.isArray(pc[0].region) && pc[0].region.every((v, i) => Math.abs(v - [3.5, 3.5, 4.5, 4.5][i]) < 1e-9));
   check("PO-FIX-2 pointContacts false (connected): no PART_POINT_CONTACT", !codes(run(saddle, { kerfMM: 0.15 })).includes("PART_POINT_CONTACT"));
@@ -4966,21 +5049,29 @@ suite("support.js — Appendix G G2 kerf necks and point contacts (PO-FIX-2, D3,
     - It offsets with `opts.join`.
     - It compares bboxes in scaled units: `src(i)` returns polygons at `opts.scale`, and the attribution uses part bboxes × scale.
     - A helper `scaled(polys, s)` multiplies every ring coordinate by s; `s === 1` returns `polys` itself.
-  - **`featureLayer` kerf step,** before `e1`:
+  - **`featureLayer` kerf step,** before `e1` (G-D2: no kerf, no pass; scale 1 for an even T, 2 for an odd one; no ×4):
 
 ```js
-    const kerfUm = cfg.kerfMM === undefined || cfg.kerfMM === null ? 0 : Math.round(cfg.kerfMM * 1000), T = Math.max(kerfUm, 0.5);
-    const S4 = 4, half4 = Math.round(2 * T);   // ×4 units: half of T µm (G-D2)
-    const ek = erode(parts, all, half4, (i) => scaled([parts[i].polygon], S4), { join: "square", scale: S4 }), kerfNeck = new Set(all.filter((i) => ek.count.get(i) > 1));
+    const kerfUm = cfg.kerfMM === undefined || cfg.kerfMM === null ? 0 : Math.round(cfg.kerfMM * 1000);
+    let ek = null, kerfNeck = new Set();
+    if (kerfUm > 0) { const T = kerfUm, S = T % 2 ? 2 : 1;   // half of T µm as an integer delta: −T/2 at scale 1, −T at scale 2 (half-µm units)
+      ek = erode(parts, all, (T * S) / 2, (i) => scaled([parts[i].polygon], S), { join: "square", scale: S });
+      kerfNeck = new Set(all.filter((i) => ek.count.get(i) > 1)); }
 ```
 
-    Per part with `kerfNeck.has(i)`, push `NECK_KERF` with `limit {value: T / 1000, unit: "mm"}`, detail `"the part splits into n pieces at the " + T / 1000 + " mm kerf"` and region = the part bbox (G3 replaces it with the neck). Then skip `NECK_NARROW` and neck-`FEATURE_MARGINAL` for that part.
-  - **Point-contact scan** (only when `cfg.pointContacts`):
+    Per part with `kerfNeck.has(i)`, push `NECK_KERF` with `limit {value: kerfUm / 1000, unit: "mm"}`, detail `"the part splits into n pieces at the " + kerfUm / 1000 + " mm kerf"` and region = the part bbox (G3 replaces it with the neck). Then skip `NECK_NARROW` and neck-`FEATURE_MARGINAL` for that part. The bboxes `erode` uses to skip parts that cannot survive are compared in the same scale (`2·half` in scaled units).
+  - **Point-contact scan** (only when `cfg.pointContacts`). A `Map` over every ring vertex of a fusion2-scale layer is wasteful (tens of thousands of vertices, almost none shared), so a bbox sweep first selects the parts whose bbox touches another part's bbox (inclusive); only their vertices enter the map:
 
 ```js
     // G-D2: every inter-part point contact is a vertex shared by two parts' rings after normalize (D3 2.1–2.3)
-    const owner = new Map(), seen = new Set();
-    parts.forEach((p, i) => { for (const r of [p.polygon.outer].concat(p.polygon.holes || [])) for (let j = 0; j < r.length; j += 2) {
+    const owner = new Map(), seen = new Set(), cand = new Set(), bb = (p) => p.bbox || G.bbox(p.polygon);
+    if (cfg.pointContacts && parts.length > 1) {
+      const order = all.slice().sort((a, b) => bb(parts[a])[0] - bb(parts[b])[0] || a - b);
+      for (let a = 0; a < order.length; a++) for (let b = a + 1; b < order.length; b++) {
+        const A = bb(parts[order[a]]), B = bb(parts[order[b]]);
+        if (B[0] > A[2]) break;                                          // sorted by x0: no later part can touch A
+        if (B[1] <= A[3] && B[3] >= A[1]) { cand.add(order[a]); cand.add(order[b]); } } }
+    parts.forEach((p, i) => { if (!cand.has(i)) return; for (const r of [p.polygon.outer].concat(p.polygon.holes || [])) for (let j = 0; j < r.length; j += 2) {
       const key = (r[j] + 33554432) * 67108864 + (r[j + 1] + 33554432);   // exact for |x|, |y| < 2^25 µm (D4 range)
       const o = owner.get(key);
       if (o === undefined) owner.set(key, i);
@@ -4989,16 +5080,16 @@ suite("support.js — Appendix G G2 kerf necks and point contacts (PO-FIX-2, D3,
           detail: "parts " + parts[o].id + " and " + p.id + " touch only at (" + x + ", " + y + ") mm" })); } } });
 ```
 
-    Ordering: contacts appear in part order, then ring order, then vertex order, which is deterministic. `featureHead` validates `kerfMM` (absent/`null`, or finite ≥ 0) and `pointContacts` (absent or boolean).
+    Ordering: contacts appear in part order, then ring order, then vertex order, which is deterministic (`cand` only filters). `featureHead` validates `kerfMM` (absent/`null`, or finite ≥ 0) and `pointContacts` (absent or boolean).
   - **`js/engine.js`:** add `kerfMM: p.machine ? p.machine.kerfMM : null, pointContacts: bonded` to `fcfg` (`:1081`), and `kerfMM: project.machine ? project.machine.kerfMM : null, pointContacts: project.construction.mode === "bonded-relief"` in `E.legacyDiagnostics` (`:226`).
   - Update the `js/support.js` header (the `featureChecks` bullet list). In `docs/ARCHITECTURE.md` D3, mark the G2 extension "Implemented (G2)".
-- [ ] **Step 4: Run the new suite.** Run `node test/run_tests.js --only "Appendix G G2"`. Expected: PASS.
+- [ ] **Step 4: Run the new suite.** Run `node test/run_tests.js --only "Appendix G G2"`. Expected: PASS. Also confirm the existing Appendix C delta tests (`test/run_tests.js` ~624-640, cfg without `kerfMM`) stay green: with no kerf the pass is skipped, so their recorded `SBGeom.offset` deltas do not move in G2 (G3 rewrites them). If a fixture passes `kerfMM`, filter the kerf offset out of `deltas` there.
 - [ ] **Step 5: Re-capture the diagnostics-only golden.**
-  1. Run the full suite. Expected failures: F0 digest mismatches limited to `diagSha`/`wholeSha` of fixtures whose diagnostics gained `NECK_KERF`/`PART_POINT_CONTACT`.
+  1. Run the full suite. Expected failures: F0 digest mismatches limited to `diagSha`/`wholeSha` of fixtures whose diagnostics gained `NECK_KERF`/`PART_POINT_CONTACT`. Connected fixtures (`h-connected-*`, `t-connected-*`, `n3-*`) can appear (`NECK_KERF` runs in connected mode too).
   2. List them from the failure message and re-capture with `--task G2`.
-  3. Add the check `G-D6 G2 re-captured ids differ from their previous digests only in diagSha/wholeSha` (same shape as F1's, through `after("G2", id)`).
+  3. Add the check `G-D6 G2 re-captured ids differ from their previous digests only in diagSha/wholeSha` (same shape as F1's, through `after("G2", id)`); for ids of connected fixtures it asserts the same and additionally `geometryHash` and `layerHashes` unchanged. It must not assert that the record has no connected ids.
   4. Record in the commit message which fixtures now block and why. Each must be a real point contact or sub-kerf neck: check the first one by hand with `SBDiag.describe`.
-- [ ] **Step 6: Run the perf gate.** Run `node test/bench.js large --only user12 --pool 8 --rows fab4096 --runs 3`. The `features` stage p50 must be ≤ 1.3 × its `speed-round.json` value; record it in the G2 Result note.
+- [ ] **Step 6: Run the perf gate (cumulative, G.7).** Run `node test/bench.js large --only user12 --pool 8 --rows fab4096 --runs 5`. Compare with the **pre-round** record, not with G1: the `features` stage p50 ≤ 1.3 × its original `speed-round.json` value, and the pooled total p95 ≤ 10 s and ≤ `phaseB.fab4096.pooledWallMs` + 1.2 s. The mitigations are already in the design (no kerf, no pass; scale 1; bbox-gated point-contact scan); if the gate still fails, report the stage table to the product owner instead of loosening it. Record the numbers (and the serial `--pool 0` total) in the G2 Result note.
 - [ ] **Step 7: Run the full suite, build and commit.**
   1. Run `node test/run_tests.js`: 0 failed.
   2. `node build.js`
@@ -5016,15 +5107,18 @@ suite("support.js — Appendix G G2 kerf necks and point contacts (PO-FIX-2, D3,
   - header.
 - Modify: `test/run_tests.js`:
   - new suite `support.js — Appendix G G3 octagonal erosion and neck regions (PO-FIX-3, GEO-05, UI-04)`;
-  - existing PO-LASER-6 strip checks (`:458-462`) must stay green.
+  - existing PO-LASER-6 strip checks (`:464-469`, `:581`) must stay green;
+  - **existing Appendix C tests this task invalidates** (review 2026-10-09), updated here: (a) `'Appendix C layer-level erosion == per-part offset oracle (10 seeds)'` (~606-620) builds its oracle with `SBGeom.offset(..., "miter")`; it becomes a `"square"`-join oracle, direct on the part polygon; (b) `'Appendix C orthogonal layer: advisory erosion composed from the first residual (−750 then −250 µm)'` (~624) encodes the composition G3 removes: it becomes "orthogonal layer: both erosions direct (−750 and −1000 µm, square join), no composition"; (c) the diagonal-layer delta test after it (~636, `-750,-1000`) keeps its deltas but its `deltas` helper must record the join and ignore scale-2 kerf calls; (d) the `deltas` helper is extended to record `d + ":" + join` so the tests assert `"square"`.
 - Modify: `test/golden/pool-equality.json` (task G3: `diagSha`/`wholeSha` only).
 - Modify: `docs/ARCHITECTURE.md` (feature-check erosion sentence under D3 / GEO-05).
 
 **Interfaces:**
 - Produces: `SBSupport.neckRegions(poly, residual, halfUnits, scale) → [[x0, y0, x1, y1] mm, …]`. One bbox per lost component of `poly − offset(residual, +halfUnits, "square")` that touches at least two residual pieces (each piece offset by `halfUnits + 2·scale`). The list is sorted by (y0, x0) and capped at 8; it is `[]` when none is isolated.
 - Each `NECK_NARROW`, `NECK_KERF` and neck-`FEATURE_MARGINAL` becomes **one raw diagnostic per neck region**: `part` is the part id and `region` is the neck bbox. `SBDiag.aggregate` then merges per (code, layer, kind), as today.
+  - **Counts change meaning (review 2026-10-09).** A part with two necks appears twice in the aggregate's `parts[]`, so `SBDiag.describe(...).where` reads "n parts" for n necks and the aggregate `count` is per neck, not per part. The G5 row header therefore reads "n necks (m parts)" with m the number of distinct part ids; G5 tests it.
   - When `neckRegions` returns `[]`, one diagnostic gets the part bbox with detail suffix "(neck location approximate)".
   - `PART_THIN` and part-`FEATURE_MARGINAL` keep the part bbox.
+  - **Cost bound (review 2026-10-09).** `lost = poly − offset(residual)` contains every chamfered convex corner and stair tooth of the part (octagon opening smooths the 0.1 mm staircase), so on a big fusion2 part `lost` has thousands of components. The locator is bounded in work, not only in output: lost components are first filtered by bbox against the pad bboxes (a component touching fewer than two pad bboxes is dropped without a Clipper call), and `G.intersection` runs only for the pads whose bbox overlaps the component (corner chips and stair teeth overlap at most one pad and never reach it). A test counts the Clipper calls. Measured 2026-10-09 on a chip-heavy prototype part (19 lost components, 2 pads): 2 intersection calls, one neck region.
 
 - [ ] **Step 1: Write the failing tests.**
 
@@ -5048,6 +5142,20 @@ suite("support.js — Appendix G G3 octagonal erosion and neck regions (PO-FIX-3
     const n = ds(mk(m, w, h)).filter((d) => d.code === "NECK_NARROW"), regs = n.flatMap((d) => (Array.isArray(d.region[0]) ? d.region : [d.region]));
     check("G.4 #4 a part with two 1.0 mm necks gets two neck regions, one per neck", regs.length === 2 && regs[0][2] <= 12 && regs[1][0] >= 18); }
   check("G3 neckRegions returns [] (no throw) when nothing is isolated", Array.isArray(SBSupport.neckRegions({ outer: [0, 0, 1000, 0, 1000, 1000, 0, 1000], holes: [] }, [], 100, 1)));
+  // self-consistency with construction (review 2026-10-09, G-D1 tie rule): what the disc cleanup keeps is not flagged as too narrow
+  { const C = SBConstruct, PX = { featR: 8, discR2: 64, bridgeR: 9, cullPx: 1000, maxBridgePx: 400, speckPx: 1000, holePx: 450, frameAnchored: false, cullEnabled: false };
+    const kept = (wpx) => { const w = 220, h = 220, m = new Uint8Array(w * h);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const A = x >= 20 && x < 80 && y >= 20 && y < 80, B = x >= 140 && x < 200 && y >= 140 && y < 200,
+        S = Math.abs(x - y) / Math.SQRT2 <= wpx / 2 && x >= 50 && x <= 170; m[y * w + x] = A || B || S ? 1 : 0; }
+      return mk(C.bonded([new Uint8Array(w * h).fill(1), m], w, h, PX).final[1], w, h); };
+    for (const wpx of [16, 17, 18, 22]) { const L = kept(wpx), c = ds(L).map((d) => d.code);
+      check(`G1/G3 tie rule: a ${wpx / 10} mm 45° neck that construction keeps (one part) is not NECK_NARROW or PART_THIN`, L[1].parts.length === 1 && !c.includes("NECK_NARROW") && !c.includes("PART_THIN")); } }   // measured: 16 px and wider keep one part and pass the octagon
+  // cost bound: a part with many lost chips but one real neck calls Clipper O(candidates), not O(lost × pads)
+  { const w = 600, h = 200, m = new Uint8Array(w * h);   // two blocks, a 1.0 mm neck, and a staircase edge that makes the octagon opening chip every step
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = (x < 250 && y > 20 && y < 180 && (x < 200 || ((x + y) >> 2) % 2 === 0)) || (x >= 350 && y > 20 && y < 180) || (y >= 95 && y < 105) ? 1 : 0;
+    const G = SBGeom, o = G.intersection; let n = 0; G.intersection = (a, b) => (n++, o(a, b));
+    let regs; try { regs = ds(mk(m, w, h)).filter((d) => d.code === "NECK_NARROW"); } finally { G.intersection = o; }
+    check("G3 neckRegions finds the neck and bounds its Clipper work (intersection calls ≤ 64 on a chip-heavy part)", regs.length >= 1 && n <= 64); }
 });
 ```
 
@@ -5057,32 +5165,35 @@ suite("support.js — Appendix G G3 octagonal erosion and neck regions (PO-FIX-3
     - `e1 = erode(parts, all, halfMin, (i) => [parts[i].polygon], {join: "square"})`;
     - `c2 = halfAdv <= halfMin ? null : erode(parts, pass, halfAdv, (i) => [parts[i].polygon], {join: "square"})` (keep `e2` for its residuals);
     - the G2 kerf erosion already uses `"square"`.
-  - **`S.neckRegions`:**
+  - **`S.neckRegions`** (work-bounded; bbox prefilters before any Clipper call):
 
 ```js
   S.neckRegions = function (poly, residual, half, s) {
-    const G = global.SBGeom;
+    const G = global.SBGeom, ov = (a, b) => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
     if (!residual || residual.length < 2) return [];
     const P = s === 1 ? [poly] : scaled([poly], s);
     const opened = G.offset(residual, half, "square");
     const lost = G.components(G.normalize(G.difference(P, opened)));
-    const pads = residual.map((r) => G.offset([r], half + 2 * s, "square"));
+    const pads = residual.map((r) => G.offset([r], half + 2 * s, "square")), padBox = pads.map((pd) => G.bbox(pd[0]));
     const out = [];
     for (const c of lost) {
+      const cb = G.bbox(c[0]), cand = [];
+      for (let i = 0; i < pads.length; i++) if (ov(cb, padBox[i])) cand.push(i);
+      if (cand.length < 2) continue;                    // a corner chip or stair tooth touches at most one pad: no Clipper call
       let touch = 0;
-      for (const pd of pads) { const I = G.intersection(c, pd); if (I.length && !G.isEmpty(I)) touch++; if (touch >= 2) break; }
-      if (touch >= 2) { const b = G.bbox(c[0]); out.push(b.map((v) => v / s / 1000)); }
+      for (const i of cand) { const I = G.intersection(c, pads[i]); if (I.length && !G.isEmpty(I)) touch++; if (touch >= 2) break; }
+      if (touch >= 2) out.push(cb.map((v) => v / s / 1000));
     }
     return out.sort((a, b) => a[1] - b[1] || a[0] - b[0]).slice(0, 8);
   };
 ```
 
-  - Call `neckRegions` with the residuals of the erosion that split the part: `e1.residual` (scale 1) for `NECK_NARROW`, `ek.residual` (scale 4) for `NECK_KERF`, and the advisory erosion's residual for neck `FEATURE_MARGINAL`. Emit one diagnostic per region.
+  - Call `neckRegions` with the residuals of the erosion that split the part: `e1.residual` (scale 1) for `NECK_NARROW`, `ek.residual` (scale 1 or 2, the kerf pass's scale, with `half = (T·S)/2`) for `NECK_KERF`, and the advisory erosion's residual for neck `FEATURE_MARGINAL`. Emit one diagnostic per region.
   - **`SBDiag.aggregate`** is unchanged. A part with two necks appears twice in `parts` with two regions, so `parts`/`region` stay index-aligned. G5 relies on this.
-- [ ] **Step 4: Run the new suite.** Run `node test/run_tests.js --only "Appendix G G3"` and `--only "support.js"`. Expected: PASS, with the PO-LASER-6 strip checks still passing.
+- [ ] **Step 4: Run the new suite and update the existing tests.** Run `node test/run_tests.js --only "Appendix G G3"` and `--only "support.js"`. Update the Appendix C oracle and delta tests as listed under Files, then expect PASS, with the PO-LASER-6 strip checks still passing.
 - [ ] **Step 5: Re-capture the golden and run the perf gate.**
-  - Re-capture with `--task G3` (diagnostics only; same check shape as G2).
-  - Perf: the `features` stage at fab4096 (pool 8) must stay ≤ 1.3 × the G2 Result value.
+  - Re-capture with `--task G3` (diagnostics only; same check shape as G2, connected ids allowed with `geometryHash`/`layerHashes` unchanged).
+  - Perf (cumulative, G.7): the features stage now runs the minimum-feature erosion, the advisory erosion (no longer composed from a cheap residual: a full-polygon offset), the kerf erosion, a point-contact scan and the neck locator, roughly three full offsets instead of about 1.3. Against the **original** `speed-round.json` value the `features` stage p50 must stay ≤ 1.7 × (the compounded G2 × G3 allowance, stated once), and the pooled total p95 ≤ 10 s and ≤ `phaseB.fab4096.pooledWallMs` + 1.2 s. If the stage exceeds 1.7 ×, measure which of the added passes dominates (kerf erosion, full-polygon advisory erosion, point-contact scan, locator) and report the stage table to the product owner with the candidate mitigations (for example restricting the advisory pass to parts that passed the minimum-feature erosion, which it already does, or sharing one offset between the kerf and minimum-feature passes when T and the minimum feature coincide); do not loosen the gate.
 - [ ] **Step 6: Run the full suite, build and commit.**
   1. Run `node test/run_tests.js`: 0 failed.
   2. `node build.js`
@@ -5093,8 +5204,8 @@ suite("support.js — Appendix G G3 octagonal erosion and neck regions (PO-FIX-3
 #### Task G4 (PO-FIX-4): No guide score stubs
 
 **Files:**
-- Modify: `js/guides.js`: constants after `:37`, `buildPair` `:79-99`, header `:20-28`.
-- Modify: `test/run_tests.js`: new suite `guides.js — Appendix G G4 no score stubs (PO-FIX-4, ASM-01/02)`.
+- Modify: `js/guides.js`: constants after `:37`, `buildPair` `:79-99`, header `:20-28`, and the `Object.freeze({ build, validate, params, buildPair, buildFold, validatePair })` literal at `:192` (it has no `G` alias, so the two new exports go into the literal).
+- Modify: `test/run_tests.js`: new suite `guides.js — Appendix G G4 no score stubs (PO-FIX-4, ASM-01/02)`, and **one existing test**: `'ASM-03 a label that does not fit is GUIDE_OMITTED kind label on that sheet ...'` (~5908-5911) builds `Lsmall = mk(1, sq(10000, 10000, 3500, 3500))` (Rc 1.3 mm) and expects the guide to stay (`scorePaths[0].length === 1`, `omitted.length === 0`); that contradicts the 2 mm rule. Change the fixture to a 5.0 mm square (Rc 2.8 mm: the ring stays, and the 2.2 × 3.2 mm label box still does not fit). Verified 2026-10-09 by applying the filter to a scratch copy: with that one change all 24 `guides.js` checks pass; `'AT-14 crescent/donut/small part ...'` (~5900) stays green unchanged because its 1.5 mm square already has no Rc polygon.
 - Modify: `test/golden/pool-equality.json` (task G4).
 
 **Interfaces:**
@@ -5120,6 +5231,12 @@ suite("guides.js — Appendix G G4 no score stubs (PO-FIX-4, ASM-01/02)", () => 
   const small = L[1].parts.find((p) => p.bbox[2] - p.bbox[0] === 3400);
   check("PO-FIX-4 the 3.4 mm part (Rc 1.2 mm) is GUIDE_OMITTED with the 2 mm reason", !!small && b.guides.omitted.some((o) => o.part === small.id && /2 mm/.test(o.reason)));
   check("ASM-02 validate still passes (no GUIDE_UNCONTAINED)", SBGuides.validate(L, b, cfg, { revision: 0, quality: "fabrication" }).length === 0);
+  // interior-mark is out of scope (review 2026-10-09): the smallest cross arm is 0.6 mm, so the 2 mm rule must not touch it. Baseline measured before the change:
+  // crosses of 3.0, 2.0 and 0.6 mm (two paths each), nothing omitted.
+  const im = SBGuides.build(L, Object.assign({}, cfg, { mode: "interior-mark" }), { revision: 0, quality: "fabrication" });
+  check("G4 interior-mark is unchanged: the 3.4 mm part still gets its 0.6 mm cross, nothing is omitted",
+    im.scorePaths[0].map(ext).sort((a, c) => c - a).join() === "3000,3000,2000,2000,600,600" && im.guides.omitted.length === 0);
+  check("G4 inset-outline emits exactly the 17.8 and 2.2 mm rings of the three parts (the 1.2 mm Rc ring is dropped)", b.scorePaths[0].map(ext).sort((a, c) => c - a).join() === "17800,2200");
 });
 ```
 
@@ -5137,14 +5254,14 @@ suite("guides.js — Appendix G G4 no score stubs (PO-FIX-4, ASM-01/02)", () => 
   }
 ```
 
-  - In `buildPair`, compute `const RcG = Rc.filter((poly) => keepGuidePoly(poly, P))` and use `RcG` for attribution (`byPart`) and for the ring loop (`:99`). Skip any ring whose `extentOf(r) < GUIDE_MIN_EXTENT_UM`.
-  - The omit reason is `"no concealed guide area ≥ 2 mm"`.
+  - In `buildPair`, compute `const RcG = interior ? Rc : Rc.filter((poly) => keepGuidePoly(poly, P))` and use `RcG` for attribution (`byPart`) and for the ring loop (`:99`). Interior-mark mode keeps `Rc` (G-D4). Skip any ring whose `extentOf(r) < GUIDE_MIN_EXTENT_UM` (inset-outline only).
+  - In inset-outline mode a part without a kept polygon is omitted with `"no concealed guide area ≥ 2 mm"` when it had Rc polygons and with the existing `"no concealed area ≥ footprint"` when it had none (`js/guides.js:98`); interior-mark reasons are unchanged. Keep the extent test before the footprint-inset offset (`keepGuidePoly` already does).
   - The label placement keeps `Rc`.
-  - Export `G.GUIDE_MIN_EXTENT_UM` and `G._keepGuidePoly`, and update the header.
+  - Export `GUIDE_MIN_EXTENT_UM` and `_keepGuidePoly` **inside the `Object.freeze({...})` literal** (`:192`); there is no mutable `G` alias, and an assignment after the freeze would throw in strict mode. Update the header.
 - [ ] **Step 4: Run the new suite.** Run `node test/run_tests.js --only "Appendix G G4"`. Expected: PASS.
 - [ ] **Step 5: Re-capture the golden and run the perf check.**
   - Re-capture with `--task G4` for the guide fixtures that changed (`guidesSha`, `layerHashes`, `geometryHash`, `diagSha`, `wholeSha` may differ; others not; check shape as G2 with that field list).
-  - Perf: the `guides` stage p50 at fab4096 must not exceed its G3 value (the filter only removes work).
+  - Perf: the `guides` stage p50 at fab4096 must not exceed its G3 value by more than 10 % (the filter drops rings, but it adds one footprint-inset offset per Rc polygon that passes the extent test; the extent test runs first), and the pooled total p95 stays ≤ 10 s (G.7).
 - [ ] **Step 6: Run the full suite, build and commit.**
   1. Run `node test/run_tests.js`: 0 failed.
   2. `node build.js`
@@ -5167,9 +5284,9 @@ suite("guides.js — Appendix G G4 no score stubs (PO-FIX-4, ASM-01/02)", () => 
 
 **Interfaces:**
 - Produces:
-  - `SBProof.diagRows(diags) → [{key, code, layer, severity, title, members: Diagnostic[], count, focus: [{label, layer, parts: string[], regions: number[][]}]}]`:
+  - `SBProof.diagRows(diags) → [{key, code, layer, severity, title, members: Diagnostic[], count, partCount, focus: [{label, layer, parts: string[], regions: number[][]}]}]`:
     - rows group the diagnostics with the same (code, layer) (layer `null` groups by code), in the order of first occurrence;
-    - `count` = Σ (`member.count || 1`);
+    - `count` = Σ (`member.count || 1`) (after G3 this counts **necks** for the neck codes: one part with two necks is two items); `partCount` = the number of distinct part ids over the focus entries, which the row header shows as "n necks (m parts)" when they differ;
     - `focus` has one entry per (part, region) pair: an aggregated member with index-aligned `parts`/`region` arrays gives one entry per index, and otherwise one entry per member from `SBDiag.describe(member).focus`;
     - `label` is `"part " + id` (`"part 3 (2)"` for the second entry of the same part).
   - `SBProof.ackAllPlan(diags, code, hash, acks) → {code, hash, keys: string[], count}`: the `SBDiag.ackKey(d, hash)` of every **warning** of that code not in `acks`; `[]` for blocking/info codes.
@@ -5192,6 +5309,7 @@ suite("proof.js/app.js — Appendix G G5 review rows and acknowledge all (PO-FIX
     rows[0].focus[1].regions[0].join() === "5,5,6,6" && rows[0].focus.every((f) => f.layer === 2));
   check("G3/G5 an aggregated member with two necks of one part gives two focus entries (part 4-1, part 4-1 (2))",
     rows[3].focus.length === 2 && rows[3].focus[1].label === "part 4-1 (2)" && rows[3].focus[1].regions[0].join() === "3,3,4,4");
+  check("G3/G5 the neck row counts necks and parts separately (2 items, 1 part)", rows[3].count === 2 && rows[3].partCount === 1 && rows[0].partCount === 2);
   const acks = new Set([D.ackKey(ds[0], "h1")]), plan = P.ackAllPlan(ds, "SUPPORT_NARROW", "h1", acks);
   check("PO-FIX-5 ackAllPlan lists the unacked warnings of the code across layers, bound to the hash", plan.hash === "h1" && plan.count === 2 &&
     plan.keys.join() === [D.ackKey(ds[1], "h1"), D.ackKey(ds[2], "h1")].join());
@@ -5205,6 +5323,7 @@ suite("proof.js/app.js — Appendix G G5 review rows and acknowledge all (PO-FIX
     /SBProof\.diagRows\(/.test(app) && /SBProof\.ackAllPlan\(/.test(ackAll) && /Acknowledge all/.test(ackAll) && /"Confirm"/.test(ackAll) && !/confirm\(/.test(ackAll));
   check("G.4 #5 the confirm re-checks the hash before adding keys", /plan\.hash\s*===\s*r\.snapshot\.geometryHash|r\.snapshot\.geometryHash\s*===\s*plan\.hash/.test(ackAll));
   check("PO-FIX-5 the panel defers to the Fabrication review via SBProof.fabListedIn", /SBProof\.fabListedIn\(/.test(app));
+  check("UI-04 the deferring panel keeps a way there: counts of blocking issues and warnings plus a jump control to #fab-review", /id="btn-goto-fab"|"btn-goto-fab"/.test(app) && /scrollIntoView/.test(app));
 });
 ```
 
@@ -5225,6 +5344,7 @@ suite("proof.js/app.js — Appendix G G5 review rows and acknowledge all (PO-FIX
       else if (d.part !== null && d.part !== undefined && layer !== null) add(d.part, d.region || null);
       else { const f = D.describe(d).focus; if (f) r.focus.push({ label: D.describe(d).where, layer: f.layer, parts: f.parts, regions: f.regions }); }
     }
+    for (const r of rows) r.partCount = new Set([].concat(...r.focus.map((f) => f.parts))).size;
     return rows;
   };
   P.ackAllPlan = function (diags, code, hash, acks) {
@@ -5251,7 +5371,8 @@ suite("proof.js/app.js — Appendix G G5 review rows and acknowledge all (PO-FIX
     - Cancel restores the button.
     - It appears in both panels (same renderer).
   - **Single listing:**
-    - in `renderDiagnostics` (not fab scope), when `SBProof.fabListedIn({shownIsFab: r === run.fab, fabReviewVisible: fabCurrent()}) === "fab-review"`, set the summary to `"This fabrication result is listed in the Fabrication review below."`, list no items, and return after `renderRepairs()`;
+    - in `renderDiagnostics` (not fab scope), when `SBProof.fabListedIn({shownIsFab: r === run.fab, fabReviewVisible: fabCurrent()}) === "fab-review"`, set the summary to `"This fabrication result is listed in the Fabrication review in the Export step: " + blockingCount + " blocking, " + warningCount + " warning(s)."`, add a `<button id="btn-goto-fab" class="btn">Go to the Fabrication review</button>` that calls `$("fab-review").scrollIntoView({block: "start"})` and focuses `#h-fab` (review 2026-10-09: the Proof panel and the review sit in different sections, `index.html:263` is the review in step 5, so without a control the user must scroll; blocking issues and clip actions would otherwise be invisible in the Proof step), list no items, and return after `renderRepairs()`;
+    - a compact blocking list in the panel (one line per blocking row) is a possible follow-up; it would list those rows twice, so the default is the counts plus the jump control (G.9 #9);
     - `renderFabReview` calls `renderDiagnostics(run.shown)` after rendering the review, so the panel updates when the review appears or hides.
   - **CSS:** `.diag-row-focus` is an inline wrap list of small buttons, and `.diag-confirm` uses the warning tokens, in both themes.
 - [ ] **Step 5: Run the new suite.** Run `node test/run_tests.js --only "Appendix G G5"`. Expected: PASS.
@@ -5316,6 +5437,10 @@ suite("raster/engine/app — Appendix G G6 match pitch to source (PO-FIX-6, IMG-
   check("PO-LASER-5 a real shortfall still warns (2000 px source at 0.1 mm/px)",
     E.rasterPlan(p, { w: 2000, h: 1506 }, "fabrication", "desktop").diagnostics.some((d) => d.code === "FAB_EXCEEDS_SOURCE"));
   check("IMG-02 RESAMPLED keeps its suggestion", /matching source size/.test(SBDiag.CODES.RESAMPLED.fix));
+  check("G-D5 FAB_MATCHES_SOURCE states the shortfall in px (tolerance: one 1 µm step, ≤ 2 % per axis)",
+    plan.diagnostics.find((d) => d.code === "FAB_MATCHES_SOURCE").detail.includes("shortfall") && /\d+ × \d+ px, within one 1 µm pitch step/.test(plan.diagnostics.find((d) => d.code === "FAB_MATCHES_SOURCE").detail));
+  { const rs = fs.readFileSync(path.join(__dirname, "..", "js", "raster.js"), "utf8");
+    check("G-D5 the FAB_PITCH_CAPPED detail names FAB_MATCHES_SOURCE in the match case (no dangling FAB_EXCEEDS_SOURCE pointer)", /see FAB_MATCHES_SOURCE/.test(rs)); }
   const app = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8"), html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
   check("PO-FIX-6 the pitch row and the RESAMPLED item offer Match pitch to source through SBEngine.matchSourcePitch + applyFabPitch",
     /id="btn-match-pitch"/.test(html) && /SBEngine\.matchSourcePitch\(/.test(app) && /applyFabPitch\(project,\s*m\.fabPitchMM\)/.test(app) && /"RESAMPLED"/.test(app));
@@ -5342,16 +5467,20 @@ suite("raster/engine/app — Appendix G G6 match pitch to source (PO-FIX-6, IMG-
   };
 ```
 
-  - **`fabDiagnostics`:** the source branch becomes:
+  - **`fabDiagnostics`:** the source branch becomes (tolerance: one 1 µm step and at most 2 % per axis, G-D5):
 
 ```js
+    const shortW = cdiv(ctx.artWUm, fab.pitchUm) - ctx.srcW, shortH = cdiv(ctx.artHUm, fab.pitchUm) - ctx.srcH;   // px the uncapped raster exceeds the source by
     const oneStep = source && fab.W === ctx.srcW && fab.H === ctx.srcH &&
-      cdiv(ctx.artWUm, fab.pitchUm + 1) <= ctx.srcW && cdiv(ctx.artHUm, fab.pitchUm + 1) <= ctx.srcH;
+      cdiv(ctx.artWUm, fab.pitchUm + 1) <= ctx.srcW && cdiv(ctx.artHUm, fab.pitchUm + 1) <= ctx.srcH &&
+      shortW * 50 <= ctx.srcW && shortH * 50 <= ctx.srcH;
     if (oneStep) out.push(global.SBDiag.make("FAB_MATCHES_SOURCE", Object.assign({}, base, {
-      detail: "the raster equals the source (" + ctx.srcW + " × " + ctx.srcH + " px) at " + umText(realUm) + " mm/px; requested pitch " + umText(fab.pitchUm) + " mm/px" })));
+      detail: "the raster equals the source (" + ctx.srcW + " × " + ctx.srcH + " px) at " + umText(realUm) + " mm/px; requested pitch " + umText(fab.pitchUm) +
+        " mm/px (shortfall " + shortW + " × " + shortH + " px, within one 1 µm pitch step)" })));
     else if (source) { /* the existing FAB_EXCEEDS_SOURCE push, unchanged */ }
 ```
 
+  - **`FAB_PITCH_CAPPED` detail:** the trailing "(see FAB_EXCEEDS_SOURCE)" (`js/raster.js:718`) is emitted only when the warning is emitted; in the match case it reads "(see FAB_MATCHES_SOURCE)".
   - **`resamplePolicy`:** `if (mode === "tonal") return W === srcW && H === srcH ? "none" : "area";`. Ship this only if the Step 1 identity check passed.
   - **`js/diag.js`:** add `["FAB_MATCHES_SOURCE", I, P, "Fabrication raster equals the source", "No action needed; the source is used 1:1 without resampling."]`.
   - **`js/engine.js`:**
@@ -5373,7 +5502,7 @@ suite("raster/engine/app — Appendix G G6 match pitch to source (PO-FIX-6, IMG-
     - A click runs `project = SBSchema.applyFabPitch(project, m.fabPitchMM); syncControls(); recompute();`.
   - **`diagItem`:** for `d.code === "RESAMPLED"`, `pitchMatchAction(d)` adds the same button (same handler) when `m` is non-null. The item's fix text is unchanged.
 - [ ] **Step 5: Run the new suite.** Run `node test/run_tests.js --only "Appendix G G6"`. Expected: PASS.
-- [ ] **Step 6: Re-capture if needed.** Run the full suite. If an equal-size tonal F0 fixture's digest changed (resample `"none"` instead of `"area"`, geometry bytes equal by Step 1), re-capture it with `--task G6` and assert that its `layerHashes` are unchanged.
+- [ ] **Step 6: Re-capture if needed.** Run the full suite. If an equal-size tonal F0 fixture's digest changed (resample `"none"` instead of `"area"`, geometry bytes equal by Step 1), re-capture it with `--task G6` and assert that its `geometryHash` **and** `layerHashes` are unchanged (review 2026-10-09: `geometryHash` excludes the resample method, but `diagSha`/`wholeSha` change because `RESAMPLED` disappears from equal-size draft fixtures too, so the record is expected to touch `diagSha`/`wholeSha` of every equal-size tonal fixture, draft ones included).
 - [ ] **Step 7: Build and commit.** Run `node build.js` and commit `js/raster.js js/engine.js js/diag.js js/app.js index.html css/app.css test/run_tests.js test/golden/pool-equality.json dist/shadowbox-studio.html`: `feat(raster,engine,app): G6 match pitch to source, one-step FAB_MATCHES_SOURCE (PO-FIX-6)` + trailer.
 
 ---
@@ -5407,10 +5536,14 @@ tr '\n' '\0' < /tmp/s7.txt | du -cb --files0-from=- | tail -1          # must be
 tr '\n' '\0' < /tmp/s7.txt | du -b --files0-from=- | sort -rn | head    # no single file > 5 MB
 grep -E 'fusion2/height_8layer_v2\.png|fusion2/engrave/' /tmp/s7.txt | wc -l   # 1 + 16 (engrave_layer0–7 .png/.svg)
 grep -lE 'ak-[A-Za-z0-9]{8,}|as-[A-Za-z0-9]{8,}|token_secret|token_id|MODAL_TOKEN|hf_[A-Za-z0-9]{20,}' $(cat /tmp/s7.txt | grep -vE '\.(png|npy)$') || echo "no secrets"
+# account identifiers (review 2026-10-09: the secrets grep above does not catch them)
+grep -nE 'modal\.com/apps|jeremy-1756|\bap-[A-Za-z0-9]{16,}' $(cat /tmp/s7.txt | grep -vE '\.(png|npy)$') || echo "no account identifiers"
 ```
 
   - If the total exceeds 30 MiB, add the next-largest non-contact-sheet previews to the ignore list (never the contact sheets, READMEs, scripts, `height.png` or `meta.json`) and re-check.
   - If the secrets grep matches, stop and report the file. **Do not commit it.**
+  - **Account identifiers (review 2026-10-09, verified):** `results/fusion2/mv2_driver.log` lines 2 and 35 carry a `modal.com/apps/<workspace>/main/ap-…` URL with the workspace name and an app id; `results/manifest.json:114` and `results/fusion2/README.md:237` name the workspace. They are not credentials, but they identify the account. Default: **scrub** them in the committed copies (`<workspace>` and `<app-id>`) with a `sed` that is recorded in the commit message, since the logs are provenance and the text around the identifiers matters; the alternative is to ignore `results/fusion2/mv2_driver.log` and scrub the two text lines (G.9 #10). Re-run the identifier grep: no match.
+  - **`spikes/S7/input/cross.png` (1.5 MB source image) would be committed.** Confirm its ownership and licence under NFR-11 (the spike README names the source, or the product owner confirms it is theirs) before committing it. If that cannot be confirmed, add `input/cross.png` to `spikes/S7/.gitignore` and note in the commit message that the scripts need it supplied (G.9 #10).
   - `results/fusion2/billing_*.txt` hold only Modal cost totals. Keep them, unless the grep flags them.
 - [ ] **Step 3: Confirm the suite is unaffected.** Run `node test/run_tests.js`: 0 failed. The hygiene suites must not scan `spikes/S7`; if one does, scope it.
 - [ ] **Step 4: Commit.**
@@ -5430,15 +5563,15 @@ git show --stat HEAD | tail -1     # record the file count and size in the G7 Re
 **Files:**
 - Version strings: `js/app.js:24`, `sw.js:23`, `js/worker.js:57`.
 - `test/run_tests.js`:
-  - DEP-02 retargets `:2659`, `:8262`;
-  - the alpha.4 CHANGELOG suite `:8054-8063` keeps its alpha.4 checks and gains an alpha.5 suite.
+  - DEP-02 retargets `:2659`, `:8262` **and the F18 check at `:8047-8049`** (it asserts `APP_VERSION`, `sw.js` `VERSION` and `WORKER_APP_VERSION` all equal `2.0.0-alpha.4` and would fail after the bump; review 2026-10-09). Its label becomes "F18 release 2.0.0-alpha.4 → 2.0.0-alpha.5 since Appendix G G8: ... agree";
+  - the alpha.4 CHANGELOG suite `:8054-8063` keeps its alpha.4 checks (they read the `## v2.0.0-alpha.4` section, which stays) and gains an alpha.5 suite.
 - Docs: `docs/CHANGELOG.md`, `docs/QA_CHECKLIST.md`, `docs/USER_GUIDE.md`.
 - Records: `docs/perf/speed-round.json` (`appendixG`).
 - `dist/shadowbox-studio.html`.
 - This plan: tick G1–G8 and add Result notes.
 
 - [ ] **Step 1: Write the failing tests.**
-  - Retarget the DEP-02 checks to `/const APP_VERSION\s*=\s*"2\.0\.0-alpha\.5"/`, `/const VERSION\s*=\s*"2\.0\.0-alpha\.5"/` and `WORKER_APP_VERSION = "2.0.0-alpha.5"`. The labels read `(2.0.0-alpha.5 since Appendix G G8)`.
+  - Retarget the DEP-02 checks (`:2659`, `:8262`) to `/const APP_VERSION\s*=\s*"2\.0\.0-alpha\.5"/` and `/const VERSION\s*=\s*"2\.0\.0-alpha\.5"/`, and the F18 check (`:8047-8049`) to `"2.0.0-alpha.5"` for all three of `APP_VERSION`, `VERSION` and `WORKER_APP_VERSION`. The labels read `(2.0.0-alpha.5 since Appendix G G8)`.
   - Add:
 
 ```js
@@ -5446,10 +5579,13 @@ suite("CHANGELOG — checkpoint v2.0.0-alpha.5 (R9, PO-FIX-1..7)", () => {
   const cl = fs.readFileSync(path.join(__dirname, "..", "docs/CHANGELOG.md"), "utf8"), sec = (cl.split(/^## v2\.0\.0-alpha\.5\b.*$/m)[1] || "").split(/^## /m)[0];
   check("R9 v2.0.0-alpha.5 section sits above alpha.4", cl.search(/^## v2\.0\.0-alpha\.5\b/m) >= 0 && cl.search(/^## v2\.0\.0-alpha\.5\b/m) < cl.search(/^## v2\.0\.0-alpha\.4\b/m));
   check("R9 alpha.5 names every PO-FIX item and the D3 extension", [1, 2, 3, 4, 5, 6, 7].every((n) => new RegExp("PO-FIX-" + n).test(sec)) && /NECK_KERF/.test(sec) && /PART_POINT_CONTACT/.test(sec) && /D3/.test(sec));
-  check("R9 alpha.5 has a known-gaps table (draft square fallback, own-hole point contact, guide threshold not a setting, match tolerance, S2 record, connected square chain)",
-    /known gaps/i.test(sec) && /^\|.*\|\s*$/m.test(sec) && /fallback/i.test(sec) && /own hole|outer.hole/i.test(sec) && /2 mm/.test(sec) && /15 ?%/.test(sec) && /S2/.test(sec) && /connected/i.test(sec));
+  check("R9 alpha.5 has a known-gaps table (draft square fallback, own-hole point contact, guide threshold not a setting, match tolerance, S2 record, connected square chain, material pinches at saddles, no repair for NECK_KERF/PART_POINT_CONTACT, image-edge cleanup)",
+    /known gaps/i.test(sec) && /^\|.*\|\s*$/m.test(sec) && /fallback/i.test(sec) && /own hole|outer.hole/i.test(sec) && /2 mm/.test(sec) && /15 ?%/.test(sec) && /S2/.test(sec) && /connected/i.test(sec) &&
+      /pinch/i.test(sec) && /no repair/i.test(sec) && /edge/i.test(sec));
   const sr = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "docs/perf/speed-round.json"), "utf8"));
-  check("NFR-03 appendixG.morph records the disc vs square per-layer p50 and the ratio ≤ 3.0", !!sr.appendixG && !!sr.appendixG.morph && sr.appendixG.morph.ratio <= 3.0);
+  check("NFR-03 appendixG.morph records the disc vs square per-layer p50 and the real-layer ratio ≤ 3.0 (a recorded figure, not a timing the test takes)", !!sr.appendixG && !!sr.appendixG.morph && sr.appendixG.morph.ratio <= 3.0);
+  check("S2 appendixG.fab4096 records the cumulative pooled p95 (≤ 10000 ms), the serial total and the pre-round reference",
+    !!sr.appendixG.fab4096 && sr.appendixG.fab4096.pooledP95Ms <= 10000 && Number.isFinite(sr.appendixG.fab4096.serialMs) && sr.appendixG.fab4096.phaseBPooledMs === 8794);
 });
 ```
 
@@ -5475,6 +5611,11 @@ suite("CHANGELOG — checkpoint v2.0.0-alpha.5 (R9, PO-FIX-1..7)", () => {
      | S2 record | The alpha.4 S2 measurement row is still pending unless G1 Step 7 measured it | measurement run |
      | Connected mode | Connected keeps the v1.1 square chain (golden) | — |
      | Neck regions | Necks are located by bbox; more than 8 per part are folded | G4.4 |
+     | Material pinches | Cleanup guarantees no waste channel below the minimum feature; a material pinch at a saddle can survive as a thin neck and is reported `NECK_NARROW` (`NECK_KERF` at or below the kerf), not removed | G.9 #8 |
+     | No repair action | `NECK_KERF` and `PART_POINT_CONTACT` are blocking at draft and fabrication and have no clip action; widen the art or raise the minimum feature | — |
+     | Part thinner than the kerf | A part that vanishes under the kerf erosion gets `PART_THIN` (a warning), not `NECK_KERF` | G.9 #7 |
+     | Image edge | Art touching the image edge is now cleaned like interior art (the square kernels kept the border ring) | by design (G-D1) |
+     | Stale repairs | The engine version stays `1.0.0-dev` while bonded output changes; `replayRepairs` applies cross-quality clips without a hash check, so only same-quality clips go `REPAIR_STALE` | — |
 
   4. QA_CHECKLIST: the fusion2 art cut check (no corner-touching blocks at the six spots; compare `crops_square_vs_disc.txt`), "Acknowledge all" in both panels, one listing, match pitch on a 4096 × 3084 source at 300 mm.
   5. USER_GUIDE: blocking point contacts and kerf necks, "Acknowledge all", match pitch.
@@ -5486,33 +5627,49 @@ suite("CHANGELOG — checkpoint v2.0.0-alpha.5 (R9, PO-FIX-1..7)", () => {
 
 | Check | Command | Budget | Owner |
 |---|---|---|---|
-| Disc vs square per layer, 12 Mpx | `node test/bench.js morph --runs 5 --record` | disc p50 ≤ 2.0 × square (target), ≤ 3.0 × (hard; above it, switch to the G.9 #1 fallback) | G1 |
+| Disc vs square per layer, 12 Mpx | `node test/bench.js morph --runs 5 --record` (dense blobby mask, sparse mask, real fusion2 layers) | target ≤ 2.0 × on the real layers; ≤ 3.0 × allowed only while the absolute gates below pass; **above 3.0 × on the real layers G1 does not ship** (G.9 #1) | G1 |
 | Bonded construction 1 Mpx × 8 | suite check `:3911-3913` | < 2.5 s | G1 |
-| User12 fabrication, pool 8 | `node test/bench.js large --only user12 --pool 8 --rows fab4096 --runs 3` | p50 ≤ 10 s (S2); construct within +1.0 s; features ≤ 1.3 × the previous task | G1, G2, G3 |
+| **User12 fabrication, pool 8, cumulative** | `node test/bench.js large --only user12 --pool 8 --rows fab4096 --runs 5` | **p95** ≤ 10 s (the S2 rule in `speed-round.json` `final.s2`: pooled fab4096 p95 ≤ 10 s in Chromium; Node figure first, Chromium `?bench=fab` when run) **and** ≤ `phaseB.fab4096.pooledWallMs` (8794 ms) + 1.2 s, checked after **every** task G1, G2, G3 and G8, not task to task. The relative gates below can all pass while the sum fails, so this absolute gate decides. | G1, G2, G3, G8 |
+| Serial fallback (record) | same bench with `--pool 0` | **record** the total (phaseB: 12879 ms; the disc adds roughly 4-5 s over eight layers, f17 pool0 p50 was already 19.6 s); no gate, but report it | G1, G8 |
+| Per-stage allowances (cumulative vs the pre-round record) | the row's stage table | construct ≤ +1.0 s (the slowest layer's disc cost is about +0.7-1.0 s in the pool); features ≤ 1.3 × after G2 and ≤ 1.7 × after G3 (the compounded allowance stated once, not 1.3 × 1.3 by accident); guides ≤ +10 % after G4 | G1-G4 |
 | Warm draft 720 | `node test/bench.js draft --only a --candidates 720` | warm p95 ≤ 3.0 s (E4 rule) | G1, G8 |
-| Guide stage | user12 row stage table | not slower than before G4 | G4 |
 
-**Prototype figures (2026-10-09, i7-11800H, Node 26.7, load ≈ 19, 3985 × 3000 synthetic mask, `openClose(8, 7)` vs disc R² 49/49, interleaved):** square 459–823 ms, disc 1624–1996 ms. That is ≈ 3.5 × for the unoptimised sweeps of Step 3, which equal brute force. The investigation's EDT prototype took 4.0 s vs 0.35 s. The Step 3 optimisations (skipping empty rows, one scratch per call, word-skipping) are expected to bring the disc to ≤ 2 ×. In the pool, construct is per layer (one item per sheet), so the fabrication critical path grows by the slowest layer's difference (≈ 0.5–1 s), inside the S2 10 s rule (pooled ≈ 8.5–8.8 s in F17/F18 interim figures).
+**Prototype figures (2026-10-09, i7-11800H, Node 26.7, 3985 × 3000 masks, `openClose(8, 7)` vs the Step 3 kernel at R² 49/49, interleaved):**
+- First measurement (load ≈ 19, synthetic mask): square 459–823 ms, disc 1624–1996 ms, ≈ 3.5 ×.
+- Review re-measurement on a blobby mask: square 264–373 ms, disc 814–1124 ms, ratio **3.1–3.4 ×**; a sparse mask 270 vs 805 ms (≈ 3.0 ×). The kernel equals brute force (including the Uint8/Uint16 boundary at R² = 65024/65025/65026, 0 mismatches), so correctness is not the issue; speed is.
+- The former expectation that skipping empty rows, one scratch per call and word-skipping bring the disc to ≤ 2 × is **unsupported**: those help sparse art only, and the sparse mask is already at 3.0 ×. G1 Step 3 therefore plans a measured optimisation loop with a binding decision rule, and G.9 #1 names the fallbacks.
+- The investigation's EDT prototype took 4.0 s vs 0.35 s per layer and is never shipped.
+- In the pool, construct is per layer (one item per sheet), so the fabrication critical path grows by the slowest layer's difference (≈ 0.7–1.0 s); the serial fallback grows by the sum (≈ +4–5 s). The S2 rule (pooled p95 ≤ 10 s) has about 1.2 s of headroom over `phaseB` (8794 ms), shared by construct, features, guides and everything else in this round. That is why the gates above are absolute and cumulative.
 
 ### G.8 Risks
 
 | # | Risk | Mitigation |
 |---|---|---|
-| 1 | Disc kernel misses the 2–3 × budget | Optimisations in G1 Step 3; hard limit 3 ×; fallback G.9 #1 (union-of-rectangles corners via the existing `windowAny` row pass, or integer EDT); never ship the 4 s EDT prototype |
-| 2 | New blocking codes block common bonded art | G2 Step 5 lists every F0 fixture that gains a blocking code and checks one by hand; the disc closing removes most saddles before validation; `NECK_KERF` uses the real kerf, not the minimum feature |
-| 3 | Bonded hash change resets acks and makes clips `REPAIR_STALE` once | Documented in the CHANGELOG (alpha.3 precedent for `draftPx`); no silent migration |
-| 4 | Neck locator cost on art with thousands of necks | Only parts that split call it; cap 8 regions per part; features stage budget 1.3 × |
+| 1 | Disc kernel misses the budget (already measured at 3.1–3.4 × on dense art, so this risk is live, not hypothetical) | Measured optimisation loop and binding decision rule in G1 Step 3; absolute cumulative S2 gate (G.7); fallbacks in G.9 #1 (re-budget with product-owner approval, or the octagon compromise); never ship the 4 s EDT prototype. The earlier "union of staircase rectangles through `windowAny`" fallback is **withdrawn**: it needs A + 1 = 8 rectangle passes per window at R² = 49 against one pass for the square, roughly 8 × per window, slower than the sweep kernel it was meant to rescue |
+| 2 | New blocking codes block common bonded art, or fail to catch what the PO sees | G2 Step 5 lists every F0 fixture that gains a blocking code and checks one by hand; `NECK_KERF` uses the real kerf, not the minimum feature. **The disc closing turns point contacts into thin necks rather than removing them** (measured: two 6 mm squares at a corner become one part with a ≈ 0.3 mm neck, `NECK_NARROW`, not `NECK_KERF` and not `PART_POINT_CONTACT`), so `PART_POINT_CONTACT` almost never fires on bonded output and 0.3–0.6 mm material pinches at saddles are reported, not removed: the minimum-feature guarantee holds for waste only. G2 has the end-to-end test; the PO confirms this reading (G.9 #8) |
+| 3 | Bonded hash change resets acks and makes clips `REPAIR_STALE` once | Documented in the CHANGELOG (alpha.3 precedent for `draftPx`); no silent migration. The engine version stays `1.0.0-dev` and `replayRepairs` applies cross-quality clips without a hash check, so only same-quality clips go `REPAIR_STALE`; the CHANGELOG says so |
+| 4 | Neck locator and feature-stage cost on art with thousands of necks or chips | Only parts that split call the locator; bbox prefilters before any Clipper call; cap 8 regions per part; no-kerf-no-pass; bbox-gated point-contact scan; cumulative features gate 1.3 × (G2) and 1.7 × (G3) |
 | 5 | The F1 golden check breaks on the first recapture | Chain-aware check in G1 Step 6 (G-D6) |
-| 6 | Tonal equal-size `"none"` changes geometry | Shipped only after the identity check (G6 Step 1) |
-| 7 | S7 commit carries secrets or exceeds 30 MB | G7 Step 2 size and secrets checks gate the commit |
+| 6 | Tonal equal-size `"none"` changes geometry | Shipped only after the identity check (G6 Step 1); `geometryHash` and `layerHashes` asserted unchanged in the recapture |
+| 7 | S7 commit carries secrets, account identifiers, an unlicensed image or exceeds 30 MB | G7 Step 2 size, secrets and account-identifier checks gate the commit; `cross.png` ownership/licence confirmed or ignored (G.9 #10) |
+| 8 | Construction keeps what the checks flag (boundary inconsistency) | G-D1 tie rule (R² = m², 17 px at 1.5 mm and 0.1 mm/px) and the self-consistency tests in G1 and G3 |
 
 ### G.9 Open questions (defaults apply unless unsafe)
 
-1. **Disc kernel fallback if the sweeps stay > 3 ×.** Default: a union of the staircase rectangles. Each corner (t, a) of the digital disc is one row-run fill of half-width a over the `g ≤ t` indicator, which reuses `scanTo`, word-skipping. It is exact by the same brute-force test.
+1. **Disc kernel fallback if the optimised sweeps stay > 3 × on the real layers.** The first-draft default (a union of staircase rectangles through `windowAny`) is withdrawn: at R² = 49 it needs A + 1 = 8 rectangle passes per window against one for the square. Candidates, in order, all needing a **product-owner decision** before use because each changes what G-D1 promised:
+   1. *Re-budget.* Accept a higher kernel ratio (up to 4 ×) if, and only if, the absolute cumulative gates of G.7 pass (pooled p95 ≤ 10 s, construct +1.0 s). This costs nothing in geometry; it is the default when the real-layer ratio is between 3.0 and 4.0 × and the absolute gates pass.
+   2. *Octagon cleanup.* Replace the Euclidean disc by the octagon (square window ∩ diamond window): a diamond erosion/dilation is a two-pass integer chamfer sweep, so the cost is a few streaming passes plus the existing square window. It also matches the G3 octagonal feature checks exactly (tie rule and diagonals become consistent by construction). Diagonal necks are judged by the octagon, not the Euclidean disc, so the PO must approve the changed meaning of "exact Euclidean disc".
+   3. *Integer EDT with row bands.* Exact, but the 4.0 s per-layer prototype is far too slow; only a banded, cache-aware version measured under budget would be shipped.
+   If none passes, G1 stops and the round is re-planned with the product owner.
 2. **A part touching its own hole at a point** (D3 4 allows it). Default: **not blocking** in this round; listed as a known gap. Promote to `PART_POINT_CONTACT` only on a new product-owner decision.
 3. **Draft cleanup at R² = 0.** Default: the square `featR` fallback (G-D1); it never reaches a fabrication result that is not already blocked by `SAMPLING_LOW`.
 4. **Guide minimum extent as a setting.** Default: a constant of 2 mm (G-D4); a schema field waits for G3.3.
 5. **Match tolerance.** Default ±15 % of the target pitch; the button never appears when the budget would cap the pitch.
+6. **Tie rule and kept width (review 2026-10-09).** Default: R² = m² with m = ⌊(⌊F⌋ + 1)/2⌋ (17 px = 1.7 mm kept at 1.5 mm and 0.1 mm/px, the width the square window had), so cleanup never keeps a width the checks flag. Alternative: keep R² = 49 (15 px kept) and make the checks tolerant by one pixel (a neck at exactly the minimum feature passes). The default is chosen because the digital disc cannot distinguish 15 from 16 px, so any rule "keep exactly the minimum feature" leaves checks and cleanup off by one pixel on one parity.
+7. **A part thinner than the kerf** gets `PART_THIN` (a warning), not `NECK_KERF` (blocking). Default: keep, as implemented; promote to blocking only on a product-owner decision.
+8. **Do the pinch guarantees match the PO's wording ("pinches 0.1–0.6 mm")?** Default: waste channels below the minimum feature are guaranteed closed; material pinches at saddles survive as thin necks and are reported (`NECK_NARROW`, located by G3; `NECK_KERF` at or below the kerf). The product owner confirms this satisfies the request, or asks for a material-side measure (for example opening the saddle pixels) as a follow-up.
+9. **Compact blocking list** in the Proof panel while the fabrication review is shown elsewhere. Default: counts plus a jump control (G5); no duplicate listing.
+10. **S7 identifiers and `cross.png`.** Default: scrub the Modal workspace and app id in the committed copies; commit `input/cross.png` only after ownership/licence is confirmed (NFR-11), else ignore it.
 
 ### G.10 Self-review
 
@@ -5527,6 +5684,12 @@ suite("CHANGELOG — checkpoint v2.0.0-alpha.5 (R9, PO-FIX-1..7)", () => {
   - G8 → R9.
 
   Each code task has a perf gate (G.7), and the checkpoint records `appendixG.morph`.
+- **Review round 2026-10-09 (post-review amendments).** The plan was reviewed against the code and amended; each amendment was verified, not just accepted:
+  - tie rule: measured on the current tree (axis 15 px neck `NECK_NARROW`, 15 px strip `PART_THIN`, 16 px `FEATURE_MARGINAL`); the proposed "R² = 63" does not fix it (63 keeps 15 px), R² = 64 does (G-D1);
+  - disc speed: re-measured at 3.1–3.4 × on dense masks (G.7);
+  - the staircase-rectangle fallback is withdrawn (8 passes per window); the point-contact and saddle behaviour was measured (G-D2);
+  - existing tests: G4 breaks exactly one existing test (ASM-03 `Lsmall`; AT-14 stays green) — verified by running the filter on a scratch copy; G3 breaks the Appendix C oracle and delta tests; G8 adds `:8047-8049`; G2 does not break the delta tests once the kerf pass is skipped without a kerf;
+  - stale line references corrected (`connected == the v1.1.0 chain` is at `:416-430`; the PO-LASER-6 strips are at `:464-469` and `:581`).
 - References re-checked on 2026-10-09 against `43f2c88`. The approval text's line numbers moved in the speed round:
   - `js/engine.js:486` is now `constructPx` `:471-486`;
   - `js/support.js:308` (miter) is now `:350`;
