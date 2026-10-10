@@ -1,5 +1,67 @@
 # Changelog
 
+## v2.0.0-alpha.5 — 2026-10-10, app fix round (bonded morphology & export hygiene)
+
+The fix round after the alpha.4 test (plan Appendix G, PO-FIX-1..7). The release label is `2.0.0-alpha.5`
+(`APP_VERSION`, `sw.js` `VERSION`, `WORKER_APP_VERSION`): re-using alpha.4 would give two different builds the same
+service-worker cache name and worker handshake. The engine version stays `1.0.0-dev`, so geometry changes are carried
+by `geometryHash`. **Every bonded `geometryHash` changes**, so acknowledgements of bonded projects are redone once and
+same-quality clips go `REPAIR_STALE` (cross-quality clips are replayed without a hash check). The worker pool from the
+speed round (alpha.4: `SBPool`, one coordinator plus up to 8 helpers, bit-identical to the serial engine) is
+unchanged and carries all of the new checks. It is still not SRS-compliant (plan R9).
+
+- **PO-FIX-1, disc morphology fix.** Bonded construction cleans each layer with an exact digital-disc open/close
+  (`SBMorph.discErode`/`discDilate`/`discOpenClose`) instead of the square window, so corner-touching blocks and
+  diagonal waste channels below the minimum feature are no longer kept (G-D1). Radius `R2 = m^2`, `m = floor((floor(F) +
+  1) / 2)` for a minimum feature of F pixels of 3 or more; below that the square fallback applies. Real layers cost
+  1.3-1.4 x the square chain (`docs/perf/speed-round.json` `appendixG.morph`). Connected mode is unchanged.
+- **PO-FIX-2, `NECK_KERF` blocking and `PART_POINT_CONTACT` warning (D3 extension).** A bonded part that splits when
+  eroded by the real kerf gets the new code `NECK_KERF`, which is **blocking** at draft and fabrication. Two parts
+  that touch only at a corner get `PART_POINT_CONTACT`, which is a **warning** since the product-owner decision of
+  2026-10-10 ("Parts touch only at a corner": the pieces separate when cut and both stay supported in bonded mode); it
+  is acknowledged per layer. Both D3 neighbourhood rules apply to the disc-cleaned geometry.
+- **PO-FIX-3, located neck warnings.** Both feature erosions use the octagonal (square-join) offset directly on the
+  part, so a 45 degree neck is judged like an axis-aligned one, and `NECK_NARROW`, `NECK_KERF` and neck
+  `FEATURE_MARGINAL` are reported once per neck with its region (`SBSupport.neckRegions`, at most 8 per part), drawn in
+  the preview. Where a neck cannot be located the part bbox is used and the text says "(neck location approximate)".
+- **PO-FIX-4, guide stub removal.** In inset-outline mode a concealed-area polygon needs a bbox extent of 2 mm and has
+  to survive the footprint inset to carry a guide; rings under 2 mm are skipped. A part left without a guide is
+  `GUIDE_OMITTED` with "no concealed guide area >= 2 mm". Interior-mark mode and sheet labels are unchanged.
+- **PO-FIX-5, ack-all/dedupe (one listing).** The Proof panel and the Fabrication review merge diagnostics with the same code and
+  layer into one row ("n necks (m parts)", one jump control per location, repair actions kept). "Acknowledge all"
+  acknowledges every warning of a code after a confirmation and never touches blocking items. A fabrication result
+  that is on screen is listed once, in the review, not twice.
+- **PO-FIX-6, pitch-match.** "Match pitch to source" (pitch row and the `RESAMPLED` item) sets the largest integer
+  pitch whose raster equals the source, within 15 % of the target and the pitch and pixel limits. A clamp within one
+  1 um step and 2 % per axis reports the info `FAB_MATCHES_SOURCE` instead of `FAB_EXCEEDS_SOURCE`. Tonal mode skips
+  the resample at equal size.
+- **PO-FIX-7, S7 spike.** The S7 depth-model spike is committed (code, READMEs, results, contact sheets, fusion2
+  deliverables); the Modal workspace and app id are scrubbed and `input/cross.png` is ignored until its licence is
+  confirmed.
+- **Gates re-checked in G8.** User12 fabrication, pool 8, five runs: p95 6851 ms (<= 10 s and <= 8794 + 1200 ms;
+  accepted features-stage cost of G3, G.9 #11); serial `--pool 0` p50 13405 / p95 13476 ms (phaseB 12879, record
+  only). Warm draft 720 p95 4039-4146 (over the rule on the loaded machine; the draft runs the square fallback, not the disc) ms against the 3.0 s rule.
+
+### Known gaps (alpha.5)
+
+| Area | Gap in alpha.5 | Arrives in |
+|---|---|---|
+| Draft size | The desktop draft is still 720 px (no candidate reached warm p95 <= 2.5 s in alpha.4; not re-opened) | by decision |
+| Responsiveness | The 100 ms main-thread rule is not met under load | later speed round |
+| Speed numbers | All figures above were measured on a loaded machine (load average 3-7 on the i7, other jobs running), so they are upper bounds and drift between runs | measurement run |
+| Draft morphology | At draft pitches where the minimum feature is < 3 px (R2 = 0), bonded drafts keep the square fallback; the disc applies at fabrication | by design (G-D1) |
+| Own-hole point contact | A part touching its own hole at a point is not flagged | G.9 #2 |
+| Guide threshold | The 2 mm minimum guide extent is a constant, not a setting | G3.3 proper |
+| Match pitch | Offered only within 15 % of the target pitch | none |
+| S2 record | The alpha.4 S2 browser measurement row is still pending (Node figures only) | measurement run |
+| Connected mode | Connected keeps the v1.1 square chain (golden) | none |
+| Neck regions | Necks are located by bbox; more than 8 per part are folded | G4.4 |
+| Material pinches | Cleanup guarantees no waste channel below the minimum feature; a material pinch at a saddle can survive as a thin neck and is reported `NECK_NARROW` (`NECK_KERF` at or below the kerf), not removed | G.9 #8 |
+| No repair action | `NECK_KERF` is blocking at draft and fabrication and has no clip action; widen the art or raise the minimum feature (`PART_POINT_CONTACT` is a warning: the pieces separate when cut but stay supported in bonded mode) | G2 decision |
+| Part thinner than the kerf | A part that vanishes under the kerf erosion gets `PART_THIN` (a warning), not `NECK_KERF` | G.9 #7 |
+| Image edge | Art touching the image edge is now cleaned like interior art (the square kernels kept the border ring) | by design (G-D1) |
+| Stale repairs | The engine version stays `1.0.0-dev` while bonded output changes; only same-quality clips go `REPAIR_STALE` | none |
+
 ## v2.0.0-alpha.4 — 2026-10-09, speed round (worker pool)
 
 A speed round before G3 (plan Appendix F), asked for by the product owner after the alpha.3 test: the fabrication

@@ -54,7 +54,7 @@
 // prettier-ignore
 const WORKER_MODULES = ["util.js","hash.js","vendor/clipper2.js","geom.js","diag.js","schema.js","png.js","jpeg.js","height.js","raster.js","morph.js","islands.js","trace.js","construct.js","material.js","support.js","strokefont.js","guides.js","svgout.js","svgread.js","proof.js","zip.js","docs.js","engine.js"];
 // The app version this worker ships with: equals APP_VERSION in js/app.js and VERSION in sw.js (hygiene test, §9.3).
-const WORKER_APP_VERSION = "2.0.0-alpha.4";
+const WORKER_APP_VERSION = "2.0.0-alpha.5";
 
 (function (self) {
   if (!self || typeof self.postMessage !== "function" || typeof self.importScripts !== "function") return;   // not a worker

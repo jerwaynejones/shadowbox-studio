@@ -663,7 +663,10 @@
     2.79,
     4.37,
     4.12
-   ]
+   ],
+   "ratio": 1.38,
+   "realLayerRatio": 1.38,
+   "ratioNote": "G8: max of the user12 and fusion2 per-layer-sum disc/square ratios (real layers)"
   },
   "g1": {
    "task": "G1",
@@ -907,6 +910,47 @@
      "pass": true
     }
    }
+  },
+  "fab4096": {
+   "task": "G8",
+   "date": "2026-10-10",
+   "command": "node test/bench.js large --only user12 --pool 8 --rows fab4096 --runs 5",
+   "pooledRunsMs": [
+    6488.2,
+    6850.8,
+    5813.2,
+    5130.2,
+    5373.4
+   ],
+   "pooledP50Ms": 5813.2,
+   "pooledP95Ms": 6850.8,
+   "serialMs": 13405.2,
+   "serialP95Ms": 13475.9,
+   "serialCommand": "same with --pool 0 (record, no gate)",
+   "phaseBPooledMs": 8794,
+   "phaseBSerialMs": 12879,
+   "preRoundPooledP95Ms": 6054,
+   "budgetMs": 10000,
+   "budgetPhaseBPlusMs": 9994,
+   "pass": true,
+   "featuresP50Ms": 555.9,
+   "constructP50Ms": 1589.7,
+   "draft720": {
+    "command": "node test/bench.js draft --only a --candidates 720",
+    "warmP95Ms": [
+     4038.6,
+     4146.2
+    ],
+    "budgetMs": 3000,
+    "pass": false,
+    "note": "measured on a loaded machine (an external python3 job at ~130% CPU); G1 recorded 2957.7 ms; the 720 px draft runs the square fallback"
+   },
+   "loadAvg": [
+    4.34,
+    3.87,
+    4.92
+   ],
+   "note": "measured on a loaded machine"
   }
  }
 }

@@ -174,3 +174,24 @@ Use a 4096 × 3084 colour PNG under Plywood (bonded) unless a step says otherwis
       version (page and workers on the same version, no version-skew notice).
 - [ ] Optional measurement: `?bench=fab` (and `&download`) in Chromium on the i7 records p50/p95 and the long-task
       maximum (target ≤ 100 ms) for docs/perf/speed-round.json `final`.
+
+## App fix round, bonded morphology and export hygiene (PO-FIX-1..7, Appendix G G8)
+
+- [ ] Fusion2 art cut check (`spikes/S7/results/fusion2/height_8layer_v2.png`, bonded, fabrication): no
+      corner-touching blocks at the six spots; compare the cut with `crops_square_vs_disc.txt` (the disc cleanup
+      rounds the corners the square window kept).
+- [ ] A bonded project with a sub-kerf neck (a part joined by less than the kerf, for example `fine-pitch`): the
+      export stays blocked on `NECK_KERF`, the neck is outlined in the preview, and there is no clip action; widening
+      the art or raising the minimum feature clears it.
+- [ ] A bonded project with a corner contact: `PART_POINT_CONTACT` shows as a warning ("Parts touch only at a
+      corner"), not as a blocker; acknowledging it lets the export through.
+- [ ] "Acknowledge all" in both panels (the Proof panel and the Fabrication review): it asks for confirmation, only
+      acknowledges warnings of that code, never blocking items, and the count in the confirm text matches.
+- [ ] Fabrication review: each item is listed once (not also in the Proof panel), and merged rows show "n necks
+      (m parts)" with a jump control per neck.
+- [ ] Match pitch: load a 4096 x 3084 source at 300 mm width; the pitch row (and the RESAMPLED item) offers "Match
+      pitch to source"; one click sets the pitch whose raster equals the source and the RESAMPLED item disappears.
+- [ ] Guides: no tiny score stubs on small concealed areas (under 2 mm); a part without a guide is listed
+      `GUIDE_OMITTED` with the reason.
+- [ ] `dist/shadowbox-studio.html` from `file://`: version reads 2.0.0-alpha.5 in the About line; no version-skew
+      notice from the workers.

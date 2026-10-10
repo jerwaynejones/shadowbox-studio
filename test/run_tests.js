@@ -2657,7 +2657,7 @@ suite("engine.js — connected export through the canonical path (DEP-04, GEO-02
     /SBEngine\.fabricationFiles\(/.test(bad) && !/SBEngine\.connectedFiles\(/.test(bad) && !/sheetSVG|proofSVG/.test(bad) && !/SBSvg\.(sheetSVG|proofSVG)/.test(app));
   check("G1.7 → G2.12 preview badge retired: the preview is drawn from the canonical polygons (preview.setSnapshot)",
     !(app + html).includes("Draft preview: cut files come from polygons") && /preview\.setSnapshot\(/.test(app));
-  check("DEP-02 release 2.0.0-alpha.4 (APP_VERSION; alpha.3 until speed round F18)", /const APP_VERSION\s*=\s*"2\.0\.0-alpha\.4"/.test(app));
+  check("DEP-02 release 2.0.0-alpha.5 (APP_VERSION; 2.0.0-alpha.5 since Appendix G G8)", /const APP_VERSION\s*=\s*"2\.0\.0-alpha\.5"/.test(app));
   const cl = fs.readFileSync(path.join(root, "docs/CHANGELOG.md"), "utf8"), sec = (cl.split(/^## v2\.0\.0-alpha\.1\b.*$/m)[1] || "").split(/^## /m)[0];
   check("DEP-04 CHANGELOG v2.0.0-alpha.1 lists the intentional connected-mode changes",
     /frame/i.test(sec) && /CUT/.test(sec) && /SCORE/.test(sec) && /proof/i.test(sec) && /0\.05 mm/.test(sec) && /holes/i.test(sec) && /label/i.test(sec));
@@ -8059,8 +8059,8 @@ suite("checkpoint v2.0.0-alpha.4 — speed round F18 final measurement, records 
   const app = rd("js/app.js"), sw = rd("sw.js"), wk = rd("js/worker.js");
   // ---- release label (F.9 Q10): alpha.4, engine version unchanged (F.3)
   check("F18 release 2.0.0-alpha.4: APP_VERSION, sw.js VERSION and WORKER_APP_VERSION agree (F.9 Q10, DEP-02)",
-    ver(app, /const APP_VERSION = "([^"]+)"/) === "2.0.0-alpha.4" && ver(sw, /const VERSION = "([^"]+)"/) === "2.0.0-alpha.4" &&
-    ver(wk, /const WORKER_APP_VERSION = "([^"]+)"/) === "2.0.0-alpha.4");
+    ver(app, /const APP_VERSION = "([^"]+)"/) === "2.0.0-alpha.5" && ver(sw, /const VERSION = "([^"]+)"/) === "2.0.0-alpha.5" &&
+    ver(wk, /const WORKER_APP_VERSION = "([^"]+)"/) === "2.0.0-alpha.5");
   check("F18 engine version unchanged by the speed round (F.3: no SBSchema.ENGINE.version change)",
     SBSchema.ENGINE.version === "1.0.0-dev" && SBEngine.VERSION === "1.0.0-dev");
 
@@ -8527,6 +8527,25 @@ suite("raster/engine/app — Appendix G G6 match pitch to source (PO-FIX-6, IMG-
     /id="btn-match-pitch"/.test(html) && /SBEngine\.matchSourcePitch\(/.test(app) && /applyFabPitch\(project,\s*m\.fabPitchMM\)/.test(app) && /"RESAMPLED"/.test(app));
 });
 
+suite("CHANGELOG — checkpoint v2.0.0-alpha.5 (R9, PO-FIX-1..7)", () => {
+  const cl = fs.readFileSync(path.join(__dirname, "..", "docs/CHANGELOG.md"), "utf8"), sec = (cl.split(/^## v2\.0\.0-alpha\.5\b.*$/m)[1] || "").split(/^## /m)[0];
+  check("R9 v2.0.0-alpha.5 section sits above alpha.4", cl.search(/^## v2\.0\.0-alpha\.5\b/m) >= 0 && cl.search(/^## v2\.0\.0-alpha\.5\b/m) < cl.search(/^## v2\.0\.0-alpha\.4\b/m));
+  check("R9 alpha.5 names every PO-FIX item and the D3 extension", [1, 2, 3, 4, 5, 6, 7].every((n) => new RegExp("PO-FIX-" + n).test(sec)) && /NECK_KERF/.test(sec) && /PART_POINT_CONTACT/.test(sec) && /D3/.test(sec));
+  check("R9 alpha.5 says NECK_KERF is blocking and PART_POINT_CONTACT is a warning (PO decision 2026-10-10)",
+    /NECK_KERF[^\n]*blocking/i.test(sec) && /PART_POINT_CONTACT[^\n]*warning/i.test(sec));
+  check("R9 alpha.5 has a known-gaps table (draft square fallback, own-hole point contact, guide threshold not a setting, match tolerance, S2 record, connected square chain, material pinches at saddles, no repair for NECK_KERF, image-edge cleanup)",
+    /known gaps/i.test(sec) && /^\|.*\|\s*$/m.test(sec) && /fallback/i.test(sec) && /own hole|outer.hole/i.test(sec) && /2 mm/.test(sec) && /15 ?%/.test(sec) && /S2/.test(sec) && /connected/i.test(sec) &&
+      /pinch/i.test(sec) && /no repair/i.test(sec) && /edge/i.test(sec));
+  check("R9 alpha.5 known gaps name the 720 px draft, the unmet 100 ms responsiveness rule and loaded-machine speed numbers",
+    /720 ?px/.test(sec) && /100 ?ms/.test(sec) && /loaded machine/i.test(sec));
+  check("R9 alpha.5 mentions the worker pool from the speed round, ack-all/dedupe, located necks, guide stubs and pitch-match",
+    /worker pool/i.test(sec) && /acknowledge all/i.test(sec) && /dedup|one listing|single listing/i.test(sec) && /located|neck regions?/i.test(sec) && /stub/i.test(sec) && /match pitch/i.test(sec));
+  const sr = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "docs/perf/speed-round.json"), "utf8"));
+  check("NFR-03 appendixG.morph records the disc vs square per-layer p50 and the real-layer ratio ≤ 3.0 (a recorded figure, not a timing the test takes)", !!sr.appendixG && !!sr.appendixG.morph && sr.appendixG.morph.ratio <= 3.0);
+  check("S2 appendixG.fab4096 records the cumulative pooled p95 (≤ 10000 ms), the serial total and the pre-round reference",
+    !!sr.appendixG.fab4096 && sr.appendixG.fab4096.pooledP95Ms <= 10000 && Number.isFinite(sr.appendixG.fab4096.serialMs) && sr.appendixG.fab4096.phaseBPooledMs === 8794);
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {
@@ -8679,5 +8698,5 @@ suite("CHANGELOG — checkpoint v2.0.0-alpha.3 (R9, PO-PREVIEW-1..7)", () => {
   check("R9 CHANGELOG has no empty-handed Unreleased section above v2.0.0-alpha.3 (items moved into the release)",
     !/^## Unreleased\b/m.test(cl.slice(0, cl.search(/^## v2\.0\.0-alpha\.3\b/m))));
   const sw = fs.readFileSync(path.join(__dirname, "..", "sw.js"), "utf8");
-  check("DEP-02 sw.js VERSION follows the release (2.0.0-alpha.4 since speed round F18; cache name follows it)", /const VERSION\s*=\s*"2\.0\.0-alpha\.4"/.test(sw));
+  check("DEP-02 sw.js VERSION follows the release (2.0.0-alpha.5 since Appendix G G8; cache name follows it)", /const VERSION\s*=\s*"2\.0\.0-alpha\.5"/.test(sw));
 });

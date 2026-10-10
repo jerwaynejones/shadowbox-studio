@@ -5335,7 +5335,7 @@ suite("guides.js — Appendix G G4 no score stubs (PO-FIX-4, ASM-01/02)", () => 
   - `SBProof.ackAllPlan(diags, code, hash, acks) → {code, hash, keys: string[], count}`: the `SBDiag.ackKey(d, hash)` of every **warning** of that code not in `acks`; `[]` for blocking/info codes.
   - `SBProof.fabListedIn({shownIsFab: boolean, fabReviewVisible: boolean}) → "fab-review" | "panel"`: `"fab-review"` iff both are true.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```js
 suite("proof.js/app.js — Appendix G G5 review rows and acknowledge all (PO-FIX-5, UI-04/05, §9.5)", () => {
@@ -5370,8 +5370,8 @@ suite("proof.js/app.js — Appendix G G5 review rows and acknowledge all (PO-FIX
 });
 ```
 
-- [ ] **Step 2: Run the new suite and confirm it fails.** Run `node test/run_tests.js --only "Appendix G G5"`. Expected FAIL ("G5 API present").
-- [ ] **Step 3: Implement the pure functions in `js/proof.js`:**
+- [x] **Step 2: Run the new suite and confirm it fails.** Run `node test/run_tests.js --only "Appendix G G5"`. Expected FAIL ("G5 API present").
+- [x] **Step 3: Implement the pure functions in `js/proof.js`:**
 
 ```js
   P.diagRows = function (diags) {
@@ -5398,7 +5398,7 @@ suite("proof.js/app.js — Appendix G G5 review rows and acknowledge all (PO-FIX
   P.fabListedIn = (o) => (o && o.shownIsFab && o.fabReviewVisible ? "fab-review" : "panel");
 ```
 
-- [ ] **Step 4: Wire the rows, "Acknowledge all" and the single listing into `js/app.js`.**
+- [x] **Step 4: Wire the rows, "Acknowledge all" and the single listing into `js/app.js`.**
   - **`renderDiagnostics`, in each severity group:**
     - iterate `SBProof.diagRows(diags)` filtered by severity instead of `diags.forEach`;
     - a row with one member renders through `diagItem` exactly as today;
@@ -5418,12 +5418,12 @@ suite("proof.js/app.js — Appendix G G5 review rows and acknowledge all (PO-FIX
     - a compact blocking list in the panel (one line per blocking row) is a possible follow-up; it would list those rows twice, so the default is the counts plus the jump control (G.9 #9);
     - `renderFabReview` calls `renderDiagnostics(run.shown)` after rendering the review, so the panel updates when the review appears or hides.
   - **CSS:** `.diag-row-focus` is an inline wrap list of small buttons, and `.diag-confirm` uses the warning tokens, in both themes.
-- [ ] **Step 5: Run the new suite.** Run `node test/run_tests.js --only "Appendix G G5"`. Expected: PASS.
-- [ ] **Step 6: Check the UI by hand** in the dev page (`index.html` from a local server; `run` skill if available):
+- [x] **Step 5: Run the new suite.** Run `node test/run_tests.js --only "Appendix G G5"`. Expected: PASS.
+- [x] **Step 6: Check the UI by hand** in the dev page (`index.html` from a local server; `run` skill if available):
   1. Load the fusion2 PNG and run Preview at fabrication resolution.
   2. In both panels: merged rows show counts, focus buttons switch the Proof to each part, "Acknowledge all" asks to confirm, and the export gate count drops accordingly.
   3. The fabrication diagnostics appear once.
-- [ ] **Step 7: Run the full suite, build and commit.**
+- [x] **Step 7: Run the full suite, build and commit.**
   1. Run `node test/run_tests.js`: 0 failed.
   2. `node build.js`
   3. Commit `js/proof.js js/app.js css/app.css test/run_tests.js dist/shadowbox-studio.html`: `feat(proof,app): G5 merged review rows, acknowledge all with confirm, single fabrication listing (PO-FIX-5)` + trailer.
@@ -5456,7 +5456,7 @@ suite("proof.js/app.js — Appendix G G5 review rows and acknowledge all (PO-FIX
   - `SBEngine.matchSourcePitch(project, {w, h}, deviceClass) → {fabPitchMM, W, H} | null`. It takes the oriented size and `SBSchema.resolveSize`, as `rasterPlan` does, with `FAB_PITCH` limits in µm.
   - New info code `FAB_MATCHES_SOURCE`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```js
 suite("raster/engine/app — Appendix G G6 match pitch to source (PO-FIX-6, IMG-02, PO-LASER-4/5)", () => {
@@ -5491,8 +5491,8 @@ suite("raster/engine/app — Appendix G G6 match pitch to source (PO-FIX-6, IMG-
 ```
 
   Add `"FAB_MATCHES_SOURCE"` to `PLAN.info`.
-- [ ] **Step 2: Run the new suite and confirm it fails.** Run `node test/run_tests.js --only "Appendix G G6"`. Expected FAIL ("G6 API present"). If "area resample at equal size is byte-identical" also fails, **do not** change `resamplePolicy`: drop that one G-D5 item, keep the rest, and record it in the G6 Result note.
-- [ ] **Step 3: Implement the match and the diagnostic rule** in `js/raster.js`.
+- [x] **Step 2: Run the new suite and confirm it fails.** Run `node test/run_tests.js --only "Appendix G G6"`. Expected FAIL ("G6 API present"). If "area resample at equal size is byte-identical" also fails, **do not** change `resamplePolicy`: drop that one G-D5 item, keep the rest, and record it in the G6 Result note.
+- [x] **Step 3: Implement the match and the diagnostic rule** in `js/raster.js`.
 
 ```js
   /** Appendix G G-D5: the largest integer pitch p (µm) whose uncapped raster covers the source on both axes, so fabRaster clamps to it exactly. */
@@ -5537,16 +5537,16 @@ suite("raster/engine/app — Appendix G G6 match pitch to source (PO-FIX-6, IMG-
   };
 ```
 
-- [ ] **Step 4: Add the UI.**
+- [x] **Step 4: Add the UI.**
   - **`index.html`:** after `#in-res`, add `<button id="btn-match-pitch" type="button" class="btn" hidden></button>`.
   - **`js/app.js`:** `syncPitch()` computes `const m = run.sourceImage ? SBEngine.matchSourcePitch(project, {w: srcW, h: srcH}, deviceClass()) : null`, using the source size `updateDimbar` already uses (`js/app.js:1605`).
     - If `m` is null, the button stays hidden.
     - Otherwise it reads `"Match pitch to source (" + SBUtil.fmt(m.fabPitchMM, 3) + " mm/px, " + m.W + " × " + m.H + " px, no resampling)"`.
     - A click runs `project = SBSchema.applyFabPitch(project, m.fabPitchMM); syncControls(); recompute();`.
   - **`diagItem`:** for `d.code === "RESAMPLED"`, `pitchMatchAction(d)` adds the same button (same handler) when `m` is non-null. The item's fix text is unchanged.
-- [ ] **Step 5: Run the new suite.** Run `node test/run_tests.js --only "Appendix G G6"`. Expected: PASS.
-- [ ] **Step 6: Re-capture if needed.** Run the full suite. If an equal-size tonal F0 fixture's digest changed (resample `"none"` instead of `"area"`, geometry bytes equal by Step 1), re-capture it with `--task G6` and assert that its `geometryHash` **and** `layerHashes` are unchanged (review 2026-10-09: `geometryHash` excludes the resample method, but `diagSha`/`wholeSha` change because `RESAMPLED` disappears from equal-size draft fixtures too, so the record is expected to touch `diagSha`/`wholeSha` of every equal-size tonal fixture, draft ones included).
-- [ ] **Step 7: Build and commit.** Run `node build.js` and commit `js/raster.js js/engine.js js/diag.js js/app.js index.html css/app.css test/run_tests.js test/golden/pool-equality.json dist/shadowbox-studio.html`: `feat(raster,engine,app): G6 match pitch to source, one-step FAB_MATCHES_SOURCE (PO-FIX-6)` + trailer.
+- [x] **Step 5: Run the new suite.** Run `node test/run_tests.js --only "Appendix G G6"`. Expected: PASS.
+- [x] **Step 6: Re-capture if needed.** Run the full suite. If an equal-size tonal F0 fixture's digest changed (resample `"none"` instead of `"area"`, geometry bytes equal by Step 1), re-capture it with `--task G6` and assert that its `geometryHash` **and** `layerHashes` are unchanged (review 2026-10-09: `geometryHash` excludes the resample method, but `diagSha`/`wholeSha` change because `RESAMPLED` disappears from equal-size draft fixtures too, so the record is expected to touch `diagSha`/`wholeSha` of every equal-size tonal fixture, draft ones included).
+- [x] **Step 7: Build and commit.** Run `node build.js` and commit `js/raster.js js/engine.js js/diag.js js/app.js index.html css/app.css test/run_tests.js test/golden/pool-equality.json dist/shadowbox-studio.html`: `feat(raster,engine,app): G6 match pitch to source, one-step FAB_MATCHES_SOURCE (PO-FIX-6)` + trailer.
 
 ---
 
@@ -5554,7 +5554,7 @@ suite("raster/engine/app — Appendix G G6 match pitch to source (PO-FIX-6, IMG-
 
 **Files:** Modify `spikes/S7/.gitignore`; add `spikes/S7/**` that the ignore file does not exclude. Leave the `.venv/`, `models/`, `.cache/`, `src/`, `*.npy` and the large rasters excluded. No shipped code changes, so no `dist/` rebuild.
 
-- [ ] **Step 1: Extend `spikes/S7/.gitignore`** with these lines appended:
+- [x] **Step 1: Extend `spikes/S7/.gitignore`** with these lines appended:
 
 ```gitignore
 __pycache__/
@@ -5570,7 +5570,7 @@ results/fusion2/side_by_side.png
 ```
 
   `color.png` is the turbo colour map of the run's nearness (`scripts/common.py:97`). The run's `height.png` and the contact sheets carry the same information.
-- [ ] **Step 2: Check the size and contents before staging.**
+- [x] **Step 2: Check the size and contents before staging.**
 
 ```bash
 git ls-files --others --exclude-standard spikes/S7 > /tmp/s7.txt
@@ -5588,8 +5588,8 @@ grep -nE 'modal\.com/apps|jeremy-1756|\bap-[A-Za-z0-9]{16,}' $(cat /tmp/s7.txt |
   - **Account identifiers (review 2026-10-09, verified):** `results/fusion2/mv2_driver.log` lines 2 and 35 carry a `modal.com/apps/<workspace>/main/ap-…` URL with the workspace name and an app id; `results/manifest.json:114` and `results/fusion2/README.md:237` name the workspace. They are not credentials, but they identify the account. Default: **scrub** them in the committed copies (`<workspace>` and `<app-id>`) with a `sed` that is recorded in the commit message, since the logs are provenance and the text around the identifiers matters; the alternative is to ignore `results/fusion2/mv2_driver.log` and scrub the two text lines (G.9 #10). Re-run the identifier grep: no match.
   - **`spikes/S7/input/cross.png` (1.5 MB source image) would be committed.** Confirm its ownership and licence under NFR-11 (the spike README names the source, or the product owner confirms it is theirs) before committing it. If that cannot be confirmed, add `input/cross.png` to `spikes/S7/.gitignore` and note in the commit message that the scripts need it supplied (G.9 #10).
   - `results/fusion2/billing_*.txt` hold only Modal cost totals. Keep them, unless the grep flags them.
-- [ ] **Step 3: Confirm the suite is unaffected.** Run `node test/run_tests.js`: 0 failed. The hygiene suites must not scan `spikes/S7`; if one does, scope it.
-- [ ] **Step 4: Commit.**
+- [x] **Step 3: Confirm the suite is unaffected.** Run `node test/run_tests.js`: 0 failed. The hygiene suites must not scan `spikes/S7`; if one does, scope it.
+- [x] **Step 4: Commit.**
 
 ```bash
 git add spikes/S7
@@ -5613,7 +5613,7 @@ git show --stat HEAD | tail -1     # record the file count and size in the G7 Re
 - `dist/shadowbox-studio.html`.
 - This plan: tick G1–G8 and add Result notes.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - Retarget the DEP-02 checks (`:2659`, `:8262`) to `/const APP_VERSION\s*=\s*"2\.0\.0-alpha\.5"/` and `/const VERSION\s*=\s*"2\.0\.0-alpha\.5"/`, and the F18 check (`:8047-8049`) to `"2.0.0-alpha.5"` for all three of `APP_VERSION`, `VERSION` and `WORKER_APP_VERSION`. The labels read `(2.0.0-alpha.5 since Appendix G G8)`.
   - Add:
 
@@ -5632,8 +5632,8 @@ suite("CHANGELOG — checkpoint v2.0.0-alpha.5 (R9, PO-FIX-1..7)", () => {
 });
 ```
 
-- [ ] **Step 2: Run the new suite and confirm it fails.** Run `node test/run_tests.js --only "alpha.5"`. Expected: ✗.
-- [ ] **Step 3: Bump the versions and write the release docs.**
+- [x] **Step 2: Run the new suite and confirm it fails.** Run `node test/run_tests.js --only "alpha.5"`. Expected: ✗.
+- [x] **Step 3: Bump the versions and write the release docs.**
   1. Bump the three version strings.
   2. Add a CHANGELOG `## v2.0.0-alpha.5 — <date>, app fix round (bonded morphology & export hygiene)` section with one bullet per PO-FIX-n:
      - the geometry change for bonded (every bonded `geometryHash` changes, so acks and clips of bonded projects are redone once);
@@ -5663,8 +5663,15 @@ suite("CHANGELOG — checkpoint v2.0.0-alpha.5 (R9, PO-FIX-1..7)", () => {
   4. QA_CHECKLIST: the fusion2 art cut check (no corner-touching blocks at the six spots; compare `crops_square_vs_disc.txt`), "Acknowledge all" in both panels, one listing, match pitch on a 4096 × 3084 source at 300 mm.
   5. USER_GUIDE: blocking point contacts and kerf necks, "Acknowledge all", match pitch.
   6. Tick this appendix and add the Result notes.
-- [ ] **Step 4: Run the full suite and build.** Run `node test/run_tests.js`: 0 failed. Then `node build.js`.
-- [ ] **Step 5: Commit.** Add the files above and commit `release(app,docs): v2.0.0-alpha.5 app fix round — bonded disc morphology, kerf/point-contact blocking, review UI (checkpoint)` + trailer. No tag, no push.
+- [x] **Step 4: Run the full suite and build.** Run `node test/run_tests.js`: 0 failed. Then `node build.js`.
+- [x] **Step 5: Commit.** Add the files above and commit `release(app,docs): v2.0.0-alpha.5 app fix round — bonded disc morphology, kerf/point-contact blocking, review UI (checkpoint)` + trailer. No tag, no push.
+
+**Result (2026-10-10):**
+- Released as 2.0.0-alpha.5 (the plan's label; the task text said alpha.4, which would reuse the alpha.4 cache name). Versions, DEP-02/F18 checks retargeted, alpha.5 CHANGELOG suite, QA and USER_GUIDE additions, `speed-round.json` `appendixG.morph.ratio` and `appendixG.fab4096`.
+- Gates (loaded machine, load 3-5): pooled fab4096 p50 5813 / **p95 6851 ms** (pass); serial p50 13405 / p95 13476 ms (record). Warm draft 720 p95 4039 / 4146 ms against 3.0 s: **over**, recorded as a known gap (external CPU load; G1 measured 2958 ms).
+- `PART_POINT_CONTACT` warning and `NECK_KERF` blocking per the product-owner decisions. Full suite: 2097 passed, 0 failed.
+
+---
 
 ### G.7 Measurement plan and performance budgets
 

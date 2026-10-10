@@ -169,6 +169,20 @@ is always an acrylic connected-sheet project (a bonded relief comes back as
 connected sheets) and an info notice `LEGACY_PROJECT_BLOCK` says so. The full
 round trip will be the `.sbrproj` project file (G3.8).
 
+**Blocking and non-blocking checks (alpha.5).** A neck narrower than the laser kerf (`NECK_KERF`) blocks the export
+at draft and fabrication and has no repair action: widen the art, raise the minimum feature size, or accept that the
+export stays blocked. Two bonded parts that touch only at a corner (`PART_POINT_CONTACT`) are a warning: the pieces
+separate when cut and both stay supported, so acknowledge it. Necks are outlined in the preview where they are.
+
+**Acknowledge all.** When many warnings share one code, one row shows the count ("n necks (m parts)") with a jump
+control for each location, and "Acknowledge all" acknowledges every warning of that code after a confirmation. It never
+touches blocking items. Each item is listed once: while the fabrication review is open, the Proof panel shows counts
+only.
+
+**Match pitch to source.** When the fabrication pitch asks for more pixels than the photo has, the pitch row offers
+"Match pitch to source": it sets the largest pitch whose raster equals the photo (within 15 % of your pitch), so
+nothing is resampled.
+
 ## Glue-up (bonded relief)
 
 1. Lay sheet 1 (the base) front face up. Its scored outlines show where the
