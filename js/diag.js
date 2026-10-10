@@ -12,8 +12,8 @@
  *                                CODES and cannot be passed in (§9.5: no
  *                                downgrade). ackState is "unacked" for
  *                                warnings and "n/a" for blocking and info.
- *   SBDiag.aggregate(diags)      merges PART_SMALL, PART_THIN, NECK_NARROW and
- *                                FEATURE_MARGINAL per (code, layer[, detail.kind])
+ *   SBDiag.aggregate(diags)      merges PART_SMALL, PART_THIN, NECK_NARROW, NECK_KERF
+ *                                (Appendix G G2) and FEATURE_MARGINAL per (code, layer[, detail.kind])
  *                                (and GUIDE_OMITTED, alpha.3 E10) into one diagnostic with count, parts[] and a
  *                                region list.
  *   SBDiag.ackKey(diag, geometryHash)  "code|layer|part-or-*|geometryHash"
@@ -110,6 +110,10 @@
       "Re-import the original source image to regenerate this project."],
     ["GUIDE_UNCONTAINED", B, F, "Assembly guide is not inside the part it marks",
       "Reduce the guide allowance or label height, or switch the guide mode."],
+    ["NECK_KERF", B, F, "Neck is narrower than the laser kerf",
+      "The kerf cuts through it and the part falls apart: widen the neck, raise the minimum feature size so cleanup removes it, or clip it."],
+    ["PART_POINT_CONTACT", B, F, "Parts touch only at a point",
+      "The laser separates parts that touch at a point; widen the contact to at least the minimum feature, or move them apart by more than the kerf."],
     // ---- blocking: import (SBPng.CODES, SBJpeg.CODES, preflight)
     ["PNG_16BIT", B, P, "16-bit PNG is not supported",
       "Re-save the image as an 8-bit PNG."],
@@ -222,7 +226,7 @@
   Object.freeze(CODES);
 
   const QUALITIES = ["draft", "fabrication"];
-  const AGGREGATED = new Set(["PART_SMALL", "PART_THIN", "NECK_NARROW", "FEATURE_MARGINAL", "GUIDE_OMITTED"]);
+  const AGGREGATED = new Set(["PART_SMALL", "PART_THIN", "NECK_NARROW", "NECK_KERF", "FEATURE_MARGINAL", "GUIDE_OMITTED"]);   // G2: PART_POINT_CONTACT is not aggregated (G-D2)
   // G2.8 (GEO-05): small-part, thin-part and neck warnings (and FEATURE_MARGINAL of kind part|neck) are labelled.
   const GEO05 = new Set(["PART_SMALL", "PART_THIN", "NECK_NARROW", "FEATURE_MARGINAL"]);
   const GEO05_NOTE = "Conservative fabrication warning — not a structural simulation";

@@ -1786,7 +1786,7 @@ suite("diag.js — SBDiag registry, make() and aggregate() (§9.1, §9.5, UI-04;
   const PLAN = {
     blocking: ["BOND_UNSUPPORTED", "BOND_EMPTY_UNDER", "GEO_SELF_INTERSECT", "GEO_ZERO_AREA", "GEO_DUPLICATE", "GEO_OPEN",
       "SAMPLING_LOW", "NONFINITE", "REG_HOLE_INVALID", "PAGE_OVERFLOW", "CONNECTED_SPLIT", "STALE",
-      "REPAIR_STALE", "COMPLEXITY_LIMIT", "LEGACY_NEEDS_SOURCE", "GUIDE_UNCONTAINED"],
+      "REPAIR_STALE", "COMPLEXITY_LIMIT", "LEGACY_NEEDS_SOURCE", "GUIDE_UNCONTAINED", "NECK_KERF", "PART_POINT_CONTACT"],
     warning: ["MAT_UNCALIBRATED", "PART_SMALL", "PART_THIN", "NECK_NARROW", "SUPPORT_NARROW",
       "GUIDE_OMITTED", "CLEANUP_ALTERED", "SMOOTH_FALLBACK", "TRAILING_OMITTED",
       "ALIGN_CLEARANCE_ZERO", "REPAIR_REVIEW_FAB", "FAB_EXCEEDS_SOURCE"],
@@ -8243,6 +8243,65 @@ suite("morph/construct — Appendix G G1 bonded disc morphology (PO-FIX-1, GEO-0
       Object.keys(g1.previous || {}).sort().join() === bondedIds.join()); }
 });
 
+// ------------------------------------------------ Appendix G G2 (PO-FIX-2): sub-kerf necks and point contacts are blocking (D3 extension)
+suite("support.js — Appendix G G2 kerf necks and point contacts (PO-FIX-2, D3, GEO-02/05)", () => {
+  const mk = (layers, w, h) => SBMaterial.assignParts(SBMaterial.fromMasks(layers.length === w * h ? [new Uint8Array(w * h).fill(1), layers] : layers, w, h, { artWMM: w * 0.1, artHMM: h * 0.1, frameMM: 0 }, {}));   // a single mask = the upper layer over a full base
+  const codes = (ds) => ds.map((d) => d.code), base = { minFeatureMM: 1.5, advisoryFeatureMM: 2, minPartMM2: 0, mmPerPxMax: 0.1, calibrated: true };
+  check("G2 codes registered as blocking", ["NECK_KERF", "PART_POINT_CONTACT"].every((c) => SBDiag.CODES[c] && SBDiag.CODES[c].severity === "blocking"));
+  // two 6 mm blocks joined by an axis neck of n px (0.1 mm/px)
+  const neck = (n) => { const w = 160, h = 80, m = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = (x >= 10 && x < 70 && y >= 10 && y < 70) || (x >= 90 && x < 150 && y >= 10 && y < 70) || (x >= 70 && x < 90 && y >= 40 && y < 40 + n) ? 1 : 0;
+    return mk([new Uint8Array(w * h).fill(1), m], w, h); };
+  const run = (L, cfg) => SBSupport.featureChecks(L, Object.assign({}, base, cfg));
+  check("PO-FIX-2 a 0.1 mm neck with the 0.15 mm kerf → NECK_KERF (blocking), no NECK_NARROW for that part",
+    codes(run(neck(1), { kerfMM: 0.15 })).includes("NECK_KERF") && !codes(run(neck(1), { kerfMM: 0.15 })).includes("NECK_NARROW"));
+  check("PO-FIX-2 a 0.2 mm neck with the 0.15 mm kerf → NECK_NARROW (warning) only", (() => { const c = codes(run(neck(2), { kerfMM: 0.15 })); return c.includes("NECK_NARROW") && !c.includes("NECK_KERF"); })());
+  check("G.4 #3 no machine (kerfMM null): 0.5 µm floor, a 0.1 mm neck is not NECK_KERF", !codes(run(neck(1), { kerfMM: null })).includes("NECK_KERF"));
+  check("G.4 #3 kerf 0 behaves as the floor", !codes(run(neck(1), { kerfMM: 0 })).includes("NECK_KERF"));
+  const nk = run(neck(1), { kerfMM: 0.15 }).find((d) => d.code === "NECK_KERF");
+  check("PO-FIX-2 NECK_KERF carries the limit in mm and the layer", !!nk && nk.layer === 1 && nk.limit.value === 0.15 && nk.limit.unit === "mm");
+  check("G-D2 an odd kerf (0.151 mm, scale 2) still flags a 0.1 mm neck and not a 0.2 mm one", codes(run(neck(1), { kerfMM: 0.151 })).includes("NECK_KERF") && !codes(run(neck(2), { kerfMM: 0.151 })).includes("NECK_KERF"));
+  { // cost control (review 2026-10-09): no kerf, no pass; a kerf adds exactly one extra offset per layer, at scale 1 for an even T
+    const calls = (cfg) => { const o = SBGeom.offset, seen = []; SBGeom.offset = (p, d, j) => (seen.push(d + ":" + j), o(p, d, j));
+      try { run(neck(2), cfg); } finally { SBGeom.offset = o; } return seen; };
+    check("G-D2 kerfMM null/0: the kerf erosion pass is skipped (no −75 offset)", !calls({ kerfMM: null }).some((c) => /^-75:/.test(c)) && !calls({ kerfMM: 0 }).some((c) => /^-75:/.test(c)));
+    check("G-D2 kerfMM 0.15: one square-join offset of −75 µm at scale 1", calls({ kerfMM: 0.15 }).filter((c) => c === "-75:square").length === 1); }
+  // point contact: two 3 mm squares touching at one corner (pixel saddle)
+  const saddle = (() => { const w = 80, h = 80, m = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = (x >= 10 && x < 40 && y >= 10 && y < 40) || (x >= 40 && x < 70 && y >= 40 && y < 70) ? 1 : 0;
+    return mk([new Uint8Array(w * h).fill(1), m], w, h); })();
+  const pc = run(saddle, { kerfMM: 0.15, pointContacts: true }).filter((d) => d.code === "PART_POINT_CONTACT");
+  // end-to-end (review 2026-10-09): the same saddle through bonded construction. The disc closing turns the contact into a thin neck: one part,
+  // NECK_NARROW (a warning, above the kerf), no PART_POINT_CONTACT. The guarantee is for waste, not material (G-D2, G.9 #8).
+  { const w = 80, h = 80, m = new Uint8Array(w * h), px = { featR: 8, discR2: 64, bridgeR: 9, cullPx: 1000, maxBridgePx: 400, speckPx: 1000, holePx: 450, frameAnchored: false, cullEnabled: false };
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = (x >= 10 && x < 40 && y >= 10 && y < 40) || (x >= 40 && x < 70 && y >= 40 && y < 70) ? 1 : 0;
+    const fin = SBConstruct.bonded([new Uint8Array(w * h).fill(1), m], w, h, px).final, L = mk(fin, w, h), c = codes(run(L, { kerfMM: 0.15, pointContacts: true }));
+    check("PO-FIX-2/G.9 #8 saddle after bonded construction: one part, NECK_NARROW (warning), no PART_POINT_CONTACT, no NECK_KERF",
+      L[1].parts.length === 1 && c.includes("NECK_NARROW") && !c.includes("PART_POINT_CONTACT") && !c.includes("NECK_KERF")); }
+  check("PO-FIX-2 two parts touching at a vertex → one PART_POINT_CONTACT naming both parts, region around (4 mm, 4 mm)",
+    pc.length === 1 && (pc[0].parts || []).length === 2 && Array.isArray(pc[0].region) && pc[0].region.every((v, i) => Math.abs(v - [3.5, 3.5, 4.5, 4.5][i]) < 1e-9));
+  check("PO-FIX-2 pointContacts false (connected): no PART_POINT_CONTACT", !codes(run(saddle, { kerfMM: 0.15 })).includes("PART_POINT_CONTACT"));
+  check("D3 4 a part touching its own hole at a point is not a point contact (G.9 #2)", (() => { const w = 60, h = 60, m = new Uint8Array(w * h).fill(0);
+    for (let y = 10; y < 50; y++) for (let x = 10; x < 50; x++) m[y * w + x] = 1; for (let y = 20; y < 30; y++) for (let x = 20; x < 30; x++) m[y * w + x] = 0;
+    for (let y = 30; y < 40; y++) for (let x = 30; x < 40; x++) m[y * w + x] = 0;   // two holes touching at (30, 30)
+    return !codes(run(mk([new Uint8Array(w * h).fill(1), m], w, h), { kerfMM: 0.15, pointContacts: true })).includes("PART_POINT_CONTACT"); })());
+  check("G2 featureHead refuses a negative or non-finite kerfMM", ["x", -1, NaN].every((k) => { try { run(neck(2), { kerfMM: k }); return false; } catch (e) { return /kerfMM/.test(e.message); } }));
+  check("EXP-07 NECK_KERF blocks the export gate", SBDiag.exportGate([nk], new Set(), { quality: "draft", geometryHash: "x" }, "draft").reason === "BLOCKING");   // cfg quality defaults to draft
+  // engine wiring: bonded plywood request passes the machine kerf and pointContacts
+  const src = fs.readFileSync(path.join(__dirname, "..", "js", "engine.js"), "utf8");
+  check("G2 engine passes kerfMM and pointContacts to both featureChecks calls", /kerfMM:\s*[^,]*machine/.test(src) && (src.match(/pointContacts:/g) || []).length >= 2);
+  // G-D6: the G2 recapture changed diagnostics only (chain-aware like F1: compare with what G2 produced); connected ids may appear,
+  // with geometryHash and layerHashes unchanged as for every other id
+  { const gold = JSON.parse(fs.readFileSync(path.join(__dirname, "golden", "pool-equality.json"), "utf8")), recs = gold.recaptured || [];
+    const g2 = recs.find((r) => r.task === "G2"), i2 = recs.indexOf(g2);
+    const after = (id) => { const later = recs.slice(i2 + 1).find((r) => r.ids.includes(id)); return later ? later.previous[id] : gold.fixtures[id]; };
+    const keep = ["slow", "status", "code", "geometryHash", "layerHashes", "cleanupSha", "supportSha", "guidesSha", "statsSha"];
+    const off = g2 ? g2.ids.filter((id) => !g2.previous || !g2.previous[id] || keep.some((k) => JSON.stringify(g2.previous[id][k]) !== JSON.stringify(after(id)[k])) ||
+      g2.previous[id].diagSha === after(id).diagSha) : ["(no G2 recapture record)"];
+    check("G-D6 G2 re-captured ids differ from their previous digests only in diagSha/wholeSha" + (off.length ? " — " + off.join(", ") : ""),
+      !!g2 && g2.ids.length > 0 && off.length === 0 && Object.keys(g2.previous).sort().join() === g2.ids.slice().sort().join()); }
+});
+
 // ------------------------------------------------------------------ report
 (async () => {
   for (const [name, fn] of queue) {
@@ -8397,4 +8456,3 @@ suite("CHANGELOG — checkpoint v2.0.0-alpha.3 (R9, PO-PREVIEW-1..7)", () => {
   const sw = fs.readFileSync(path.join(__dirname, "..", "sw.js"), "utf8");
   check("DEP-02 sw.js VERSION follows the release (2.0.0-alpha.4 since speed round F18; cache name follows it)", /const VERSION\s*=\s*"2\.0\.0-alpha\.4"/.test(sw));
 });
-

@@ -2249,8 +2249,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *                                CODES and cannot be passed in (§9.5: no
  *                                downgrade). ackState is "unacked" for
  *                                warnings and "n/a" for blocking and info.
- *   SBDiag.aggregate(diags)      merges PART_SMALL, PART_THIN, NECK_NARROW and
- *                                FEATURE_MARGINAL per (code, layer[, detail.kind])
+ *   SBDiag.aggregate(diags)      merges PART_SMALL, PART_THIN, NECK_NARROW, NECK_KERF
+ *                                (Appendix G G2) and FEATURE_MARGINAL per (code, layer[, detail.kind])
  *                                (and GUIDE_OMITTED, alpha.3 E10) into one diagnostic with count, parts[] and a
  *                                region list.
  *   SBDiag.ackKey(diag, geometryHash)  "code|layer|part-or-*|geometryHash"
@@ -2347,6 +2347,10 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       "Re-import the original source image to regenerate this project."],
     ["GUIDE_UNCONTAINED", B, F, "Assembly guide is not inside the part it marks",
       "Reduce the guide allowance or label height, or switch the guide mode."],
+    ["NECK_KERF", B, F, "Neck is narrower than the laser kerf",
+      "The kerf cuts through it and the part falls apart: widen the neck, raise the minimum feature size so cleanup removes it, or clip it."],
+    ["PART_POINT_CONTACT", B, F, "Parts touch only at a point",
+      "The laser separates parts that touch at a point; widen the contact to at least the minimum feature, or move them apart by more than the kerf."],
     // ---- blocking: import (SBPng.CODES, SBJpeg.CODES, preflight)
     ["PNG_16BIT", B, P, "16-bit PNG is not supported",
       "Re-save the image as an 8-bit PNG."],
@@ -2459,7 +2463,7 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   Object.freeze(CODES);
 
   const QUALITIES = ["draft", "fabrication"];
-  const AGGREGATED = new Set(["PART_SMALL", "PART_THIN", "NECK_NARROW", "FEATURE_MARGINAL", "GUIDE_OMITTED"]);
+  const AGGREGATED = new Set(["PART_SMALL", "PART_THIN", "NECK_NARROW", "NECK_KERF", "FEATURE_MARGINAL", "GUIDE_OMITTED"]);   // G2: PART_POINT_CONTACT is not aggregated (G-D2)
   // G2.8 (GEO-05): small-part, thin-part and neck warnings (and FEATURE_MARGINAL of kind part|neck) are labelled.
   const GEO05 = new Set(["PART_SMALL", "PART_THIN", "NECK_NARROW", "FEATURE_MARGINAL"]);
   const GEO05_NOTE = "Conservative fabrication warning — not a structural simulation";
@@ -7164,6 +7168,15 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *       · Advisory tier (PO-LASER-6): a part that passes both at minFeatureMM but vanishes or splits under the same
  *         erosion at advisoryFeatureMM → FEATURE_MARGINAL (warning, detail.kind "part" | "neck").
  *       · PART_SMALL (warning) when a part's area < minPartMM2; MAT_UNCALIBRATED (warning) when !calibrated.
+ *       · Appendix G G2 (D3 extension, G-D2, PO-FIX-2): NECK_KERF (blocking) when a part splits under the octagonal
+ *         ("square" join) erosion by half the kerf T = round(kerfMM·1000) µm (a neck ≤ T; T even: scale 1, delta −T/2;
+ *         T odd: the part ×2, delta −T half-µm). No kerf (kerfMM absent, null or 0), no pass; hole-free convex parts are
+ *         skipped (they cannot split). A NECK_KERF part gets no NECK_NARROW and no neck FEATURE_MARGINAL; a part that
+ *         vanishes under the kerf erosion gets PART_THIN only. NECK_KERF is aggregated like NECK_NARROW.
+ *       · PART_POINT_CONTACT (blocking, cfg.pointContacts, the engine sets it in bonded mode): two parts of one layer share
+ *         a ring vertex (after normalize every inter-part point contact is one, D3 2.1–2.3); one diagnostic per contact
+ *         with parts [a, b] and a 1 mm box around it, not aggregated. A bbox sweep limits the vertex map to parts whose
+ *         bboxes touch. A part touching its own hole at a point is not a contact (D3 4).
  *     Appendix C (offsets are the slowest primitive): ONE offset per layer and width, on the union of the parts that
  *     still need it (never per part); a part whose bbox is ≤ 2·halfUm in some direction vanishes without an offset.
  *     On orthogonal layers (bonded, unsmoothed, D1) the advisory erosion is the first residual eroded by the
@@ -7171,7 +7184,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
  *     The residual components are attributed to their parts by the same bbox sweep as the support graph (witness: a
  *     residual vertex, halfUm inside its part). The GEO-05 messages carry SBDiag's conservative-warning note.
  *     cfg = {minFeatureMM > 0, advisoryFeatureMM? (≥ minFeatureMM; absent = no advisory tier), minPartMM2 ≥ 0 (absent
- *       = 0), mmPerPxMax > 0 (the coarser real axis pitch), calibrated: boolean, revision = 0, quality = "draft"}.
+ *       = 0), mmPerPxMax > 0 (the coarser real axis pitch), calibrated: boolean, revision = 0, quality = "draft",
+ *       kerfMM? (null/absent = no machine, else finite ≥ 0), pointContacts? (boolean, default false)}.
  *     Speed round F9 (S1): featureChecks = featureHead (checks, MAT_UNCALIBRATED, SAMPLING_LOW/DRAFT_COARSER) +
  *     featureLayer(L, k, cfg) per layer (the pool's item; raw diagnostics) + one SBDiag.aggregate.
  *
@@ -7433,27 +7447,52 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
   /** Speed round F9: the S.validate argument check alone (the pooled bonded path runs supportPair items, then supportFold). */
   S.validateArgs = function (layers, mode, cfg) { checkArgs(layers, mode, cfg); };
 
+  /** Appendix G G2: every ring coordinate of polys multiplied by the integer s (s === 1 returns polys itself). */
+  function scaled(polys, s) {
+    if (s === 1) return polys;
+    const ring = (r) => r.map((v) => v * s);
+    return polys.map((p) => ({ outer: ring(p.outer), holes: (p.holes || []).map(ring) }));
+  }
+
   /**
-   * Miter erosion by halfUm (integer µm) of src(i) for each part i in idx: {count: Map(i → residual components),
-   * residual: Map(i → PolygonWithHoles[])}. src(i) is the part polygon, or (composition, orthogonal layers) its earlier
-   * residual. One offset on the union of every src that can survive (Appendix C); a src whose bbox is ≤ 2·halfUm in
-   * some direction vanishes without it. Residual components are attributed to their parts by the bbox sweep.
+   * Erosion by halfUnits (an integer, in the units of opts.scale) of src(i) for each part i in idx: {count: Map(i →
+   * residual components), residual: Map(i → PolygonWithHoles[])}. src(i) is the part polygon, or (composition,
+   * orthogonal layers) its earlier residual, at opts.scale (1 = µm, 2 = half-µm; Appendix G G2). opts.join is the
+   * SBGeom.offset join ("miter" default; "square" = the octagon). One offset on the union of every src that can survive
+   * (Appendix C); a src whose bbox is ≤ 2·halfUnits in some direction vanishes without it. Residual components are
+   * attributed to their parts (bboxes and polygons at the same scale) by the bbox sweep.
    */
-  function erode(parts, idx, halfUm, src) {
+  function erode(parts, idx, halfUnits, src, opts) {
     const G = global.SBGeom, count = new Map(), residual = new Map(), need = [];
+    const join = (opts && opts.join) || "miter", sc = (opts && opts.scale) || 1;
     for (const i of idx) {
       const polys = src(i);
       count.set(i, 0); residual.set(i, []);
-      if (halfUm <= 0) { count.set(i, polys.length); residual.set(i, polys); continue; }
+      if (halfUnits <= 0) { count.set(i, polys.length); residual.set(i, polys); continue; }
       const b = bboxOf(polys);
-      if (b && b[2] - b[0] > 2 * halfUm && b[3] - b[1] > 2 * halfUm) need.push(i);
+      if (b && b[2] - b[0] > 2 * halfUnits && b[3] - b[1] > 2 * halfUnits) need.push(i);
     }
     if (!need.length) return { count, residual };
-    const comps = G.components(G.offset([].concat(...need.map(src)), -halfUm, "miter"));
+    const comps = G.components(G.offset([].concat(...need.map(src)), -halfUnits, join));
     const items = comps.map((c) => ({ b: G.bbox(c[0]), witness: { x: c[0].outer[0], y: c[0].outer[1] } }));
-    const owner = attribute(items, need.map((i) => parts[i]));
+    const atScale = (p) => (sc === 1 ? p : { bbox: (p.bbox || G.bbox(p.polygon)).map((v) => v * sc), polygon: scaled([p.polygon], sc)[0] });
+    const owner = attribute(items, need.map((i) => atScale(parts[i])));
     owner.forEach((j, c) => { if (j === null) return; const i = need[j]; count.set(i, count.get(i) + 1); residual.get(i).push(comps[c][0]); });
     return { count, residual };
+  }
+
+  /** Appendix G G2: true for a hole-free polygon whose outer ring turns one way only (exact integer cross products). */
+  function convexNoHoles(poly) {
+    if (poly.holes && poly.holes.length) return false;
+    const r = poly.outer, n = r.length / 2;
+    let sign = 0;
+    for (let i = 0; i < n; i++) {
+      const a = (i + n - 1) % n, c = (i + 1) % n;
+      const cr = (r[2 * i] - r[2 * a]) * (r[2 * c + 1] - r[2 * i + 1]) - (r[2 * i + 1] - r[2 * a + 1]) * (r[2 * c] - r[2 * i]);
+      if (cr === 0) continue;
+      if (sign === 0) sign = cr > 0 ? 1 : -1; else if ((cr > 0 ? 1 : -1) !== sign) return false;
+    }
+    return true;
   }
 
   /** True when every edge of every part is axis-parallel (bonded, unsmoothed D1 geometry). */
@@ -7482,6 +7521,10 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const hasSampling = cfg.samplingMmPerPx !== undefined && cfg.samplingMmPerPx !== null;
     if (hasSampling && !posNum(cfg.samplingMmPerPx)) throw sfail("samplingMmPerPx must be a finite number > 0 (got " + cfg.samplingMmPerPx + ")");
     if (typeof cfg.calibrated !== "boolean") throw sfail("calibrated must be a boolean");
+    // Appendix G G2 (G-D2): kerfMM absent/null = no machine, else finite ≥ 0; pointContacts absent or boolean
+    if (cfg.kerfMM !== undefined && cfg.kerfMM !== null && !(typeof cfg.kerfMM === "number" && Number.isFinite(cfg.kerfMM) && cfg.kerfMM >= 0))
+      throw sfail("kerfMM must be null or a finite number ≥ 0 (got " + cfg.kerfMM + ")");
+    if (cfg.pointContacts !== undefined && typeof cfg.pointContacts !== "boolean") throw sfail("pointContacts must be a boolean (got " + cfg.pointContacts + ")");
     const D = global.SBDiag;
     const dOpts = { revision: cfg.revision === undefined ? 0 : cfg.revision, quality: cfg.quality || "draft" };
     const make = (code, f) => D.make(code, Object.assign({}, dOpts, f));
@@ -7512,6 +7555,14 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     const mfUm = Math.round(cfg.minFeatureMM * 1000), halfMin = Math.floor(mfUm / 2);
     const advUm = hasAdv ? Math.round(cfg.advisoryFeatureMM * 1000) : mfUm, halfAdv = Math.floor(advUm / 2);
     const parts = L.parts, all = parts.map((p, i) => i);
+    // Appendix G G2 (G-D2): a part that splits under the octagonal erosion by half the kerf T has a neck the kerf cuts
+    // through (NECK_KERF, blocking). No kerf, no pass. T even: scale 1, delta −T/2 µm; T odd: scale 2, delta −T half-µm.
+    const kerfUm = cfg.kerfMM === undefined || cfg.kerfMM === null ? 0 : Math.round(cfg.kerfMM * 1000);
+    let kerfNeck = new Set();
+    if (kerfUm > 0) { const T = kerfUm, Sc = T % 2 ? 2 : 1;
+      const splittable = all.filter((i) => !convexNoHoles(parts[i].polygon));   // an erosion of a convex part stays one piece
+      const ek = erode(parts, splittable, (T * Sc) / 2, (i) => scaled([parts[i].polygon], Sc), { join: "square", scale: Sc });
+      kerfNeck = new Set(splittable.filter((i) => ek.count.get(i) > 1)); }
     const e1 = erode(parts, all, halfMin, (i) => [parts[i].polygon]), c1 = e1.count;
     const pass = all.filter((i) => c1.get(i) === 1);
     // Square (miter) erosions compose exactly on orthogonal lattice geometry: erode the first residual by the
@@ -7522,15 +7573,42 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       const region = regionMM(p.bbox || G.bbox(p.polygon)), areaMM2 = G.area([p.polygon]) / 1e6, base = { layer: k, part: p.id, areaMM2, region };
       if (areaMM2 < minPart) diags.push(make("PART_SMALL", Object.assign({}, base, { measured: { value: areaMM2, unit: "mm2" }, limit: { value: minPart, unit: "mm2" },
         detail: "area " + Math.round(areaMM2 * 100) / 100 + " mm² is below " + minPart + " mm²" })));
-      const lim = { value: mfUm / 1000, unit: "mm" }, n1 = c1.get(i);
+      const lim = { value: mfUm / 1000, unit: "mm" }, n1 = c1.get(i), kn = kerfNeck.has(i);
+      if (kn) diags.push(make("NECK_KERF", Object.assign({}, base, { measured: null, limit: { value: kerfUm / 1000, unit: "mm" },
+        detail: "the part splits into pieces at the " + kerfUm / 1000 + " mm kerf" })));
       if (n1 === 0) diags.push(make("PART_THIN", Object.assign({}, base, { limit: lim, detail: "the part disappears when eroded by half of " + mfUm / 1000 + " mm" })));
-      else if (n1 > 1) diags.push(make("NECK_NARROW", Object.assign({}, base, { limit: lim, detail: "the part splits into " + n1 + " pieces when eroded by half of " + mfUm / 1000 + " mm" })));
+      else if (n1 > 1) { if (!kn) diags.push(make("NECK_NARROW", Object.assign({}, base, { limit: lim, detail: "the part splits into " + n1 + " pieces when eroded by half of " + mfUm / 1000 + " mm" }))); }
       else if (c2) {
         const n2 = c2.get(i), alim = { value: advUm / 1000, unit: "mm" };
         if (n2 === 0) diags.push(make("FEATURE_MARGINAL", Object.assign({}, base, { limit: alim, detail: { kind: "part", text: "the part is narrower than the advisory " + advUm / 1000 + " mm" } })));
-        else if (n2 > 1) diags.push(make("FEATURE_MARGINAL", Object.assign({}, base, { limit: alim, detail: { kind: "neck", text: "a neck is narrower than the advisory " + advUm / 1000 + " mm" } })));
+        else if (n2 > 1 && !kn) diags.push(make("FEATURE_MARGINAL", Object.assign({}, base, { limit: alim, detail: { kind: "neck", text: "a neck is narrower than the advisory " + advUm / 1000 + " mm" } })));
       }
     });
+    // Appendix G G2 (G-D2, bonded only): every inter-part point contact is a vertex shared by two parts' rings after
+    // normalize (D3 2.1–2.3). A bbox sweep selects the parts whose bbox touches another's (inclusive); only their
+    // vertices enter the map. One PART_POINT_CONTACT per shared vertex, in part, ring, vertex order (not aggregated).
+    if (cfg.pointContacts && parts.length > 1) {
+      const owner = new Map(), seen = new Set(), cand = new Set(), bb = (p) => p.bbox || G.bbox(p.polygon);
+      const order = all.slice().sort((a, b) => bb(parts[a])[0] - bb(parts[b])[0] || a - b);
+      for (let a = 0; a < order.length; a++) for (let b = a + 1; b < order.length; b++) {
+        const A = bb(parts[order[a]]), B = bb(parts[order[b]]);
+        if (B[0] > A[2]) break;                                          // sorted by x0: no later part can touch A
+        if (B[1] <= A[3] && B[3] >= A[1]) { cand.add(order[a]); cand.add(order[b]); }
+      }
+      parts.forEach((p, i) => {
+        if (!cand.has(i)) return;
+        for (const r of [p.polygon.outer].concat(p.polygon.holes || [])) for (let j = 0; j < r.length; j += 2) {
+          const key = (r[j] + 33554432) * 67108864 + (r[j + 1] + 33554432);   // exact for |x|, |y| < 2^25 µm (D4 range)
+          const o = owner.get(key);
+          if (o === undefined) owner.set(key, i);
+          else if (o !== i && !seen.has(key)) {
+            seen.add(key); const x = r[j] / 1000, y = r[j + 1] / 1000;
+            diags.push(make("PART_POINT_CONTACT", { layer: k, part: null, parts: [parts[o].id, p.id], region: [x - 0.5, y - 0.5, x + 0.5, y + 0.5],
+              detail: "parts " + parts[o].id + " and " + p.id + " touch only at (" + x + ", " + y + ") mm" }));
+          }
+        }
+      });
+    }
     return diags;
   };
 
@@ -9365,7 +9443,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
       revision: dOpts.revision, quality: dOpts.quality }).diagnostics);
     const { sxUm, syUm } = M.scale({ w, h, artWMM: page.artWMM, artHMM: page.artHMM });
     out.push(...S.featureChecks(view.layers, { minFeatureMM: mat.minFeatureMM, advisoryFeatureMM: mat.advisoryFeatureMM, minPartMM2: mat.minPartMM2,
-      mmPerPxMax: Math.max(sxUm, syUm) / 1000, calibrated: mat.calibrated, revision: dOpts.revision, quality: dOpts.quality }));
+      mmPerPxMax: Math.max(sxUm, syUm) / 1000, calibrated: mat.calibrated, revision: dOpts.revision, quality: dOpts.quality,
+      kerfMM: project.machine ? project.machine.kerfMM : null, pointContacts: project.construction.mode === "bonded-relief" }));   // Appendix G G2 (G-D2)
     out.push(...S.checkEnvelope({ wMM: page.wMM, hMM: page.hMM }, project.machine, mat, dOpts));
     return out;
   };
@@ -10225,7 +10304,8 @@ global.Clipper2 = Object.freeze({"Active":Ne,"ClipType":n,"Clipper":qt,"Clipper6
     // (rasterPlan reads only sizes; its FAB_* diagnostics are not repeated here). Diagnostics are not hash input.
     const fabGeo = quality === "fabrication" ? geo : E.rasterPlan(p, { w: ns.w, h: ns.h }, "fabrication", deviceClass).geometry;
     const fcfg = { minFeatureMM: mat.minFeatureMM, advisoryFeatureMM: mat.advisoryFeatureMM, minPartMM2: mat.minPartMM2,
-      mmPerPxMax: geo.mmPerPxMax, samplingMmPerPx: fabGeo.mmPerPxMax, calibrated: mat.calibrated, revision, quality };
+      mmPerPxMax: geo.mmPerPxMax, samplingMmPerPx: fabGeo.mmPerPxMax, calibrated: mat.calibrated, revision, quality,
+      kerfMM: p.machine ? p.machine.kerfMM : null, pointContacts: bonded };   // Appendix G G2 (G-D2)
     const fhead = S.featureHead(layers, fcfg);   // F9: featureChecks = head + one featureLayer item per layer + one aggregate
     diagnostics.push(...D.aggregate(fhead.concat(...(yield batch("featureLayer", layers.map((L, k) => [L, k, fcfg]), null, null, null, late)))));
     step("envelope", 0.95);

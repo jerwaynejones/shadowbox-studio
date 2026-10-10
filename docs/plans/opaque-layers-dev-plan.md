@@ -4989,7 +4989,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
     - `PART_POINT_CONTACT` (blocking): `{layer, parts: [a, b], region: [x−0.5, y−0.5, x+0.5, y+0.5] mm, detail}`, one per contact point.
   - `erode(parts, idx, halfUnits, src, {join = "miter", scale = 1})`: `src(i)` returns polygons at the given scale (1 or 2).
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```js
 suite("support.js — Appendix G G2 kerf necks and point contacts (PO-FIX-2, D3, GEO-02/05)", () => {
@@ -5042,8 +5042,8 @@ suite("support.js — Appendix G G2 kerf necks and point contacts (PO-FIX-2, D3,
 ```
 
   Add `"NECK_KERF", "PART_POINT_CONTACT"` to `PLAN.blocking` (`test/run_tests.js:1786-1788`).
-- [ ] **Step 2: Run the new suite and confirm it fails.** Run `node test/run_tests.js --only "Appendix G G2"`. Expected FAIL ("G2 codes registered as blocking").
-- [ ] **Step 3: Implement the two checks and the engine wiring.**
+- [x] **Step 2: Run the new suite and confirm it fails.** Run `node test/run_tests.js --only "Appendix G G2"`. Expected FAIL ("G2 codes registered as blocking").
+- [x] **Step 3: Implement the two checks and the engine wiring.**
   - **`js/diag.js`:** add to the blocking geometry block:
 
 ```js
@@ -5093,17 +5093,28 @@ suite("support.js — Appendix G G2 kerf necks and point contacts (PO-FIX-2, D3,
     Ordering: contacts appear in part order, then ring order, then vertex order, which is deterministic (`cand` only filters). `featureHead` validates `kerfMM` (absent/`null`, or finite ≥ 0) and `pointContacts` (absent or boolean).
   - **`js/engine.js`:** add `kerfMM: p.machine ? p.machine.kerfMM : null, pointContacts: bonded` to `fcfg` (`:1081`), and `kerfMM: project.machine ? project.machine.kerfMM : null, pointContacts: project.construction.mode === "bonded-relief"` in `E.legacyDiagnostics` (`:226`).
   - Update the `js/support.js` header (the `featureChecks` bullet list). In `docs/ARCHITECTURE.md` D3, mark the G2 extension "Implemented (G2)".
-- [ ] **Step 4: Run the new suite.** Run `node test/run_tests.js --only "Appendix G G2"`. Expected: PASS. Also confirm the existing Appendix C delta tests (`test/run_tests.js` ~624-640, cfg without `kerfMM`) stay green: with no kerf the pass is skipped, so their recorded `SBGeom.offset` deltas do not move in G2 (G3 rewrites them). If a fixture passes `kerfMM`, filter the kerf offset out of `deltas` there.
-- [ ] **Step 5: Re-capture the diagnostics-only golden.**
+- [x] **Step 4: Run the new suite.** Run `node test/run_tests.js --only "Appendix G G2"`. Expected: PASS. Also confirm the existing Appendix C delta tests (`test/run_tests.js` ~624-640, cfg without `kerfMM`) stay green: with no kerf the pass is skipped, so their recorded `SBGeom.offset` deltas do not move in G2 (G3 rewrites them). If a fixture passes `kerfMM`, filter the kerf offset out of `deltas` there.
+- [x] **Step 5: Re-capture the diagnostics-only golden.**
   1. Run the full suite. Expected failures: F0 digest mismatches limited to `diagSha`/`wholeSha` of fixtures whose diagnostics gained `NECK_KERF`/`PART_POINT_CONTACT`. Connected fixtures (`h-connected-*`, `t-connected-*`, `n3-*`) can appear (`NECK_KERF` runs in connected mode too).
   2. List them from the failure message and re-capture with `--task G2`.
   3. Add the check `G-D6 G2 re-captured ids differ from their previous digests only in diagSha/wholeSha` (same shape as F1's, through `after("G2", id)`); for ids of connected fixtures it asserts the same and additionally `geometryHash` and `layerHashes` unchanged. It must not assert that the record has no connected ids.
   4. Record in the commit message which fixtures now block and why. Each must be a real point contact or sub-kerf neck: check the first one by hand with `SBDiag.describe`.
-- [ ] **Step 6: Run the perf gate (cumulative, G.7).** Run `node test/bench.js large --only user12 --pool 8 --rows fab4096 --runs 5`. Compare with the **pre-round** record, not with G1: the `features` stage p50 ≤ 1.3 × its original `speed-round.json` value, and the pooled total p95 ≤ 10 s and ≤ `phaseB.fab4096.pooledWallMs` + 1.2 s. The mitigations are already in the design (no kerf, no pass; scale 1; bbox-gated point-contact scan); if the gate still fails, report the stage table to the product owner instead of loosening it. Record the numbers (and the serial `--pool 0` total) in the G2 Result note.
-- [ ] **Step 7: Run the full suite, build and commit.**
+- [x] **Step 6: Run the perf gate (cumulative, G.7).** Run `node test/bench.js large --only user12 --pool 8 --rows fab4096 --runs 5`. Compare with the **pre-round** record, not with G1: the `features` stage p50 ≤ 1.3 × its original `speed-round.json` value, and the pooled total p95 ≤ 10 s and ≤ `phaseB.fab4096.pooledWallMs` + 1.2 s. The mitigations are already in the design (no kerf, no pass; scale 1; bbox-gated point-contact scan); if the gate still fails, report the stage table to the product owner instead of loosening it. Record the numbers (and the serial `--pool 0` total) in the G2 Result note.
+- [x] **Step 7: Run the full suite, build and commit.**
   1. Run `node test/run_tests.js`: 0 failed.
   2. `node build.js`
   3. Commit `js/support.js js/diag.js js/engine.js test/run_tests.js test/golden/pool-equality.json docs/ARCHITECTURE.md dist/shadowbox-studio.html`: `feat(support,diag,engine): G2 sub-kerf necks and point contacts are blocking (PO-FIX-2, D3 extension)` + trailer.
+
+**Result (2026-10-09):**
+- **Implemented as specified**, with one addition: the kerf erosion skips hole-free convex parts (exact integer turn test, `convexNoHoles`), since an erosion of a convex set cannot split. Without it the plan's own check "kerfMM 0.15: one square-join offset of −75 µm" fails on its two-layer fixture, because the full rectangular base layer is offset too. Real base layers with a frame or holes are still eroded.
+- **The test suite had to sit before the report block** of `test/run_tests.js`: a suite appended after it never runs under `--only` (the async report loop drains the queue before later `suite()` calls register).
+- **Golden.** `pool-equality.json` re-captured with `--task G2` for 20 ids, all bonded, all `diagSha`/`wholeSha` only (checked by `G-D6 G2 re-captured ids differ from their previous digests only in diagSha/wholeSha`). No connected fixture changed: their parts are single sheets without a sub-kerf neck. New blocking diagnostics per fixture:
+  - `PART_POINT_CONTACT`: a3-900-draft/-nooverlay-draft (34 each), a3-900-fabrication (6), a3-1800-draft (1), a3-1800-fabrication (2), t-light-draft/-fabrication and mobile-draft/-fabrication (39 each), t-dark-draft/-fabrication (7 each), g-none-draft/-fabrication and g-interior-draft/-fabrication (1 each), alpha-domain-draft/-fabrication (5 each), n12-draft/-fabrication (16 each).
+  - `NECK_KERF`: fine-pitch-fabrication (layer 4, one part).
+  - Checked by hand with `SBDiag.describe`: a3-900-fabrication layer 4, parts L03-P001 and L03-P002 share the vertex (75.556, 166.222) mm; g-none-fabrication layer 5, L04-P001/L04-P033 at (96, 64.667) mm; fine-pitch-fabrication layer 4, L03-P002 splits at the 0.15 mm kerf. All are real shared vertices or sub-kerf necks of the constructed geometry.
+- **Deviation from G-D2's expectation (for the product owner, G.9 #8).** G-D2 expected `PART_POINT_CONTACT` to "almost never survive" bonded construction. That holds at the production radius: the user's fusion2 art (`spikes/S7/results/fusion2/height_8layer_v2.png`, zipcheck3 settings) gives no `PART_POINT_CONTACT` and no `NECK_KERF` at draft or fabrication (draft: 10 `NECK_NARROW`, 7 `FEATURE_MARGINAL`; fabrication: 7 and 6). It does **not** hold for small rasters and coarse pitches, where the square fallback (F < 3) or a small disc (R² 4 at 0.33 mm/px) keeps diagonal pixel contacts: 20 of the 39 bonded corpus fixtures now block, mostly synthetic tonal art. Those contacts are real (the laser separates the parts), so the rule is applied as decided, but a coarse **draft** of busy art can now show many blocking point contacts that the fabrication run may not have.
+- **Perf gate (cumulative, G.7; load 4.5–5.8).** `node test/bench.js large --only user12 --pool 8 --rows fab4096 --runs 5`: p50 6162 / **p95 6525 ms** (≤ 10 s and ≤ 8794 + 1200 ms: pass); `features` stage p50 375 ms (pre-round large rows 366–402 ms; ≤ 1.3 ×: pass). Serial `--pool 0`: p50 12144 / p95 12603 ms (G1 11998 / 12195; phaseB 12879); its `features` stage is 1041 ms against 497 ms on the G1 tree (the kerf erosion is one more full-layer offset per layer; pooled it runs in parallel per layer).
+- Full suite: 2031 passed, 0 failed.
 
 ---
 

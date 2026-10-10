@@ -224,7 +224,8 @@
       revision: dOpts.revision, quality: dOpts.quality }).diagnostics);
     const { sxUm, syUm } = M.scale({ w, h, artWMM: page.artWMM, artHMM: page.artHMM });
     out.push(...S.featureChecks(view.layers, { minFeatureMM: mat.minFeatureMM, advisoryFeatureMM: mat.advisoryFeatureMM, minPartMM2: mat.minPartMM2,
-      mmPerPxMax: Math.max(sxUm, syUm) / 1000, calibrated: mat.calibrated, revision: dOpts.revision, quality: dOpts.quality }));
+      mmPerPxMax: Math.max(sxUm, syUm) / 1000, calibrated: mat.calibrated, revision: dOpts.revision, quality: dOpts.quality,
+      kerfMM: project.machine ? project.machine.kerfMM : null, pointContacts: project.construction.mode === "bonded-relief" }));   // Appendix G G2 (G-D2)
     out.push(...S.checkEnvelope({ wMM: page.wMM, hMM: page.hMM }, project.machine, mat, dOpts));
     return out;
   };
@@ -1084,7 +1085,8 @@
     // (rasterPlan reads only sizes; its FAB_* diagnostics are not repeated here). Diagnostics are not hash input.
     const fabGeo = quality === "fabrication" ? geo : E.rasterPlan(p, { w: ns.w, h: ns.h }, "fabrication", deviceClass).geometry;
     const fcfg = { minFeatureMM: mat.minFeatureMM, advisoryFeatureMM: mat.advisoryFeatureMM, minPartMM2: mat.minPartMM2,
-      mmPerPxMax: geo.mmPerPxMax, samplingMmPerPx: fabGeo.mmPerPxMax, calibrated: mat.calibrated, revision, quality };
+      mmPerPxMax: geo.mmPerPxMax, samplingMmPerPx: fabGeo.mmPerPxMax, calibrated: mat.calibrated, revision, quality,
+      kerfMM: p.machine ? p.machine.kerfMM : null, pointContacts: bonded };   // Appendix G G2 (G-D2)
     const fhead = S.featureHead(layers, fcfg);   // F9: featureChecks = head + one featureLayer item per layer + one aggregate
     diagnostics.push(...D.aggregate(fhead.concat(...(yield batch("featureLayer", layers.map((L, k) => [L, k, fcfg]), null, null, null, late)))));
     step("envelope", 0.95);
