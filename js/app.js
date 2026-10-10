@@ -613,6 +613,11 @@
     fix.className = "diag-fix";
     fix.textContent = "Fix: " + it.fix;
     li.appendChild(fix);
+    // repair actions: clipAction keys only on code and layer, so one action per (code, layer) row from the first member
+    const first = row.members[0];
+    const fabRepair = !!(r && r.snapshot) && r === run.fab && first.code === "REPAIR_REVIEW_FAB";
+    const act = fabRepair ? fabRepairActions(first, it) : onScreen ? clipAction(first) : null;
+    if (act) li.appendChild(act);
     if (row.focus.length) {
       const ul = document.createElement("ul");
       ul.className = "diag-row-focus";
@@ -624,7 +629,7 @@
         if (navigable) {
           b.title = "Show " + entry.label + " in the Proof";
           const member = row.members[0];
-          b.addEventListener("click", () => focusDiagnostic(member, Object.assign({}, it, { where: "Layer " + (entry.layer + 1) + ", " + entry.label, focus: entry }), li));
+          b.addEventListener("click", () => focusDiagnostic(member, Object.assign({}, it, { where: entry.label, focus: entry }), li));
         }
         fli.appendChild(b);
         ul.appendChild(fli);
@@ -649,9 +654,11 @@
         if (again) again.focus();
       });
       lab.appendChild(cb);
-      lab.appendChild(document.createTextNode("Acknowledge all " + row.count + " for this " + (r === run.fab ? "fabrication " : "") + "result"));
+      lab.appendChild(document.createTextNode(fabRepair ? "Keep these clips at fabrication resolution"
+        : "Acknowledge all " + row.count + " for this " + (r === run.fab ? "fabrication " : "") + "result"));
       li.appendChild(lab);
     }
+    if (run.focus && run.focus.key === first.id) li.setAttribute("aria-current", "true");
     return li;
   }
 
@@ -688,7 +695,8 @@
           ok.addEventListener("click", () => {
             if (r.snapshot && plan.hash === r.snapshot.geometryHash) plan.keys.forEach((k) => r.acks.add(k));
             refreshDiagnostics(r);
-            const home = document.querySelector(r === run.fab && $("fab-list") && $("fab-list").children.length ? "#fab-list .diag-head" : "#diag-list .diag-head");
+            const panel = r === run.fab && $("fab-list") && $("fab-list").children.length ? "#fab-list" : "#diag-list";
+            const home = document.querySelector(panel + " .diag-group:has(.diag-ackall) .diag-head") || document.querySelector(panel + " .diag-head");
             if (home) { home.tabIndex = -1; home.focus(); }
           });
           no.addEventListener("click", () => { show(); holder.firstChild.focus(); });

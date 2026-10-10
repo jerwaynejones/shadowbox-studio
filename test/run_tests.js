@@ -8449,6 +8449,11 @@ suite("proof.js/app.js — Appendix G G5 review rows and acknowledge all (PO-FIX
   const ds = [mk("SUPPORT_NARROW", { layer: 2, part: "2-1", region: [0, 0, 1, 1] }), mk("SUPPORT_NARROW", { layer: 2, part: "2-4", region: [5, 5, 6, 6] }),
     mk("SUPPORT_NARROW", { layer: 3, part: "3-1", region: [1, 1, 2, 2] }), mk("BOND_UNSUPPORTED", { layer: 2, part: "2-2", areaMM2: 1, region: [2, 2, 3, 3] }),
     ...D.aggregate([mk("NECK_NARROW", { layer: 4, part: "4-1", region: [0, 0, 1, 1] }), mk("NECK_NARROW", { layer: 4, part: "4-1", region: [3, 3, 4, 4] })])];
+  {
+    const appSrc = fs.readFileSync(path.join(__dirname, "..", "js", "app.js"), "utf8");
+    const body = appSrc.slice(appSrc.indexOf("function diagRow("), appSrc.indexOf("function ackAllControl("));
+    check("G5 merged diagRow keeps the repair actions (clipAction, fabRepairActions)", /clipAction\(/.test(body) && /fabRepairActions\(/.test(body));
+  }
   check("G5 API present", ["diagRows", "ackAllPlan", "fabListedIn"].every((f) => typeof P[f] === "function"));
   if (typeof P.diagRows !== "function") return;
   const rows = P.diagRows(ds);
